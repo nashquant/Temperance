@@ -82,6 +82,7 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
     table["date"] = table["start_time_utc"].dt.date
     table["distance_km"] = table["distance_m"] / 1000.0
     table["duration_min"] = table["duration_s"] / 60.0
+    table["avg_pace_min_per_km"] = table["avg_pace_s_per_km"] / 60.0
 
     cols = [
         "activity_id",
@@ -89,7 +90,7 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "distance_km",
         "duration_min",
         "avg_hr",
-        "avg_pace_s_per_km",
+        "avg_pace_min_per_km",
         "aerobic_load",
         "mechanical_load",
     ]

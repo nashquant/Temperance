@@ -45,6 +45,15 @@ init_db(cfg.db_path)
 cfg.import_dir.mkdir(parents=True, exist_ok=True)
 cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
 
+
+def format_pace_min_per_km(pace_s_per_km: float | None) -> str:
+    if not pace_s_per_km or pace_s_per_km <= 0:
+        return "-"
+    total_seconds = int(round(float(pace_s_per_km)))
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    return f"{minutes}:{seconds:02d} min/km"
+
 with st.sidebar:
     st.header("Navigation")
     view = st.radio("Page", ["Dashboard", "Activity Detail", "Recovery Data"], index=0)
@@ -232,7 +241,7 @@ if view == "Dashboard":
             column_config={
                 "distance_km": st.column_config.NumberColumn(format="%.2f km"),
                 "duration_min": st.column_config.NumberColumn(format="%.1f min"),
-                "avg_pace_s_per_km": st.column_config.NumberColumn(format="%.1f s/km"),
+                "avg_pace_min_per_km": st.column_config.NumberColumn(format="%.2f min/km"),
                 "aerobic_load": st.column_config.NumberColumn(format="%.1f"),
                 "mechanical_load": st.column_config.NumberColumn(format="%.1f"),
                 "garmin_training_load": st.column_config.NumberColumn(format="%.1f"),
@@ -344,7 +353,7 @@ if view == "Activity Detail":
         m1.metric("Model Aerobic", f"{row['aerobic_load']:.1f}")
         m2.metric("Garmin Training Load", f"{(row.get('garmin_training_load') or 0):.1f}")
         m3.metric("Mechanical", f"{row['mechanical_load']:.1f}")
-        m4.metric("Avg Pace", f"{row['avg_pace_s_per_km']:.1f} s/km")
+        m4.metric("Avg Pace", format_pace_min_per_km(row.get("avg_pace_s_per_km")))
 
         st.write(
             {
