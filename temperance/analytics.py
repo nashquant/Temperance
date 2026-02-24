@@ -47,6 +47,9 @@ def compute_metrics(
         axis=1,
     )
 
+    if "garmin_training_load" in df.columns:
+        df["aerobic_vs_garmin_delta"] = df["aerobic_load"] - df["garmin_training_load"]
+
     return df
 
 
@@ -58,17 +61,16 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
     weekly["week_start"] = weekly["start_time_utc"].dt.to_period("W-SUN").dt.start_time
     weekly["distance_km"] = weekly["distance_m"] / 1000.0
 
-    grouped = (
-        weekly.groupby("week_start", as_index=False)
-        .agg(
-            total_distance_km=("distance_km", "sum"),
-            total_aerobic_load=("aerobic_load", "sum"),
-            total_mechanical_load=("mechanical_load", "sum"),
-            runs=("activity_id", "count"),
-        )
-        .sort_values("week_start")
-    )
+    agg_spec: dict[str, tuple[str, str]] = {
+        "total_distance_km": ("distance_km", "sum"),
+        "total_aerobic_load": ("aerobic_load", "sum"),
+        "total_mechanical_load": ("mechanical_load", "sum"),
+        "runs": ("activity_id", "count"),
+    }
+    if "garmin_training_load" in weekly.columns:
+        agg_spec["total_garmin_training_load"] = ("garmin_training_load", "sum")
 
+    grouped = weekly.groupby("week_start", as_index=False).agg(**agg_spec).sort_values("week_start")
     return grouped
 
 
@@ -81,15 +83,23 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
     table["distance_km"] = table["distance_m"] / 1000.0
     table["duration_min"] = table["duration_s"] / 60.0
 
-    return table[
-        [
-            "activity_id",
-            "date",
-            "distance_km",
-            "duration_min",
-            "avg_hr",
-            "avg_pace_s_per_km",
-            "aerobic_load",
-            "mechanical_load",
-        ]
+    cols = [
+        "activity_id",
+        "date",
+        "distance_km",
+        "duration_min",
+        "avg_hr",
+        "avg_pace_s_per_km",
+        "aerobic_load",
+        "mechanical_load",
     ]
+
+    optional = [
+        "garmin_training_load",
+        "garmin_aerobic_te",
+        "garmin_anaerobic_te",
+        "aerobic_vs_garmin_delta",
+    ]
+    cols.extend([c for c in optional if c in table.columns])
+
+    return table[cols]

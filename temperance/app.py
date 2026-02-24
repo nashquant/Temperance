@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import altair as alt
 import pandas as pd
@@ -9,17 +9,30 @@ import streamlit as st
 from analytics import compute_metrics, display_table, weekly_summary
 from config import load_config
 from db import (
+    get_activity_detail_raw,
     get_activity_raw,
     get_last_sync,
     get_latest_activity_time,
     get_runs_df,
     get_setting,
+    get_sleep_df,
+    get_table_counts,
+    get_wellness_df,
     init_db,
     log_sync,
     save_setting,
     upsert_activities,
+    upsert_activity_details,
+    upsert_activity_metrics,
+    upsert_sleep_daily,
+    upsert_wellness_daily,
 )
-from garmin_client import fetch_garmin_runs, import_runs_from_folder
+from garmin_client import (
+    dump_extract_to_json,
+    fetch_garmin_comprehensive,
+    fetch_garmin_runs,
+    import_runs_from_folder,
+)
 from synthetic_data import generate_synthetic_runs
 
 
@@ -30,12 +43,11 @@ st.caption("Local-first running load tracker (aerobic + mechanical)")
 cfg = load_config()
 init_db(cfg.db_path)
 cfg.import_dir.mkdir(parents=True, exist_ok=True)
-
+cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
 
 with st.sidebar:
     st.header("Navigation")
-    view = st.radio("Page", ["Dashboard", "Activity Detail"], index=0)
-
+    view = st.radio("Page", ["Dashboard", "Activity Detail", "Recovery Data"], index=0)
 
 st.header("Settings")
 def_resting = float(get_setting(cfg.db_path, "resting_hr") or 60)
@@ -68,14 +80,24 @@ if last_sync:
 else:
     st.caption("No sync has been run yet.")
 
-sync_cols = st.columns([1, 1, 1, 1])
-with sync_cols[0]:
+counts = get_table_counts(cfg.db_path)
+st.caption(
+    "Local records | "
+    f"activities={counts['activities']}, metrics={counts['activity_metrics']}, details={counts['activity_details']}, "
+    f"sleep={counts['sleep_daily']}, wellness={counts['wellness_daily']}"
+)
+st.caption(f"Private DB: {cfg.db_path}")
+st.caption(f"Private exports: {cfg.private_export_dir}")
+
+st.subheader("Quick Sync")
+quick_cols = st.columns([1, 1, 1, 1])
+with quick_cols[0]:
     days_back = st.number_input("Days to sync", min_value=7, max_value=365, value=90)
-with sync_cols[1]:
+with quick_cols[1]:
     source = st.selectbox("Source", ["Garmin API", "File Import", "Both"], index=2)
-with sync_cols[2]:
+with quick_cols[2]:
     run_sync = st.button("Sync activities")
-with sync_cols[3]:
+with quick_cols[3]:
     generate_demo = st.button("Generate demo data")
 
 st.caption(f"Import folder: {cfg.import_dir}")
@@ -118,7 +140,7 @@ if run_sync:
     log_sync(cfg.db_path, source=source.lower().replace(" ", "_"), success=success, message=" | ".join(messages))
 
     if total_rows > 0:
-        st.success("Sync complete. " + " ".join(messages))
+        st.success("Quick sync complete. " + " ".join(messages))
     else:
         st.info(
             "No activities found. If Garmin sync fails, place .FIT/.TCX files in "
@@ -136,6 +158,59 @@ if generate_demo:
     )
     st.success(f"Added {len(demo_rows)} synthetic runs for demo.")
 
+st.subheader("Comprehensive Garmin Extract")
+extract_cols = st.columns([1, 1, 1, 1])
+with extract_cols[0]:
+    extract_start = st.date_input("Start date", value=date(2025, 1, 1))
+with extract_cols[1]:
+    include_details = st.checkbox("Include activity details", value=True)
+with extract_cols[2]:
+    include_wellness = st.checkbox("Include sleep + wellness", value=True)
+with extract_cols[3]:
+    run_extract = st.button("Run comprehensive extract")
+
+if run_extract:
+    if not (cfg.garmin_email and cfg.garmin_password):
+        st.error("GARMIN_EMAIL / GARMIN_PASSWORD missing. Add them in environment or .env.")
+    else:
+        try:
+            with st.spinner("Extracting Garmin data. This can take a few minutes..."):
+                extract = fetch_garmin_comprehensive(
+                    email=cfg.garmin_email,
+                    password=cfg.garmin_password,
+                    start_day=extract_start,
+                    end_day=datetime.now(timezone.utc).date(),
+                    include_activity_details=include_details,
+                    include_wellness=include_wellness,
+                )
+
+            n_a = upsert_activities(cfg.db_path, extract.activities)
+            n_m = upsert_activity_metrics(cfg.db_path, extract.activity_metrics)
+            n_d = upsert_activity_details(cfg.db_path, extract.activity_details)
+            n_s = upsert_sleep_daily(cfg.db_path, extract.sleep_daily)
+            n_w = upsert_wellness_daily(cfg.db_path, extract.wellness_daily)
+
+            snapshot_file = cfg.private_export_dir / f"garmin_extract_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+            dump_extract_to_json(snapshot_file, extract)
+
+            msg = (
+                f"activities={len(extract.activities)} (db_changes={n_a}), "
+                f"metrics={len(extract.activity_metrics)} (db_changes={n_m}), "
+                f"details={len(extract.activity_details)} (db_changes={n_d}), "
+                f"sleep={len(extract.sleep_daily)} (db_changes={n_s}), "
+                f"wellness={len(extract.wellness_daily)} (db_changes={n_w}), "
+                f"errors={len(extract.errors)}"
+            )
+            log_sync(cfg.db_path, source="garmin_comprehensive", success=True, message=msg)
+            st.success("Comprehensive extract complete. " + msg)
+            st.info(f"Snapshot saved locally at: {snapshot_file}")
+            if extract.errors:
+                st.warning("Some endpoints failed for specific days/activities. First 20 errors:")
+                st.code("\n".join(extract.errors[:20]))
+        except Exception as exc:
+            log_sync(cfg.db_path, source="garmin_comprehensive", success=False, message=str(exc))
+            st.error(f"Comprehensive extract failed: {exc}")
+
 runs_df = get_runs_df(cfg.db_path)
 metrics_df = compute_metrics(runs_df, resting_hr=float(resting_hr), max_hr=float(max_hr), sex=sex)
 
@@ -145,8 +220,8 @@ if view == "Dashboard":
 
     if metrics_df.empty:
         st.info(
-            "No running activities yet. Use Sync above."
-            " If Garmin fails, import .FIT/.TCX files into the local import folder."
+            "No running activities yet. Use Sync above. "
+            "For your full archive, run Comprehensive Garmin Extract from Jan 1, 2025."
         )
     else:
         table_df = display_table(metrics_df)
@@ -160,6 +235,8 @@ if view == "Dashboard":
                 "avg_pace_s_per_km": st.column_config.NumberColumn(format="%.1f s/km"),
                 "aerobic_load": st.column_config.NumberColumn(format="%.1f"),
                 "mechanical_load": st.column_config.NumberColumn(format="%.1f"),
+                "garmin_training_load": st.column_config.NumberColumn(format="%.1f"),
+                "aerobic_vs_garmin_delta": st.column_config.NumberColumn(format="%.1f"),
             },
         )
 
@@ -168,7 +245,7 @@ if view == "Dashboard":
 
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("Weekly Aerobic Load")
+            st.subheader("Weekly Aerobic Load (Model)")
             ch = (
                 alt.Chart(weekly)
                 .mark_bar()
@@ -185,8 +262,45 @@ if view == "Dashboard":
             )
             st.altair_chart(ch2, use_container_width=True)
 
+        if "total_garmin_training_load" in weekly.columns:
+            st.subheader("Weekly Model vs Garmin Training Load")
+            compare = weekly.melt(
+                id_vars=["week_start"],
+                value_vars=["total_aerobic_load", "total_garmin_training_load"],
+                var_name="series",
+                value_name="value",
+            )
+            comp_chart = (
+                alt.Chart(compare)
+                .mark_line(point=True)
+                .encode(x="week_start:T", y="value:Q", color="series:N", tooltip=["week_start", "series", "value"])
+            )
+            st.altair_chart(comp_chart, use_container_width=True)
+
+            per_run = metrics_df.dropna(subset=["garmin_training_load"])
+            if not per_run.empty:
+                st.subheader("Per-Run: Model Aerobic Load vs Garmin Training Load")
+                scatter = (
+                    alt.Chart(per_run)
+                    .mark_circle(size=90)
+                    .encode(
+                        x="aerobic_load:Q",
+                        y="garmin_training_load:Q",
+                        color=alt.Color("distance_m:Q", scale=alt.Scale(scheme="viridis")),
+                        tooltip=[
+                            "activity_id",
+                            "start_time_utc",
+                            "distance_m",
+                            "aerobic_load",
+                            "garmin_training_load",
+                            "aerobic_vs_garmin_delta",
+                        ],
+                    )
+                )
+                st.altair_chart(scatter, use_container_width=True)
+
         st.subheader("Daily Run Scatter: Mechanical vs Aerobic")
-        scatter = (
+        scatter2 = (
             alt.Chart(metrics_df)
             .mark_circle(size=90)
             .encode(
@@ -204,10 +318,7 @@ if view == "Dashboard":
                 ],
             )
         )
-        st.altair_chart(scatter, use_container_width=True)
-
-        st.subheader("Weekly Totals")
-        st.dataframe(weekly, use_container_width=True)
+        st.altair_chart(scatter2, use_container_width=True)
 
 if view == "Activity Detail":
     st.divider()
@@ -229,10 +340,11 @@ if view == "Activity Detail":
 
         row = options_df.loc[options_df["activity_id"] == activity_id].iloc[0]
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Aerobic Load", f"{row['aerobic_load']:.1f}")
-        m2.metric("Mechanical Load", f"{row['mechanical_load']:.1f}")
-        m3.metric("Avg Pace", f"{row['avg_pace_s_per_km']:.1f} s/km")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Model Aerobic", f"{row['aerobic_load']:.1f}")
+        m2.metric("Garmin Training Load", f"{(row.get('garmin_training_load') or 0):.1f}")
+        m3.metric("Mechanical", f"{row['mechanical_load']:.1f}")
+        m4.metric("Avg Pace", f"{row['avg_pace_s_per_km']:.1f} s/km")
 
         st.write(
             {
@@ -245,12 +357,39 @@ if view == "Activity Detail":
                 "max_hr": row["max_hr"],
                 "elevation_gain_m": row["elevation_gain_m"],
                 "source": row["source"],
+                "garmin_training_load": row.get("garmin_training_load"),
+                "garmin_aerobic_te": row.get("garmin_aerobic_te"),
+                "garmin_anaerobic_te": row.get("garmin_anaerobic_te"),
+                "garmin_vo2max": row.get("garmin_vo2max"),
             }
         )
 
         raw = get_activity_raw(cfg.db_path, str(activity_id))
         if raw:
-            with st.expander("Raw activity payload"):
+            with st.expander("Raw summary payload"):
                 st.json(raw)
+
+        detail_raw = get_activity_detail_raw(cfg.db_path, str(activity_id))
+        if detail_raw:
+            with st.expander("Raw detail payload"):
+                st.json(detail_raw)
+
+if view == "Recovery Data":
+    st.divider()
+    st.header("Recovery Data (Garmin)")
+
+    sleep_df = get_sleep_df(cfg.db_path)
+    wellness_df = get_wellness_df(cfg.db_path)
+
+    if sleep_df.empty and wellness_df.empty:
+        st.info("No sleep/wellness data yet. Run Comprehensive Garmin Extract with wellness enabled.")
+    else:
+        if not sleep_df.empty:
+            st.subheader("Sleep Daily")
+            st.dataframe(sleep_df, use_container_width=True)
+
+        if not wellness_df.empty:
+            st.subheader("Wellness Daily")
+            st.dataframe(wellness_df, use_container_width=True)
 
 st.caption(f"Now: {datetime.now(timezone.utc).isoformat()} UTC")
