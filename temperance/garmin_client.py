@@ -152,6 +152,8 @@ def _normalize_activity(
         avg_pace_s_per_km = duration_s / (distance_m / 1000.0)
 
     stamina_start, stamina_end = _extract_stamina_values(a, details_bundle)
+    activity_type = a.get("activityType") if isinstance(a.get("activityType"), dict) else {}
+    split_summaries = a.get("splitSummaries")
 
     return {
         "activity_id": str(activity_id),
@@ -164,11 +166,20 @@ def _normalize_activity(
         "avg_pace_s_per_km": avg_pace_s_per_km,
         "elevation_gain_m": _to_float(a.get("elevationGain") or a.get("totalAscent")),
         "elevation_loss_m": _to_float(a.get("elevationLoss") or a.get("totalDescent")),
-        "avg_cadence": _to_float(a.get("averageRunCadence") or a.get("averageCadence")),
-        "max_cadence": _to_float(a.get("maxRunCadence") or a.get("maxCadence")),
+        "avg_cadence": _to_float(
+            a.get("averageRunCadence")
+            or a.get("averageCadence")
+            or a.get("averageRunningCadenceInStepsPerMinute")
+        ),
+        "max_cadence": _to_float(
+            a.get("maxRunCadence")
+            or a.get("maxCadence")
+            or a.get("maxRunningCadenceInStepsPerMinute")
+            or a.get("maxDoubleCadence")
+        ),
         "avg_stride_length": _to_float(a.get("avgStrideLength") or a.get("averageStrideLength")),
-        "vertical_ratio": _to_float(a.get("verticalRatio")),
-        "vertical_oscillation": _to_float(a.get("verticalOscillation")),
+        "vertical_ratio": _to_float(a.get("verticalRatio") or a.get("avgVerticalRatio")),
+        "vertical_oscillation": _to_float(a.get("verticalOscillation") or a.get("avgVerticalOscillation")),
         "running_power_avg": _to_float(a.get("avgPower") or a.get("averagePower")),
         "running_power_max": _to_float(a.get("maxPower")),
         "stamina_start": stamina_start,
@@ -179,6 +190,26 @@ def _normalize_activity(
             a.get("performanceCondition") or _deep_first(a, {"avgPerformanceCondition", "performanceCondition"})
         ),
         "device_name": _extract_device_name(a, details_bundle),
+        "manufacturer": _to_str(a.get("manufacturer")),
+        "activity_uuid": _to_str(a.get("activityUUID")),
+        "owner_id": _to_str(a.get("ownerId")),
+        "owner_full_name": _to_str(a.get("ownerFullName")),
+        "elapsed_duration_s": _to_float(a.get("elapsedDuration")),
+        "moving_duration_s": _to_float(a.get("movingDuration")),
+        "average_speed_mps": _to_float(a.get("averageSpeed")),
+        "activity_type_key": _to_str(activity_type.get("typeKey")),
+        "activity_type_id": _to_float(activity_type.get("typeId")),
+        "hr_time_in_zone_1": _to_float(a.get("hrTimeInZone_1")),
+        "hr_time_in_zone_2": _to_float(a.get("hrTimeInZone_2")),
+        "hr_time_in_zone_3": _to_float(a.get("hrTimeInZone_3")),
+        "hr_time_in_zone_4": _to_float(a.get("hrTimeInZone_4")),
+        "hr_time_in_zone_5": _to_float(a.get("hrTimeInZone_5")),
+        "moderate_intensity_minutes": _to_float(a.get("moderateIntensityMinutes")),
+        "vigorous_intensity_minutes": _to_float(a.get("vigorousIntensityMinutes")),
+        "difference_body_battery": _to_float(a.get("differenceBodyBattery")),
+        "bmr_calories": _to_float(a.get("bmrCalories")),
+        "is_pr": _to_float(a.get("pr")),
+        "split_summaries_json": json.dumps(split_summaries, default=str) if split_summaries is not None else None,
         "source": source,
         "raw": a,
     }
@@ -795,6 +826,26 @@ def _parse_tcx(path: Path) -> dict[str, Any] | None:
         "training_effect_anaerobic": None,
         "performance_condition": None,
         "device_name": None,
+        "manufacturer": None,
+        "activity_uuid": None,
+        "owner_id": None,
+        "owner_full_name": None,
+        "elapsed_duration_s": None,
+        "moving_duration_s": None,
+        "average_speed_mps": None,
+        "activity_type_key": "running",
+        "activity_type_id": None,
+        "hr_time_in_zone_1": None,
+        "hr_time_in_zone_2": None,
+        "hr_time_in_zone_3": None,
+        "hr_time_in_zone_4": None,
+        "hr_time_in_zone_5": None,
+        "moderate_intensity_minutes": None,
+        "vigorous_intensity_minutes": None,
+        "difference_body_battery": None,
+        "bmr_calories": None,
+        "is_pr": None,
+        "split_summaries_json": None,
         "source": "file_import",
         "raw": {"file": str(path), "format": "tcx"},
     }
@@ -845,6 +896,26 @@ def _parse_fit(path: Path) -> dict[str, Any] | None:
         "training_effect_anaerobic": None,
         "performance_condition": None,
         "device_name": _to_str(session_data.get("device_name") or session_data.get("manufacturer")),
+        "manufacturer": _to_str(session_data.get("manufacturer")),
+        "activity_uuid": None,
+        "owner_id": None,
+        "owner_full_name": None,
+        "elapsed_duration_s": _to_float(session_data.get("total_timer_time")),
+        "moving_duration_s": duration_s,
+        "average_speed_mps": _to_float(session_data.get("enhanced_avg_speed") or session_data.get("avg_speed")),
+        "activity_type_key": "running",
+        "activity_type_id": None,
+        "hr_time_in_zone_1": None,
+        "hr_time_in_zone_2": None,
+        "hr_time_in_zone_3": None,
+        "hr_time_in_zone_4": None,
+        "hr_time_in_zone_5": None,
+        "moderate_intensity_minutes": None,
+        "vigorous_intensity_minutes": None,
+        "difference_body_battery": None,
+        "bmr_calories": None,
+        "is_pr": None,
+        "split_summaries_json": None,
         "source": "file_import",
         "raw": {"file": str(path), "format": "fit"},
     }
