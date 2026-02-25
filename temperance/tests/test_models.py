@@ -35,3 +35,28 @@ def test_mechanical_load_hills_increase_score() -> None:
     flat = mechanical_load(distance_m=10000, duration_s=3000, elevation_gain_m=0)
     hilly = mechanical_load(distance_m=10000, duration_s=3000, elevation_gain_m=300)
     assert hilly > flat
+
+
+def test_mechanical_load_v15_cadence_stride_power_increase_score() -> None:
+    baseline = mechanical_load(distance_m=10000, duration_s=3000, elevation_gain_m=50)
+    enriched = mechanical_load(
+        distance_m=10000,
+        duration_s=3000,
+        elevation_gain_m=50,
+        avg_cadence=178,
+        avg_stride_length=1.2,
+        running_power_avg=320,
+    )
+    assert enriched > baseline
+
+
+def test_mechanical_load_handles_missing_optional_inputs() -> None:
+    score = mechanical_load(
+        distance_m=8000,
+        duration_s=2600,
+        elevation_gain_m=None,
+        avg_cadence=None,
+        avg_stride_length=None,
+        running_power_avg=None,
+    )
+    assert score > 0

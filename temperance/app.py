@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import altair as alt
 import pandas as pd
@@ -9,6 +9,7 @@ import streamlit as st
 from analytics import compute_metrics, display_table, weekly_summary
 from config import load_config
 from db import (
+    get_activity_records_df,
     get_activity_detail_raw,
     get_activity_raw,
     get_last_sync,
@@ -23,6 +24,7 @@ from db import (
     save_setting,
     upsert_activities,
     upsert_activity_details,
+    upsert_activity_records,
     upsert_activity_metrics,
     upsert_sleep_daily,
     upsert_wellness_daily,
@@ -93,7 +95,7 @@ counts = get_table_counts(cfg.db_path)
 st.caption(
     "Local records | "
     f"activities={counts['activities']}, metrics={counts['activity_metrics']}, details={counts['activity_details']}, "
-    f"sleep={counts['sleep_daily']}, wellness={counts['wellness_daily']}"
+    f"records={counts['activity_records']}, sleep={counts['sleep_daily']}, wellness={counts['wellness_daily']}"
 )
 st.caption(f"Private DB: {cfg.db_path}")
 st.caption(f"Private exports: {cfg.private_export_dir}")
@@ -168,7 +170,7 @@ if generate_demo:
     st.success(f"Added {len(demo_rows)} synthetic runs for demo.")
 
 st.subheader("Comprehensive Garmin Extract")
-extract_cols = st.columns([1, 1, 1, 1])
+extract_cols = st.columns([1, 1, 1, 1, 1])
 with extract_cols[0]:
     extract_start = st.date_input("Start date", value=date(2025, 1, 1))
 with extract_cols[1]:
@@ -176,6 +178,8 @@ with extract_cols[1]:
 with extract_cols[2]:
     include_wellness = st.checkbox("Include sleep + wellness", value=True)
 with extract_cols[3]:
+    incremental_extract = st.checkbox("Incremental only", value=True)
+with extract_cols[4]:
     run_extract = st.button("Run comprehensive extract")
 
 if run_extract:
@@ -183,19 +187,25 @@ if run_extract:
         st.error("GARMIN_EMAIL / GARMIN_PASSWORD missing. Add them in environment or .env.")
     else:
         try:
+            latest = get_latest_activity_time(cfg.db_path)
+            start_day = extract_start
+            if incremental_extract and latest:
+                start_day = max(start_day, (latest - timedelta(days=2)).date())
             with st.spinner("Extracting Garmin data. This can take a few minutes..."):
                 extract = fetch_garmin_comprehensive(
                     email=cfg.garmin_email,
                     password=cfg.garmin_password,
-                    start_day=extract_start,
+                    start_day=start_day,
                     end_day=datetime.now(timezone.utc).date(),
                     include_activity_details=include_details,
                     include_wellness=include_wellness,
+                    raw_export_dir=cfg.private_export_dir / "raw",
                 )
 
             n_a = upsert_activities(cfg.db_path, extract.activities)
             n_m = upsert_activity_metrics(cfg.db_path, extract.activity_metrics)
             n_d = upsert_activity_details(cfg.db_path, extract.activity_details)
+            n_r = upsert_activity_records(cfg.db_path, extract.activity_records)
             n_s = upsert_sleep_daily(cfg.db_path, extract.sleep_daily)
             n_w = upsert_wellness_daily(cfg.db_path, extract.wellness_daily)
 
@@ -206,6 +216,7 @@ if run_extract:
                 f"activities={len(extract.activities)} (db_changes={n_a}), "
                 f"metrics={len(extract.activity_metrics)} (db_changes={n_m}), "
                 f"details={len(extract.activity_details)} (db_changes={n_d}), "
+                f"records={len(extract.activity_records)} (db_changes={n_r}), "
                 f"sleep={len(extract.sleep_daily)} (db_changes={n_s}), "
                 f"wellness={len(extract.wellness_daily)} (db_changes={n_w}), "
                 f"errors={len(extract.errors)}"
@@ -248,6 +259,28 @@ if view == "Dashboard":
                 "aerobic_vs_garmin_delta": st.column_config.NumberColumn(format="%.1f"),
             },
         )
+
+        st.subheader("Trend Overlay (Optional)")
+        overlay_metric = st.selectbox(
+            "Overlay metric",
+            ["None", "running_power_avg", "avg_cadence"],
+            index=0,
+        )
+        if overlay_metric != "None":
+            overlay_df = metrics_df.dropna(subset=[overlay_metric]).copy()
+            if overlay_df.empty:
+                st.caption(f"No {overlay_metric} data available yet.")
+            else:
+                overlay_chart = (
+                    alt.Chart(overlay_df)
+                    .mark_line(point=True)
+                    .encode(
+                        x="start_time_utc:T",
+                        y=alt.Y(f"{overlay_metric}:Q", title=overlay_metric),
+                        tooltip=["activity_id", "start_time_utc", overlay_metric],
+                    )
+                )
+                st.altair_chart(overlay_chart, use_container_width=True)
 
         weekly = weekly_summary(metrics_df)
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
@@ -365,6 +398,20 @@ if view == "Activity Detail":
                 "avg_hr": row["avg_hr"],
                 "max_hr": row["max_hr"],
                 "elevation_gain_m": row["elevation_gain_m"],
+                "elevation_loss_m": row.get("elevation_loss_m"),
+                "avg_cadence": row.get("avg_cadence"),
+                "max_cadence": row.get("max_cadence"),
+                "avg_stride_length": row.get("avg_stride_length"),
+                "vertical_ratio": row.get("vertical_ratio"),
+                "vertical_oscillation": row.get("vertical_oscillation"),
+                "running_power_avg": row.get("running_power_avg"),
+                "running_power_max": row.get("running_power_max"),
+                "stamina_start": row.get("stamina_start"),
+                "stamina_end": row.get("stamina_end"),
+                "training_effect_aerobic": row.get("training_effect_aerobic"),
+                "training_effect_anaerobic": row.get("training_effect_anaerobic"),
+                "performance_condition": row.get("performance_condition"),
+                "device_name": row.get("device_name"),
                 "source": row["source"],
                 "garmin_training_load": row.get("garmin_training_load"),
                 "garmin_aerobic_te": row.get("garmin_aerobic_te"),
@@ -372,6 +419,47 @@ if view == "Activity Detail":
                 "garmin_vo2max": row.get("garmin_vo2max"),
             }
         )
+
+        records_df = get_activity_records_df(cfg.db_path, str(activity_id))
+        if not records_df.empty:
+            st.subheader("Per-Record FIT Series")
+            records_df["record_time_utc"] = pd.to_datetime(records_df["record_time_utc"], utc=True, errors="coerce")
+            record_metric = st.selectbox(
+                "Record metric",
+                ["heart_rate", "cadence", "power", "speed", "distance", "stamina"],
+                index=0,
+            )
+            plot_df = records_df.dropna(subset=[record_metric])
+            if plot_df.empty:
+                st.caption(f"No {record_metric} records for this run.")
+            else:
+                record_chart = (
+                    alt.Chart(plot_df)
+                    .mark_line()
+                    .encode(
+                        x="record_time_utc:T",
+                        y=f"{record_metric}:Q",
+                        tooltip=["record_time_utc", record_metric],
+                    )
+                )
+                st.altair_chart(record_chart, use_container_width=True)
+
+        st.subheader("Data Availability")
+        availability_cols = [
+            "avg_hr",
+            "avg_cadence",
+            "avg_stride_length",
+            "vertical_ratio",
+            "vertical_oscillation",
+            "running_power_avg",
+            "stamina_start",
+            "training_effect_aerobic",
+            "performance_condition",
+        ]
+        availability_df = options_df[["activity_id", "start_time_utc"] + availability_cols].copy()
+        for col in availability_cols:
+            availability_df[col] = availability_df[col].notna()
+        st.dataframe(availability_df, use_container_width=True)
 
         raw = get_activity_raw(cfg.db_path, str(activity_id))
         if raw:

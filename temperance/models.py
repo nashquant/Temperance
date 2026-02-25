@@ -89,6 +89,13 @@ def mechanical_load(
     duration_s: float,
     elevation_gain_m: float | None = None,
     baseline_pace_s_per_km: float = 300.0,
+    avg_cadence: float | None = None,
+    avg_stride_length: float | None = None,
+    running_power_avg: float | None = None,
+    step_weight: float = 0.2,
+    stride_weight: float = 0.15,
+    hill_weight: float = 0.2,
+    power_weight: float = 0.2,
 ) -> float:
     """
     Mechanical load proxy for running.
@@ -109,6 +116,24 @@ def mechanical_load(
     hill_factor = 1.0
     if elevation_gain_m and elevation_gain_m > 0:
         grade_proxy = _clamp(elevation_gain_m / max(distance_m, 1.0), 0.0, 0.12)
-        hill_factor += grade_proxy * 1.5
+        hill_factor += grade_proxy * (1.0 + hill_weight)
 
-    return distance_km * pace_factor * hill_factor
+    step_factor = 1.0
+    if avg_cadence and avg_cadence > 0:
+        # cadence in steps/min * duration gives a step-count proxy.
+        step_count_proxy = avg_cadence * (duration_s / 60.0)
+        reference_steps = max(distance_km * 1000.0 / 1.2, 1.0)
+        step_ratio = _clamp(step_count_proxy / reference_steps, 0.7, 1.4)
+        step_factor += step_weight * (step_ratio - 1.0)
+
+    stride_factor = 1.0
+    if avg_stride_length and avg_stride_length > 0:
+        stride_ratio = _clamp(avg_stride_length / 1.1, 0.7, 1.35)
+        stride_factor += stride_weight * (stride_ratio - 1.0)
+
+    power_factor = 1.0
+    if running_power_avg and running_power_avg > 0:
+        power_ratio = _clamp(running_power_avg / 260.0, 0.7, 1.5)
+        power_factor += power_weight * (power_ratio - 1.0)
+
+    return distance_km * pace_factor * hill_factor * step_factor * stride_factor * power_factor

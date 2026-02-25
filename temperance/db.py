@@ -5,12 +5,11 @@ import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
 UTC_NOW = lambda: datetime.now(timezone.utc).isoformat()
-
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS activities (
@@ -23,6 +22,20 @@ CREATE TABLE IF NOT EXISTS activities (
     max_hr REAL,
     avg_pace_s_per_km REAL,
     elevation_gain_m REAL,
+    elevation_loss_m REAL,
+    avg_cadence REAL,
+    max_cadence REAL,
+    avg_stride_length REAL,
+    vertical_ratio REAL,
+    vertical_oscillation REAL,
+    running_power_avg REAL,
+    running_power_max REAL,
+    stamina_start REAL,
+    stamina_end REAL,
+    training_effect_aerobic REAL,
+    training_effect_anaerobic REAL,
+    performance_condition REAL,
+    device_name TEXT,
     source TEXT NOT NULL,
     raw_json TEXT,
     created_at TEXT NOT NULL,
@@ -51,13 +64,37 @@ CREATE TABLE IF NOT EXISTS activity_details (
     FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
 );
 
+CREATE TABLE IF NOT EXISTS activity_records (
+    activity_id TEXT NOT NULL,
+    record_time_utc TEXT NOT NULL,
+    heart_rate REAL,
+    cadence REAL,
+    step_length REAL,
+    stride_length REAL,
+    vertical_ratio REAL,
+    vertical_oscillation REAL,
+    power REAL,
+    grade REAL,
+    altitude REAL,
+    speed REAL,
+    distance REAL,
+    stamina REAL,
+    raw_json TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (activity_id, record_time_utc),
+    FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
+);
+
 CREATE TABLE IF NOT EXISTS sleep_daily (
     day_utc TEXT PRIMARY KEY,
     sleep_score REAL,
     sleep_duration_s REAL,
     deep_sleep_s REAL,
     rem_sleep_s REAL,
+    light_sleep_s REAL,
     awake_s REAL,
+    sleep_start_utc TEXT,
+    sleep_end_utc TEXT,
     raw_json TEXT,
     updated_at TEXT NOT NULL
 );
@@ -68,9 +105,13 @@ CREATE TABLE IF NOT EXISTS wellness_daily (
     hrv_status REAL,
     training_readiness REAL,
     stress_avg REAL,
+    stress_max REAL,
     body_battery_start REAL,
     body_battery_end REAL,
+    body_battery_avg REAL,
+    respiration_avg REAL,
     steps REAL,
+    intensity_minutes REAL,
     calories_total REAL,
     raw_json TEXT,
     updated_at TEXT NOT NULL
@@ -90,7 +131,14 @@ CREATE TABLE IF NOT EXISTS sync_log (
     message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    applied_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_activities_start_time ON activities(start_time_utc);
+CREATE INDEX IF NOT EXISTS idx_activity_records_activity_time ON activity_records(activity_id, record_time_utc);
 CREATE INDEX IF NOT EXISTS idx_sync_log_time ON sync_log(sync_time_utc DESC);
 """
 
@@ -101,11 +149,139 @@ def get_conn(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+        (table,),
+    ).fetchone()
+    return bool(row)
+
+
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    if not _table_exists(conn, table):
+        return False
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(str(r["name"]) == column for r in rows)
+
+
+def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, col_type: str) -> None:
+    if not _column_exists(conn, table, column):
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+
+
+def run_migrations(db_path: Path) -> None:
+    migrations: list[tuple[str, Callable[[sqlite3.Connection], None]]] = [
+        ("001_expand_activity_summary_fields", _migration_expand_activity_summary_fields),
+        ("002_add_activity_records", _migration_add_activity_records),
+        ("003_expand_daily_monitoring", _migration_expand_daily_monitoring),
+    ]
+
+    with closing(get_conn(db_path)) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                applied_at TEXT NOT NULL
+            )
+            """
+        )
+
+        applied = {
+            row["name"]
+            for row in conn.execute("SELECT name FROM schema_migrations").fetchall()
+        }
+
+        for name, migration_fn in migrations:
+            if name in applied:
+                continue
+            migration_fn(conn)
+            conn.execute(
+                "INSERT INTO schema_migrations(name, applied_at) VALUES (?, ?)",
+                (name, UTC_NOW()),
+            )
+        conn.commit()
+
+
+def _migration_expand_activity_summary_fields(conn: sqlite3.Connection) -> None:
+    fields = {
+        "elevation_loss_m": "REAL",
+        "avg_cadence": "REAL",
+        "max_cadence": "REAL",
+        "avg_stride_length": "REAL",
+        "vertical_ratio": "REAL",
+        "vertical_oscillation": "REAL",
+        "running_power_avg": "REAL",
+        "running_power_max": "REAL",
+        "stamina_start": "REAL",
+        "stamina_end": "REAL",
+        "training_effect_aerobic": "REAL",
+        "training_effect_anaerobic": "REAL",
+        "performance_condition": "REAL",
+        "device_name": "TEXT",
+    }
+    for column, col_type in fields.items():
+        _add_column_if_missing(conn, "activities", column, col_type)
+
+
+def _migration_add_activity_records(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS activity_records (
+            activity_id TEXT NOT NULL,
+            record_time_utc TEXT NOT NULL,
+            heart_rate REAL,
+            cadence REAL,
+            step_length REAL,
+            stride_length REAL,
+            vertical_ratio REAL,
+            vertical_oscillation REAL,
+            power REAL,
+            grade REAL,
+            altitude REAL,
+            speed REAL,
+            distance REAL,
+            stamina REAL,
+            raw_json TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (activity_id, record_time_utc),
+            FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_activity_records_activity_time
+        ON activity_records(activity_id, record_time_utc)
+        """
+    )
+
+
+def _migration_expand_daily_monitoring(conn: sqlite3.Connection) -> None:
+    sleep_fields = {
+        "light_sleep_s": "REAL",
+        "sleep_start_utc": "TEXT",
+        "sleep_end_utc": "TEXT",
+    }
+    for column, col_type in sleep_fields.items():
+        _add_column_if_missing(conn, "sleep_daily", column, col_type)
+
+    wellness_fields = {
+        "stress_max": "REAL",
+        "body_battery_avg": "REAL",
+        "respiration_avg": "REAL",
+        "intensity_minutes": "REAL",
+    }
+    for column, col_type in wellness_fields.items():
+        _add_column_if_missing(conn, "wellness_daily", column, col_type)
+
+
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with closing(get_conn(db_path)) as conn:
         conn.executescript(SCHEMA_SQL)
         conn.commit()
+    run_migrations(db_path)
 
 
 def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
@@ -118,12 +294,20 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
             """
             INSERT INTO activities (
                 activity_id, start_time_utc, sport_type, distance_m, duration_s,
-                avg_hr, max_hr, avg_pace_s_per_km, elevation_gain_m, source,
-                raw_json, created_at, updated_at
+                avg_hr, max_hr, avg_pace_s_per_km, elevation_gain_m, elevation_loss_m,
+                avg_cadence, max_cadence, avg_stride_length, vertical_ratio,
+                vertical_oscillation, running_power_avg, running_power_max,
+                stamina_start, stamina_end, training_effect_aerobic,
+                training_effect_anaerobic, performance_condition, device_name,
+                source, raw_json, created_at, updated_at
             ) VALUES (
                 :activity_id, :start_time_utc, :sport_type, :distance_m, :duration_s,
-                :avg_hr, :max_hr, :avg_pace_s_per_km, :elevation_gain_m, :source,
-                :raw_json, :created_at, :updated_at
+                :avg_hr, :max_hr, :avg_pace_s_per_km, :elevation_gain_m, :elevation_loss_m,
+                :avg_cadence, :max_cadence, :avg_stride_length, :vertical_ratio,
+                :vertical_oscillation, :running_power_avg, :running_power_max,
+                :stamina_start, :stamina_end, :training_effect_aerobic,
+                :training_effect_anaerobic, :performance_condition, :device_name,
+                :source, :raw_json, :created_at, :updated_at
             )
             ON CONFLICT(activity_id) DO UPDATE SET
                 start_time_utc=excluded.start_time_utc,
@@ -134,13 +318,50 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                 max_hr=excluded.max_hr,
                 avg_pace_s_per_km=excluded.avg_pace_s_per_km,
                 elevation_gain_m=excluded.elevation_gain_m,
+                elevation_loss_m=excluded.elevation_loss_m,
+                avg_cadence=excluded.avg_cadence,
+                max_cadence=excluded.max_cadence,
+                avg_stride_length=excluded.avg_stride_length,
+                vertical_ratio=excluded.vertical_ratio,
+                vertical_oscillation=excluded.vertical_oscillation,
+                running_power_avg=excluded.running_power_avg,
+                running_power_max=excluded.running_power_max,
+                stamina_start=excluded.stamina_start,
+                stamina_end=excluded.stamina_end,
+                training_effect_aerobic=excluded.training_effect_aerobic,
+                training_effect_anaerobic=excluded.training_effect_anaerobic,
+                performance_condition=excluded.performance_condition,
+                device_name=excluded.device_name,
                 source=excluded.source,
                 raw_json=excluded.raw_json,
                 updated_at=excluded.updated_at
             """,
             [
                 {
-                    **row,
+                    "activity_id": row.get("activity_id"),
+                    "start_time_utc": row.get("start_time_utc"),
+                    "sport_type": row.get("sport_type") or "unknown",
+                    "distance_m": row.get("distance_m"),
+                    "duration_s": row.get("duration_s"),
+                    "avg_hr": row.get("avg_hr"),
+                    "max_hr": row.get("max_hr"),
+                    "avg_pace_s_per_km": row.get("avg_pace_s_per_km"),
+                    "elevation_gain_m": row.get("elevation_gain_m"),
+                    "elevation_loss_m": row.get("elevation_loss_m"),
+                    "avg_cadence": row.get("avg_cadence"),
+                    "max_cadence": row.get("max_cadence"),
+                    "avg_stride_length": row.get("avg_stride_length"),
+                    "vertical_ratio": row.get("vertical_ratio"),
+                    "vertical_oscillation": row.get("vertical_oscillation"),
+                    "running_power_avg": row.get("running_power_avg"),
+                    "running_power_max": row.get("running_power_max"),
+                    "stamina_start": row.get("stamina_start"),
+                    "stamina_end": row.get("stamina_end"),
+                    "training_effect_aerobic": row.get("training_effect_aerobic"),
+                    "training_effect_anaerobic": row.get("training_effect_anaerobic"),
+                    "performance_condition": row.get("performance_condition"),
+                    "device_name": row.get("device_name"),
+                    "source": row.get("source") or "unknown",
                     "raw_json": json.dumps(row.get("raw", {}), default=str),
                     "created_at": now,
                     "updated_at": now,
@@ -223,6 +444,52 @@ def upsert_activity_details(db_path: Path, details: list[dict[str, Any]]) -> int
         return conn.total_changes
 
 
+def upsert_activity_records(db_path: Path, records: list[dict[str, Any]]) -> int:
+    if not records:
+        return 0
+
+    now = UTC_NOW()
+    with closing(get_conn(db_path)) as conn:
+        conn.executemany(
+            """
+            INSERT INTO activity_records (
+                activity_id, record_time_utc, heart_rate, cadence, step_length,
+                stride_length, vertical_ratio, vertical_oscillation, power,
+                grade, altitude, speed, distance, stamina, raw_json, updated_at
+            ) VALUES (
+                :activity_id, :record_time_utc, :heart_rate, :cadence, :step_length,
+                :stride_length, :vertical_ratio, :vertical_oscillation, :power,
+                :grade, :altitude, :speed, :distance, :stamina, :raw_json, :updated_at
+            )
+            ON CONFLICT(activity_id, record_time_utc) DO UPDATE SET
+                heart_rate=excluded.heart_rate,
+                cadence=excluded.cadence,
+                step_length=excluded.step_length,
+                stride_length=excluded.stride_length,
+                vertical_ratio=excluded.vertical_ratio,
+                vertical_oscillation=excluded.vertical_oscillation,
+                power=excluded.power,
+                grade=excluded.grade,
+                altitude=excluded.altitude,
+                speed=excluded.speed,
+                distance=excluded.distance,
+                stamina=excluded.stamina,
+                raw_json=excluded.raw_json,
+                updated_at=excluded.updated_at
+            """,
+            [
+                {
+                    **row,
+                    "raw_json": json.dumps(row.get("raw", {}), default=str),
+                    "updated_at": now,
+                }
+                for row in records
+            ],
+        )
+        conn.commit()
+        return conn.total_changes
+
+
 def upsert_sleep_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
@@ -233,17 +500,22 @@ def upsert_sleep_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
             """
             INSERT INTO sleep_daily (
                 day_utc, sleep_score, sleep_duration_s, deep_sleep_s,
-                rem_sleep_s, awake_s, raw_json, updated_at
+                rem_sleep_s, light_sleep_s, awake_s, sleep_start_utc,
+                sleep_end_utc, raw_json, updated_at
             ) VALUES (
                 :day_utc, :sleep_score, :sleep_duration_s, :deep_sleep_s,
-                :rem_sleep_s, :awake_s, :raw_json, :updated_at
+                :rem_sleep_s, :light_sleep_s, :awake_s, :sleep_start_utc,
+                :sleep_end_utc, :raw_json, :updated_at
             )
             ON CONFLICT(day_utc) DO UPDATE SET
                 sleep_score=excluded.sleep_score,
                 sleep_duration_s=excluded.sleep_duration_s,
                 deep_sleep_s=excluded.deep_sleep_s,
                 rem_sleep_s=excluded.rem_sleep_s,
+                light_sleep_s=excluded.light_sleep_s,
                 awake_s=excluded.awake_s,
+                sleep_start_utc=excluded.sleep_start_utc,
+                sleep_end_utc=excluded.sleep_end_utc,
                 raw_json=excluded.raw_json,
                 updated_at=excluded.updated_at
             """,
@@ -270,21 +542,27 @@ def upsert_wellness_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
             """
             INSERT INTO wellness_daily (
                 day_utc, resting_hr, hrv_status, training_readiness,
-                stress_avg, body_battery_start, body_battery_end,
-                steps, calories_total, raw_json, updated_at
+                stress_avg, stress_max, body_battery_start, body_battery_end,
+                body_battery_avg, respiration_avg, steps, intensity_minutes,
+                calories_total, raw_json, updated_at
             ) VALUES (
                 :day_utc, :resting_hr, :hrv_status, :training_readiness,
-                :stress_avg, :body_battery_start, :body_battery_end,
-                :steps, :calories_total, :raw_json, :updated_at
+                :stress_avg, :stress_max, :body_battery_start, :body_battery_end,
+                :body_battery_avg, :respiration_avg, :steps, :intensity_minutes,
+                :calories_total, :raw_json, :updated_at
             )
             ON CONFLICT(day_utc) DO UPDATE SET
                 resting_hr=excluded.resting_hr,
                 hrv_status=excluded.hrv_status,
                 training_readiness=excluded.training_readiness,
                 stress_avg=excluded.stress_avg,
+                stress_max=excluded.stress_max,
                 body_battery_start=excluded.body_battery_start,
                 body_battery_end=excluded.body_battery_end,
+                body_battery_avg=excluded.body_battery_avg,
+                respiration_avg=excluded.respiration_avg,
                 steps=excluded.steps,
+                intensity_minutes=excluded.intensity_minutes,
                 calories_total=excluded.calories_total,
                 raw_json=excluded.raw_json,
                 updated_at=excluded.updated_at
@@ -307,7 +585,12 @@ def get_runs_df(db_path: Path) -> pd.DataFrame:
         return pd.read_sql_query(
             """
             SELECT a.activity_id, a.start_time_utc, a.sport_type, a.distance_m, a.duration_s,
-                   a.avg_hr, a.max_hr, a.avg_pace_s_per_km, a.elevation_gain_m, a.source,
+                   a.avg_hr, a.max_hr, a.avg_pace_s_per_km, a.elevation_gain_m,
+                   a.elevation_loss_m, a.avg_cadence, a.max_cadence, a.avg_stride_length,
+                   a.vertical_ratio, a.vertical_oscillation, a.running_power_avg,
+                   a.running_power_max, a.stamina_start, a.stamina_end,
+                   a.training_effect_aerobic, a.training_effect_anaerobic,
+                   a.performance_condition, a.device_name, a.source,
                    m.garmin_training_load, m.garmin_aerobic_te, m.garmin_anaerobic_te,
                    m.garmin_vo2max, m.garmin_training_effect_label
             FROM activities a
@@ -316,6 +599,22 @@ def get_runs_df(db_path: Path) -> pd.DataFrame:
             ORDER BY a.start_time_utc DESC
             """,
             conn,
+        )
+
+
+def get_activity_records_df(db_path: Path, activity_id: str) -> pd.DataFrame:
+    with closing(get_conn(db_path)) as conn:
+        return pd.read_sql_query(
+            """
+            SELECT record_time_utc, heart_rate, cadence, step_length, stride_length,
+                   vertical_ratio, vertical_oscillation, power, grade, altitude,
+                   speed, distance, stamina
+            FROM activity_records
+            WHERE activity_id = ?
+            ORDER BY record_time_utc
+            """,
+            conn,
+            params=(activity_id,),
         )
 
 
@@ -357,6 +656,7 @@ def get_table_counts(db_path: Path) -> dict[str, int]:
         "activities",
         "activity_metrics",
         "activity_details",
+        "activity_records",
         "sleep_daily",
         "wellness_daily",
     ]
@@ -371,7 +671,8 @@ def get_sleep_df(db_path: Path) -> pd.DataFrame:
     with closing(get_conn(db_path)) as conn:
         return pd.read_sql_query(
             """
-            SELECT day_utc, sleep_score, sleep_duration_s, deep_sleep_s, rem_sleep_s, awake_s
+            SELECT day_utc, sleep_score, sleep_duration_s, deep_sleep_s,
+                   rem_sleep_s, light_sleep_s, awake_s, sleep_start_utc, sleep_end_utc
             FROM sleep_daily
             ORDER BY day_utc DESC
             """,
@@ -384,7 +685,8 @@ def get_wellness_df(db_path: Path) -> pd.DataFrame:
         return pd.read_sql_query(
             """
             SELECT day_utc, resting_hr, hrv_status, training_readiness, stress_avg,
-                   body_battery_start, body_battery_end, steps, calories_total
+                   stress_max, body_battery_start, body_battery_end, body_battery_avg,
+                   respiration_avg, steps, intensity_minutes, calories_total
             FROM wellness_daily
             ORDER BY day_utc DESC
             """,

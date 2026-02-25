@@ -19,6 +19,7 @@ class GarminExtractResult:
     activities: list[dict[str, Any]]
     activity_metrics: list[dict[str, Any]]
     activity_details: list[dict[str, Any]]
+    activity_records: list[dict[str, Any]]
     sleep_daily: list[dict[str, Any]]
     wellness_daily: list[dict[str, Any]]
     errors: list[str]
@@ -40,6 +41,20 @@ def _safe_call(fn: Callable[..., Any], *args: Any) -> tuple[Any, str | None]:
         return fn(*args), None
     except Exception as exc:  # pragma: no cover
         return None, str(exc)
+
+
+def _safe_call_method(
+    client: Any,
+    method_names: tuple[str, ...],
+    *args: Any,
+) -> tuple[Any, str | None, str | None]:
+    for method_name in method_names:
+        method = getattr(client, method_name, None)
+        if method is None:
+            continue
+        payload, err = _safe_call(method, *args)
+        return payload, err, method_name
+    return None, None, None
 
 
 def _iter_days(start: date, end: date) -> list[date]:
@@ -85,7 +100,8 @@ def _to_str(value: Any) -> str | None:
 def _is_running_activity(sport_type: str | None) -> bool:
     if not sport_type:
         return False
-    return "run" in sport_type.lower()
+    lower = sport_type.lower()
+    return "run" in lower or "treadmill" in lower
 
 
 def _extract_sport_type(a: dict[str, Any]) -> str:
@@ -95,7 +111,30 @@ def _extract_sport_type(a: dict[str, Any]) -> str:
     return str(a.get("typeKey") or activity_type or "unknown")
 
 
-def _normalize_activity(a: dict[str, Any], source: str = "garmin_api") -> dict[str, Any] | None:
+def _extract_device_name(a: dict[str, Any], details_bundle: dict[str, Any] | None = None) -> str | None:
+    return _to_str(
+        a.get("deviceName")
+        or _deep_first(a, {"deviceName", "productName"})
+        or _deep_first(details_bundle or {}, {"deviceName", "productName"})
+    )
+
+
+def _extract_stamina_values(summary: dict[str, Any], details_bundle: dict[str, Any] | None) -> tuple[float | None, float | None]:
+    combined = {"summary": summary, "details": details_bundle or {}}
+    stamina_start = _to_float(
+        _deep_first(combined, {"staminaStart", "startStamina", "stamina_start", "staminaBefore"})
+    )
+    stamina_end = _to_float(
+        _deep_first(combined, {"staminaEnd", "endStamina", "stamina_end", "staminaAfter", "remainingStamina"})
+    )
+    return stamina_start, stamina_end
+
+
+def _normalize_activity(
+    a: dict[str, Any],
+    source: str = "garmin_api",
+    details_bundle: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     activity_id = a.get("activityId")
     if not activity_id:
         return None
@@ -112,16 +151,34 @@ def _normalize_activity(a: dict[str, Any], source: str = "garmin_api") -> dict[s
     if distance_m > 0 and duration_s > 0:
         avg_pace_s_per_km = duration_s / (distance_m / 1000.0)
 
+    stamina_start, stamina_end = _extract_stamina_values(a, details_bundle)
+
     return {
         "activity_id": str(activity_id),
         "start_time_utc": _to_iso_utc(start_time),
         "sport_type": sport_type,
         "distance_m": distance_m,
         "duration_s": duration_s,
-        "avg_hr": _to_float(a.get("averageHR")),
-        "max_hr": _to_float(a.get("maxHR")),
+        "avg_hr": _to_float(a.get("averageHR") or a.get("averageHeartRate")),
+        "max_hr": _to_float(a.get("maxHR") or a.get("maxHeartRate")),
         "avg_pace_s_per_km": avg_pace_s_per_km,
-        "elevation_gain_m": _to_float(a.get("elevationGain")),
+        "elevation_gain_m": _to_float(a.get("elevationGain") or a.get("totalAscent")),
+        "elevation_loss_m": _to_float(a.get("elevationLoss") or a.get("totalDescent")),
+        "avg_cadence": _to_float(a.get("averageRunCadence") or a.get("averageCadence")),
+        "max_cadence": _to_float(a.get("maxRunCadence") or a.get("maxCadence")),
+        "avg_stride_length": _to_float(a.get("avgStrideLength") or a.get("averageStrideLength")),
+        "vertical_ratio": _to_float(a.get("verticalRatio")),
+        "vertical_oscillation": _to_float(a.get("verticalOscillation")),
+        "running_power_avg": _to_float(a.get("avgPower") or a.get("averagePower")),
+        "running_power_max": _to_float(a.get("maxPower")),
+        "stamina_start": stamina_start,
+        "stamina_end": stamina_end,
+        "training_effect_aerobic": _to_float(a.get("aerobicTrainingEffect")),
+        "training_effect_anaerobic": _to_float(a.get("anaerobicTrainingEffect")),
+        "performance_condition": _to_float(
+            a.get("performanceCondition") or _deep_first(a, {"avgPerformanceCondition", "performanceCondition"})
+        ),
+        "device_name": _extract_device_name(a, details_bundle),
         "source": source,
         "raw": a,
     }
@@ -178,7 +235,10 @@ def _extract_sleep_row(day: date, sleep_data: dict[str, Any] | None) -> dict[str
         "sleep_duration_s": _to_float(_deep_first(blob, {"sleepTimeSeconds", "totalSleepSeconds"})),
         "deep_sleep_s": _to_float(_deep_first(blob, {"deepSleepSeconds", "deepSleepDuration"})),
         "rem_sleep_s": _to_float(_deep_first(blob, {"remSleepSeconds", "remSleepDuration"})),
+        "light_sleep_s": _to_float(_deep_first(blob, {"lightSleepSeconds", "lightSleepDuration"})),
         "awake_s": _to_float(_deep_first(blob, {"awakeTimeSeconds", "awakeDuration"})),
+        "sleep_start_utc": _to_str(_deep_first(blob, {"sleepStartTimestampGMT", "sleepStartTimestamp"})),
+        "sleep_end_utc": _to_str(_deep_first(blob, {"sleepEndTimestampGMT", "sleepEndTimestamp"})),
         "raw": blob,
     }
 
@@ -191,6 +251,9 @@ def _extract_wellness_row(
     rhr: dict[str, Any] | None,
     readiness: dict[str, Any] | None,
     stats_body: dict[str, Any] | None,
+    respiration: dict[str, Any] | None,
+    intensity_minutes: dict[str, Any] | None,
+    steps_payload: dict[str, Any] | None,
 ) -> dict[str, Any]:
     battery_values: list[float] = []
     for row in body_battery or []:
@@ -199,15 +262,37 @@ def _extract_wellness_row(
             battery_values.append(val)
 
     stats = stats_body or {}
+    stress_values: list[float] = []
+    for k in ("averageStressLevel", "avgStressLevel", "overallStressLevel"):
+        val = _to_float(_deep_first(stress or {}, {k}))
+        if val is not None:
+            stress_values.append(val)
+
+    stress_max = _to_float(_deep_first(stress or {}, {"maxStressLevel", "highestStressLevel"}))
+    if stress_max is None and stress_values:
+        stress_max = max(stress_values)
+
+    intensity_value = _to_float(
+        _deep_first(intensity_minutes or {}, {"intensityMinutes", "totalIntensityMinutes", "totalDurationMinutes"})
+        or _deep_first(stats, {"moderateIntensityMinutes", "vigorousIntensityMinutes", "intensityMinutes"})
+    )
+
     return {
         "day_utc": day.isoformat(),
         "resting_hr": _to_float(_deep_first(rhr or {}, {"restingHeartRate", "allDayRestingHeartRate"})),
         "hrv_status": _to_float(_deep_first(hrv or {}, {"weeklyAvg", "lastNightAvg", "hrvValue"})),
         "training_readiness": _to_float(_deep_first(readiness or {}, {"trainingReadinessScore", "score"})),
         "stress_avg": _to_float(_deep_first(stress or {}, {"averageStressLevel", "avgStressLevel", "overallStressLevel"})),
+        "stress_max": stress_max,
         "body_battery_start": min(battery_values) if battery_values else None,
         "body_battery_end": max(battery_values) if battery_values else None,
-        "steps": _to_float(_deep_first(stats, {"totalSteps", "steps"})),
+        "body_battery_avg": (sum(battery_values) / len(battery_values)) if battery_values else None,
+        "respiration_avg": _to_float(_deep_first(respiration or {}, {"avgWakingRespirationValue", "avgRespirationValue", "averageRespiration"})),
+        "steps": _to_float(
+            _deep_first(stats, {"totalSteps", "steps"})
+            or _deep_first(steps_payload or {}, {"totalSteps", "steps"})
+        ),
+        "intensity_minutes": intensity_value,
         "calories_total": _to_float(_deep_first(stats, {"totalKilocalories", "totalCalories", "activeKilocalories"})),
         "raw": {
             "body_battery": body_battery,
@@ -216,8 +301,164 @@ def _extract_wellness_row(
             "rhr": rhr,
             "training_readiness": readiness,
             "stats_and_body": stats_body,
+            "respiration": respiration,
+            "intensity_minutes": intensity_minutes,
+            "steps": steps_payload,
         },
     }
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+
+
+def _archive_activity_payload(raw_root: Path | None, activity_id: str, name: str, payload: Any) -> None:
+    if raw_root is None:
+        return
+    _write_json(raw_root / "activities" / str(activity_id) / f"{name}.json", payload)
+
+
+def _archive_daily_payload(raw_root: Path | None, day: str, name: str, payload: Any) -> None:
+    if raw_root is None:
+        return
+    _write_json(raw_root / "daily" / day / f"{name}.json", payload)
+
+
+def _download_fit_if_missing(client: Any, activity_id: str, raw_root: Path | None) -> tuple[Path | None, str | None]:
+    if raw_root is None:
+        return None, None
+
+    fit_path = raw_root / "fit" / f"{activity_id}.fit"
+    if fit_path.exists():
+        return fit_path, None
+
+    fit_path.parent.mkdir(parents=True, exist_ok=True)
+
+    attempts = [
+        lambda: client.download_activity(int(activity_id), dl_fmt="fit"),
+        lambda: client.download_activity(int(activity_id), dl_fmt="original"),
+        lambda: client.download_original_activity(int(activity_id)),
+    ]
+
+    last_error: str | None = None
+    for attempt in attempts:
+        payload, err = _safe_call(attempt)
+        if err:
+            last_error = err
+            continue
+
+        if payload is None:
+            continue
+
+        try:
+            if isinstance(payload, bytes):
+                fit_path.write_bytes(payload)
+                return fit_path, None
+
+            if hasattr(payload, "read"):
+                fit_path.write_bytes(payload.read())
+                return fit_path, None
+
+            if isinstance(payload, str):
+                fit_path.write_text(payload, encoding="utf-8")
+                return fit_path, None
+        except Exception as write_err:  # pragma: no cover
+            last_error = str(write_err)
+
+    return None, last_error
+
+
+def _extract_fit_session(path: Path) -> dict[str, Any] | None:
+    if FitFile is None:
+        return None
+
+    fit_file = FitFile(path)
+    for msg in fit_file.get_messages("session"):
+        return {field.name: field.value for field in msg}
+    return None
+
+
+def _parse_fit_records(path: Path, activity_id: str) -> list[dict[str, Any]]:
+    if FitFile is None:
+        return []
+
+    fit_file = FitFile(path)
+    records: list[dict[str, Any]] = []
+
+    for msg in fit_file.get_messages("record"):
+        row = {field.name: field.value for field in msg}
+        timestamp = row.get("timestamp")
+        if not timestamp:
+            continue
+
+        stamina = None
+        for key, value in row.items():
+            if "stamina" in str(key).lower():
+                stamina = _to_float(value)
+                if stamina is not None:
+                    break
+
+        records.append(
+            {
+                "activity_id": activity_id,
+                "record_time_utc": _to_iso_utc(timestamp),
+                "heart_rate": _to_float(row.get("heart_rate")),
+                "cadence": _to_float(row.get("cadence")),
+                "step_length": _to_float(row.get("step_length")),
+                "stride_length": _to_float(row.get("stride_length")),
+                "vertical_ratio": _to_float(row.get("vertical_ratio")),
+                "vertical_oscillation": _to_float(row.get("vertical_oscillation")),
+                "power": _to_float(row.get("power")),
+                "grade": _to_float(row.get("grade")),
+                "altitude": _to_float(row.get("altitude") or row.get("enhanced_altitude")),
+                "speed": _to_float(row.get("speed") or row.get("enhanced_speed")),
+                "distance": _to_float(row.get("distance") or row.get("enhanced_distance")),
+                "stamina": stamina,
+                "raw": row,
+            }
+        )
+
+    return records
+
+
+def _merge_session_into_activity(activity: dict[str, Any], session_data: dict[str, Any] | None) -> dict[str, Any]:
+    if not session_data:
+        return activity
+
+    merged = dict(activity)
+
+    # Fill only when API summary did not provide the value.
+    fallback_map: dict[str, tuple[str, ...]] = {
+        "avg_cadence": ("avg_cadence", "enhanced_avg_running_cadence", "avg_running_cadence"),
+        "max_cadence": ("max_cadence", "enhanced_max_running_cadence", "max_running_cadence"),
+        "avg_stride_length": ("avg_step_length", "step_length"),
+        "vertical_ratio": ("avg_vertical_ratio", "vertical_ratio"),
+        "vertical_oscillation": ("avg_vertical_oscillation", "vertical_oscillation"),
+        "running_power_avg": ("avg_power", "enhanced_avg_power"),
+        "running_power_max": ("max_power",),
+        "elevation_gain_m": ("total_ascent",),
+        "elevation_loss_m": ("total_descent",),
+    }
+
+    for key, fit_keys in fallback_map.items():
+        if merged.get(key) is not None:
+            continue
+        for fit_key in fit_keys:
+            value = _to_float(session_data.get(fit_key))
+            if value is not None:
+                merged[key] = value
+                break
+
+    if merged.get("device_name") is None:
+        merged["device_name"] = _to_str(session_data.get("device_name") or session_data.get("manufacturer"))
+
+    if merged.get("stamina_start") is None:
+        merged["stamina_start"] = _to_float(session_data.get("stamina_start"))
+    if merged.get("stamina_end") is None:
+        merged["stamina_end"] = _to_float(session_data.get("stamina_end") or session_data.get("remaining_stamina"))
+
+    return merged
 
 
 def fetch_garmin_runs(
@@ -240,6 +481,7 @@ def fetch_garmin_runs(
         include_activity_details=False,
         include_wellness=False,
         page_size=100,
+        raw_export_dir=None,
     )
     return [a for a in result.activities if _is_running_activity(a.get("sport_type"))]
 
@@ -252,12 +494,15 @@ def fetch_garmin_comprehensive(
     include_activity_details: bool = True,
     include_wellness: bool = True,
     page_size: int = 100,
+    raw_export_dir: Path | None = None,
 ) -> GarminExtractResult:
     """
-    Pull a broad local archive from Garmin:
-    - all activity summaries in date range
+    Pull a broad local archive from Garmin with incremental behavior:
+    - activity summaries in date range
     - optional per-activity detail endpoints
+    - optional per-activity FIT download + time-series parsing
     - optional daily sleep/wellness endpoints
+    - raw endpoint payload archival to disk for rebuilds
     """
     from garminconnect import Garmin
 
@@ -269,6 +514,7 @@ def fetch_garmin_comprehensive(
     activities: list[dict[str, Any]] = []
     activity_metrics: list[dict[str, Any]] = []
     activity_details: list[dict[str, Any]] = []
+    activity_records: list[dict[str, Any]] = []
 
     offset = 0
     while True:
@@ -298,33 +544,55 @@ def fetch_garmin_comprehensive(
             if day > end_day:
                 continue
 
-            activities.append(normalized)
+            activity_id = normalized["activity_id"]
+            _archive_activity_payload(raw_export_dir, activity_id, "summary", row)
 
             details_bundle: dict[str, Any] | None = None
             if include_activity_details:
                 details_bundle = {}
-                for name, call in (
-                    ("details", client.get_activity_details),
-                    ("splits", client.get_activity_splits),
-                    ("split_summaries", client.get_activity_split_summaries),
-                    ("weather", client.get_activity_weather),
-                    ("hr_timezones", client.get_activity_hr_in_timezones),
+                for endpoint_name, method_name in (
+                    ("details", "get_activity_details"),
+                    ("splits", "get_activity_splits"),
+                    ("split_summaries", "get_activity_split_summaries"),
+                    ("weather", "get_activity_weather"),
+                    ("hr_timezones", "get_activity_hr_in_timezones"),
                 ):
-                    payload, call_err = _safe_call(call, int(normalized["activity_id"]))
+                    method = getattr(client, method_name, None)
+                    if method is None:
+                        continue
+                    payload, call_err = _safe_call(method, int(activity_id))
                     if call_err:
-                        errors.append(f"activity_id={normalized['activity_id']} {name}: {call_err}")
-                    details_bundle[name] = payload
+                        errors.append(f"activity_id={activity_id} {endpoint_name}: {call_err}")
+                    details_bundle[endpoint_name] = payload
+                    _archive_activity_payload(raw_export_dir, activity_id, endpoint_name, payload)
 
                 activity_details.append(
                     {
-                        "activity_id": normalized["activity_id"],
+                        "activity_id": activity_id,
                         "details": details_bundle,
                     }
                 )
 
+            normalized = _normalize_activity(row, source="garmin_api", details_bundle=details_bundle) or normalized
+
+            fit_path, fit_err = _download_fit_if_missing(client, activity_id, raw_export_dir)
+            if fit_err:
+                errors.append(f"activity_id={activity_id} fit_download: {fit_err}")
+
+            if fit_path and fit_path.exists():
+                try:
+                    session_data = _extract_fit_session(fit_path)
+                    normalized = _merge_session_into_activity(normalized, session_data)
+                    if _is_running_activity(normalized.get("sport_type")):
+                        activity_records.extend(_parse_fit_records(fit_path, activity_id))
+                except Exception as parse_err:
+                    errors.append(f"activity_id={activity_id} fit_parse: {parse_err}")
+
+            activities.append(normalized)
+
             activity_metrics.append(
                 _extract_activity_metrics(
-                    activity_id=normalized["activity_id"],
+                    activity_id=activity_id,
                     summary=row,
                     details_bundle=details_bundle,
                 )
@@ -340,6 +608,13 @@ def fetch_garmin_comprehensive(
     activities = list({row["activity_id"]: row for row in activities}.values())
     activity_metrics = list({row["activity_id"]: row for row in activity_metrics}.values())
     activity_details = list({row["activity_id"]: row for row in activity_details}.values())
+    activity_records = list(
+        {
+            (row["activity_id"], row["record_time_utc"]): row
+            for row in activity_records
+            if row.get("record_time_utc")
+        }.values()
+    )
 
     sleep_daily: list[dict[str, Any]] = []
     wellness_daily: list[dict[str, Any]] = []
@@ -348,17 +623,33 @@ def fetch_garmin_comprehensive(
         for day in _iter_days(start_day, end_day):
             cdate = day.isoformat()
 
-            sleep_data, sleep_err = _safe_call(client.get_sleep_data, cdate)
+            sleep_data, sleep_err, _ = _safe_call_method(client, ("get_sleep_data",), cdate)
             if sleep_err:
                 errors.append(f"date={cdate} sleep: {sleep_err}")
+            _archive_daily_payload(raw_export_dir, cdate, "sleep", sleep_data)
             sleep_daily.append(_extract_sleep_row(day, sleep_data))
 
-            body_battery, bb_err = _safe_call(client.get_body_battery, cdate)
-            stress, stress_err = _safe_call(client.get_all_day_stress, cdate)
-            hrv, hrv_err = _safe_call(client.get_hrv_data, cdate)
-            rhr, rhr_err = _safe_call(client.get_rhr_day, cdate)
-            readiness, read_err = _safe_call(client.get_training_readiness, cdate)
-            stats_body, stats_err = _safe_call(client.get_stats_and_body, cdate)
+            body_battery, bb_err, _ = _safe_call_method(client, ("get_body_battery",), cdate)
+            stress, stress_err, _ = _safe_call_method(client, ("get_all_day_stress",), cdate)
+            hrv, hrv_err, _ = _safe_call_method(client, ("get_hrv_data",), cdate)
+            rhr, rhr_err, _ = _safe_call_method(client, ("get_rhr_day",), cdate)
+            readiness, read_err, _ = _safe_call_method(client, ("get_training_readiness",), cdate)
+            stats_body, stats_err, _ = _safe_call_method(client, ("get_stats_and_body",), cdate)
+            respiration, resp_err, _ = _safe_call_method(
+                client,
+                ("get_respiration_data", "get_daily_respiration_data", "get_respiration"),
+                cdate,
+            )
+            intensity, intensity_err, _ = _safe_call_method(
+                client,
+                ("get_intensity_minutes_data", "get_intensity_minutes"),
+                cdate,
+            )
+            steps_data, steps_err, _ = _safe_call_method(
+                client,
+                ("get_daily_steps", "get_steps_data"),
+                cdate,
+            )
 
             for label, err in (
                 ("body_battery", bb_err),
@@ -367,9 +658,22 @@ def fetch_garmin_comprehensive(
                 ("rhr", rhr_err),
                 ("training_readiness", read_err),
                 ("stats_and_body", stats_err),
+                ("respiration", resp_err),
+                ("intensity_minutes", intensity_err),
+                ("steps", steps_err),
             ):
                 if err:
                     errors.append(f"date={cdate} {label}: {err}")
+
+            _archive_daily_payload(raw_export_dir, cdate, "body_battery", body_battery)
+            _archive_daily_payload(raw_export_dir, cdate, "stress", stress)
+            _archive_daily_payload(raw_export_dir, cdate, "hrv", hrv)
+            _archive_daily_payload(raw_export_dir, cdate, "resting_hr", rhr)
+            _archive_daily_payload(raw_export_dir, cdate, "training_readiness", readiness)
+            _archive_daily_payload(raw_export_dir, cdate, "stats_and_body", stats_body)
+            _archive_daily_payload(raw_export_dir, cdate, "respiration", respiration)
+            _archive_daily_payload(raw_export_dir, cdate, "intensity_minutes", intensity)
+            _archive_daily_payload(raw_export_dir, cdate, "steps", steps_data)
 
             wellness_daily.append(
                 _extract_wellness_row(
@@ -380,6 +684,9 @@ def fetch_garmin_comprehensive(
                     rhr=rhr,
                     readiness=readiness,
                     stats_body=stats_body,
+                    respiration=respiration,
+                    intensity_minutes=intensity,
+                    steps_payload=steps_data,
                 )
             )
 
@@ -387,6 +694,7 @@ def fetch_garmin_comprehensive(
         activities=activities,
         activity_metrics=activity_metrics,
         activity_details=activity_details,
+        activity_records=activity_records,
         sleep_daily=sleep_daily,
         wellness_daily=wellness_daily,
         errors=errors,
@@ -473,6 +781,20 @@ def _parse_tcx(path: Path) -> dict[str, Any] | None:
         "max_hr": max(max_hr_values) if max_hr_values else None,
         "avg_pace_s_per_km": avg_pace,
         "elevation_gain_m": None,
+        "elevation_loss_m": None,
+        "avg_cadence": None,
+        "max_cadence": None,
+        "avg_stride_length": None,
+        "vertical_ratio": None,
+        "vertical_oscillation": None,
+        "running_power_avg": None,
+        "running_power_max": None,
+        "stamina_start": None,
+        "stamina_end": None,
+        "training_effect_aerobic": None,
+        "training_effect_anaerobic": None,
+        "performance_condition": None,
+        "device_name": None,
         "source": "file_import",
         "raw": {"file": str(path), "format": "tcx"},
     }
@@ -482,13 +804,7 @@ def _parse_fit(path: Path) -> dict[str, Any] | None:
     if FitFile is None:
         return None
 
-    fit_file = FitFile(path)
-    session_data: dict[str, Any] = {}
-
-    for msg in fit_file.get_messages("session"):
-        for field in msg:
-            session_data[field.name] = field.value
-        break
+    session_data = _extract_fit_session(path) or {}
 
     sport = str(session_data.get("sport") or "").lower()
     sub_sport = str(session_data.get("sub_sport") or "").lower()
@@ -511,10 +827,24 @@ def _parse_fit(path: Path) -> dict[str, Any] | None:
         "sport_type": "running",
         "distance_m": distance_m,
         "duration_s": duration_s,
-        "avg_hr": session_data.get("avg_heart_rate"),
-        "max_hr": session_data.get("max_heart_rate"),
+        "avg_hr": _to_float(session_data.get("avg_heart_rate")),
+        "max_hr": _to_float(session_data.get("max_heart_rate")),
         "avg_pace_s_per_km": avg_pace,
-        "elevation_gain_m": session_data.get("total_ascent"),
+        "elevation_gain_m": _to_float(session_data.get("total_ascent")),
+        "elevation_loss_m": _to_float(session_data.get("total_descent")),
+        "avg_cadence": _to_float(session_data.get("avg_cadence") or session_data.get("enhanced_avg_running_cadence")),
+        "max_cadence": _to_float(session_data.get("max_cadence") or session_data.get("enhanced_max_running_cadence")),
+        "avg_stride_length": _to_float(session_data.get("avg_step_length")),
+        "vertical_ratio": _to_float(session_data.get("avg_vertical_ratio")),
+        "vertical_oscillation": _to_float(session_data.get("avg_vertical_oscillation")),
+        "running_power_avg": _to_float(session_data.get("avg_power") or session_data.get("enhanced_avg_power")),
+        "running_power_max": _to_float(session_data.get("max_power")),
+        "stamina_start": _to_float(session_data.get("stamina_start")),
+        "stamina_end": _to_float(session_data.get("stamina_end") or session_data.get("remaining_stamina")),
+        "training_effect_aerobic": None,
+        "training_effect_anaerobic": None,
+        "performance_condition": None,
+        "device_name": _to_str(session_data.get("device_name") or session_data.get("manufacturer")),
         "source": "file_import",
         "raw": {"file": str(path), "format": "fit"},
     }
@@ -525,6 +855,7 @@ def dump_extract_to_json(path: Path, extract: GarminExtractResult) -> None:
         "activities": extract.activities,
         "activity_metrics": extract.activity_metrics,
         "activity_details": extract.activity_details,
+        "activity_records": extract.activity_records,
         "sleep_daily": extract.sleep_daily,
         "wellness_daily": extract.wellness_daily,
         "errors": extract.errors,

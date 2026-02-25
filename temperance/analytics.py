@@ -43,6 +43,17 @@ def compute_metrics(
                 if pd.notna(r.get("elevation_gain_m"))
                 else None
             ),
+            avg_cadence=float(r.get("avg_cadence")) if pd.notna(r.get("avg_cadence")) else None,
+            avg_stride_length=(
+                float(r.get("avg_stride_length"))
+                if pd.notna(r.get("avg_stride_length"))
+                else None
+            ),
+            running_power_avg=(
+                float(r.get("running_power_avg"))
+                if pd.notna(r.get("running_power_avg"))
+                else None
+            ),
         ),
         axis=1,
     )
@@ -96,6 +107,8 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
     ]
 
     optional = [
+        "avg_cadence",
+        "running_power_avg",
         "garmin_training_load",
         "garmin_aerobic_te",
         "garmin_anaerobic_te",
