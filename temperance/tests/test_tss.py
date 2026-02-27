@@ -13,6 +13,7 @@ from tss import (  # noqa: E402
     ConstantLTHRProvider,
     ConstantThresholdPaceProvider,
     LTHRProvider,
+    PiecewiseThresholdPaceProvider,
     ThresholdPaceProvider,
     compute_hrtss,
     compute_rtss,
@@ -123,3 +124,16 @@ def test_curve_providers_extensibility() -> None:
     )
     assert bundle["rTSS"] == pytest.approx((3600 * (295.0 / 300.0) ** 2) / 3600 * 100, rel=1e-9)
     assert bundle["hrTSS"] == pytest.approx((3600 * (178.0 / 180.0) ** 2) / 3600 * 100, rel=1e-9)
+
+
+def test_piecewise_threshold_provider_selects_latest_point() -> None:
+    provider = PiecewiseThresholdPaceProvider(
+        default_threshold_pace_sec_per_km=300.0,
+        points=(
+            (datetime(2025, 1, 1, tzinfo=timezone.utc), 220.0),
+            (datetime(2026, 1, 1, tzinfo=timezone.utc), 210.0),
+        ),
+    )
+    assert provider.get_threshold_pace_sec_per_km(datetime(2024, 12, 1, tzinfo=timezone.utc)) == 300.0
+    assert provider.get_threshold_pace_sec_per_km(datetime(2025, 6, 1, tzinfo=timezone.utc)) == 220.0
+    assert provider.get_threshold_pace_sec_per_km(datetime(2026, 2, 1, tzinfo=timezone.utc)) == 210.0

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+from datetime import datetime
 
 import pandas as pd
 
@@ -10,6 +11,7 @@ from tss import (
     ActivityTSSInput,
     ConstantLTHRProvider,
     ConstantThresholdPaceProvider,
+    PiecewiseThresholdPaceProvider,
     compute_tss_bundle,
 )
 
@@ -21,6 +23,7 @@ def compute_metrics(
     sex: str = "male",
     threshold_pace_sec_per_km: float = 300.0,
     lthr_bpm: float = 178.0,
+    threshold_pace_curve_points: list[tuple[datetime, float]] | None = None,
 ) -> pd.DataFrame:
     if runs_df.empty:
         return runs_df
@@ -114,7 +117,13 @@ def compute_metrics(
         axis=1,
     )
 
-    pace_provider = ConstantThresholdPaceProvider(threshold_pace_sec_per_km=threshold_pace_sec_per_km)
+    if threshold_pace_curve_points:
+        pace_provider = PiecewiseThresholdPaceProvider(
+            default_threshold_pace_sec_per_km=threshold_pace_sec_per_km,
+            points=tuple(threshold_pace_curve_points),
+        )
+    else:
+        pace_provider = ConstantThresholdPaceProvider(threshold_pace_sec_per_km=threshold_pace_sec_per_km)
     lthr_provider = ConstantLTHRProvider(lthr_bpm=lthr_bpm)
     df["rtss"] = pd.NA
     df["tss"] = pd.NA
@@ -295,6 +304,8 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
     }
     if "training_load_garmin" in weekly.columns:
         agg_spec["total_garmin_training_load"] = ("training_load_garmin", "sum")
+    if "calories_total" in weekly.columns:
+        agg_spec["total_calories"] = ("calories_total", "sum")
 
     grouped = weekly.groupby("week_start", as_index=False).agg(**agg_spec).sort_values("week_start")
     return grouped

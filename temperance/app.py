@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta, timezone
 
 import altair as alt
@@ -19,6 +20,7 @@ from analytics import (
 )
 from config import load_config
 from db import (
+    get_setting,
     get_activity_records_df,
     get_activity_detail_raw,
     get_activity_raw,
@@ -31,6 +33,7 @@ from db import (
     get_wellness_df,
     init_db,
     log_sync,
+    save_setting,
     upsert_activities,
     upsert_activity_details,
     upsert_activity_records,
@@ -55,6 +58,7 @@ st.caption("Local-first running load tracker (aerobic + mechanical)")
 DEFAULT_RESTING_HR = 45.0
 DEFAULT_MAX_HR = 200.0
 DEFAULT_LTHR = 178.0
+DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 INJURY_WINDOWS = [
     {"label": "Injury 1", "start": "2025-05-25", "end": "2025-06-16"},
     {"label": "Injury 2", "start": "2026-01-03", "end": "2026-01-20"},
@@ -64,6 +68,89 @@ cfg = load_config()
 init_db(cfg.db_path)
 cfg.import_dir.mkdir(parents=True, exist_ok=True)
 cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
+
+SETTINGS_KEY_THRESHOLD_PACE_DEFAULT = "threshold_pace_default_sec_per_km"
+SETTINGS_KEY_THRESHOLD_PACE_CURVE = "threshold_pace_curve_v1"
+
+
+def _pace_sec_to_mmss(pace_sec_per_km: float) -> str:
+    total_seconds = int(round(float(pace_sec_per_km)))
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    return f"{minutes}:{seconds:02d}"
+
+
+def _pace_mmss_to_sec(text: str) -> float:
+    raw = text.strip()
+    if ":" in raw:
+        mins_str, sec_str = raw.split(":", 1)
+        mins = int(mins_str.strip())
+        secs = int(sec_str.strip())
+        if mins < 0 or secs < 0 or secs >= 60:
+            raise ValueError("pace mm:ss must be valid")
+        value = mins * 60 + secs
+    else:
+        value = float(raw)
+    if value <= 0:
+        raise ValueError("pace must be > 0")
+    return float(value)
+
+
+def _load_threshold_curve_points(db_path) -> list[tuple[datetime, float]]:
+    raw = get_setting(db_path, SETTINGS_KEY_THRESHOLD_PACE_CURVE)
+    if not raw:
+        return []
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return []
+
+    points: list[tuple[datetime, float]] = []
+    if not isinstance(payload, list):
+        return points
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        date_s = str(row.get("date", "")).strip()
+        pace = row.get("pace_sec_per_km")
+        if not date_s:
+            continue
+        try:
+            dt = datetime.fromisoformat(date_s).replace(tzinfo=timezone.utc)
+            pace_v = float(pace)
+            if pace_v > 0:
+                points.append((dt, pace_v))
+        except Exception:
+            continue
+    points.sort(key=lambda x: x[0])
+    return points
+
+
+def _curve_points_to_text(points: list[tuple[datetime, float]]) -> str:
+    lines = [f"{dt.date().isoformat()}, {_pace_sec_to_mmss(pace)}" for dt, pace in points]
+    return "\n".join(lines)
+
+
+def _parse_curve_text(text: str) -> list[tuple[datetime, float]]:
+    points: list[tuple[datetime, float]] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "," not in line:
+            raise ValueError(f"Invalid curve row (missing comma): {line}")
+        date_part, pace_part = [p.strip() for p in line.split(",", 1)]
+        dt = datetime.fromisoformat(date_part).replace(tzinfo=timezone.utc)
+        pace_sec = _pace_mmss_to_sec(pace_part)
+        points.append((dt, pace_sec))
+    points.sort(key=lambda x: x[0])
+    dedup: dict[str, float] = {}
+    for dt, pace in points:
+        dedup[dt.date().isoformat()] = pace
+    return [
+        (datetime.fromisoformat(d).replace(tzinfo=timezone.utc), p)
+        for d, p in sorted(dedup.items(), key=lambda x: x[0])
+    ]
 
 
 def format_pace_min_per_km(pace_s_per_km: float | None) -> str:
@@ -135,8 +222,21 @@ def cached_compute_metrics(
     resting_hr: float,
     max_hr: float,
     sex: str,
+    threshold_pace_default_sec: float,
+    threshold_pace_curve_points: tuple[tuple[str, float], ...],
 ) -> pd.DataFrame:
-    return compute_metrics(runs_df, resting_hr=resting_hr, max_hr=max_hr, sex=sex)
+    curve_points = [
+        (datetime.fromisoformat(d).replace(tzinfo=timezone.utc), float(p))
+        for d, p in threshold_pace_curve_points
+    ]
+    return compute_metrics(
+        runs_df,
+        resting_hr=resting_hr,
+        max_hr=max_hr,
+        sex=sex,
+        threshold_pace_sec_per_km=threshold_pace_default_sec,
+        threshold_pace_curve_points=curve_points,
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -241,6 +341,48 @@ if view != "Data Extract":
         f"TRIMP defaults: resting HR={int(DEFAULT_RESTING_HR)}, max HR={int(DEFAULT_MAX_HR)}, "
         f"LTHR={int(DEFAULT_LTHR)} bpm"
     )
+    saved_tp_raw = get_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_DEFAULT)
+    try:
+        saved_threshold_pace_sec = float(saved_tp_raw) if saved_tp_raw else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    except Exception:
+        saved_threshold_pace_sec = DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    saved_curve_points = _load_threshold_curve_points(cfg.db_path)
+
+    with st.expander("rTSS Threshold Pace Curve", expanded=False):
+        st.caption("Default applies when no curve point is active for an activity date.")
+        tp_default_text = st.text_input(
+            "Default Threshold Pace (mm:ss per km)",
+            value=_pace_sec_to_mmss(saved_threshold_pace_sec),
+            key="tp_default_text",
+        )
+        tp_curve_text = st.text_area(
+            "Curve (one per line: YYYY-MM-DD, mm:ss)",
+            value=_curve_points_to_text(saved_curve_points),
+            height=120,
+            key="tp_curve_text",
+        )
+        if st.button("Save Threshold Curve", key="save_threshold_curve_btn"):
+            try:
+                default_sec = _pace_mmss_to_sec(tp_default_text)
+                parsed_curve = _parse_curve_text(tp_curve_text)
+                curve_payload = [
+                    {"date": dt.date().isoformat(), "pace_sec_per_km": float(p)}
+                    for dt, p in parsed_curve
+                ]
+                save_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_DEFAULT, str(default_sec))
+                save_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_CURVE, json.dumps(curve_payload))
+                cached_compute_metrics.clear()
+                cached_filtered_views.clear()
+                st.success("Threshold pace settings saved.")
+            except Exception as exc:
+                st.error(f"Could not save threshold pace settings: {exc}")
+else:
+    saved_tp_raw = get_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_DEFAULT)
+    try:
+        saved_threshold_pace_sec = float(saved_tp_raw) if saved_tp_raw else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    except Exception:
+        saved_threshold_pace_sec = DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    saved_curve_points = _load_threshold_curve_points(cfg.db_path)
 
 runs_df = get_runs_df(cfg.db_path)
 metrics_df = cached_compute_metrics(
@@ -248,6 +390,8 @@ metrics_df = cached_compute_metrics(
     resting_hr=float(resting_hr),
     max_hr=float(max_hr),
     sex=sex,
+    threshold_pace_default_sec=float(saved_threshold_pace_sec),
+    threshold_pace_curve_points=tuple((dt.date().isoformat(), float(p)) for dt, p in saved_curve_points),
 )
 if not metrics_df.empty:
     upsert_activity_trimp(
@@ -566,34 +710,44 @@ if view == "Dashboard":
                 weekly_tss_chart = weekly_tss_chart.interactive()
             st.altair_chart(weekly_tss_chart, use_container_width=True)
 
-        st.subheader("Weekly Edwards TRIMP vs Garmin Training Load vs rTSS")
-        if (
-            "total_garmin_training_load" in weekly.columns
-            and "total_edwards_trimp" in weekly.columns
-            and "total_rtss" in weekly.columns
-        ):
-            weekly_compare = weekly.melt(
-                id_vars=["week_start"],
-                value_vars=["total_edwards_trimp", "total_garmin_training_load", "total_rtss"],
-                var_name="series",
-                value_name="value",
-            )
-            weekly_chart = (
-                alt.Chart(weekly_compare)
-                .mark_line(point=True)
+        st.subheader("Garmin Training Load vs. Total Calories")
+        if "total_garmin_training_load" in weekly.columns and "total_calories" in weekly.columns:
+            weekly_gl = weekly[["week_start", "total_garmin_training_load"]].copy()
+            weekly_cal = weekly[["week_start", "total_calories"]].copy()
+
+            left_chart = (
+                alt.Chart(weekly_gl)
+                .mark_line(point=True, color="#60a5fa")
                 .encode(
                     x=alt.X("week_start:T", axis=alt.Axis(title="")),
-                    y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
-                    color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
-                    tooltip=["week_start", "series", alt.Tooltip("value:Q", format=".0f")],
+                    y=alt.Y(
+                        "total_garmin_training_load:Q",
+                        axis=alt.Axis(format=".0f", title="Garmin Training Load"),
+                    ),
+                    tooltip=[
+                        "week_start:T",
+                        alt.Tooltip("total_garmin_training_load:Q", title="Garmin Training Load", format=".0f"),
+                    ],
                 )
             )
-            if legend_toggle:
-                weekly_sel = alt.selection_point(fields=["series"], bind="legend")
-                weekly_chart = weekly_chart.encode(
-                    opacity=alt.condition(weekly_sel, alt.value(1.0), alt.value(0.08))
-                ).add_params(weekly_sel)
-            weekly_chart = alt.layer(build_injury_layer(), weekly_chart)
+
+            right_chart = (
+                alt.Chart(weekly_cal)
+                .mark_line(point=True, color="#f59e0b")
+                .encode(
+                    x=alt.X("week_start:T", axis=alt.Axis(title="")),
+                    y=alt.Y(
+                        "total_calories:Q",
+                        axis=alt.Axis(format=".0f", title="Total Calories", orient="right"),
+                    ),
+                    tooltip=[
+                        "week_start:T",
+                        alt.Tooltip("total_calories:Q", title="Total Calories", format=".0f"),
+                    ],
+                )
+            )
+
+            weekly_chart = alt.layer(build_injury_layer(), left_chart, right_chart).resolve_scale(y="independent")
             if enable_zoom:
                 weekly_chart = weekly_chart.interactive()
             st.altair_chart(weekly_chart, use_container_width=True)

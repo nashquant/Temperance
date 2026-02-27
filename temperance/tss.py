@@ -36,6 +36,35 @@ class ConstantLTHRProvider:
 
 
 @dataclass(frozen=True)
+class PiecewiseThresholdPaceProvider:
+    """
+    Date-based threshold pace curve with a constant fallback.
+
+    Points are tuples of (effective_datetime, threshold_pace_sec_per_km).
+    Provider returns the latest point with effective_datetime <= activity time.
+    """
+
+    default_threshold_pace_sec_per_km: float
+    points: tuple[tuple[datetime, float], ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.default_threshold_pace_sec_per_km <= 0:
+            raise ValueError("default threshold pace must be > 0")
+        for _, pace in self.points:
+            if pace <= 0:
+                raise ValueError("all threshold pace curve values must be > 0")
+
+    def get_threshold_pace_sec_per_km(self, at: datetime) -> float:
+        chosen = float(self.default_threshold_pace_sec_per_km)
+        for effective_at, pace in sorted(self.points, key=lambda x: x[0]):
+            if effective_at <= at:
+                chosen = float(pace)
+            else:
+                break
+        return chosen
+
+
+@dataclass(frozen=True)
 class ActivityTSSInput:
     activity_duration_seconds: int
     activity_avg_pace_sec_per_km: float | None
