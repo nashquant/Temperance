@@ -268,7 +268,7 @@ def cached_filtered_views(
         )
         filtered_daily["fitness"] = ema(training_series, 42)
         filtered_daily["fatigue"] = ema(training_series, 7)
-        filtered_daily["overreach"] = filtered_daily["fatigue"] - filtered_daily["fitness"]
+        filtered_daily["overreach"] = (filtered_daily["fatigue"] - filtered_daily["fitness"]).clip(lower=0.0)
         rtss_series = (
             filtered_daily["rtss_total"].fillna(0.0)
             if "rtss_total" in filtered_daily.columns
@@ -276,7 +276,7 @@ def cached_filtered_views(
         )
         filtered_daily["rfitness"] = ema(rtss_series, 200)
         filtered_daily["rfatigue"] = ema(rtss_series, 7)
-        filtered_daily["rform"] = filtered_daily["rfatigue"] - filtered_daily["rfitness"]
+        filtered_daily["rform"] = (filtered_daily["rfatigue"] - filtered_daily["rfitness"]).clip(lower=0.0)
     return filtered_metrics, filtered_daily
 
 
