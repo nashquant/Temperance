@@ -369,6 +369,10 @@ def _download_fit_if_missing(client: Any, activity_id: str, raw_root: Path | Non
     for attempt in attempts:
         payload, err = _safe_call(attempt)
         if err:
+            # Some garminconnect versions do not support FIT download via dl_fmt.
+            # Treat this as "not available" instead of surfacing noisy per-activity errors.
+            if "Unexpected value fit for dl_fmt" in err:
+                return None, None
             last_error = err
             continue
 

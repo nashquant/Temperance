@@ -383,21 +383,25 @@ if view == "Dashboard":
                     for n in ema_ns:
                         frame[f"ema_{n}"] = ema(frame["value"], n)
                     overlay_chart_df = frame[["day", "value"] + [c for c in frame.columns if c.startswith(("sma_", "ema_"))]]
-                    overlay_long = overlay_chart_df.melt(id_vars=["day"], var_name="series", value_name="value")
+                    overlay_long = overlay_chart_df.melt(
+                        id_vars=["day"],
+                        var_name="series",
+                        value_name="metric_value",
+                    )
                     mark = alt.Chart(overlay_long)
                     if chart_type == "bar":
                         chart = mark.mark_bar().encode(
                             x="day:T",
-                            y="value:Q",
+                            y="metric_value:Q",
                             color="series:N",
-                            tooltip=["day:T", "series:N", "value:Q"],
+                            tooltip=["day:T", "series:N", "metric_value:Q"],
                         )
                     else:
                         chart = mark.mark_line(point=True).encode(
                             x="day:T",
-                            y="value:Q",
+                            y="metric_value:Q",
                             color="series:N",
-                            tooltip=["day:T", "series:N", "value:Q"],
+                            tooltip=["day:T", "series:N", "metric_value:Q"],
                         )
                     st.altair_chart(chart, use_container_width=True)
 
