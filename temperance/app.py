@@ -55,6 +55,10 @@ st.caption("Local-first running load tracker (aerobic + mechanical)")
 DEFAULT_RESTING_HR = 45.0
 DEFAULT_MAX_HR = 200.0
 DEFAULT_LTHR = 178.0
+INJURY_WINDOWS = [
+    {"label": "Injury 1", "start": "2025-05-25", "end": "2025-06-16"},
+    {"label": "Injury 2", "start": "2026-01-03", "end": "2026-01-20"},
+]
 
 cfg = load_config()
 init_db(cfg.db_path)
@@ -90,6 +94,55 @@ def filter_by_activity_type(df: pd.DataFrame, mode: str) -> pd.DataFrame:
         mask = pd.Series([True] * len(df), index=df.index)
 
     return df.loc[mask].copy()
+
+
+def apply_specificity_factor(df: pd.DataFrame, enabled: bool) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    out = df.copy()
+    sport = out["sport_type"].fillna("").astype(str).str.lower()
+    is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
+    out["specificity_factor"] = 1.0
+    if enabled:
+        out.loc[~is_running_like, "specificity_factor"] = 0.9
+
+    factor_cols = [
+        "distance_m",
+        "trimp",
+        "edwards_trimp",
+        "mechanical_load",
+        "training_load_garmin",
+        "calories_active",
+        "calories_total",
+        "intensity_minutes_vigorous",
+        "intensity_minutes_moderate",
+        "hr_time_in_zone_1",
+        "hr_time_in_zone_2",
+        "hr_time_in_zone_3",
+        "hr_time_in_zone_4",
+        "hr_time_in_zone_5",
+    ]
+    for col in factor_cols:
+        if col in out.columns:
+            out[col] = out[col] * out["specificity_factor"]
+    return out
+
+
+def build_injury_layer() -> alt.Chart:
+    injuries = pd.DataFrame(INJURY_WINDOWS).copy()
+    injuries["start"] = pd.to_datetime(injuries["start"])
+    # Inclusive end-date visual window.
+    injuries["end_exclusive"] = pd.to_datetime(injuries["end"]) + pd.Timedelta(days=1)
+    return (
+        alt.Chart(injuries)
+        .mark_rect(color="#ef4444", opacity=0.12)
+        .encode(
+            x="start:T",
+            x2="end_exclusive:T",
+            tooltip=["label:N", "start:T", "end:T"],
+        )
+    )
 
 with st.sidebar:
     st.header("Navigation")
@@ -156,6 +209,7 @@ if view == "Dashboard":
             normalize_compare = st.checkbox("Normalize compare (index=100)", value=False, disabled=not compare_mode)
             enable_zoom = st.checkbox("Zoom/pan", value=False)
             legend_toggle = st.checkbox("Legend toggle", value=True)
+            specificity_factor_on = st.checkbox("Specificity factor (0.9 non-running)", value=True)
 
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
@@ -165,6 +219,7 @@ if view == "Dashboard":
         end_ts = pd.Timestamp(end_date)
 
         filtered_metrics = filter_by_activity_type(metrics_df, activity_filter)
+        filtered_metrics = apply_specificity_factor(filtered_metrics, specificity_factor_on)
         filtered_daily = build_daily_summary(filtered_metrics)
         if not filtered_daily.empty:
             filtered_daily = filtered_daily.sort_values("day_utc").copy()
@@ -324,6 +379,7 @@ if view == "Dashboard":
                         chart = chart.encode(
                             opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
                         ).add_params(legend_sel)
+                    chart = alt.layer(build_injury_layer(), chart)
                     if enable_zoom:
                         chart = chart.interactive()
                         st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
@@ -364,7 +420,9 @@ if view == "Dashboard":
                     right_chart = right_chart.encode(
                         opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
                     )
-                compare_chart = alt.layer(left_chart, right_chart).resolve_scale(y="independent")
+                compare_chart = alt.layer(build_injury_layer(), left_chart, right_chart).resolve_scale(
+                    y="independent"
+                )
                 if legend_sel is not None:
                     compare_chart = compare_chart.add_params(legend_sel)
                 if enable_zoom:
@@ -385,6 +443,7 @@ if view == "Dashboard":
                 "edwards_trimp": st.column_config.NumberColumn(format="%.1f"),
                 "mechanical_load": st.column_config.NumberColumn(format="%.1f"),
                 "training_load_garmin": st.column_config.NumberColumn(format="%.1f"),
+                "specificity_factor": st.column_config.NumberColumn(format="%.2f"),
             },
         )
         weekly = weekly_summary(filtered_metrics)
@@ -415,6 +474,7 @@ if view == "Dashboard":
                 weekly_ml_chart = weekly_ml_chart.encode(
                     opacity=alt.condition(weekly_ml_sel, alt.value(1.0), alt.value(0.08))
                 ).add_params(weekly_ml_sel)
+            weekly_ml_chart = alt.layer(build_injury_layer(), weekly_ml_chart)
             if enable_zoom:
                 weekly_ml_chart = weekly_ml_chart.interactive()
             st.altair_chart(weekly_ml_chart, use_container_width=True)
@@ -444,6 +504,7 @@ if view == "Dashboard":
                 weekly_ed_chart = weekly_ed_chart.encode(
                     opacity=alt.condition(weekly_ed_sel, alt.value(1.0), alt.value(0.08))
                 ).add_params(weekly_ed_sel)
+            weekly_ed_chart = alt.layer(build_injury_layer(), weekly_ed_chart)
             if enable_zoom:
                 weekly_ed_chart = weekly_ed_chart.interactive()
             st.altair_chart(weekly_ed_chart, use_container_width=True)
@@ -475,6 +536,7 @@ if view == "Dashboard":
                 weekly_chart = weekly_chart.encode(
                     opacity=alt.condition(weekly_sel, alt.value(1.0), alt.value(0.08))
                 ).add_params(weekly_sel)
+            weekly_chart = alt.layer(build_injury_layer(), weekly_chart)
             if enable_zoom:
                 weekly_chart = weekly_chart.interactive()
             st.altair_chart(weekly_chart, use_container_width=True)
