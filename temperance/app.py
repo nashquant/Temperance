@@ -269,6 +269,14 @@ def cached_filtered_views(
         filtered_daily["fitness"] = ema(training_series, 42)
         filtered_daily["fatigue"] = ema(training_series, 7)
         filtered_daily["form"] = filtered_daily["fitness"] - filtered_daily["fatigue"]
+        rtss_series = (
+            filtered_daily["rtss_total"].fillna(0.0)
+            if "rtss_total" in filtered_daily.columns
+            else pd.Series([0.0] * len(filtered_daily), index=filtered_daily.index)
+        )
+        filtered_daily["rfitness"] = ema(rtss_series, 200)
+        filtered_daily["rfatigue"] = ema(rtss_series, 7)
+        filtered_daily["rform"] = filtered_daily["rfitness"] - filtered_daily["rfatigue"]
     return filtered_metrics, filtered_daily
 
 
@@ -476,6 +484,9 @@ if view == "Dashboard":
             "Fitness (EWMA 42)": "fitness",
             "Fatigue (EWMA 7)": "fatigue",
             "Form (Fitness - Fatigue)": "form",
+            "Running Economy (EWMA 200, rTSS)": "rfitness",
+            "Pounding (EWMA 7, rTSS)": "rfatigue",
+            "Injury Risk (Running Economy - Pounding)": "rform",
             "rTSS": "rtss_total",
             "TSS": "tss_total",
             "TRIMP": "trimp_total",
@@ -761,6 +772,54 @@ if view == "Dashboard":
             st.altair_chart(ff_chart, use_container_width=True)
         else:
             st.caption("No fitness/fatigue data to plot.")
+
+        st.subheader("Weekly Running Economy vs Pounding")
+        if not filtered_daily.empty and "rfitness" in filtered_daily.columns and "rfatigue" in filtered_daily.columns:
+            weekly_rff = filtered_daily[["day_utc", "rfitness", "rfatigue"]].copy()
+            weekly_rff["day"] = pd.to_datetime(weekly_rff["day_utc"], errors="coerce")
+            weekly_rff = weekly_rff.dropna(subset=["day"])
+            weekly_rff["rfitness"] = pd.to_numeric(weekly_rff["rfitness"], errors="coerce").fillna(0.0)
+            weekly_rff["rfatigue"] = pd.to_numeric(weekly_rff["rfatigue"], errors="coerce").fillna(0.0)
+            weekly_rff["week_start"] = weekly_rff["day"].dt.to_period("W-SUN").dt.start_time
+            weekly_rff = (
+                weekly_rff.groupby("week_start", as_index=False)[["rfitness", "rfatigue"]]
+                .mean()
+                .sort_values("week_start")
+            )
+            weekly_rff_long = weekly_rff.melt(
+                id_vars=["week_start"],
+                value_vars=["rfitness", "rfatigue"],
+                var_name="series",
+                value_name="value",
+            )
+            weekly_rff_long["series"] = weekly_rff_long["series"].replace(
+                {"rfitness": "Running Economy", "rfatigue": "Pounding"}
+            )
+            rff_chart = (
+                alt.Chart(weekly_rff_long)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("week_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                    y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                    color=alt.Color(
+                        "series:N",
+                        legend=alt.Legend(orient="bottom", direction="horizontal"),
+                        scale=alt.Scale(domain=["Running Economy", "Pounding"], range=["#22c55e", "#ef4444"]),
+                    ),
+                    tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                )
+            )
+            if legend_toggle:
+                rff_sel = alt.selection_point(fields=["series"], bind="legend")
+                rff_chart = rff_chart.encode(
+                    opacity=alt.condition(rff_sel, alt.value(1.0), alt.value(0.08))
+                ).add_params(rff_sel)
+            rff_chart = alt.layer(build_injury_layer(), rff_chart)
+            if enable_zoom:
+                rff_chart = rff_chart.interactive()
+            st.altair_chart(rff_chart, use_container_width=True)
+        else:
+            st.caption("No Running Economy/Pounding data to plot.")
 
         st.subheader("Garmin Training Load vs. Total Calories")
         if (
