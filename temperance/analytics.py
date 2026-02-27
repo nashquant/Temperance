@@ -62,6 +62,31 @@ def compute_metrics(
                 if pd.notna(r.get("running_power_avg"))
                 else None
             ),
+            hr_zone_1_s=(
+                float(r.get("hr_time_in_zone_1"))
+                if pd.notna(r.get("hr_time_in_zone_1"))
+                else None
+            ),
+            hr_zone_2_s=(
+                float(r.get("hr_time_in_zone_2"))
+                if pd.notna(r.get("hr_time_in_zone_2"))
+                else None
+            ),
+            hr_zone_3_s=(
+                float(r.get("hr_time_in_zone_3"))
+                if pd.notna(r.get("hr_time_in_zone_3"))
+                else None
+            ),
+            hr_zone_4_s=(
+                float(r.get("hr_time_in_zone_4"))
+                if pd.notna(r.get("hr_time_in_zone_4"))
+                else None
+            ),
+            hr_zone_5_s=(
+                float(r.get("hr_time_in_zone_5"))
+                if pd.notna(r.get("hr_time_in_zone_5"))
+                else None
+            ),
         ),
         axis=1,
     )

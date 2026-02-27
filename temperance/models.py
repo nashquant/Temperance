@@ -120,6 +120,11 @@ def mechanical_load(
     stride_weight: float = 0.15,
     hill_weight: float = 0.2,
     power_weight: float = 0.2,
+    hr_zone_1_s: float | None = None,
+    hr_zone_2_s: float | None = None,
+    hr_zone_3_s: float | None = None,
+    hr_zone_4_s: float | None = None,
+    hr_zone_5_s: float | None = None,
 ) -> float:
     """
     Mechanical load proxy for running.
@@ -135,7 +140,9 @@ def mechanical_load(
     distance_km = distance_m / 1000.0
     pace_s_per_km = duration_s / max(distance_km, 0.001)
 
-    pace_factor = _clamp(baseline_pace_s_per_km / pace_s_per_km, 0.6, 1.8)
+    # Stronger-than-linear pace sensitivity to better separate easy mileage from hard efforts.
+    pace_ratio = _clamp(baseline_pace_s_per_km / pace_s_per_km, 0.6, 2.0)
+    pace_factor = pace_ratio ** 1.35
 
     hill_factor = 1.0
     if elevation_gain_m and elevation_gain_m > 0:
@@ -160,4 +167,27 @@ def mechanical_load(
         power_ratio = _clamp(running_power_avg / 260.0, 0.7, 1.5)
         power_factor += power_weight * (power_ratio - 1.0)
 
-    return distance_km * pace_factor * hill_factor * step_factor * stride_factor * power_factor
+    zone_times = [
+        max(float(hr_zone_1_s or 0.0), 0.0),
+        max(float(hr_zone_2_s or 0.0), 0.0),
+        max(float(hr_zone_3_s or 0.0), 0.0),
+        max(float(hr_zone_4_s or 0.0), 0.0),
+        max(float(hr_zone_5_s or 0.0), 0.0),
+    ]
+    zone_weights = [0.6, 1.0, 1.5, 2.2, 3.0]
+    zone_factor = 1.0
+    total_zone_s = sum(zone_times)
+    if total_zone_s > 0:
+        weighted_zone = sum(t * w for t, w in zip(zone_times, zone_weights)) / total_zone_s
+        # Center around 1.0 and allow meaningful differentiation for harder sessions.
+        zone_factor = _clamp(weighted_zone, 0.75, 2.4) ** 0.55
+
+    return (
+        distance_km
+        * pace_factor
+        * hill_factor
+        * step_factor
+        * stride_factor
+        * power_factor
+        * zone_factor
+    )

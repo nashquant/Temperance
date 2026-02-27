@@ -82,3 +82,25 @@ def test_mechanical_load_handles_missing_optional_inputs() -> None:
         running_power_avg=None,
     )
     assert score > 0
+
+
+def test_mechanical_load_zone_intensity_increases_score() -> None:
+    easy_zones = mechanical_load(
+        distance_m=10000,
+        duration_s=3000,
+        hr_zone_1_s=2200,
+        hr_zone_2_s=700,
+        hr_zone_3_s=100,
+        hr_zone_4_s=0,
+        hr_zone_5_s=0,
+    )
+    hard_zones = mechanical_load(
+        distance_m=10000,
+        duration_s=3000,
+        hr_zone_1_s=200,
+        hr_zone_2_s=700,
+        hr_zone_3_s=1300,
+        hr_zone_4_s=600,
+        hr_zone_5_s=200,
+    )
+    assert hard_zones > easy_zones
