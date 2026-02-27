@@ -165,9 +165,25 @@ if view == "Dashboard":
 
         filtered_metrics = filter_by_activity_type(metrics_df, activity_filter)
         filtered_daily = build_daily_summary(filtered_metrics)
+        if not filtered_daily.empty:
+            filtered_daily = filtered_daily.sort_values("day_utc").copy()
+            daily_index = pd.date_range(
+                start=pd.to_datetime(filtered_daily["day_utc"]).min(),
+                end=pd.to_datetime(filtered_daily["day_utc"]).max(),
+                freq="D",
+            )
+            complete_daily = pd.DataFrame({"day_utc": daily_index.strftime("%Y-%m-%d")})
+            filtered_daily = complete_daily.merge(filtered_daily, on="day_utc", how="left")
+            # Fitness/Fatigue are always computed on continuous daily data with missing days as zero load.
+            training_series = filtered_daily["training_load_garmin"].fillna(0.0)
+            filtered_daily["fitness"] = ema(training_series, 42)
+            filtered_daily["fatigue"] = ema(training_series, 7)
 
         metric_map = {
+            "Distance (km)": "distance_km",
             "Garmin Training Load": "training_load_garmin",
+            "Fitness (EWMA 42)": "fitness",
+            "Fatigue (EWMA 7)": "fatigue",
             "TRIMP": "trimp_total",
             "Calories Active": "calories_active",
             "Calories Total": "calories_total",
@@ -185,10 +201,16 @@ if view == "Dashboard":
             st.info(f"No data for activity filter: {activity_filter}")
         else:
             if compare_mode:
-                selected_labels = st.multiselect(
-                    "Metrics to compare",
+                left_axis_labels = st.multiselect(
+                    "Left axis metrics",
                     list(metric_map.keys()),
-                    default=["Garmin Training Load", "TRIMP"],
+                    default=["Garmin Training Load"],
+                    max_selections=3,
+                )
+                right_axis_labels = st.multiselect(
+                    "Right axis metrics",
+                    list(metric_map.keys()),
+                    default=["TRIMP"],
                     max_selections=3,
                 )
             else:
@@ -218,7 +240,14 @@ if view == "Dashboard":
                 st.caption(alpha_text)
 
             plot_frames: list[pd.DataFrame] = []
-            for label in selected_labels:
+            if compare_mode:
+                labels_and_axis = [(label, "left") for label in left_axis_labels] + [
+                    (label, "right") for label in right_axis_labels
+                ]
+            else:
+                labels_and_axis = [(label, "left") for label in selected_labels]
+
+            for label, axis_side in labels_and_axis:
                 metric = metric_map[label]
                 frame = prepare_metric_series(
                     daily_df=base_df.rename(columns={"day_utc": "day_utc"}),
@@ -232,6 +261,7 @@ if view == "Dashboard":
                     continue
                 frame = frame.rename(columns={metric: "value"})
                 frame["series"] = label
+                frame["axis_side"] = axis_side
                 if compare_mode and normalize_compare:
                     first_value = float(frame["value"].iloc[0]) if not frame.empty else 0.0
                     denom = first_value if first_value != 0 else 1.0
@@ -276,26 +306,42 @@ if view == "Dashboard":
 
             if compare_mode and plot_frames:
                 compare_df = pd.concat(plot_frames, ignore_index=True)
-                mark = alt.Chart(compare_df)
                 legend_sel = alt.selection_point(fields=["series"], bind="legend") if legend_toggle else None
-                if chart_type == "bar":
-                    compare_chart = mark.mark_bar().encode(
+
+                left_df = compare_df[compare_df["axis_side"] == "left"]
+                right_df = compare_df[compare_df["axis_side"] == "right"]
+
+                left_chart = (
+                    alt.Chart(left_df)
+                    .mark_line(point=True)
+                    .encode(
                         x="day:T",
-                        y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                        y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Left axis")),
                         color="series:N",
                         tooltip=["day:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
-                else:
-                    compare_chart = mark.mark_line(point=True).encode(
+                )
+                right_chart = (
+                    alt.Chart(right_df)
+                    .mark_line(point=True)
+                    .encode(
                         x="day:T",
-                        y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                        y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Right axis", orient="right")),
                         color="series:N",
                         tooltip=["day:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
+                )
+
                 if legend_sel is not None:
-                    compare_chart = compare_chart.encode(
+                    left_chart = left_chart.encode(
                         opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
-                    ).add_params(legend_sel)
+                    )
+                    right_chart = right_chart.encode(
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
+                    )
+                compare_chart = alt.layer(left_chart, right_chart).resolve_scale(y="independent")
+                if legend_sel is not None:
+                    compare_chart = compare_chart.add_params(legend_sel)
                 if enable_zoom:
                     compare_chart = compare_chart.interactive()
                     st.caption("Tip: drag chart to pan/zoom, double-click to reset.")

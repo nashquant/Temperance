@@ -70,6 +70,7 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             columns=[
                 "day_utc",
+                "distance_km",
                 "trimp_total",
                 "training_load_garmin",
                 "calories_active",
@@ -86,10 +87,12 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
 
     daily = df.copy()
     daily["day_utc"] = daily["start_time_utc"].dt.date.astype(str)
+    daily["distance_km"] = daily["distance_m"].fillna(0.0) / 1000.0
 
     grouped = (
         daily.groupby("day_utc", as_index=False)
         .agg(
+            distance_km=("distance_km", "sum"),
             trimp_total=("trimp", "sum"),
             training_load_garmin=("training_load_garmin", "sum"),
             calories_active=("calories_active", "sum"),
