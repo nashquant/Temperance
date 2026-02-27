@@ -19,8 +19,12 @@ def compute_metrics(
     df = runs_df.copy()
     df["start_time_utc"] = pd.to_datetime(df["start_time_utc"], utc=True, errors="coerce")
 
-    # Fill pace where missing from duration and distance.
-    missing_pace = df["avg_pace_s_per_km"].isna()
+    # Fill pace where missing from duration and distance for running-like activities only.
+    is_running_like = (
+        df["sport_type"].fillna("").astype(str).str.lower().str.contains("run")
+        | df["sport_type"].fillna("").astype(str).str.lower().str.contains("treadmill")
+    )
+    missing_pace = df["avg_pace_s_per_km"].isna() & is_running_like
     df.loc[missing_pace, "avg_pace_s_per_km"] = (
         df.loc[missing_pace, "duration_s"] / (df.loc[missing_pace, "distance_m"] / 1000.0)
     )
@@ -212,7 +216,10 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
     table["distance_km"] = table["distance_m"] / 1000.0
     table["duration_min"] = table["duration_s"] / 60.0
 
-    def _pace_str(pace_s_per_km: float | None) -> str:
+    def _pace_str(pace_s_per_km: float | None, sport_type: str | None) -> str:
+        sport = str(sport_type or "").lower()
+        if "run" not in sport and "treadmill" not in sport:
+            return "-"
         if pace_s_per_km is None or pd.isna(pace_s_per_km):
             return "-"
         try:
@@ -228,7 +235,10 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         seconds = total_seconds % 60
         return f"{minutes}:{seconds:02d}/km"
 
-    table["avg_pace_display"] = table["avg_pace_s_per_km"].apply(_pace_str)
+    table["avg_pace_display"] = table.apply(
+        lambda r: _pace_str(r.get("avg_pace_s_per_km"), r.get("sport_type")),
+        axis=1,
+    )
 
     cols = [
         "activity_id",

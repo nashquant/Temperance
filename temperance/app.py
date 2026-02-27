@@ -418,7 +418,9 @@ if view == "Activity Detail":
         m1.metric("TRIMP", f"{row['trimp']:.1f}")
         m2.metric("Garmin Training Load", f"{(row.get('training_load_garmin') or 0):.1f}")
         m3.metric("Edwards TRIMP", f"{(row.get('edwards_trimp') or 0):.1f}")
-        m4.metric("Avg Pace", format_pace_min_per_km(row.get("avg_pace_s_per_km")))
+        sport_type = str(row.get("sport_type") or "").lower()
+        show_pace = ("run" in sport_type) or ("treadmill" in sport_type)
+        m4.metric("Avg Pace", format_pace_min_per_km(row.get("avg_pace_s_per_km")) if show_pace else "-")
 
         st.write(
             {
