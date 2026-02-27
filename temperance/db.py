@@ -56,6 +56,14 @@ CREATE TABLE IF NOT EXISTS activities (
     bmr_calories REAL,
     is_pr REAL,
     split_summaries_json TEXT,
+    training_load_garmin REAL,
+    training_load_garmin_field_name TEXT,
+    training_load_garmin_units TEXT,
+    calories_active REAL,
+    calories_total REAL,
+    intensity_minutes_vigorous REAL,
+    intensity_minutes_moderate REAL,
+    trimp REAL,
     source TEXT NOT NULL,
     raw_json TEXT,
     created_at TEXT NOT NULL,
@@ -157,8 +165,21 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS daily_summary (
+    day_utc TEXT PRIMARY KEY,
+    activities_count INTEGER,
+    trimp_total REAL,
+    training_load_garmin REAL,
+    calories_active REAL,
+    calories_total REAL,
+    intensity_minutes_vigorous REAL,
+    intensity_minutes_moderate REAL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_activities_start_time ON activities(start_time_utc);
 CREATE INDEX IF NOT EXISTS idx_activity_records_activity_time ON activity_records(activity_id, record_time_utc);
+CREATE INDEX IF NOT EXISTS idx_daily_summary_day ON daily_summary(day_utc);
 CREATE INDEX IF NOT EXISTS idx_sync_log_time ON sync_log(sync_time_utc DESC);
 """
 
@@ -195,6 +216,7 @@ def run_migrations(db_path: Path) -> None:
         ("002_add_activity_records", _migration_add_activity_records),
         ("003_expand_daily_monitoring", _migration_expand_daily_monitoring),
         ("004_expand_activity_training_context", _migration_expand_activity_training_context),
+        ("005_v1_primary_garmin_metrics", _migration_v1_primary_garmin_metrics),
     ]
 
     with closing(get_conn(db_path)) as conn:
@@ -324,6 +346,43 @@ def _migration_expand_activity_training_context(conn: sqlite3.Connection) -> Non
         _add_column_if_missing(conn, "activities", column, col_type)
 
 
+def _migration_v1_primary_garmin_metrics(conn: sqlite3.Connection) -> None:
+    activity_fields = {
+        "training_load_garmin": "REAL",
+        "training_load_garmin_field_name": "TEXT",
+        "training_load_garmin_units": "TEXT",
+        "calories_active": "REAL",
+        "calories_total": "REAL",
+        "intensity_minutes_vigorous": "REAL",
+        "intensity_minutes_moderate": "REAL",
+        "trimp": "REAL",
+    }
+    for column, col_type in activity_fields.items():
+        _add_column_if_missing(conn, "activities", column, col_type)
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_summary (
+            day_utc TEXT PRIMARY KEY,
+            activities_count INTEGER,
+            trimp_total REAL,
+            training_load_garmin REAL,
+            calories_active REAL,
+            calories_total REAL,
+            intensity_minutes_vigorous REAL,
+            intensity_minutes_moderate REAL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_daily_summary_day
+        ON daily_summary(day_utc)
+        """
+    )
+
+
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with closing(get_conn(db_path)) as conn:
@@ -353,6 +412,9 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                 hr_time_in_zone_1, hr_time_in_zone_2, hr_time_in_zone_3, hr_time_in_zone_4,
                 hr_time_in_zone_5, moderate_intensity_minutes, vigorous_intensity_minutes,
                 difference_body_battery, bmr_calories, is_pr, split_summaries_json,
+                training_load_garmin, training_load_garmin_field_name, training_load_garmin_units,
+                calories_active, calories_total, intensity_minutes_vigorous,
+                intensity_minutes_moderate, trimp,
                 source, raw_json, created_at, updated_at
             ) VALUES (
                 :activity_id, :start_time_utc, :sport_type, :distance_m, :duration_s,
@@ -367,6 +429,9 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                 :hr_time_in_zone_1, :hr_time_in_zone_2, :hr_time_in_zone_3, :hr_time_in_zone_4,
                 :hr_time_in_zone_5, :moderate_intensity_minutes, :vigorous_intensity_minutes,
                 :difference_body_battery, :bmr_calories, :is_pr, :split_summaries_json,
+                :training_load_garmin, :training_load_garmin_field_name, :training_load_garmin_units,
+                :calories_active, :calories_total, :intensity_minutes_vigorous,
+                :intensity_minutes_moderate, :trimp,
                 :source, :raw_json, :created_at, :updated_at
             )
             ON CONFLICT(activity_id) DO UPDATE SET
@@ -412,6 +477,14 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                 bmr_calories=excluded.bmr_calories,
                 is_pr=excluded.is_pr,
                 split_summaries_json=excluded.split_summaries_json,
+                training_load_garmin=excluded.training_load_garmin,
+                training_load_garmin_field_name=excluded.training_load_garmin_field_name,
+                training_load_garmin_units=excluded.training_load_garmin_units,
+                calories_active=excluded.calories_active,
+                calories_total=excluded.calories_total,
+                intensity_minutes_vigorous=excluded.intensity_minutes_vigorous,
+                intensity_minutes_moderate=excluded.intensity_minutes_moderate,
+                trimp=excluded.trimp,
                 source=excluded.source,
                 raw_json=excluded.raw_json,
                 updated_at=excluded.updated_at
@@ -461,6 +534,14 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                     "bmr_calories": row.get("bmr_calories"),
                     "is_pr": row.get("is_pr"),
                     "split_summaries_json": row.get("split_summaries_json"),
+                    "training_load_garmin": row.get("training_load_garmin"),
+                    "training_load_garmin_field_name": row.get("training_load_garmin_field_name"),
+                    "training_load_garmin_units": row.get("training_load_garmin_units"),
+                    "calories_active": row.get("calories_active"),
+                    "calories_total": row.get("calories_total"),
+                    "intensity_minutes_vigorous": row.get("intensity_minutes_vigorous"),
+                    "intensity_minutes_moderate": row.get("intensity_minutes_moderate"),
+                    "trimp": row.get("trimp"),
                     "source": row.get("source") or "unknown",
                     "raw_json": json.dumps(row.get("raw", {}), default=str),
                     "created_at": now,
@@ -697,13 +778,84 @@ def get_runs_df(db_path: Path) -> pd.DataFrame:
                    a.hr_time_in_zone_3, a.hr_time_in_zone_4, a.hr_time_in_zone_5,
                    a.moderate_intensity_minutes, a.vigorous_intensity_minutes,
                    a.difference_body_battery, a.bmr_calories, a.is_pr, a.split_summaries_json,
+                   a.training_load_garmin, a.training_load_garmin_field_name,
+                   a.training_load_garmin_units, a.calories_active, a.calories_total,
+                   a.intensity_minutes_vigorous, a.intensity_minutes_moderate, a.trimp,
                    a.source,
-                   m.garmin_training_load, m.garmin_aerobic_te, m.garmin_anaerobic_te,
+                   m.garmin_aerobic_te, m.garmin_anaerobic_te,
                    m.garmin_vo2max, m.garmin_training_effect_label
             FROM activities a
             LEFT JOIN activity_metrics m ON m.activity_id = a.activity_id
-            WHERE lower(a.sport_type) LIKE '%run%'
             ORDER BY a.start_time_utc DESC
+            """,
+            conn,
+        )
+
+
+def upsert_activity_trimp(db_path: Path, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    now = UTC_NOW()
+    with closing(get_conn(db_path)) as conn:
+        conn.executemany(
+            """
+            UPDATE activities
+            SET trimp = :trimp, updated_at = :updated_at
+            WHERE activity_id = :activity_id
+            """,
+            [
+                {
+                    "activity_id": row["activity_id"],
+                    "trimp": row.get("trimp"),
+                    "updated_at": now,
+                }
+                for row in rows
+            ],
+        )
+        conn.commit()
+        return conn.total_changes
+
+
+def upsert_daily_summary(db_path: Path, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    now = UTC_NOW()
+    with closing(get_conn(db_path)) as conn:
+        conn.executemany(
+            """
+            INSERT INTO daily_summary(
+                day_utc, trimp_total, training_load_garmin,
+                calories_active, calories_total, intensity_minutes_vigorous,
+                intensity_minutes_moderate, updated_at
+            ) VALUES (
+                :day_utc, :trimp_total, :training_load_garmin,
+                :calories_active, :calories_total, :intensity_minutes_vigorous,
+                :intensity_minutes_moderate, :updated_at
+            )
+            ON CONFLICT(day_utc) DO UPDATE SET
+                trimp_total=excluded.trimp_total,
+                training_load_garmin=excluded.training_load_garmin,
+                calories_active=excluded.calories_active,
+                calories_total=excluded.calories_total,
+                intensity_minutes_vigorous=excluded.intensity_minutes_vigorous,
+                intensity_minutes_moderate=excluded.intensity_minutes_moderate,
+                updated_at=excluded.updated_at
+            """,
+            [{**row, "updated_at": now} for row in rows],
+        )
+        conn.commit()
+        return conn.total_changes
+
+
+def get_daily_summary_df(db_path: Path) -> pd.DataFrame:
+    with closing(get_conn(db_path)) as conn:
+        return pd.read_sql_query(
+            """
+            SELECT day_utc, trimp_total, training_load_garmin,
+                   calories_active, calories_total, intensity_minutes_vigorous,
+                   intensity_minutes_moderate
+            FROM daily_summary
+            ORDER BY day_utc ASC
             """,
             conn,
         )
@@ -766,6 +918,7 @@ def get_table_counts(db_path: Path) -> dict[str, int]:
         "activity_records",
         "sleep_daily",
         "wellness_daily",
+        "daily_summary",
     ]
     with closing(get_conn(db_path)) as conn:
         for table in tables:

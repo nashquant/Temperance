@@ -14,9 +14,25 @@ Local-first app to track running load and extract your own Garmin data archive (
   - elevation gain/loss, cadence, stride length, vertical ratio/oscillation
   - running power avg/max, stamina start/end, training effect (aerobic/anaerobic)
   - performance condition, device name
-- Running dashboard with your model estimates vs Garmin-reported training-load fields.
+  - HR zone times, elapsed/moving durations, average speed, intensity minutes
+  - activity UUID/type, PR flag, owner metadata, split summaries, BMR calories
+- Garmin-first dashboard for training-load, calories, and intensity-minute trend analysis with SMA/EMA overlays.
 - Local SQLite caching and upsert logic.
 - File import fallback for runs (`.FIT` / `.TCX`).
+
+## Primary stored Garmin metrics (v1)
+Per activity, Temperance stores first-class Garmin metrics:
+- `training_load_garmin` (raw Garmin value from `activityTrainingLoad` or fallback `trainingLoad`)
+- `training_load_garmin_field_name` + `training_load_garmin_units` (provenance/units metadata)
+- `calories_active`, `calories_total`
+- `intensity_minutes_vigorous`, `intensity_minutes_moderate`
+- `trimp` (model-derived, stored per activity)
+
+Daily aggregates are stored in `daily_summary`:
+- `trimp_total`
+- `training_load_garmin`
+- `calories_active`, `calories_total`
+- `intensity_minutes_vigorous`, `intensity_minutes_moderate`
 
 ## Privacy / local-only
 Personal data is stored locally only:
@@ -89,7 +105,7 @@ python migrate.py
 4. Click **Run comprehensive extract**.
 
 After extraction, use:
-- **Dashboard** to compare your estimated aerobic load vs Garmin training load.
+- **Dashboard** for TradingView-lite metric plots with overlays and compare mode.
 - **Activity Detail** for per-run deep payloads.
 - **Recovery Data** for sleep/wellness tables.
 
@@ -99,6 +115,13 @@ After extraction, use:
   - Edwards fallback when needed
 - Mechanical load: simple distance + pace (+ optional elevation modifier)
   - v1.5 adds optional cadence-step proxy, stride length, elevation, and running power factors
+
+### SMA / EMA calculations
+- SMA(N): simple rolling mean over N daily points.
+- EMA(N): exponential moving average with `alpha = 2 / (N + 1)`.
+- Missing days: chart logic can use either:
+  - `zero` fill (default), or
+  - `ffill` (forward fill then leading zeros)
 
 These are practical v1 proxies, not lab-grade physiology/biomechanics.
 

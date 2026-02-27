@@ -33,6 +33,8 @@ def compute_metrics(
         ),
         axis=1,
     )
+    # Persisted per-activity TRIMP proxy is this aerobic load output.
+    df["trimp"] = df["aerobic_load"]
 
     df["mechanical_load"] = df.apply(
         lambda r: mechanical_load(
@@ -58,10 +60,97 @@ def compute_metrics(
         axis=1,
     )
 
-    if "garmin_training_load" in df.columns:
-        df["aerobic_vs_garmin_delta"] = df["aerobic_load"] - df["garmin_training_load"]
-
     return df
+
+
+def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(
+            columns=[
+                "day_utc",
+                "trimp_total",
+                "training_load_garmin",
+                "calories_active",
+                "calories_total",
+                "intensity_minutes_vigorous",
+                "intensity_minutes_moderate",
+            ]
+        )
+
+    daily = df.copy()
+    daily["day_utc"] = daily["start_time_utc"].dt.date.astype(str)
+
+    grouped = (
+        daily.groupby("day_utc", as_index=False)
+        .agg(
+            trimp_total=("trimp", "sum"),
+            training_load_garmin=("training_load_garmin", "sum"),
+            calories_active=("calories_active", "sum"),
+            calories_total=("calories_total", "sum"),
+            intensity_minutes_vigorous=("intensity_minutes_vigorous", "sum"),
+            intensity_minutes_moderate=("intensity_minutes_moderate", "sum"),
+        )
+        .sort_values("day_utc")
+    )
+    return grouped
+
+
+def sma(series: pd.Series, window: int) -> pd.Series:
+    if window <= 0:
+        raise ValueError("window must be > 0")
+    return series.rolling(window=window, min_periods=1).mean()
+
+
+def ema_alpha_from_days(window: int) -> float:
+    if window <= 0:
+        raise ValueError("window must be > 0")
+    return 2.0 / (window + 1.0)
+
+
+def ema(series: pd.Series, window: int) -> pd.Series:
+    alpha = ema_alpha_from_days(window)
+    return series.ewm(alpha=alpha, adjust=False).mean()
+
+
+def prepare_metric_series(
+    daily_df: pd.DataFrame,
+    metric: str,
+    start_day: pd.Timestamp,
+    end_day: pd.Timestamp,
+    fill_method: str = "zero",
+    weekly: bool = False,
+) -> pd.DataFrame:
+    if daily_df.empty:
+        return pd.DataFrame(columns=["day", metric])
+
+    series = daily_df.copy()
+    series["day"] = pd.to_datetime(series["day_utc"], utc=False, errors="coerce")
+    series = series[(series["day"] >= start_day) & (series["day"] <= end_day)]
+
+    if series.empty:
+        return pd.DataFrame(columns=["day", metric])
+
+    full_index = pd.date_range(start=start_day, end=end_day, freq="D")
+    metric_df = series.set_index("day")[[metric]].reindex(full_index)
+
+    if fill_method == "ffill":
+        metric_df[metric] = metric_df[metric].ffill().fillna(0.0)
+    else:
+        metric_df[metric] = metric_df[metric].fillna(0.0)
+
+    metric_df = metric_df.reset_index().rename(columns={"index": "day"})
+
+    if weekly:
+        weekly_df = metric_df.copy()
+        weekly_df["week_start"] = weekly_df["day"].dt.to_period("W-SUN").dt.start_time
+        weekly_df = (
+            weekly_df.groupby("week_start", as_index=False)[metric]
+            .sum()
+            .rename(columns={"week_start": "day"})
+        )
+        return weekly_df
+
+    return metric_df
 
 
 def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
@@ -74,12 +163,12 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
 
     agg_spec: dict[str, tuple[str, str]] = {
         "total_distance_km": ("distance_km", "sum"),
-        "total_aerobic_load": ("aerobic_load", "sum"),
+        "total_trimp": ("trimp", "sum"),
         "total_mechanical_load": ("mechanical_load", "sum"),
         "runs": ("activity_id", "count"),
     }
-    if "garmin_training_load" in weekly.columns:
-        agg_spec["total_garmin_training_load"] = ("garmin_training_load", "sum")
+    if "training_load_garmin" in weekly.columns:
+        agg_spec["total_garmin_training_load"] = ("training_load_garmin", "sum")
 
     grouped = weekly.groupby("week_start", as_index=False).agg(**agg_spec).sort_values("week_start")
     return grouped
@@ -102,17 +191,18 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "duration_min",
         "avg_hr",
         "avg_pace_min_per_km",
-        "aerobic_load",
+        "trimp",
         "mechanical_load",
     ]
 
     optional = [
         "avg_cadence",
         "running_power_avg",
-        "garmin_training_load",
-        "garmin_aerobic_te",
-        "garmin_anaerobic_te",
-        "aerobic_vs_garmin_delta",
+        "training_load_garmin",
+        "calories_active",
+        "calories_total",
+        "intensity_minutes_vigorous",
+        "intensity_minutes_moderate",
     ]
     cols.extend([c for c in optional if c in table.columns])
 

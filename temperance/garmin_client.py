@@ -154,6 +154,19 @@ def _normalize_activity(
     stamina_start, stamina_end = _extract_stamina_values(a, details_bundle)
     activity_type = a.get("activityType") if isinstance(a.get("activityType"), dict) else {}
     split_summaries = a.get("splitSummaries")
+    training_load_field_name = None
+    training_load_value = None
+    for field in ("activityTrainingLoad", "trainingLoad", "exerciseTrainingLoad"):
+        v = _to_float(a.get(field))
+        if v is not None:
+            training_load_field_name = field
+            training_load_value = v
+            break
+    calories_total = _to_float(a.get("calories") or a.get("totalCalories"))
+    calories_active = _to_float(a.get("activeKilocalories") or a.get("activeCalories"))
+    if calories_active is None and calories_total is not None:
+        bmr = _to_float(a.get("bmrCalories"))
+        calories_active = calories_total - bmr if bmr is not None else calories_total
 
     return {
         "activity_id": str(activity_id),
@@ -210,6 +223,14 @@ def _normalize_activity(
         "bmr_calories": _to_float(a.get("bmrCalories")),
         "is_pr": _to_float(a.get("pr")),
         "split_summaries_json": json.dumps(split_summaries, default=str) if split_summaries is not None else None,
+        "training_load_garmin": training_load_value,
+        "training_load_garmin_field_name": training_load_field_name,
+        "training_load_garmin_units": "load_points" if training_load_value is not None else None,
+        "calories_active": calories_active,
+        "calories_total": calories_total,
+        "intensity_minutes_vigorous": _to_float(a.get("vigorousIntensityMinutes")),
+        "intensity_minutes_moderate": _to_float(a.get("moderateIntensityMinutes")),
+        "trimp": None,
         "source": source,
         "raw": a,
     }
@@ -846,6 +867,14 @@ def _parse_tcx(path: Path) -> dict[str, Any] | None:
         "bmr_calories": None,
         "is_pr": None,
         "split_summaries_json": None,
+        "training_load_garmin": None,
+        "training_load_garmin_field_name": None,
+        "training_load_garmin_units": None,
+        "calories_active": None,
+        "calories_total": None,
+        "intensity_minutes_vigorous": None,
+        "intensity_minutes_moderate": None,
+        "trimp": None,
         "source": "file_import",
         "raw": {"file": str(path), "format": "tcx"},
     }
@@ -916,6 +945,14 @@ def _parse_fit(path: Path) -> dict[str, Any] | None:
         "bmr_calories": None,
         "is_pr": None,
         "split_summaries_json": None,
+        "training_load_garmin": None,
+        "training_load_garmin_field_name": None,
+        "training_load_garmin_units": None,
+        "calories_active": None,
+        "calories_total": None,
+        "intensity_minutes_vigorous": None,
+        "intensity_minutes_moderate": None,
+        "trimp": None,
         "source": "file_import",
         "raw": {"file": str(path), "format": "fit"},
     }

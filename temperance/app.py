@@ -6,12 +6,22 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from analytics import compute_metrics, display_table, weekly_summary
+from analytics import (
+    build_daily_summary,
+    compute_metrics,
+    display_table,
+    ema,
+    ema_alpha_from_days,
+    prepare_metric_series,
+    sma,
+    weekly_summary,
+)
 from config import load_config
 from db import (
     get_activity_records_df,
     get_activity_detail_raw,
     get_activity_raw,
+    get_daily_summary_df,
     get_last_sync,
     get_latest_activity_time,
     get_runs_df,
@@ -25,7 +35,9 @@ from db import (
     upsert_activities,
     upsert_activity_details,
     upsert_activity_records,
+    upsert_activity_trimp,
     upsert_activity_metrics,
+    upsert_daily_summary,
     upsert_sleep_daily,
     upsert_wellness_daily,
 )
@@ -55,6 +67,27 @@ def format_pace_min_per_km(pace_s_per_km: float | None) -> str:
     minutes = total_seconds // 60
     seconds = total_seconds % 60
     return f"{minutes}:{seconds:02d} min/km"
+
+
+def filter_by_activity_type(df: pd.DataFrame, mode: str) -> pd.DataFrame:
+    if df.empty or mode == "All Activities":
+        return df
+
+    sport = df["sport_type"].fillna("").astype(str).str.lower()
+    if mode == "All Running":
+        mask = sport.str.contains("run") | sport.str.contains("treadmill")
+    elif mode == "Running":
+        mask = sport.str.contains("run") & ~sport.str.contains("treadmill")
+    elif mode == "Treadmill":
+        mask = sport.str.contains("treadmill")
+    elif mode == "Cycling":
+        mask = sport.str.contains("cycl") | sport.str.contains("bike")
+    elif mode == "Elliptical":
+        mask = sport.str.contains("elliptical")
+    else:
+        mask = pd.Series([True] * len(df), index=df.index)
+
+    return df.loc[mask].copy()
 
 with st.sidebar:
     st.header("Navigation")
@@ -95,7 +128,8 @@ counts = get_table_counts(cfg.db_path)
 st.caption(
     "Local records | "
     f"activities={counts['activities']}, metrics={counts['activity_metrics']}, details={counts['activity_details']}, "
-    f"records={counts['activity_records']}, sleep={counts['sleep_daily']}, wellness={counts['wellness_daily']}"
+    f"records={counts['activity_records']}, sleep={counts['sleep_daily']}, wellness={counts['wellness_daily']}, "
+    f"daily_summary={counts['daily_summary']}"
 )
 st.caption(f"Private DB: {cfg.db_path}")
 st.caption(f"Private exports: {cfg.private_export_dir}")
@@ -233,6 +267,20 @@ if run_extract:
 
 runs_df = get_runs_df(cfg.db_path)
 metrics_df = compute_metrics(runs_df, resting_hr=float(resting_hr), max_hr=float(max_hr), sex=sex)
+if not metrics_df.empty:
+    upsert_activity_trimp(
+        cfg.db_path,
+        [
+            {"activity_id": str(r["activity_id"]), "trimp": float(r["trimp"])}
+            for _, r in metrics_df[["activity_id", "trimp"]].iterrows()
+            if pd.notna(r["trimp"])
+        ],
+    )
+    upsert_daily_summary(
+        cfg.db_path,
+        build_daily_summary(metrics_df).to_dict(orient="records"),
+    )
+daily_summary_df = get_daily_summary_df(cfg.db_path)
 
 if view == "Dashboard":
     st.divider()
@@ -240,11 +288,152 @@ if view == "Dashboard":
 
     if metrics_df.empty:
         st.info(
-            "No running activities yet. Use Sync above. "
+            "No activities yet. Use Sync above. "
             "For your full archive, run Comprehensive Garmin Extract from Jan 1, 2025."
         )
     else:
-        table_df = display_table(metrics_df)
+        st.caption("Missing-day fill mode applies to chart calculations (SMA/EMA and aggregations).")
+        controls = st.columns([1, 1, 1, 1, 1])
+        with controls[0]:
+            min_day = pd.to_datetime(daily_summary_df["day_utc"]).min().date() if not daily_summary_df.empty else metrics_df["start_time_utc"].min().date()
+            max_day = pd.to_datetime(daily_summary_df["day_utc"]).max().date() if not daily_summary_df.empty else metrics_df["start_time_utc"].max().date()
+            date_range = st.date_input("Date range", value=(min_day, max_day), min_value=min_day, max_value=max_day)
+        with controls[1]:
+            activity_filter = st.selectbox(
+                "Activity filter",
+                ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
+                index=0,
+            )
+        with controls[2]:
+            chart_type = st.selectbox("Chart type", ["line", "bar"], index=0)
+            weekly_toggle = st.checkbox("Weekly aggregation", value=False)
+        with controls[3]:
+            fill_mode = st.selectbox("Missing days", ["zero", "ffill"], index=0)
+            compare_mode = st.checkbox("Compare mode (up to 3 metrics)", value=False)
+        with controls[4]:
+            normalize_compare = st.checkbox("Normalize compare (index=100)", value=False, disabled=not compare_mode)
+
+        if isinstance(date_range, tuple) and len(date_range) == 2:
+            start_date, end_date = date_range
+        else:
+            start_date = end_date = max_day
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+
+        filtered_metrics = filter_by_activity_type(metrics_df, activity_filter)
+        filtered_daily = build_daily_summary(filtered_metrics)
+
+        metric_map = {
+            "Garmin Training Load": "training_load_garmin",
+            "TRIMP": "trimp_total",
+            "Calories Active": "calories_active",
+            "Calories Total": "calories_total",
+            "Vigorous Minutes": "intensity_minutes_vigorous",
+            "Moderate Minutes": "intensity_minutes_moderate",
+        }
+
+        base_df = filtered_daily.copy()
+        if base_df.empty:
+            st.info(f"No data for activity filter: {activity_filter}")
+        else:
+            if compare_mode:
+                selected_labels = st.multiselect(
+                    "Metrics to compare",
+                    list(metric_map.keys()),
+                    default=["Garmin Training Load", "TRIMP"],
+                    max_selections=3,
+                )
+            else:
+                selected_labels = [st.selectbox("Metric", list(metric_map.keys()), index=0)]
+
+            sma_windows = st.text_input("SMA windows (days, comma-separated)", value="7,28")
+            ema_windows = st.text_input("EMA windows (days, comma-separated)", value="14")
+
+            def _parse_windows(text: str) -> list[int]:
+                out: list[int] = []
+                for part in text.split(","):
+                    part = part.strip()
+                    if not part:
+                        continue
+                    try:
+                        val = int(part)
+                    except ValueError:
+                        continue
+                    if val > 0:
+                        out.append(val)
+                return out
+
+            sma_ns = _parse_windows(sma_windows)
+            ema_ns = _parse_windows(ema_windows)
+            if ema_ns:
+                alpha_text = ", ".join([f"EMA {n} -> alpha={ema_alpha_from_days(n):.4f}" for n in ema_ns])
+                st.caption(alpha_text)
+
+            plot_frames: list[pd.DataFrame] = []
+            for label in selected_labels:
+                metric = metric_map[label]
+                frame = prepare_metric_series(
+                    daily_df=base_df.rename(columns={"day_utc": "day_utc"}),
+                    metric=metric,
+                    start_day=start_ts,
+                    end_day=end_ts,
+                    fill_method=fill_mode,
+                    weekly=weekly_toggle,
+                )
+                if frame.empty:
+                    continue
+                frame = frame.rename(columns={metric: "value"})
+                frame["series"] = label
+                if compare_mode and normalize_compare:
+                    first_value = float(frame["value"].iloc[0]) if not frame.empty else 0.0
+                    denom = first_value if first_value != 0 else 1.0
+                    frame["value"] = (frame["value"] / denom) * 100.0
+                plot_frames.append(frame)
+
+                if not compare_mode:
+                    for n in sma_ns:
+                        frame[f"sma_{n}"] = sma(frame["value"], n)
+                    for n in ema_ns:
+                        frame[f"ema_{n}"] = ema(frame["value"], n)
+                    overlay_chart_df = frame[["day", "value"] + [c for c in frame.columns if c.startswith(("sma_", "ema_"))]]
+                    overlay_long = overlay_chart_df.melt(id_vars=["day"], var_name="series", value_name="value")
+                    mark = alt.Chart(overlay_long)
+                    if chart_type == "bar":
+                        chart = mark.mark_bar().encode(
+                            x="day:T",
+                            y="value:Q",
+                            color="series:N",
+                            tooltip=["day:T", "series:N", "value:Q"],
+                        )
+                    else:
+                        chart = mark.mark_line(point=True).encode(
+                            x="day:T",
+                            y="value:Q",
+                            color="series:N",
+                            tooltip=["day:T", "series:N", "value:Q"],
+                        )
+                    st.altair_chart(chart, use_container_width=True)
+
+            if compare_mode and plot_frames:
+                compare_df = pd.concat(plot_frames, ignore_index=True)
+                mark = alt.Chart(compare_df)
+                if chart_type == "bar":
+                    compare_chart = mark.mark_bar().encode(
+                        x="day:T",
+                        y="value:Q",
+                        color="series:N",
+                        tooltip=["day:T", "series:N", "value:Q"],
+                    )
+                else:
+                    compare_chart = mark.mark_line(point=True).encode(
+                        x="day:T",
+                        y="value:Q",
+                        color="series:N",
+                        tooltip=["day:T", "series:N", "value:Q"],
+                    )
+                st.altair_chart(compare_chart, use_container_width=True)
+
+        table_df = display_table(filtered_metrics)
         st.subheader("Runs")
         st.dataframe(
             table_df,
@@ -253,114 +442,27 @@ if view == "Dashboard":
                 "distance_km": st.column_config.NumberColumn(format="%.2f km"),
                 "duration_min": st.column_config.NumberColumn(format="%.1f min"),
                 "avg_pace_min_per_km": st.column_config.NumberColumn(format="%.2f min/km"),
-                "aerobic_load": st.column_config.NumberColumn(format="%.1f"),
+                "trimp": st.column_config.NumberColumn(format="%.1f"),
                 "mechanical_load": st.column_config.NumberColumn(format="%.1f"),
-                "garmin_training_load": st.column_config.NumberColumn(format="%.1f"),
-                "aerobic_vs_garmin_delta": st.column_config.NumberColumn(format="%.1f"),
+                "training_load_garmin": st.column_config.NumberColumn(format="%.1f"),
             },
         )
-
-        st.subheader("Trend Overlay (Optional)")
-        overlay_metric = st.selectbox(
-            "Overlay metric",
-            ["None", "running_power_avg", "avg_cadence"],
-            index=0,
-        )
-        if overlay_metric != "None":
-            overlay_df = metrics_df.dropna(subset=[overlay_metric]).copy()
-            if overlay_df.empty:
-                st.caption(f"No {overlay_metric} data available yet.")
-            else:
-                overlay_chart = (
-                    alt.Chart(overlay_df)
-                    .mark_line(point=True)
-                    .encode(
-                        x="start_time_utc:T",
-                        y=alt.Y(f"{overlay_metric}:Q", title=overlay_metric),
-                        tooltip=["activity_id", "start_time_utc", overlay_metric],
-                    )
-                )
-                st.altair_chart(overlay_chart, use_container_width=True)
-
-        weekly = weekly_summary(metrics_df)
+        weekly = weekly_summary(filtered_metrics)
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("Weekly Aerobic Load (Model)")
-            ch = (
-                alt.Chart(weekly)
-                .mark_bar()
-                .encode(x="week_start:T", y="total_aerobic_load:Q", tooltip=list(weekly.columns))
-            )
-            st.altair_chart(ch, use_container_width=True)
-
-        with c2:
-            st.subheader("Weekly Mechanical Load")
-            ch2 = (
-                alt.Chart(weekly)
-                .mark_bar(color="#f58518")
-                .encode(x="week_start:T", y="total_mechanical_load:Q", tooltip=list(weekly.columns))
-            )
-            st.altair_chart(ch2, use_container_width=True)
-
+        st.subheader("Weekly TRIMP vs Garmin Training Load")
         if "total_garmin_training_load" in weekly.columns:
-            st.subheader("Weekly Model vs Garmin Training Load")
-            compare = weekly.melt(
+            weekly_compare = weekly.melt(
                 id_vars=["week_start"],
-                value_vars=["total_aerobic_load", "total_garmin_training_load"],
+                value_vars=["total_trimp", "total_garmin_training_load"],
                 var_name="series",
                 value_name="value",
             )
-            comp_chart = (
-                alt.Chart(compare)
+            weekly_chart = (
+                alt.Chart(weekly_compare)
                 .mark_line(point=True)
                 .encode(x="week_start:T", y="value:Q", color="series:N", tooltip=["week_start", "series", "value"])
             )
-            st.altair_chart(comp_chart, use_container_width=True)
-
-            per_run = metrics_df.dropna(subset=["garmin_training_load"])
-            if not per_run.empty:
-                st.subheader("Per-Run: Model Aerobic Load vs Garmin Training Load")
-                scatter = (
-                    alt.Chart(per_run)
-                    .mark_circle(size=90)
-                    .encode(
-                        x="aerobic_load:Q",
-                        y="garmin_training_load:Q",
-                        color=alt.Color("distance_m:Q", scale=alt.Scale(scheme="viridis")),
-                        tooltip=[
-                            "activity_id",
-                            "start_time_utc",
-                            "distance_m",
-                            "aerobic_load",
-                            "garmin_training_load",
-                            "aerobic_vs_garmin_delta",
-                        ],
-                    )
-                )
-                st.altair_chart(scatter, use_container_width=True)
-
-        st.subheader("Daily Run Scatter: Mechanical vs Aerobic")
-        scatter2 = (
-            alt.Chart(metrics_df)
-            .mark_circle(size=90)
-            .encode(
-                x="aerobic_load:Q",
-                y="mechanical_load:Q",
-                color=alt.Color("distance_m:Q", scale=alt.Scale(scheme="viridis")),
-                tooltip=[
-                    "activity_id",
-                    "start_time_utc",
-                    "distance_m",
-                    "duration_s",
-                    "avg_hr",
-                    "aerobic_load",
-                    "mechanical_load",
-                ],
-            )
-        )
-        st.altair_chart(scatter2, use_container_width=True)
+            st.altair_chart(weekly_chart, use_container_width=True)
 
 if view == "Activity Detail":
     st.divider()
@@ -383,8 +485,8 @@ if view == "Activity Detail":
         row = options_df.loc[options_df["activity_id"] == activity_id].iloc[0]
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Model Aerobic", f"{row['aerobic_load']:.1f}")
-        m2.metric("Garmin Training Load", f"{(row.get('garmin_training_load') or 0):.1f}")
+        m1.metric("TRIMP", f"{row['trimp']:.1f}")
+        m2.metric("Garmin Training Load", f"{(row.get('training_load_garmin') or 0):.1f}")
         m3.metric("Mechanical", f"{row['mechanical_load']:.1f}")
         m4.metric("Avg Pace", format_pace_min_per_km(row.get("avg_pace_s_per_km")))
 
@@ -410,6 +512,14 @@ if view == "Activity Detail":
                 "stamina_end": row.get("stamina_end"),
                 "training_effect_aerobic": row.get("training_effect_aerobic"),
                 "training_effect_anaerobic": row.get("training_effect_anaerobic"),
+                "training_load_garmin": row.get("training_load_garmin"),
+                "training_load_garmin_field_name": row.get("training_load_garmin_field_name"),
+                "training_load_garmin_units": row.get("training_load_garmin_units"),
+                "calories_active": row.get("calories_active"),
+                "calories_total": row.get("calories_total"),
+                "intensity_minutes_vigorous": row.get("intensity_minutes_vigorous"),
+                "intensity_minutes_moderate": row.get("intensity_minutes_moderate"),
+                "trimp": row.get("trimp"),
                 "performance_condition": row.get("performance_condition"),
                 "device_name": row.get("device_name"),
                 "manufacturer": row.get("manufacturer"),
@@ -433,7 +543,6 @@ if view == "Activity Detail":
                 "is_pr": row.get("is_pr"),
                 "split_summaries_json": row.get("split_summaries_json"),
                 "source": row["source"],
-                "garmin_training_load": row.get("garmin_training_load"),
                 "garmin_aerobic_te": row.get("garmin_aerobic_te"),
                 "garmin_anaerobic_te": row.get("garmin_anaerobic_te"),
                 "garmin_vo2max": row.get("garmin_vo2max"),
