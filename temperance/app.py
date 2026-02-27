@@ -178,13 +178,16 @@ if view == "Dashboard":
             training_series = filtered_daily["training_load_garmin"].fillna(0.0)
             filtered_daily["fitness"] = ema(training_series, 42)
             filtered_daily["fatigue"] = ema(training_series, 7)
+            filtered_daily["form"] = filtered_daily["fitness"] - filtered_daily["fatigue"]
 
         metric_map = {
             "Distance (km)": "distance_km",
             "Garmin Training Load": "training_load_garmin",
             "Fitness (EWMA 42)": "fitness",
             "Fatigue (EWMA 7)": "fatigue",
+            "Form (Fitness - Fatigue)": "form",
             "TRIMP": "trimp_total",
+            "Edwards TRIMP": "edwards_trimp_total",
             "Calories Active": "calories_active",
             "Calories Total": "calories_total",
             "Vigorous Minutes": "intensity_minutes_vigorous",
@@ -357,6 +360,7 @@ if view == "Dashboard":
                 "duration_min": st.column_config.NumberColumn(format="%.1f min"),
                 "avg_pace_display": st.column_config.TextColumn("Pace"),
                 "trimp": st.column_config.NumberColumn(format="%.1f"),
+                "edwards_trimp": st.column_config.NumberColumn(format="%.1f"),
                 "mechanical_load": st.column_config.NumberColumn(format="%.1f"),
                 "training_load_garmin": st.column_config.NumberColumn(format="%.1f"),
             },
@@ -413,7 +417,7 @@ if view == "Activity Detail":
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("TRIMP", f"{row['trimp']:.1f}")
         m2.metric("Garmin Training Load", f"{(row.get('training_load_garmin') or 0):.1f}")
-        m3.metric("Mechanical", f"{row['mechanical_load']:.1f}")
+        m3.metric("Edwards TRIMP", f"{(row.get('edwards_trimp') or 0):.1f}")
         m4.metric("Avg Pace", format_pace_min_per_km(row.get("avg_pace_s_per_km")))
 
         st.write(
@@ -446,6 +450,8 @@ if view == "Activity Detail":
                 "intensity_minutes_vigorous": row.get("intensity_minutes_vigorous"),
                 "intensity_minutes_moderate": row.get("intensity_minutes_moderate"),
                 "trimp": row.get("trimp"),
+                "edwards_trimp": row.get("edwards_trimp"),
+                "mechanical_load": row.get("mechanical_load"),
                 "performance_condition": row.get("performance_condition"),
                 "device_name": row.get("device_name"),
                 "manufacturer": row.get("manufacturer"),

@@ -65,6 +65,30 @@ def edwards_trimp(duration_s: float, avg_hr: float, max_hr: float) -> float:
     return duration_min * weight
 
 
+def edwards_trimp_from_zones(
+    hr_zone_1_s: float | None,
+    hr_zone_2_s: float | None,
+    hr_zone_3_s: float | None,
+    hr_zone_4_s: float | None,
+    hr_zone_5_s: float | None,
+) -> float:
+    """
+    Edwards TRIMP using time spent in HR zones.
+
+    Assumes Garmin zone time fields are in seconds.
+    Zone multipliers are 1..5 respectively.
+    """
+    zone_seconds = [
+        max(float(hr_zone_1_s or 0.0), 0.0),
+        max(float(hr_zone_2_s or 0.0), 0.0),
+        max(float(hr_zone_3_s or 0.0), 0.0),
+        max(float(hr_zone_4_s or 0.0), 0.0),
+        max(float(hr_zone_5_s or 0.0), 0.0),
+    ]
+    weights = [1.0, 2.0, 3.0, 4.0, 5.0]
+    return sum((sec / 60.0) * w for sec, w in zip(zone_seconds, weights))
+
+
 def aerobic_load(
     duration_s: float,
     avg_hr: float | None,

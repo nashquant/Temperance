@@ -3,7 +3,13 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from models import aerobic_load, bannister_trimp, edwards_trimp, mechanical_load
+from models import (
+    aerobic_load,
+    bannister_trimp,
+    edwards_trimp,
+    edwards_trimp_from_zones,
+    mechanical_load,
+)
 
 
 def test_bannister_trimp_increases_with_hr() -> None:
@@ -21,6 +27,22 @@ def test_edwards_trimp_zone_weighting() -> None:
 def test_aerobic_load_fallback_to_edwards() -> None:
     score = aerobic_load(duration_s=1800, avg_hr=150, resting_hr=None, max_hr=190)
     assert score > 0
+
+
+def test_edwards_trimp_from_zones_weighting() -> None:
+    score = edwards_trimp_from_zones(
+        hr_zone_1_s=600,  # 10 min * 1
+        hr_zone_2_s=600,  # 10 min * 2
+        hr_zone_3_s=0,
+        hr_zone_4_s=0,
+        hr_zone_5_s=0,
+    )
+    assert score == 30.0
+
+
+def test_edwards_trimp_from_zones_handles_missing() -> None:
+    score = edwards_trimp_from_zones(None, None, None, None, None)
+    assert score == 0.0
 
 
 def test_mechanical_load_sensitive_to_pace_and_distance() -> None:

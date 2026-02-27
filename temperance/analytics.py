@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from models import aerobic_load, mechanical_load
+from models import aerobic_load, edwards_trimp_from_zones, mechanical_load
 
 
 def compute_metrics(
@@ -62,6 +62,17 @@ def compute_metrics(
         axis=1,
     )
 
+    df["edwards_trimp"] = df.apply(
+        lambda r: edwards_trimp_from_zones(
+            hr_zone_1_s=float(r.get("hr_time_in_zone_1")) if pd.notna(r.get("hr_time_in_zone_1")) else 0.0,
+            hr_zone_2_s=float(r.get("hr_time_in_zone_2")) if pd.notna(r.get("hr_time_in_zone_2")) else 0.0,
+            hr_zone_3_s=float(r.get("hr_time_in_zone_3")) if pd.notna(r.get("hr_time_in_zone_3")) else 0.0,
+            hr_zone_4_s=float(r.get("hr_time_in_zone_4")) if pd.notna(r.get("hr_time_in_zone_4")) else 0.0,
+            hr_zone_5_s=float(r.get("hr_time_in_zone_5")) if pd.notna(r.get("hr_time_in_zone_5")) else 0.0,
+        ),
+        axis=1,
+    )
+
     return df
 
 
@@ -72,6 +83,7 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
                 "day_utc",
                 "distance_km",
                 "trimp_total",
+                "edwards_trimp_total",
                 "training_load_garmin",
                 "calories_active",
                 "calories_total",
@@ -94,6 +106,7 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
         .agg(
             distance_km=("distance_km", "sum"),
             trimp_total=("trimp", "sum"),
+            edwards_trimp_total=("edwards_trimp", "sum"),
             training_load_garmin=("training_load_garmin", "sum"),
             calories_active=("calories_active", "sum"),
             calories_total=("calories_total", "sum"),
@@ -179,6 +192,7 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
     agg_spec: dict[str, tuple[str, str]] = {
         "total_distance_km": ("distance_km", "sum"),
         "total_trimp": ("trimp", "sum"),
+        "total_edwards_trimp": ("edwards_trimp", "sum"),
         "total_mechanical_load": ("mechanical_load", "sum"),
         "runs": ("activity_id", "count"),
     }
@@ -224,6 +238,7 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "avg_hr",
         "avg_pace_display",
         "trimp",
+        "edwards_trimp",
         "mechanical_load",
     ]
 
