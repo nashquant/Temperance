@@ -268,7 +268,7 @@ def cached_filtered_views(
         )
         filtered_daily["fitness"] = ema(training_series, 42)
         filtered_daily["fatigue"] = ema(training_series, 7)
-        filtered_daily["form"] = filtered_daily["fitness"] - filtered_daily["fatigue"]
+        filtered_daily["overreach"] = filtered_daily["fatigue"] - filtered_daily["fitness"]
         rtss_series = (
             filtered_daily["rtss_total"].fillna(0.0)
             if "rtss_total" in filtered_daily.columns
@@ -276,7 +276,7 @@ def cached_filtered_views(
         )
         filtered_daily["rfitness"] = ema(rtss_series, 200)
         filtered_daily["rfatigue"] = ema(rtss_series, 7)
-        filtered_daily["rform"] = filtered_daily["rfitness"] - filtered_daily["rfatigue"]
+        filtered_daily["rform"] = filtered_daily["rfatigue"] - filtered_daily["rfitness"]
     return filtered_metrics, filtered_daily
 
 
@@ -483,10 +483,10 @@ if view == "Dashboard":
             "Garmin Training Load": "training_load_garmin",
             "Fitness (EWMA 42)": "fitness",
             "Fatigue (EWMA 7)": "fatigue",
-            "Form (Fitness - Fatigue)": "form",
+            "Overreach (Fatigue - Fitness)": "overreach",
             "Running Economy (EWMA 200, rTSS)": "rfitness",
             "Pounding (EWMA 7, rTSS)": "rfatigue",
-            "Injury Risk (Running Economy - Pounding)": "rform",
+            "Injury Risk (Pounding - Running Economy)": "rform",
             "rTSS": "rtss_total",
             "TSS": "tss_total",
             "TRIMP": "trimp_total",
@@ -820,6 +820,54 @@ if view == "Dashboard":
             st.altair_chart(rff_chart, use_container_width=True)
         else:
             st.caption("No Running Economy/Pounding data to plot.")
+
+        st.subheader("Weekly Overreach vs Injury Risk")
+        if not filtered_daily.empty and "overreach" in filtered_daily.columns and "rform" in filtered_daily.columns:
+            weekly_fr = filtered_daily[["day_utc", "overreach", "rform"]].copy()
+            weekly_fr["day"] = pd.to_datetime(weekly_fr["day_utc"], errors="coerce")
+            weekly_fr = weekly_fr.dropna(subset=["day"])
+            weekly_fr["overreach"] = pd.to_numeric(weekly_fr["overreach"], errors="coerce").fillna(0.0)
+            weekly_fr["rform"] = pd.to_numeric(weekly_fr["rform"], errors="coerce").fillna(0.0)
+            weekly_fr["week_start"] = weekly_fr["day"].dt.to_period("W-SUN").dt.start_time
+            weekly_fr = (
+                weekly_fr.groupby("week_start", as_index=False)[["overreach", "rform"]]
+                .mean()
+                .sort_values("week_start")
+            )
+            weekly_fr_long = weekly_fr.melt(
+                id_vars=["week_start"],
+                value_vars=["overreach", "rform"],
+                var_name="series",
+                value_name="value",
+            )
+            weekly_fr_long["series"] = weekly_fr_long["series"].replace(
+                {"overreach": "Overreach", "rform": "Injury Risk"}
+            )
+            fr_chart = (
+                alt.Chart(weekly_fr_long)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("week_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                    y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                    color=alt.Color(
+                        "series:N",
+                        legend=alt.Legend(orient="bottom", direction="horizontal"),
+                        scale=alt.Scale(domain=["Overreach", "Injury Risk"], range=["#60a5fa", "#ef4444"]),
+                    ),
+                    tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                )
+            )
+            if legend_toggle:
+                fr_sel = alt.selection_point(fields=["series"], bind="legend")
+                fr_chart = fr_chart.encode(
+                    opacity=alt.condition(fr_sel, alt.value(1.0), alt.value(0.08))
+                ).add_params(fr_sel)
+            fr_chart = alt.layer(build_injury_layer(), fr_chart)
+            if enable_zoom:
+                fr_chart = fr_chart.interactive()
+            st.altair_chart(fr_chart, use_container_width=True)
+        else:
+            st.caption("No Overreach/Injury Risk data to plot.")
 
         st.subheader("Garmin Training Load vs. Total Calories")
         if (
