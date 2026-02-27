@@ -362,7 +362,6 @@ def _download_fit_if_missing(client: Any, activity_id: str, raw_root: Path | Non
     attempts: list[Callable[[], Any]] = []
     if hasattr(client, "download_activity"):
         attempts.append(lambda: client.download_activity(int(activity_id), dl_fmt="fit"))
-        attempts.append(lambda: client.download_activity(int(activity_id), dl_fmt="original"))
     if hasattr(client, "download_original_activity"):
         attempts.append(lambda: client.download_original_activity(int(activity_id)))
 
