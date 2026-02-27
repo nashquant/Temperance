@@ -389,6 +389,65 @@ if view == "Dashboard":
         )
         weekly = weekly_summary(filtered_metrics)
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
+
+        if "total_mechanical_load" in weekly.columns and not weekly.empty:
+            weekly_ml = weekly[["week_start", "total_mechanical_load"]].copy().sort_values("week_start")
+            weekly_ml["ema10"] = ema(weekly_ml["total_mechanical_load"].fillna(0.0), 10)
+            weekly_ml_plot = weekly_ml.melt(
+                id_vars=["week_start"],
+                value_vars=["total_mechanical_load", "ema10"],
+                var_name="series",
+                value_name="value",
+            )
+            st.subheader("Weekly Mechanical Load vs EMA10")
+            weekly_ml_chart = (
+                alt.Chart(weekly_ml_plot)
+                .mark_line(point=True)
+                .encode(
+                    x="week_start:T",
+                    y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                    color="series:N",
+                    tooltip=["week_start", "series", alt.Tooltip("value:Q", format=".0f")],
+                )
+            )
+            if legend_toggle:
+                weekly_ml_sel = alt.selection_point(fields=["series"], bind="legend")
+                weekly_ml_chart = weekly_ml_chart.encode(
+                    opacity=alt.condition(weekly_ml_sel, alt.value(1.0), alt.value(0.08))
+                ).add_params(weekly_ml_sel)
+            if enable_zoom:
+                weekly_ml_chart = weekly_ml_chart.interactive()
+            st.altair_chart(weekly_ml_chart, use_container_width=True)
+
+        if "total_edwards_trimp" in weekly.columns and not weekly.empty:
+            weekly_ed = weekly[["week_start", "total_edwards_trimp"]].copy().sort_values("week_start")
+            weekly_ed["ema10"] = ema(weekly_ed["total_edwards_trimp"].fillna(0.0), 10)
+            weekly_ed_plot = weekly_ed.melt(
+                id_vars=["week_start"],
+                value_vars=["total_edwards_trimp", "ema10"],
+                var_name="series",
+                value_name="value",
+            )
+            st.subheader("Weekly Edwards TRIMP vs EMA10")
+            weekly_ed_chart = (
+                alt.Chart(weekly_ed_plot)
+                .mark_line(point=True)
+                .encode(
+                    x="week_start:T",
+                    y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                    color="series:N",
+                    tooltip=["week_start", "series", alt.Tooltip("value:Q", format=".0f")],
+                )
+            )
+            if legend_toggle:
+                weekly_ed_sel = alt.selection_point(fields=["series"], bind="legend")
+                weekly_ed_chart = weekly_ed_chart.encode(
+                    opacity=alt.condition(weekly_ed_sel, alt.value(1.0), alt.value(0.08))
+                ).add_params(weekly_ed_sel)
+            if enable_zoom:
+                weekly_ed_chart = weekly_ed_chart.interactive()
+            st.altair_chart(weekly_ed_chart, use_container_width=True)
+
         st.subheader("Weekly Edwards TRIMP vs Garmin Training Load vs Mechanical Load")
         if (
             "total_garmin_training_load" in weekly.columns
