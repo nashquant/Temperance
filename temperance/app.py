@@ -61,7 +61,7 @@ DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 INJURY_WINDOWS = [
     {"label": "Injury 1", "start": "2025-06-02", "end": "2025-07-15"},
-    {"label": "Injury 2", "start": "2026-01-03", "end": "2026-01-20"},
+    {"label": "Injury 2", "start": "2025-12-28", "end": "2026-01-20"},
 ]
 
 cfg = load_config()
