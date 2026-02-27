@@ -72,3 +72,52 @@ def test_mechanical_load_only_for_running_like() -> None:
     bike_ml = out.loc[out["activity_id"] == "2", "mechanical_load"].iloc[0]
     assert pd.notna(run_ml)
     assert pd.isna(bike_ml)
+
+
+def test_compute_metrics_includes_rtss_and_tss() -> None:
+    runs_df = pd.DataFrame(
+        [
+            {
+                "activity_id": "1",
+                "start_time_utc": "2026-01-01T10:00:00Z",
+                "sport_type": "running",
+                "distance_m": 5000.0,
+                "duration_s": 1500.0,
+                "avg_pace_s_per_km": 300.0,
+                "avg_hr": 170.0,
+            }
+        ]
+    )
+    out = compute_metrics(runs_df, resting_hr=45.0, max_hr=200.0)
+    assert pd.notna(out.loc[0, "rtss"])
+    assert pd.notna(out.loc[0, "tss"])
+
+
+def test_rtss_only_for_running_or_treadmill() -> None:
+    runs_df = pd.DataFrame(
+        [
+            {
+                "activity_id": "run",
+                "start_time_utc": "2026-01-01T10:00:00Z",
+                "sport_type": "running",
+                "distance_m": 5000.0,
+                "duration_s": 1500.0,
+                "avg_pace_s_per_km": 300.0,
+                "avg_hr": 160.0,
+            },
+            {
+                "activity_id": "bike",
+                "start_time_utc": "2026-01-01T12:00:00Z",
+                "sport_type": "cycling",
+                "distance_m": 20000.0,
+                "duration_s": 3600.0,
+                "avg_pace_s_per_km": 180.0,
+                "avg_hr": 150.0,
+            },
+        ]
+    )
+    out = compute_metrics(runs_df, resting_hr=45.0, max_hr=200.0)
+    run_rtss = out.loc[out["activity_id"] == "run", "rtss"].iloc[0]
+    bike_rtss = out.loc[out["activity_id"] == "bike", "rtss"].iloc[0]
+    assert pd.notna(run_rtss)
+    assert pd.isna(bike_rtss)

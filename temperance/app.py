@@ -328,6 +328,8 @@ if view == "Dashboard":
             "Fitness (EWMA 42)": "fitness",
             "Fatigue (EWMA 7)": "fatigue",
             "Form (Fitness - Fatigue)": "form",
+            "rTSS": "rtss_total",
+            "TSS": "tss_total",
             "TRIMP": "trimp_total",
             "Mechanical Load": "mechanical_load_total",
             "Edwards TRIMP": "edwards_trimp_total",
@@ -526,6 +528,8 @@ if view == "Dashboard":
                 "duration_min": st.column_config.NumberColumn(format="%.1f min"),
                 "avg_pace_display": st.column_config.TextColumn("Pace"),
                 "trimp": st.column_config.NumberColumn(format="%.1f"),
+                "rtss": st.column_config.NumberColumn("rTSS", format="%.1f"),
+                "tss": st.column_config.NumberColumn("TSS", format="%.1f"),
                 "edwards_trimp": st.column_config.NumberColumn(format="%.1f"),
                 "mechanical_load": st.column_config.NumberColumn(format="%.1f"),
                 "training_load_garmin": st.column_config.NumberColumn(format="%.1f"),
@@ -537,14 +541,15 @@ if view == "Dashboard":
 
         if "total_mechanical_load" in weekly.columns and not weekly.empty:
             weekly_ml = weekly[["week_start", "total_mechanical_load"]].copy().sort_values("week_start")
+            weekly_ml["ema3"] = ema(weekly_ml["total_mechanical_load"].fillna(0.0), 3)
             weekly_ml["ema10"] = ema(weekly_ml["total_mechanical_load"].fillna(0.0), 10)
             weekly_ml_plot = weekly_ml.melt(
                 id_vars=["week_start"],
-                value_vars=["total_mechanical_load", "ema10"],
+                value_vars=["total_mechanical_load", "ema3", "ema10"],
                 var_name="series",
                 value_name="value",
             )
-            st.subheader("Weekly Mechanical Load vs EMA10")
+            st.subheader("Weekly Mechanical Load")
             weekly_ml_chart = (
                 alt.Chart(weekly_ml_plot)
                 .mark_line(point=True)
@@ -565,18 +570,17 @@ if view == "Dashboard":
                 weekly_ml_chart = weekly_ml_chart.interactive()
             st.altair_chart(weekly_ml_chart, use_container_width=True)
 
-        if "total_edwards_trimp" in weekly.columns and not weekly.empty:
-            weekly_ed = weekly[["week_start", "total_edwards_trimp"]].copy().sort_values("week_start")
-            weekly_ed["ema10"] = ema(weekly_ed["total_edwards_trimp"].fillna(0.0), 10)
-            weekly_ed_plot = weekly_ed.melt(
+        if "total_tss" in weekly.columns and "total_rtss" in weekly.columns and not weekly.empty:
+            weekly_tss = weekly[["week_start", "total_tss", "total_rtss"]].copy().sort_values("week_start")
+            weekly_tss_plot = weekly_tss.melt(
                 id_vars=["week_start"],
-                value_vars=["total_edwards_trimp", "ema10"],
+                value_vars=["total_tss", "total_rtss"],
                 var_name="series",
                 value_name="value",
             )
-            st.subheader("Weekly Edwards TRIMP vs EMA10")
-            weekly_ed_chart = (
-                alt.Chart(weekly_ed_plot)
+            st.subheader("Weekly TSS vs rTSS")
+            weekly_tss_chart = (
+                alt.Chart(weekly_tss_plot)
                 .mark_line(point=True)
                 .encode(
                     x="week_start:T",
@@ -586,14 +590,14 @@ if view == "Dashboard":
                 )
             )
             if legend_toggle:
-                weekly_ed_sel = alt.selection_point(fields=["series"], bind="legend")
-                weekly_ed_chart = weekly_ed_chart.encode(
-                    opacity=alt.condition(weekly_ed_sel, alt.value(1.0), alt.value(0.08))
-                ).add_params(weekly_ed_sel)
-            weekly_ed_chart = alt.layer(build_injury_layer(), weekly_ed_chart)
+                weekly_tss_sel = alt.selection_point(fields=["series"], bind="legend")
+                weekly_tss_chart = weekly_tss_chart.encode(
+                    opacity=alt.condition(weekly_tss_sel, alt.value(1.0), alt.value(0.08))
+                ).add_params(weekly_tss_sel)
+            weekly_tss_chart = alt.layer(build_injury_layer(), weekly_tss_chart)
             if enable_zoom:
-                weekly_ed_chart = weekly_ed_chart.interactive()
-            st.altair_chart(weekly_ed_chart, use_container_width=True)
+                weekly_tss_chart = weekly_tss_chart.interactive()
+            st.altair_chart(weekly_tss_chart, use_container_width=True)
 
         st.subheader("Weekly Edwards TRIMP vs Garmin Training Load vs Mechanical Load")
         if (

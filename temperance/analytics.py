@@ -6,6 +6,12 @@ import re
 import pandas as pd
 
 from models import aerobic_load, edwards_trimp_from_zones, mechanical_load
+from tss import (
+    ActivityTSSInput,
+    ConstantLTHRProvider,
+    ConstantThresholdPaceProvider,
+    compute_tss_bundle,
+)
 
 
 def compute_metrics(
@@ -13,6 +19,8 @@ def compute_metrics(
     resting_hr: float | None,
     max_hr: float | None,
     sex: str = "male",
+    threshold_pace_sec_per_km: float = 300.0,
+    lthr_bpm: float = 178.0,
 ) -> pd.DataFrame:
     if runs_df.empty:
         return runs_df
@@ -106,6 +114,29 @@ def compute_metrics(
         axis=1,
     )
 
+    pace_provider = ConstantThresholdPaceProvider(threshold_pace_sec_per_km=threshold_pace_sec_per_km)
+    lthr_provider = ConstantLTHRProvider(lthr_bpm=lthr_bpm)
+    df["rtss"] = pd.NA
+    df["tss"] = pd.NA
+
+    for idx, row in df.iterrows():
+        is_run_like = bool(running_idx.loc[idx]) if idx in running_idx.index else False
+        activity = ActivityTSSInput(
+            activity_duration_seconds=int(float(row.get("duration_s") or 0)),
+            activity_avg_pace_sec_per_km=(
+                float(row.get("avg_pace_s_per_km"))
+                if is_run_like and pd.notna(row.get("avg_pace_s_per_km"))
+                else None
+            ),
+            activity_avg_hr_bpm=float(row.get("avg_hr")) if pd.notna(row.get("avg_hr")) else None,
+            activity_start_datetime=row["start_time_utc"].to_pydatetime(),
+        )
+        bundle = compute_tss_bundle(activity, pace_provider=pace_provider, lthr_provider=lthr_provider)
+        if "rTSS" in bundle:
+            df.at[idx, "rtss"] = bundle["rTSS"]
+        if "hrTSS" in bundle:
+            df.at[idx, "tss"] = bundle["hrTSS"]
+
     return df
 
 
@@ -118,6 +149,8 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
                 "trimp_total",
                 "mechanical_load_total",
                 "edwards_trimp_total",
+                "rtss_total",
+                "tss_total",
                 "training_load_garmin",
                 "calories_active",
                 "calories_total",
@@ -142,6 +175,8 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
             trimp_total=("trimp", "sum"),
             mechanical_load_total=("mechanical_load", "sum"),
             edwards_trimp_total=("edwards_trimp", "sum"),
+            rtss_total=("rtss", "sum"),
+            tss_total=("tss", "sum"),
             training_load_garmin=("training_load_garmin", "sum"),
             calories_active=("calories_active", "sum"),
             calories_total=("calories_total", "sum"),
@@ -253,6 +288,8 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
         "total_distance_km": ("distance_km", "sum"),
         "total_trimp": ("trimp", "sum"),
         "total_edwards_trimp": ("edwards_trimp", "sum"),
+        "total_rtss": ("rtss", "sum"),
+        "total_tss": ("tss", "sum"),
         "total_mechanical_load": ("mechanical_load", "sum"),
         "runs": ("activity_id", "count"),
     }
