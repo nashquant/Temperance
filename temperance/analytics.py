@@ -74,6 +74,11 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
                 "calories_total",
                 "intensity_minutes_vigorous",
                 "intensity_minutes_moderate",
+                "hr_time_in_zone_1",
+                "hr_time_in_zone_2",
+                "hr_time_in_zone_3",
+                "hr_time_in_zone_4",
+                "hr_time_in_zone_5",
             ]
         )
 
@@ -89,6 +94,11 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
             calories_total=("calories_total", "sum"),
             intensity_minutes_vigorous=("intensity_minutes_vigorous", "sum"),
             intensity_minutes_moderate=("intensity_minutes_moderate", "sum"),
+            hr_time_in_zone_1=("hr_time_in_zone_1", "sum"),
+            hr_time_in_zone_2=("hr_time_in_zone_2", "sum"),
+            hr_time_in_zone_3=("hr_time_in_zone_3", "sum"),
+            hr_time_in_zone_4=("hr_time_in_zone_4", "sum"),
+            hr_time_in_zone_5=("hr_time_in_zone_5", "sum"),
         )
         .sort_values("day_utc")
     )
@@ -182,7 +192,22 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
     table["date"] = table["start_time_utc"].dt.date
     table["distance_km"] = table["distance_m"] / 1000.0
     table["duration_min"] = table["duration_s"] / 60.0
-    table["avg_pace_min_per_km"] = table["avg_pace_s_per_km"] / 60.0
+
+    def _pace_str(pace_s_per_km: float | None) -> str:
+        if pace_s_per_km is None or pd.isna(pace_s_per_km):
+            return "-"
+        try:
+            pace_value = float(pace_s_per_km)
+        except (TypeError, ValueError):
+            return "-"
+        if pace_value <= 0:
+            return "-"
+        total_seconds = int(round(pace_value))
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        return f"{minutes}:{seconds:02d}/km"
+
+    table["avg_pace_display"] = table["avg_pace_s_per_km"].apply(_pace_str)
 
     cols = [
         "activity_id",
@@ -190,7 +215,7 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "distance_km",
         "duration_min",
         "avg_hr",
-        "avg_pace_min_per_km",
+        "avg_pace_display",
         "trimp",
         "mechanical_load",
     ]
