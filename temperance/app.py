@@ -261,7 +261,11 @@ def cached_filtered_views(
         complete_daily = pd.DataFrame({"day_utc": daily_index.strftime("%Y-%m-%d")})
         filtered_daily = complete_daily.merge(filtered_daily, on="day_utc", how="left")
         # Fitness/Fatigue are always computed on continuous daily data with missing days as zero load.
-        training_series = filtered_daily["training_load_garmin"].fillna(0.0)
+        training_series = (
+            filtered_daily["tss_total"].fillna(0.0)
+            if "tss_total" in filtered_daily.columns
+            else filtered_daily["training_load_garmin"].fillna(0.0)
+        )
         filtered_daily["fitness"] = ema(training_series, 42)
         filtered_daily["fatigue"] = ema(training_series, 7)
         filtered_daily["form"] = filtered_daily["fitness"] - filtered_daily["fatigue"]
@@ -710,47 +714,121 @@ if view == "Dashboard":
                 weekly_tss_chart = weekly_tss_chart.interactive()
             st.altair_chart(weekly_tss_chart, use_container_width=True)
 
-        st.subheader("Garmin Training Load vs. Total Calories")
-        if "total_garmin_training_load" in weekly.columns and "total_calories" in weekly.columns:
-            weekly_gl = weekly[["week_start", "total_garmin_training_load"]].copy()
-            weekly_cal = weekly[["week_start", "total_calories"]].copy()
-
-            left_chart = (
-                alt.Chart(weekly_gl)
-                .mark_line(point=True, color="#60a5fa")
+        st.subheader("Weekly Fitness vs Fatigue")
+        if not filtered_daily.empty and "fitness" in filtered_daily.columns and "fatigue" in filtered_daily.columns:
+            weekly_ff = filtered_daily[["day_utc", "fitness", "fatigue"]].copy()
+            weekly_ff["day"] = pd.to_datetime(weekly_ff["day_utc"], errors="coerce")
+            weekly_ff = weekly_ff.dropna(subset=["day"])
+            weekly_ff["fitness"] = pd.to_numeric(weekly_ff["fitness"], errors="coerce").fillna(0.0)
+            weekly_ff["fatigue"] = pd.to_numeric(weekly_ff["fatigue"], errors="coerce").fillna(0.0)
+            weekly_ff["week_start"] = weekly_ff["day"].dt.to_period("W-SUN").dt.start_time
+            weekly_ff = (
+                weekly_ff.groupby("week_start", as_index=False)[["fitness", "fatigue"]]
+                .mean()
+                .sort_values("week_start")
+            )
+            weekly_ff_long = weekly_ff.melt(
+                id_vars=["week_start"],
+                value_vars=["fitness", "fatigue"],
+                var_name="series",
+                value_name="value",
+            )
+            weekly_ff_long["series"] = weekly_ff_long["series"].replace(
+                {"fitness": "Fitness", "fatigue": "Fatigue"}
+            )
+            ff_chart = (
+                alt.Chart(weekly_ff_long)
+                .mark_line(point=True)
                 .encode(
-                    x=alt.X("week_start:T", axis=alt.Axis(title="")),
-                    y=alt.Y(
-                        "total_garmin_training_load:Q",
-                        axis=alt.Axis(format=".0f", title="Garmin Training Load"),
+                    x=alt.X("week_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                    y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                    color=alt.Color(
+                        "series:N",
+                        legend=alt.Legend(orient="bottom", direction="horizontal"),
+                        scale=alt.Scale(domain=["Fitness", "Fatigue"], range=["#60a5fa", "#f59e0b"]),
                     ),
-                    tooltip=[
-                        "week_start:T",
-                        alt.Tooltip("total_garmin_training_load:Q", title="Garmin Training Load", format=".0f"),
-                    ],
+                    tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                 )
             )
-
-            right_chart = (
-                alt.Chart(weekly_cal)
-                .mark_line(point=True, color="#f59e0b")
-                .encode(
-                    x=alt.X("week_start:T", axis=alt.Axis(title="")),
-                    y=alt.Y(
-                        "total_calories:Q",
-                        axis=alt.Axis(format=".0f", title="Total Calories", orient="right"),
-                    ),
-                    tooltip=[
-                        "week_start:T",
-                        alt.Tooltip("total_calories:Q", title="Total Calories", format=".0f"),
-                    ],
-                )
-            )
-
-            weekly_chart = alt.layer(build_injury_layer(), left_chart, right_chart).resolve_scale(y="independent")
+            if legend_toggle:
+                ff_sel = alt.selection_point(fields=["series"], bind="legend")
+                ff_chart = ff_chart.encode(
+                    opacity=alt.condition(ff_sel, alt.value(1.0), alt.value(0.08))
+                ).add_params(ff_sel)
+            ff_chart = alt.layer(build_injury_layer(), ff_chart)
             if enable_zoom:
-                weekly_chart = weekly_chart.interactive()
-            st.altair_chart(weekly_chart, use_container_width=True)
+                ff_chart = ff_chart.interactive()
+            st.altair_chart(ff_chart, use_container_width=True)
+        else:
+            st.caption("No fitness/fatigue data to plot.")
+
+        st.subheader("Garmin Training Load vs. Total Calories")
+        if (
+            "total_garmin_training_load" in weekly.columns
+            and "total_calories" in weekly.columns
+            and not weekly.empty
+        ):
+            weekly_gc = weekly[["week_start", "total_garmin_training_load", "total_calories"]].copy()
+            weekly_gc["week_start"] = pd.to_datetime(weekly_gc["week_start"], errors="coerce")
+            weekly_gc["total_garmin_training_load"] = pd.to_numeric(
+                weekly_gc["total_garmin_training_load"], errors="coerce"
+            ).fillna(0.0)
+            weekly_gc["total_calories"] = pd.to_numeric(
+                weekly_gc["total_calories"], errors="coerce"
+            ).fillna(0.0)
+            weekly_gc = weekly_gc.dropna(subset=["week_start"]).sort_values("week_start")
+
+            if weekly_gc.empty:
+                st.caption("No weekly Garmin training load/calories data to plot.")
+            else:
+                weekly_gc_long = pd.DataFrame(
+                    {
+                        "week_start": pd.concat([weekly_gc["week_start"], weekly_gc["week_start"]], ignore_index=True),
+                        "series": ["Garmin Training Load"] * len(weekly_gc) + ["Total Calories"] * len(weekly_gc),
+                        "value": pd.concat(
+                            [weekly_gc["total_garmin_training_load"], weekly_gc["total_calories"]],
+                            ignore_index=True,
+                        ),
+                    }
+                )
+
+                base = alt.Chart(weekly_gc_long).encode(
+                    x=alt.X(
+                        "week_start:T",
+                        axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
+                    ),
+                    color=alt.Color(
+                        "series:N",
+                        legend=alt.Legend(orient="bottom", direction="horizontal"),
+                        scale=alt.Scale(
+                            domain=["Garmin Training Load", "Total Calories"],
+                            range=["#60a5fa", "#f59e0b"],
+                        ),
+                    ),
+                    tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                )
+                legend_sel = alt.selection_point(fields=["series"], bind="legend") if legend_toggle else None
+                left_chart = base.transform_filter(alt.datum.series == "Garmin Training Load").mark_line(point=True).encode(
+                    y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Garmin Training Load"))
+                )
+                right_chart = base.transform_filter(alt.datum.series == "Total Calories").mark_line(point=True).encode(
+                    y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Total Calories", orient="right"))
+                )
+                if legend_sel is not None:
+                    left_chart = left_chart.encode(
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
+                    )
+                    right_chart = right_chart.encode(
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
+                    )
+                weekly_chart = alt.layer(left_chart, right_chart).resolve_scale(y="independent")
+                if legend_sel is not None:
+                    weekly_chart = weekly_chart.add_params(legend_sel)
+                if enable_zoom:
+                    weekly_chart = weekly_chart.interactive()
+                st.altair_chart(weekly_chart, use_container_width=True)
+        else:
+            st.caption("No weekly Garmin training load/calories data to plot.")
 
 if view == "Activity Detail":
     st.divider()
