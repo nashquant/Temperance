@@ -225,7 +225,7 @@ if view == "Dashboard":
                 selected_labels = [st.selectbox("Metric", metric_labels, index=default_index)]
 
             sma_windows = st.text_input("SMA windows (days, comma-separated)", value="")
-            ema_windows = st.text_input("EMA windows (days, comma-separated)", value="20,100")
+            ema_windows = st.text_input("EMA windows (days, comma-separated)", value="3,10")
             sma_ns, sma_pairs = parse_ma_windows(sma_windows)
             ema_ns, ema_pairs = parse_ma_windows(ema_windows)
             if ema_ns:
