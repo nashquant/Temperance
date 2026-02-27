@@ -187,6 +187,7 @@ if view == "Dashboard":
             "Fatigue (EWMA 7)": "fatigue",
             "Form (Fitness - Fatigue)": "form",
             "TRIMP": "trimp_total",
+            "Mechanical Load": "mechanical_load_total",
             "Edwards TRIMP": "edwards_trimp_total",
             "Calories Active": "calories_active",
             "Calories Total": "calories_total",

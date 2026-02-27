@@ -87,6 +87,7 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
                 "day_utc",
                 "distance_km",
                 "trimp_total",
+                "mechanical_load_total",
                 "edwards_trimp_total",
                 "training_load_garmin",
                 "calories_active",
@@ -110,6 +111,7 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
         .agg(
             distance_km=("distance_km", "sum"),
             trimp_total=("trimp", "sum"),
+            mechanical_load_total=("mechanical_load", "sum"),
             edwards_trimp_total=("edwards_trimp", "sum"),
             training_load_garmin=("training_load_garmin", "sum"),
             calories_active=("calories_active", "sum"),
