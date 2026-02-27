@@ -17,7 +17,6 @@ except Exception:  # pragma: no cover
 @dataclass
 class GarminExtractResult:
     activities: list[dict[str, Any]]
-    activity_metrics: list[dict[str, Any]]
     activity_details: list[dict[str, Any]]
     activity_records: list[dict[str, Any]]
     sleep_daily: list[dict[str, Any]]
@@ -217,8 +216,6 @@ def _normalize_activity(
         "hr_time_in_zone_3": _to_float(a.get("hrTimeInZone_3")),
         "hr_time_in_zone_4": _to_float(a.get("hrTimeInZone_4")),
         "hr_time_in_zone_5": _to_float(a.get("hrTimeInZone_5")),
-        "moderate_intensity_minutes": _to_float(a.get("moderateIntensityMinutes")),
-        "vigorous_intensity_minutes": _to_float(a.get("vigorousIntensityMinutes")),
         "difference_body_battery": _to_float(a.get("differenceBodyBattery")),
         "bmr_calories": _to_float(a.get("bmrCalories")),
         "is_pr": _to_float(a.get("pr")),
@@ -233,49 +230,6 @@ def _normalize_activity(
         "trimp": None,
         "source": source,
         "raw": a,
-    }
-
-
-def _extract_activity_metrics(
-    activity_id: str,
-    summary: dict[str, Any],
-    details_bundle: dict[str, Any] | None,
-) -> dict[str, Any]:
-    combined = {"summary": summary, "details": details_bundle or {}}
-
-    training_effect_label = _to_str(
-        summary.get("trainingEffectLabel")
-        or _deep_first(combined, {"trainingEffectLabel", "benefit", "trainingEffect"})
-    )
-
-    return {
-        "activity_id": activity_id,
-        "garmin_training_load": _to_float(
-            summary.get("activityTrainingLoad")
-            or summary.get("trainingLoad")
-            or _deep_first(combined, {"activityTrainingLoad", "trainingLoad", "exerciseTrainingLoad"})
-        ),
-        "garmin_aerobic_te": _to_float(
-            summary.get("aerobicTrainingEffect")
-            or _deep_first(combined, {"aerobicTrainingEffect", "aerobicTrainingEffectMessage"})
-        ),
-        "garmin_anaerobic_te": _to_float(
-            summary.get("anaerobicTrainingEffect")
-            or _deep_first(combined, {"anaerobicTrainingEffect", "anaerobicTrainingEffectMessage"})
-        ),
-        "garmin_vo2max": _to_float(
-            summary.get("vO2MaxValue")
-            or _deep_first(combined, {"vO2MaxValue", "vo2Max", "vo2max"})
-        ),
-        "garmin_calories": _to_float(summary.get("calories") or _deep_first(combined, {"calories"})),
-        "garmin_avg_power": _to_float(summary.get("averagePower") or _deep_first(combined, {"avgPower", "averagePower"})),
-        "garmin_norm_power": _to_float(summary.get("normPower") or _deep_first(combined, {"normPower", "normalizedPower"})),
-        "garmin_training_effect_label": training_effect_label,
-        "raw": {
-            "summary_keys": sorted(summary.keys()),
-            "summary": summary,
-            "detail_keys": sorted((details_bundle or {}).keys()),
-        },
     }
 
 
@@ -564,7 +518,6 @@ def fetch_garmin_comprehensive(
 
     errors: list[str] = []
     activities: list[dict[str, Any]] = []
-    activity_metrics: list[dict[str, Any]] = []
     activity_details: list[dict[str, Any]] = []
     activity_records: list[dict[str, Any]] = []
 
@@ -642,14 +595,6 @@ def fetch_garmin_comprehensive(
 
             activities.append(normalized)
 
-            activity_metrics.append(
-                _extract_activity_metrics(
-                    activity_id=activity_id,
-                    summary=row,
-                    details_bundle=details_bundle,
-                )
-            )
-
         offset += page_size
         if not keep_going:
             break
@@ -658,7 +603,6 @@ def fetch_garmin_comprehensive(
 
     # Deduplicate by activity_id in case APIs return overlapping windows.
     activities = list({row["activity_id"]: row for row in activities}.values())
-    activity_metrics = list({row["activity_id"]: row for row in activity_metrics}.values())
     activity_details = list({row["activity_id"]: row for row in activity_details}.values())
     activity_records = list(
         {
@@ -744,7 +688,6 @@ def fetch_garmin_comprehensive(
 
     return GarminExtractResult(
         activities=activities,
-        activity_metrics=activity_metrics,
         activity_details=activity_details,
         activity_records=activity_records,
         sleep_daily=sleep_daily,
@@ -861,8 +804,6 @@ def _parse_tcx(path: Path) -> dict[str, Any] | None:
         "hr_time_in_zone_3": None,
         "hr_time_in_zone_4": None,
         "hr_time_in_zone_5": None,
-        "moderate_intensity_minutes": None,
-        "vigorous_intensity_minutes": None,
         "difference_body_battery": None,
         "bmr_calories": None,
         "is_pr": None,
@@ -939,8 +880,6 @@ def _parse_fit(path: Path) -> dict[str, Any] | None:
         "hr_time_in_zone_3": None,
         "hr_time_in_zone_4": None,
         "hr_time_in_zone_5": None,
-        "moderate_intensity_minutes": None,
-        "vigorous_intensity_minutes": None,
         "difference_body_battery": None,
         "bmr_calories": None,
         "is_pr": None,
@@ -961,7 +900,6 @@ def _parse_fit(path: Path) -> dict[str, Any] | None:
 def dump_extract_to_json(path: Path, extract: GarminExtractResult) -> None:
     payload = {
         "activities": extract.activities,
-        "activity_metrics": extract.activity_metrics,
         "activity_details": extract.activity_details,
         "activity_records": extract.activity_records,
         "sleep_daily": extract.sleep_daily,

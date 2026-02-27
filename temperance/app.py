@@ -36,7 +36,6 @@ from db import (
     upsert_activity_details,
     upsert_activity_records,
     upsert_activity_trimp,
-    upsert_activity_metrics,
     upsert_daily_summary,
     upsert_sleep_daily,
     upsert_wellness_daily,
@@ -127,7 +126,7 @@ else:
 counts = get_table_counts(cfg.db_path)
 st.caption(
     "Local records | "
-    f"activities={counts['activities']}, metrics={counts['activity_metrics']}, details={counts['activity_details']}, "
+    f"activities={counts['activities']}, details={counts['activity_details']}, "
     f"records={counts['activity_records']}, sleep={counts['sleep_daily']}, wellness={counts['wellness_daily']}, "
     f"daily_summary={counts['daily_summary']}"
 )
@@ -237,7 +236,6 @@ if run_extract:
                 )
 
             n_a = upsert_activities(cfg.db_path, extract.activities)
-            n_m = upsert_activity_metrics(cfg.db_path, extract.activity_metrics)
             n_d = upsert_activity_details(cfg.db_path, extract.activity_details)
             n_r = upsert_activity_records(cfg.db_path, extract.activity_records)
             n_s = upsert_sleep_daily(cfg.db_path, extract.sleep_daily)
@@ -248,7 +246,6 @@ if run_extract:
 
             msg = (
                 f"activities={len(extract.activities)} (db_changes={n_a}), "
-                f"metrics={len(extract.activity_metrics)} (db_changes={n_m}), "
                 f"details={len(extract.activity_details)} (db_changes={n_d}), "
                 f"records={len(extract.activity_records)} (db_changes={n_r}), "
                 f"sleep={len(extract.sleep_daily)} (db_changes={n_s}), "
@@ -536,16 +533,11 @@ if view == "Activity Detail":
                 "hr_time_in_zone_3": row.get("hr_time_in_zone_3"),
                 "hr_time_in_zone_4": row.get("hr_time_in_zone_4"),
                 "hr_time_in_zone_5": row.get("hr_time_in_zone_5"),
-                "moderate_intensity_minutes": row.get("moderate_intensity_minutes"),
-                "vigorous_intensity_minutes": row.get("vigorous_intensity_minutes"),
                 "difference_body_battery": row.get("difference_body_battery"),
                 "bmr_calories": row.get("bmr_calories"),
                 "is_pr": row.get("is_pr"),
                 "split_summaries_json": row.get("split_summaries_json"),
                 "source": row["source"],
-                "garmin_aerobic_te": row.get("garmin_aerobic_te"),
-                "garmin_anaerobic_te": row.get("garmin_anaerobic_te"),
-                "garmin_vo2max": row.get("garmin_vo2max"),
             }
         )
 

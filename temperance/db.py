@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 
@@ -50,8 +50,6 @@ CREATE TABLE IF NOT EXISTS activities (
     hr_time_in_zone_3 REAL,
     hr_time_in_zone_4 REAL,
     hr_time_in_zone_5 REAL,
-    moderate_intensity_minutes REAL,
-    vigorous_intensity_minutes REAL,
     difference_body_battery REAL,
     bmr_calories REAL,
     is_pr REAL,
@@ -68,21 +66,6 @@ CREATE TABLE IF NOT EXISTS activities (
     raw_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS activity_metrics (
-    activity_id TEXT PRIMARY KEY,
-    garmin_training_load REAL,
-    garmin_aerobic_te REAL,
-    garmin_anaerobic_te REAL,
-    garmin_vo2max REAL,
-    garmin_calories REAL,
-    garmin_avg_power REAL,
-    garmin_norm_power REAL,
-    garmin_training_effect_label TEXT,
-    raw_json TEXT,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
 );
 
 CREATE TABLE IF NOT EXISTS activity_details (
@@ -145,6 +128,17 @@ CREATE TABLE IF NOT EXISTS wellness_daily (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS daily_summary (
+    day_utc TEXT PRIMARY KEY,
+    trimp_total REAL,
+    training_load_garmin REAL,
+    calories_active REAL,
+    calories_total REAL,
+    intensity_minutes_vigorous REAL,
+    intensity_minutes_moderate REAL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -165,18 +159,6 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS daily_summary (
-    day_utc TEXT PRIMARY KEY,
-    activities_count INTEGER,
-    trimp_total REAL,
-    training_load_garmin REAL,
-    calories_active REAL,
-    calories_total REAL,
-    intensity_minutes_vigorous REAL,
-    intensity_minutes_moderate REAL,
-    updated_at TEXT NOT NULL
-);
-
 CREATE INDEX IF NOT EXISTS idx_activities_start_time ON activities(start_time_utc);
 CREATE INDEX IF NOT EXISTS idx_activity_records_activity_time ON activity_records(activity_id, record_time_utc);
 CREATE INDEX IF NOT EXISTS idx_daily_summary_day ON daily_summary(day_utc);
@@ -190,35 +172,8 @@ def get_conn(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
-        (table,),
-    ).fetchone()
-    return bool(row)
-
-
-def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
-    if not _table_exists(conn, table):
-        return False
-    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-    return any(str(r["name"]) == column for r in rows)
-
-
-def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, col_type: str) -> None:
-    if not _column_exists(conn, table, column):
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
-
-
 def run_migrations(db_path: Path) -> None:
-    migrations: list[tuple[str, Callable[[sqlite3.Connection], None]]] = [
-        ("001_expand_activity_summary_fields", _migration_expand_activity_summary_fields),
-        ("002_add_activity_records", _migration_add_activity_records),
-        ("003_expand_daily_monitoring", _migration_expand_daily_monitoring),
-        ("004_expand_activity_training_context", _migration_expand_activity_training_context),
-        ("005_v1_primary_garmin_metrics", _migration_v1_primary_garmin_metrics),
-    ]
-
+    # v1 canonical schema: no legacy backfill migrations.
     with closing(get_conn(db_path)) as conn:
         conn.execute(
             """
@@ -229,158 +184,7 @@ def run_migrations(db_path: Path) -> None:
             )
             """
         )
-
-        applied = {
-            row["name"]
-            for row in conn.execute("SELECT name FROM schema_migrations").fetchall()
-        }
-
-        for name, migration_fn in migrations:
-            if name in applied:
-                continue
-            migration_fn(conn)
-            conn.execute(
-                "INSERT INTO schema_migrations(name, applied_at) VALUES (?, ?)",
-                (name, UTC_NOW()),
-            )
         conn.commit()
-
-
-def _migration_expand_activity_summary_fields(conn: sqlite3.Connection) -> None:
-    fields = {
-        "elevation_loss_m": "REAL",
-        "avg_cadence": "REAL",
-        "max_cadence": "REAL",
-        "avg_stride_length": "REAL",
-        "vertical_ratio": "REAL",
-        "vertical_oscillation": "REAL",
-        "running_power_avg": "REAL",
-        "running_power_max": "REAL",
-        "stamina_start": "REAL",
-        "stamina_end": "REAL",
-        "training_effect_aerobic": "REAL",
-        "training_effect_anaerobic": "REAL",
-        "performance_condition": "REAL",
-        "device_name": "TEXT",
-    }
-    for column, col_type in fields.items():
-        _add_column_if_missing(conn, "activities", column, col_type)
-
-
-def _migration_add_activity_records(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS activity_records (
-            activity_id TEXT NOT NULL,
-            record_time_utc TEXT NOT NULL,
-            heart_rate REAL,
-            cadence REAL,
-            step_length REAL,
-            stride_length REAL,
-            vertical_ratio REAL,
-            vertical_oscillation REAL,
-            power REAL,
-            grade REAL,
-            altitude REAL,
-            speed REAL,
-            distance REAL,
-            stamina REAL,
-            raw_json TEXT,
-            updated_at TEXT NOT NULL,
-            PRIMARY KEY (activity_id, record_time_utc),
-            FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_activity_records_activity_time
-        ON activity_records(activity_id, record_time_utc)
-        """
-    )
-
-
-def _migration_expand_daily_monitoring(conn: sqlite3.Connection) -> None:
-    sleep_fields = {
-        "light_sleep_s": "REAL",
-        "sleep_start_utc": "TEXT",
-        "sleep_end_utc": "TEXT",
-    }
-    for column, col_type in sleep_fields.items():
-        _add_column_if_missing(conn, "sleep_daily", column, col_type)
-
-    wellness_fields = {
-        "stress_max": "REAL",
-        "body_battery_avg": "REAL",
-        "respiration_avg": "REAL",
-        "intensity_minutes": "REAL",
-    }
-    for column, col_type in wellness_fields.items():
-        _add_column_if_missing(conn, "wellness_daily", column, col_type)
-
-
-def _migration_expand_activity_training_context(conn: sqlite3.Connection) -> None:
-    fields = {
-        "activity_uuid": "TEXT",
-        "manufacturer": "TEXT",
-        "owner_id": "TEXT",
-        "owner_full_name": "TEXT",
-        "elapsed_duration_s": "REAL",
-        "moving_duration_s": "REAL",
-        "average_speed_mps": "REAL",
-        "activity_type_key": "TEXT",
-        "activity_type_id": "REAL",
-        "hr_time_in_zone_1": "REAL",
-        "hr_time_in_zone_2": "REAL",
-        "hr_time_in_zone_3": "REAL",
-        "hr_time_in_zone_4": "REAL",
-        "hr_time_in_zone_5": "REAL",
-        "moderate_intensity_minutes": "REAL",
-        "vigorous_intensity_minutes": "REAL",
-        "difference_body_battery": "REAL",
-        "bmr_calories": "REAL",
-        "is_pr": "REAL",
-        "split_summaries_json": "TEXT",
-    }
-    for column, col_type in fields.items():
-        _add_column_if_missing(conn, "activities", column, col_type)
-
-
-def _migration_v1_primary_garmin_metrics(conn: sqlite3.Connection) -> None:
-    activity_fields = {
-        "training_load_garmin": "REAL",
-        "training_load_garmin_field_name": "TEXT",
-        "training_load_garmin_units": "TEXT",
-        "calories_active": "REAL",
-        "calories_total": "REAL",
-        "intensity_minutes_vigorous": "REAL",
-        "intensity_minutes_moderate": "REAL",
-        "trimp": "REAL",
-    }
-    for column, col_type in activity_fields.items():
-        _add_column_if_missing(conn, "activities", column, col_type)
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS daily_summary (
-            day_utc TEXT PRIMARY KEY,
-            activities_count INTEGER,
-            trimp_total REAL,
-            training_load_garmin REAL,
-            calories_active REAL,
-            calories_total REAL,
-            intensity_minutes_vigorous REAL,
-            intensity_minutes_moderate REAL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_daily_summary_day
-        ON daily_summary(day_utc)
-        """
-    )
 
 
 def init_db(db_path: Path) -> None:
@@ -406,16 +210,16 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                 vertical_oscillation, running_power_avg, running_power_max,
                 stamina_start, stamina_end, training_effect_aerobic,
                 training_effect_anaerobic, performance_condition, device_name,
-                manufacturer,
-                activity_uuid, owner_id, owner_full_name, elapsed_duration_s,
-                moving_duration_s, average_speed_mps, activity_type_key, activity_type_id,
-                hr_time_in_zone_1, hr_time_in_zone_2, hr_time_in_zone_3, hr_time_in_zone_4,
-                hr_time_in_zone_5, moderate_intensity_minutes, vigorous_intensity_minutes,
-                difference_body_battery, bmr_calories, is_pr, split_summaries_json,
-                training_load_garmin, training_load_garmin_field_name, training_load_garmin_units,
+                manufacturer, activity_uuid, owner_id, owner_full_name,
+                elapsed_duration_s, moving_duration_s, average_speed_mps,
+                activity_type_key, activity_type_id, hr_time_in_zone_1,
+                hr_time_in_zone_2, hr_time_in_zone_3, hr_time_in_zone_4,
+                hr_time_in_zone_5, difference_body_battery, bmr_calories,
+                is_pr, split_summaries_json, training_load_garmin,
+                training_load_garmin_field_name, training_load_garmin_units,
                 calories_active, calories_total, intensity_minutes_vigorous,
-                intensity_minutes_moderate, trimp,
-                source, raw_json, created_at, updated_at
+                intensity_minutes_moderate, trimp, source, raw_json,
+                created_at, updated_at
             ) VALUES (
                 :activity_id, :start_time_utc, :sport_type, :distance_m, :duration_s,
                 :avg_hr, :max_hr, :avg_pace_s_per_km, :elevation_gain_m, :elevation_loss_m,
@@ -423,16 +227,16 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                 :vertical_oscillation, :running_power_avg, :running_power_max,
                 :stamina_start, :stamina_end, :training_effect_aerobic,
                 :training_effect_anaerobic, :performance_condition, :device_name,
-                :manufacturer,
-                :activity_uuid, :owner_id, :owner_full_name, :elapsed_duration_s,
-                :moving_duration_s, :average_speed_mps, :activity_type_key, :activity_type_id,
-                :hr_time_in_zone_1, :hr_time_in_zone_2, :hr_time_in_zone_3, :hr_time_in_zone_4,
-                :hr_time_in_zone_5, :moderate_intensity_minutes, :vigorous_intensity_minutes,
-                :difference_body_battery, :bmr_calories, :is_pr, :split_summaries_json,
-                :training_load_garmin, :training_load_garmin_field_name, :training_load_garmin_units,
+                :manufacturer, :activity_uuid, :owner_id, :owner_full_name,
+                :elapsed_duration_s, :moving_duration_s, :average_speed_mps,
+                :activity_type_key, :activity_type_id, :hr_time_in_zone_1,
+                :hr_time_in_zone_2, :hr_time_in_zone_3, :hr_time_in_zone_4,
+                :hr_time_in_zone_5, :difference_body_battery, :bmr_calories,
+                :is_pr, :split_summaries_json, :training_load_garmin,
+                :training_load_garmin_field_name, :training_load_garmin_units,
                 :calories_active, :calories_total, :intensity_minutes_vigorous,
-                :intensity_minutes_moderate, :trimp,
-                :source, :raw_json, :created_at, :updated_at
+                :intensity_minutes_moderate, :trimp, :source, :raw_json,
+                :created_at, :updated_at
             )
             ON CONFLICT(activity_id) DO UPDATE SET
                 start_time_utc=excluded.start_time_utc,
@@ -471,8 +275,6 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                 hr_time_in_zone_3=excluded.hr_time_in_zone_3,
                 hr_time_in_zone_4=excluded.hr_time_in_zone_4,
                 hr_time_in_zone_5=excluded.hr_time_in_zone_5,
-                moderate_intensity_minutes=excluded.moderate_intensity_minutes,
-                vigorous_intensity_minutes=excluded.vigorous_intensity_minutes,
                 difference_body_battery=excluded.difference_body_battery,
                 bmr_calories=excluded.bmr_calories,
                 is_pr=excluded.is_pr,
@@ -528,8 +330,6 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                     "hr_time_in_zone_3": row.get("hr_time_in_zone_3"),
                     "hr_time_in_zone_4": row.get("hr_time_in_zone_4"),
                     "hr_time_in_zone_5": row.get("hr_time_in_zone_5"),
-                    "moderate_intensity_minutes": row.get("moderate_intensity_minutes"),
-                    "vigorous_intensity_minutes": row.get("vigorous_intensity_minutes"),
                     "difference_body_battery": row.get("difference_body_battery"),
                     "bmr_calories": row.get("bmr_calories"),
                     "is_pr": row.get("is_pr"),
@@ -548,50 +348,6 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                     "updated_at": now,
                 }
                 for row in activities
-            ],
-        )
-        conn.commit()
-        return conn.total_changes
-
-
-def upsert_activity_metrics(db_path: Path, metrics: list[dict[str, Any]]) -> int:
-    if not metrics:
-        return 0
-
-    now = UTC_NOW()
-    with closing(get_conn(db_path)) as conn:
-        conn.executemany(
-            """
-            INSERT INTO activity_metrics (
-                activity_id, garmin_training_load, garmin_aerobic_te,
-                garmin_anaerobic_te, garmin_vo2max, garmin_calories,
-                garmin_avg_power, garmin_norm_power, garmin_training_effect_label,
-                raw_json, updated_at
-            ) VALUES (
-                :activity_id, :garmin_training_load, :garmin_aerobic_te,
-                :garmin_anaerobic_te, :garmin_vo2max, :garmin_calories,
-                :garmin_avg_power, :garmin_norm_power, :garmin_training_effect_label,
-                :raw_json, :updated_at
-            )
-            ON CONFLICT(activity_id) DO UPDATE SET
-                garmin_training_load=excluded.garmin_training_load,
-                garmin_aerobic_te=excluded.garmin_aerobic_te,
-                garmin_anaerobic_te=excluded.garmin_anaerobic_te,
-                garmin_vo2max=excluded.garmin_vo2max,
-                garmin_calories=excluded.garmin_calories,
-                garmin_avg_power=excluded.garmin_avg_power,
-                garmin_norm_power=excluded.garmin_norm_power,
-                garmin_training_effect_label=excluded.garmin_training_effect_label,
-                raw_json=excluded.raw_json,
-                updated_at=excluded.updated_at
-            """,
-            [
-                {
-                    **row,
-                    "raw_json": json.dumps(row.get("raw", {}), default=str),
-                    "updated_at": now,
-                }
-                for row in metrics
             ],
         )
         conn.commit()
@@ -765,28 +521,9 @@ def get_runs_df(db_path: Path) -> pd.DataFrame:
     with closing(get_conn(db_path)) as conn:
         return pd.read_sql_query(
             """
-            SELECT a.activity_id, a.start_time_utc, a.sport_type, a.distance_m, a.duration_s,
-                   a.avg_hr, a.max_hr, a.avg_pace_s_per_km, a.elevation_gain_m,
-                   a.elevation_loss_m, a.avg_cadence, a.max_cadence, a.avg_stride_length,
-                   a.vertical_ratio, a.vertical_oscillation, a.running_power_avg,
-                   a.running_power_max, a.stamina_start, a.stamina_end,
-                   a.training_effect_aerobic, a.training_effect_anaerobic,
-                   a.performance_condition, a.device_name, a.manufacturer, a.activity_uuid,
-                   a.owner_id, a.owner_full_name, a.elapsed_duration_s,
-                   a.moving_duration_s, a.average_speed_mps, a.activity_type_key,
-                   a.activity_type_id, a.hr_time_in_zone_1, a.hr_time_in_zone_2,
-                   a.hr_time_in_zone_3, a.hr_time_in_zone_4, a.hr_time_in_zone_5,
-                   a.moderate_intensity_minutes, a.vigorous_intensity_minutes,
-                   a.difference_body_battery, a.bmr_calories, a.is_pr, a.split_summaries_json,
-                   a.training_load_garmin, a.training_load_garmin_field_name,
-                   a.training_load_garmin_units, a.calories_active, a.calories_total,
-                   a.intensity_minutes_vigorous, a.intensity_minutes_moderate, a.trimp,
-                   a.source,
-                   m.garmin_aerobic_te, m.garmin_anaerobic_te,
-                   m.garmin_vo2max, m.garmin_training_effect_label
-            FROM activities a
-            LEFT JOIN activity_metrics m ON m.activity_id = a.activity_id
-            ORDER BY a.start_time_utc DESC
+            SELECT *
+            FROM activities
+            ORDER BY start_time_utc DESC
             """,
             conn,
         )
@@ -913,7 +650,6 @@ def get_table_counts(db_path: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     tables = [
         "activities",
-        "activity_metrics",
         "activity_details",
         "activity_records",
         "sleep_daily",
