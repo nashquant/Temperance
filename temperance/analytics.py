@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from models import aerobic_load, mechanical_load
@@ -199,6 +201,8 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         try:
             pace_value = float(pace_s_per_km)
         except (TypeError, ValueError):
+            return "-"
+        if not math.isfinite(pace_value):
             return "-"
         if pace_value <= 0:
             return "-"
