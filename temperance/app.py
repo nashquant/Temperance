@@ -96,7 +96,7 @@ def filter_by_activity_type(df: pd.DataFrame, mode: str) -> pd.DataFrame:
     return df.loc[mask].copy()
 
 
-def apply_specificity_factor(df: pd.DataFrame, enabled: bool) -> pd.DataFrame:
+def apply_specificity_factor(df: pd.DataFrame, enabled: bool, non_running_factor: float) -> pd.DataFrame:
     if df.empty:
         return df
 
@@ -105,7 +105,7 @@ def apply_specificity_factor(df: pd.DataFrame, enabled: bool) -> pd.DataFrame:
     is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
     out["specificity_factor"] = 1.0
     if enabled:
-        out.loc[~is_running_like, "specificity_factor"] = 0.9
+        out.loc[~is_running_like, "specificity_factor"] = float(non_running_factor)
 
     factor_cols = [
         "distance_m",
@@ -127,6 +127,45 @@ def apply_specificity_factor(df: pd.DataFrame, enabled: bool) -> pd.DataFrame:
         if col in out.columns:
             out[col] = out[col] * out["specificity_factor"]
     return out
+
+
+@st.cache_data(show_spinner=False)
+def cached_compute_metrics(
+    runs_df: pd.DataFrame,
+    resting_hr: float,
+    max_hr: float,
+    sex: str,
+) -> pd.DataFrame:
+    return compute_metrics(runs_df, resting_hr=resting_hr, max_hr=max_hr, sex=sex)
+
+
+@st.cache_data(show_spinner=False)
+def cached_filtered_views(
+    metrics_df: pd.DataFrame,
+    activity_filter: str,
+    specificity_enabled: bool,
+    specificity_factor: float,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    filtered_metrics = filter_by_activity_type(metrics_df, activity_filter)
+    filtered_metrics = apply_specificity_factor(
+        filtered_metrics, specificity_enabled, specificity_factor
+    )
+    filtered_daily = build_daily_summary(filtered_metrics)
+    if not filtered_daily.empty:
+        filtered_daily = filtered_daily.sort_values("day_utc").copy()
+        daily_index = pd.date_range(
+            start=pd.to_datetime(filtered_daily["day_utc"]).min(),
+            end=pd.to_datetime(filtered_daily["day_utc"]).max(),
+            freq="D",
+        )
+        complete_daily = pd.DataFrame({"day_utc": daily_index.strftime("%Y-%m-%d")})
+        filtered_daily = complete_daily.merge(filtered_daily, on="day_utc", how="left")
+        # Fitness/Fatigue are always computed on continuous daily data with missing days as zero load.
+        training_series = filtered_daily["training_load_garmin"].fillna(0.0)
+        filtered_daily["fitness"] = ema(training_series, 42)
+        filtered_daily["fatigue"] = ema(training_series, 7)
+        filtered_daily["form"] = filtered_daily["fitness"] - filtered_daily["fatigue"]
+    return filtered_metrics, filtered_daily
 
 
 def build_injury_layer() -> alt.Chart:
@@ -160,7 +199,12 @@ if view != "Data Extract":
     )
 
 runs_df = get_runs_df(cfg.db_path)
-metrics_df = compute_metrics(runs_df, resting_hr=float(resting_hr), max_hr=float(max_hr), sex=sex)
+metrics_df = cached_compute_metrics(
+    runs_df,
+    resting_hr=float(resting_hr),
+    max_hr=float(max_hr),
+    sex=sex,
+)
 if not metrics_df.empty:
     upsert_activity_trimp(
         cfg.db_path,
@@ -209,7 +253,16 @@ if view == "Dashboard":
             normalize_compare = st.checkbox("Normalize compare (index=100)", value=False, disabled=not compare_mode)
             enable_zoom = st.checkbox("Zoom/pan", value=False)
             legend_toggle = st.checkbox("Legend toggle", value=True)
-            specificity_factor_on = st.checkbox("Specificity factor (0.9 non-running)", value=True)
+            specificity_factor_on = st.checkbox("Specificity factor", value=True)
+            specificity_factor_value = st.number_input(
+                "Non-running factor",
+                min_value=0.0,
+                max_value=1.5,
+                value=0.9,
+                step=0.05,
+                format="%.2f",
+                disabled=not specificity_factor_on,
+            )
 
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
@@ -218,23 +271,12 @@ if view == "Dashboard":
         start_ts = pd.Timestamp(start_date)
         end_ts = pd.Timestamp(end_date)
 
-        filtered_metrics = filter_by_activity_type(metrics_df, activity_filter)
-        filtered_metrics = apply_specificity_factor(filtered_metrics, specificity_factor_on)
-        filtered_daily = build_daily_summary(filtered_metrics)
-        if not filtered_daily.empty:
-            filtered_daily = filtered_daily.sort_values("day_utc").copy()
-            daily_index = pd.date_range(
-                start=pd.to_datetime(filtered_daily["day_utc"]).min(),
-                end=pd.to_datetime(filtered_daily["day_utc"]).max(),
-                freq="D",
-            )
-            complete_daily = pd.DataFrame({"day_utc": daily_index.strftime("%Y-%m-%d")})
-            filtered_daily = complete_daily.merge(filtered_daily, on="day_utc", how="left")
-            # Fitness/Fatigue are always computed on continuous daily data with missing days as zero load.
-            training_series = filtered_daily["training_load_garmin"].fillna(0.0)
-            filtered_daily["fitness"] = ema(training_series, 42)
-            filtered_daily["fatigue"] = ema(training_series, 7)
-            filtered_daily["form"] = filtered_daily["fitness"] - filtered_daily["fatigue"]
+        filtered_metrics, filtered_daily = cached_filtered_views(
+            metrics_df,
+            activity_filter=activity_filter,
+            specificity_enabled=specificity_factor_on,
+            specificity_factor=float(specificity_factor_value),
+        )
 
         metric_map = {
             "Distance (km)": "distance_km",
