@@ -25,13 +25,11 @@ from db import (
     get_last_sync,
     get_latest_activity_time,
     get_runs_df,
-    get_setting,
     get_sleep_df,
     get_table_counts,
     get_wellness_df,
     init_db,
     log_sync,
-    save_setting,
     upsert_activities,
     upsert_activity_details,
     upsert_activity_records,
@@ -52,6 +50,10 @@ from synthetic_data import generate_synthetic_runs
 st.set_page_config(page_title="Temperance", layout="wide")
 st.title("Temperance")
 st.caption("Local-first running load tracker (aerobic + mechanical)")
+
+DEFAULT_RESTING_HR = 45.0
+DEFAULT_MAX_HR = 200.0
+DEFAULT_LTHR = 178.0
 
 cfg = load_config()
 init_db(cfg.db_path)
@@ -91,28 +93,16 @@ def filter_by_activity_type(df: pd.DataFrame, mode: str) -> pd.DataFrame:
 with st.sidebar:
     st.header("Navigation")
     view = st.radio("Page", ["Dashboard", "Activity Detail", "Recovery Data"], index=0)
-
-st.header("Settings")
-def_resting = float(get_setting(cfg.db_path, "resting_hr") or 60)
-def_max = float(get_setting(cfg.db_path, "max_hr") or 190)
-sex = get_setting(cfg.db_path, "sex") or "male"
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    resting_hr = st.number_input("Resting HR", min_value=30, max_value=100, value=int(def_resting))
-with col2:
-    max_hr = st.number_input("Max HR", min_value=120, max_value=230, value=int(def_max))
-with col3:
-    sex = st.selectbox("Sex constant (TRIMP)", ["male", "female"], index=0 if sex == "male" else 1)
-
-if st.button("Save settings"):
-    save_setting(cfg.db_path, "resting_hr", str(resting_hr))
-    save_setting(cfg.db_path, "max_hr", str(max_hr))
-    save_setting(cfg.db_path, "sex", sex)
-    st.success("Settings saved.")
+resting_hr = DEFAULT_RESTING_HR
+max_hr = DEFAULT_MAX_HR
+sex = "male"
 
 st.divider()
 st.header("Sync")
+st.caption(
+    f"TRIMP defaults: resting HR={int(DEFAULT_RESTING_HR)}, max HR={int(DEFAULT_MAX_HR)}, "
+    f"LTHR={int(DEFAULT_LTHR)} bpm"
+)
 
 last_sync = get_last_sync(cfg.db_path)
 if last_sync:
