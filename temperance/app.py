@@ -183,6 +183,50 @@ def build_injury_layer() -> alt.Chart:
         )
     )
 
+
+@st.cache_data(show_spinner=False)
+def build_recovery_daily_frame(sleep_df: pd.DataFrame, wellness_df: pd.DataFrame) -> pd.DataFrame:
+    parts: list[pd.DataFrame] = []
+    if not sleep_df.empty:
+        s = sleep_df.copy()
+        s["day"] = pd.to_datetime(s["day_utc"], errors="coerce")
+        s["sleep_duration_h"] = s["sleep_duration_s"] / 3600.0
+        s["deep_sleep_h"] = s["deep_sleep_s"] / 3600.0
+        s["rem_sleep_h"] = s["rem_sleep_s"] / 3600.0
+        parts.append(
+            s[
+                [
+                    "day",
+                    "sleep_score",
+                    "sleep_duration_h",
+                    "deep_sleep_h",
+                    "rem_sleep_h",
+                ]
+            ]
+        )
+    if not wellness_df.empty:
+        w = wellness_df.copy()
+        w["day"] = pd.to_datetime(w["day_utc"], errors="coerce")
+        parts.append(
+            w[
+                [
+                    "day",
+                    "hrv_status",
+                    "stress_avg",
+                    "training_readiness",
+                    "respiration_avg",
+                    "resting_hr",
+                ]
+            ]
+        )
+    if not parts:
+        return pd.DataFrame()
+
+    merged = parts[0]
+    for p in parts[1:]:
+        merged = merged.merge(p, on="day", how="outer")
+    return merged.sort_values("day")
+
 with st.sidebar:
     st.header("Navigation")
     view = st.radio("Page", ["Dashboard", "Activity Detail", "Recovery Data", "Data Extract"], index=0)
