@@ -772,6 +772,97 @@ if view == "Recovery Data":
     if sleep_df.empty and wellness_df.empty:
         st.info("No sleep/wellness data yet. Run Comprehensive Garmin Extract with wellness enabled.")
     else:
+        st.subheader("Recovery Analytics")
+        recovery_df = build_recovery_daily_frame(sleep_df, wellness_df)
+        if not recovery_df.empty:
+            metric_map = {
+                "HRV (avg)": ("hrv_status", "avg"),
+                "Stress Avg (avg)": ("stress_avg", "avg"),
+                "Training Readiness (avg)": ("training_readiness", "avg"),
+                "Respiration Avg (avg)": ("respiration_avg", "avg"),
+                "Resting HR (avg)": ("resting_hr", "avg"),
+                "Sleep Score (avg)": ("sleep_score", "avg"),
+                "Deep Sleep (h, sum)": ("deep_sleep_h", "sum"),
+                "Sleep Duration (h, sum)": ("sleep_duration_h", "sum"),
+                "REM Sleep (h, sum)": ("rem_sleep_h", "sum"),
+            }
+            rc1, rc2, rc3 = st.columns([1, 1, 1])
+            with rc1:
+                r_min = recovery_df["day"].min().date()
+                r_max = recovery_df["day"].max().date()
+                r_range = st.date_input(
+                    "Recovery date range",
+                    value=(r_min, r_max),
+                    min_value=r_min,
+                    max_value=r_max,
+                    key="recovery_range",
+                )
+            with rc2:
+                recovery_weekly = st.checkbox("Weekly aggregation", value=True, key="recovery_weekly")
+            with rc3:
+                selected_recovery_metrics = st.multiselect(
+                    "Recovery metrics",
+                    list(metric_map.keys()),
+                    default=["Resting HR (avg)", "Sleep Duration (h, sum)"],
+                    key="recovery_metrics",
+                )
+
+            if isinstance(r_range, tuple) and len(r_range) == 2:
+                r_start, r_end = r_range
+            else:
+                r_start = r_end = r_max
+            r_start_ts = pd.Timestamp(r_start)
+            r_end_ts = pd.Timestamp(r_end)
+
+            plot_long_frames: list[pd.DataFrame] = []
+            frame = recovery_df[(recovery_df["day"] >= r_start_ts) & (recovery_df["day"] <= r_end_ts)].copy()
+            if not frame.empty and selected_recovery_metrics:
+                if recovery_weekly:
+                    frame["week_start"] = frame["day"].dt.to_period("W-SUN").dt.start_time
+                for label in selected_recovery_metrics:
+                    col, agg_type = metric_map[label]
+                    if col not in frame.columns:
+                        continue
+                    if recovery_weekly:
+                        if agg_type == "sum":
+                            g = (
+                                frame.groupby("week_start", as_index=False)[col]
+                                .sum()
+                                .rename(columns={"week_start": "day", col: "value"})
+                            )
+                        else:
+                            g = (
+                                frame.groupby("week_start", as_index=False)[col]
+                                .mean()
+                                .rename(columns={"week_start": "day", col: "value"})
+                            )
+                    else:
+                        g = frame[["day", col]].rename(columns={col: "value"})
+                    g["series"] = label
+                    plot_long_frames.append(g)
+
+            if plot_long_frames:
+                recovery_long = pd.concat(plot_long_frames, ignore_index=True).dropna(subset=["value"])
+                if not recovery_long.empty:
+                    rec_sel = alt.selection_point(fields=["series"], bind="legend")
+                    recovery_chart = (
+                        alt.Chart(recovery_long)
+                        .mark_line(point=True)
+                        .encode(
+                            x="day:T",
+                            y=alt.Y("value:Q", axis=alt.Axis(format=".2f")),
+                            color="series:N",
+                            tooltip=["day:T", "series:N", alt.Tooltip("value:Q", format=".2f")],
+                            opacity=alt.condition(rec_sel, alt.value(1.0), alt.value(0.08)),
+                        )
+                        .add_params(rec_sel)
+                    )
+                    st.altair_chart(recovery_chart, use_container_width=True)
+                else:
+                    st.caption("No recovery values in selected range for selected metrics.")
+            else:
+                st.caption("Select at least one recovery metric to plot.")
+
         if not sleep_df.empty:
             st.subheader("Sleep Daily")
             st.dataframe(sleep_df, use_container_width=True)

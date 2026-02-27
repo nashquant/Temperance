@@ -114,6 +114,42 @@ def _to_str(value: Any) -> str | None:
     return str(value)
 
 
+def _extract_numeric(value: Any) -> float | None:
+    direct = _to_float(value)
+    if direct is not None:
+        return direct
+    if isinstance(value, dict):
+        for key in (
+            "value",
+            "score",
+            "overallSleepScore",
+            "sleepScore",
+            "seconds",
+            "duration",
+            "totalSeconds",
+        ):
+            nested = _to_float(value.get(key))
+            if nested is not None:
+                return nested
+        nested_any = _deep_first(
+            value,
+            {"value", "score", "overallSleepScore", "sleepScore", "seconds", "duration", "totalSeconds"},
+        )
+        return _to_float(nested_any)
+    if isinstance(value, list) and len(value) == 1:
+        return _extract_numeric(value[0])
+    return None
+
+
+def _first_numeric(data: Any, keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        raw = _deep_first(data, {key})
+        val = _extract_numeric(raw)
+        if val is not None:
+            return val
+    return None
+
+
 def _is_running_activity(sport_type: str | None) -> bool:
     if not sport_type:
         return False
@@ -255,12 +291,12 @@ def _extract_sleep_row(day: date, sleep_data: dict[str, Any] | None) -> dict[str
     blob = sleep_data or {}
     return {
         "day_utc": day.isoformat(),
-        "sleep_score": _to_float(_deep_first(blob, {"overallSleepScore", "sleepScore"})),
-        "sleep_duration_s": _to_float(_deep_first(blob, {"sleepTimeSeconds", "totalSleepSeconds"})),
-        "deep_sleep_s": _to_float(_deep_first(blob, {"deepSleepSeconds", "deepSleepDuration"})),
-        "rem_sleep_s": _to_float(_deep_first(blob, {"remSleepSeconds", "remSleepDuration"})),
-        "light_sleep_s": _to_float(_deep_first(blob, {"lightSleepSeconds", "lightSleepDuration"})),
-        "awake_s": _to_float(_deep_first(blob, {"awakeTimeSeconds", "awakeDuration"})),
+        "sleep_score": _first_numeric(blob, ("overallSleepScore", "sleepScore", "overallScore", "score")),
+        "sleep_duration_s": _first_numeric(blob, ("sleepTimeSeconds", "totalSleepSeconds")),
+        "deep_sleep_s": _first_numeric(blob, ("deepSleepSeconds", "deepSleepDuration")),
+        "rem_sleep_s": _first_numeric(blob, ("remSleepSeconds", "remSleepDuration")),
+        "light_sleep_s": _first_numeric(blob, ("lightSleepSeconds", "lightSleepDuration")),
+        "awake_s": _first_numeric(blob, ("awakeTimeSeconds", "awakeDuration")),
         "sleep_start_utc": _to_str(_deep_first(blob, {"sleepStartTimestampGMT", "sleepStartTimestamp"})),
         "sleep_end_utc": _to_str(_deep_first(blob, {"sleepEndTimestampGMT", "sleepEndTimestamp"})),
         "raw": blob,
@@ -303,15 +339,22 @@ def _extract_wellness_row(
 
     return {
         "day_utc": day.isoformat(),
-        "resting_hr": _to_float(_deep_first(rhr or {}, {"restingHeartRate", "allDayRestingHeartRate"})),
-        "hrv_status": _to_float(_deep_first(hrv or {}, {"weeklyAvg", "lastNightAvg", "hrvValue"})),
-        "training_readiness": _to_float(_deep_first(readiness or {}, {"trainingReadinessScore", "score"})),
-        "stress_avg": _to_float(_deep_first(stress or {}, {"averageStressLevel", "avgStressLevel", "overallStressLevel"})),
+        "resting_hr": (
+            _first_numeric(rhr, ("restingHeartRate", "allDayRestingHeartRate", "value"))
+            or _first_numeric(stats, ("restingHeartRate", "allDayRestingHeartRate"))
+            or _extract_numeric(rhr)
+        ),
+        "hrv_status": _first_numeric(hrv, ("weeklyAvg", "lastNightAvg", "hrvValue", "value")),
+        "training_readiness": _first_numeric(readiness, ("trainingReadinessScore", "score", "value")),
+        "stress_avg": _first_numeric(stress, ("averageStressLevel", "avgStressLevel", "overallStressLevel")),
         "stress_max": stress_max,
         "body_battery_start": min(battery_values) if battery_values else None,
         "body_battery_end": max(battery_values) if battery_values else None,
         "body_battery_avg": (sum(battery_values) / len(battery_values)) if battery_values else None,
-        "respiration_avg": _to_float(_deep_first(respiration or {}, {"avgWakingRespirationValue", "avgRespirationValue", "averageRespiration"})),
+        "respiration_avg": _first_numeric(
+            respiration,
+            ("avgWakingRespirationValue", "avgRespirationValue", "averageRespiration", "value"),
+        ),
         "steps": _to_float(
             _deep_first(stats, {"totalSteps", "steps"})
             or _deep_first(steps_payload or {}, {"totalSteps", "steps"})
