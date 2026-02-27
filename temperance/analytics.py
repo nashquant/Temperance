@@ -339,6 +339,8 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "distance_km",
         "duration_min",
         "avg_hr",
+        "rtss",
+        "tss",
         "avg_pace_display",
         "trimp",
         "edwards_trimp",

@@ -331,7 +331,6 @@ if view == "Dashboard":
             "rTSS": "rtss_total",
             "TSS": "tss_total",
             "TRIMP": "trimp_total",
-            "Mechanical Load": "mechanical_load_total",
             "Edwards TRIMP": "edwards_trimp_total",
             "Calories Active": "calories_active",
             "Calories Total": "calories_total",
@@ -363,7 +362,7 @@ if view == "Dashboard":
                 )
             else:
                 metric_labels = list(metric_map.keys())
-                default_metric = "Mechanical Load"
+                default_metric = "rTSS"
                 default_index = metric_labels.index(default_metric) if default_metric in metric_labels else 0
                 selected_labels = [st.selectbox("Metric", metric_labels, index=default_index)]
 
@@ -519,7 +518,7 @@ if view == "Dashboard":
                 st.altair_chart(compare_chart, use_container_width=True)
 
         table_df = display_table(filtered_metrics)
-        st.subheader("Runs")
+        st.subheader("Activities")
         st.dataframe(
             table_df,
             use_container_width=True,
@@ -531,44 +530,12 @@ if view == "Dashboard":
                 "rtss": st.column_config.NumberColumn("rTSS", format="%.1f"),
                 "tss": st.column_config.NumberColumn("TSS", format="%.1f"),
                 "edwards_trimp": st.column_config.NumberColumn(format="%.1f"),
-                "mechanical_load": st.column_config.NumberColumn(format="%.1f"),
                 "training_load_garmin": st.column_config.NumberColumn(format="%.1f"),
                 "specificity_factor": st.column_config.NumberColumn(format="%.2f"),
             },
         )
         weekly = weekly_summary(filtered_metrics)
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
-
-        if "total_mechanical_load" in weekly.columns and not weekly.empty:
-            weekly_ml = weekly[["week_start", "total_mechanical_load"]].copy().sort_values("week_start")
-            weekly_ml["ema3"] = ema(weekly_ml["total_mechanical_load"].fillna(0.0), 3)
-            weekly_ml["ema10"] = ema(weekly_ml["total_mechanical_load"].fillna(0.0), 10)
-            weekly_ml_plot = weekly_ml.melt(
-                id_vars=["week_start"],
-                value_vars=["total_mechanical_load", "ema3", "ema10"],
-                var_name="series",
-                value_name="value",
-            )
-            st.subheader("Weekly Mechanical Load")
-            weekly_ml_chart = (
-                alt.Chart(weekly_ml_plot)
-                .mark_line(point=True)
-                .encode(
-                    x="week_start:T",
-                    y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
-                    color="series:N",
-                    tooltip=["week_start", "series", alt.Tooltip("value:Q", format=".0f")],
-                )
-            )
-            if legend_toggle:
-                weekly_ml_sel = alt.selection_point(fields=["series"], bind="legend")
-                weekly_ml_chart = weekly_ml_chart.encode(
-                    opacity=alt.condition(weekly_ml_sel, alt.value(1.0), alt.value(0.08))
-                ).add_params(weekly_ml_sel)
-            weekly_ml_chart = alt.layer(build_injury_layer(), weekly_ml_chart)
-            if enable_zoom:
-                weekly_ml_chart = weekly_ml_chart.interactive()
-            st.altair_chart(weekly_ml_chart, use_container_width=True)
 
         if "total_tss" in weekly.columns and "total_rtss" in weekly.columns and not weekly.empty:
             weekly_tss = weekly[["week_start", "total_tss", "total_rtss"]].copy().sort_values("week_start")
@@ -583,9 +550,9 @@ if view == "Dashboard":
                 alt.Chart(weekly_tss_plot)
                 .mark_line(point=True)
                 .encode(
-                    x="week_start:T",
+                    x=alt.X("week_start:T", axis=alt.Axis(title="")),
                     y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
-                    color="series:N",
+                    color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
                     tooltip=["week_start", "series", alt.Tooltip("value:Q", format=".0f")],
                 )
             )
@@ -599,15 +566,15 @@ if view == "Dashboard":
                 weekly_tss_chart = weekly_tss_chart.interactive()
             st.altair_chart(weekly_tss_chart, use_container_width=True)
 
-        st.subheader("Weekly Edwards TRIMP vs Garmin Training Load vs Mechanical Load")
+        st.subheader("Weekly Edwards TRIMP vs Garmin Training Load vs rTSS")
         if (
             "total_garmin_training_load" in weekly.columns
             and "total_edwards_trimp" in weekly.columns
-            and "total_mechanical_load" in weekly.columns
+            and "total_rtss" in weekly.columns
         ):
             weekly_compare = weekly.melt(
                 id_vars=["week_start"],
-                value_vars=["total_edwards_trimp", "total_garmin_training_load", "total_mechanical_load"],
+                value_vars=["total_edwards_trimp", "total_garmin_training_load", "total_rtss"],
                 var_name="series",
                 value_name="value",
             )
@@ -615,9 +582,9 @@ if view == "Dashboard":
                 alt.Chart(weekly_compare)
                 .mark_line(point=True)
                 .encode(
-                    x="week_start:T",
+                    x=alt.X("week_start:T", axis=alt.Axis(title="")),
                     y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
-                    color="series:N",
+                    color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
                     tooltip=["week_start", "series", alt.Tooltip("value:Q", format=".0f")],
                 )
             )
