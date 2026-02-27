@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 
 import pandas as pd
 
@@ -42,54 +43,57 @@ def compute_metrics(
     # Persisted per-activity TRIMP proxy is this aerobic load output.
     df["trimp"] = df["aerobic_load"]
 
-    df["mechanical_load"] = df.apply(
-        lambda r: mechanical_load(
-            distance_m=float(r.get("distance_m") or 0),
-            duration_s=float(r.get("duration_s") or 0),
-            elevation_gain_m=(
-                float(r.get("elevation_gain_m"))
-                if pd.notna(r.get("elevation_gain_m"))
-                else None
+    df["mechanical_load"] = pd.NA
+    running_idx = is_running_like.fillna(False)
+    if running_idx.any():
+        df.loc[running_idx, "mechanical_load"] = df.loc[running_idx].apply(
+            lambda r: mechanical_load(
+                distance_m=float(r.get("distance_m") or 0),
+                duration_s=float(r.get("duration_s") or 0),
+                elevation_gain_m=(
+                    float(r.get("elevation_gain_m"))
+                    if pd.notna(r.get("elevation_gain_m"))
+                    else None
+                ),
+                avg_cadence=float(r.get("avg_cadence")) if pd.notna(r.get("avg_cadence")) else None,
+                avg_stride_length=(
+                    float(r.get("avg_stride_length"))
+                    if pd.notna(r.get("avg_stride_length"))
+                    else None
+                ),
+                running_power_avg=(
+                    float(r.get("running_power_avg"))
+                    if pd.notna(r.get("running_power_avg"))
+                    else None
+                ),
+                hr_zone_1_s=(
+                    float(r.get("hr_time_in_zone_1"))
+                    if pd.notna(r.get("hr_time_in_zone_1"))
+                    else None
+                ),
+                hr_zone_2_s=(
+                    float(r.get("hr_time_in_zone_2"))
+                    if pd.notna(r.get("hr_time_in_zone_2"))
+                    else None
+                ),
+                hr_zone_3_s=(
+                    float(r.get("hr_time_in_zone_3"))
+                    if pd.notna(r.get("hr_time_in_zone_3"))
+                    else None
+                ),
+                hr_zone_4_s=(
+                    float(r.get("hr_time_in_zone_4"))
+                    if pd.notna(r.get("hr_time_in_zone_4"))
+                    else None
+                ),
+                hr_zone_5_s=(
+                    float(r.get("hr_time_in_zone_5"))
+                    if pd.notna(r.get("hr_time_in_zone_5"))
+                    else None
+                ),
             ),
-            avg_cadence=float(r.get("avg_cadence")) if pd.notna(r.get("avg_cadence")) else None,
-            avg_stride_length=(
-                float(r.get("avg_stride_length"))
-                if pd.notna(r.get("avg_stride_length"))
-                else None
-            ),
-            running_power_avg=(
-                float(r.get("running_power_avg"))
-                if pd.notna(r.get("running_power_avg"))
-                else None
-            ),
-            hr_zone_1_s=(
-                float(r.get("hr_time_in_zone_1"))
-                if pd.notna(r.get("hr_time_in_zone_1"))
-                else None
-            ),
-            hr_zone_2_s=(
-                float(r.get("hr_time_in_zone_2"))
-                if pd.notna(r.get("hr_time_in_zone_2"))
-                else None
-            ),
-            hr_zone_3_s=(
-                float(r.get("hr_time_in_zone_3"))
-                if pd.notna(r.get("hr_time_in_zone_3"))
-                else None
-            ),
-            hr_zone_4_s=(
-                float(r.get("hr_time_in_zone_4"))
-                if pd.notna(r.get("hr_time_in_zone_4"))
-                else None
-            ),
-            hr_zone_5_s=(
-                float(r.get("hr_time_in_zone_5"))
-                if pd.notna(r.get("hr_time_in_zone_5"))
-                else None
-            ),
-        ),
-        axis=1,
-    )
+            axis=1,
+        )
 
     df["edwards_trimp"] = df.apply(
         lambda r: edwards_trimp_from_zones(
@@ -169,6 +173,31 @@ def ema_alpha_from_days(window: int) -> float:
 def ema(series: pd.Series, window: int) -> pd.Series:
     alpha = ema_alpha_from_days(window)
     return series.ewm(alpha=alpha, adjust=False).mean()
+
+
+def parse_ma_windows(text: str) -> tuple[list[int], list[tuple[int, int]]]:
+    pairs: list[tuple[int, int]] = []
+    for a_str, b_str in re.findall(r"\((\d+)\s*,\s*(\d+)\)", text):
+        a, b = int(a_str), int(b_str)
+        if a > 0 and b > 0:
+            pairs.append((a, b))
+
+    cleaned = re.sub(r"\(\s*\d+\s*,\s*\d+\s*\)", "", text)
+    singles: list[int] = []
+    for part in cleaned.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            val = int(part)
+        except ValueError:
+            continue
+        if val > 0:
+            singles.append(val)
+
+    singles = list(dict.fromkeys(singles))
+    pairs = list(dict.fromkeys(pairs))
+    return singles, pairs
 
 
 def prepare_metric_series(

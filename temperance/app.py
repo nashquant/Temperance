@@ -12,6 +12,7 @@ from analytics import (
     display_table,
     ema,
     ema_alpha_from_days,
+    parse_ma_windows,
     prepare_metric_series,
     sma,
     weekly_summary,
@@ -218,30 +219,24 @@ if view == "Dashboard":
                     max_selections=3,
                 )
             else:
-                selected_labels = [st.selectbox("Metric", list(metric_map.keys()), index=0)]
+                metric_labels = list(metric_map.keys())
+                default_metric = "Mechanical Load"
+                default_index = metric_labels.index(default_metric) if default_metric in metric_labels else 0
+                selected_labels = [st.selectbox("Metric", metric_labels, index=default_index)]
 
             sma_windows = st.text_input("SMA windows (days, comma-separated)", value="")
             ema_windows = st.text_input("EMA windows (days, comma-separated)", value="20,100")
-
-            def _parse_windows(text: str) -> list[int]:
-                out: list[int] = []
-                for part in text.split(","):
-                    part = part.strip()
-                    if not part:
-                        continue
-                    try:
-                        val = int(part)
-                    except ValueError:
-                        continue
-                    if val > 0:
-                        out.append(val)
-                return out
-
-            sma_ns = _parse_windows(sma_windows)
-            ema_ns = _parse_windows(ema_windows)
+            sma_ns, sma_pairs = parse_ma_windows(sma_windows)
+            ema_ns, ema_pairs = parse_ma_windows(ema_windows)
             if ema_ns:
                 alpha_text = ", ".join([f"EMA {n} -> alpha={ema_alpha_from_days(n):.4f}" for n in ema_ns])
                 st.caption(alpha_text)
+            if ema_pairs:
+                pair_text = ", ".join([f"EMA{a}-EMA{b}" for a, b in ema_pairs])
+                st.caption(f"EMA spread overlays: {pair_text}")
+            if sma_pairs:
+                pair_text = ", ".join([f"SMA{a}-SMA{b}" for a, b in sma_pairs])
+                st.caption(f"SMA spread overlays: {pair_text}")
 
             plot_frames: list[pd.DataFrame] = []
             if compare_mode:
@@ -273,11 +268,37 @@ if view == "Dashboard":
                 plot_frames.append(frame)
 
                 if not compare_mode:
+                    overlay_cols: list[str] = []
                     for n in sma_ns:
-                        frame[f"sma_{n}"] = sma(frame["value"], n)
+                        col = f"SMA{n}"
+                        frame[col] = sma(frame["value"], n)
+                        overlay_cols.append(col)
                     for n in ema_ns:
-                        frame[f"ema_{n}"] = ema(frame["value"], n)
-                    overlay_chart_df = frame[["day", "value"] + [c for c in frame.columns if c.startswith(("sma_", "ema_"))]]
+                        col = f"EMA{n}"
+                        frame[col] = ema(frame["value"], n)
+                        overlay_cols.append(col)
+                    for a, b in sma_pairs:
+                        col_a = f"SMA{a}"
+                        col_b = f"SMA{b}"
+                        if col_a not in frame.columns:
+                            frame[col_a] = sma(frame["value"], a)
+                        if col_b not in frame.columns:
+                            frame[col_b] = sma(frame["value"], b)
+                        spread_col = f"SMA{a}-SMA{b}"
+                        frame[spread_col] = frame[col_a] - frame[col_b]
+                        overlay_cols.append(spread_col)
+                    for a, b in ema_pairs:
+                        col_a = f"EMA{a}"
+                        col_b = f"EMA{b}"
+                        if col_a not in frame.columns:
+                            frame[col_a] = ema(frame["value"], a)
+                        if col_b not in frame.columns:
+                            frame[col_b] = ema(frame["value"], b)
+                        spread_col = f"EMA{a}-EMA{b}"
+                        frame[spread_col] = frame[col_a] - frame[col_b]
+                        overlay_cols.append(spread_col)
+                    overlay_cols = list(dict.fromkeys(overlay_cols))
+                    overlay_chart_df = frame[["day", "value"] + overlay_cols]
                     overlay_long = overlay_chart_df.melt(
                         id_vars=["day"],
                         var_name="series",
@@ -368,11 +389,15 @@ if view == "Dashboard":
         )
         weekly = weekly_summary(filtered_metrics)
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
-        st.subheader("Weekly TRIMP vs Garmin Training Load")
-        if "total_garmin_training_load" in weekly.columns:
+        st.subheader("Weekly Edwards TRIMP vs Garmin Training Load vs Mechanical Load")
+        if (
+            "total_garmin_training_load" in weekly.columns
+            and "total_edwards_trimp" in weekly.columns
+            and "total_mechanical_load" in weekly.columns
+        ):
             weekly_compare = weekly.melt(
                 id_vars=["week_start"],
-                value_vars=["total_trimp", "total_garmin_training_load"],
+                value_vars=["total_edwards_trimp", "total_garmin_training_load", "total_mechanical_load"],
                 var_name="series",
                 value_name="value",
             )
