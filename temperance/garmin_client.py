@@ -56,6 +56,24 @@ def _safe_call_method(
     return None, None, None
 
 
+def _safe_call_method_with_variants(
+    client: Any,
+    method_name: str,
+    arg_variants: list[tuple[Any, ...]],
+) -> tuple[Any, str | None]:
+    method = getattr(client, method_name, None)
+    if method is None:
+        return None, None
+
+    last_err: str | None = None
+    for args in arg_variants:
+        payload, err = _safe_call(method, *args)
+        if err is None:
+            return payload, None
+        last_err = err
+    return None, last_err
+
+
 def _iter_days(start: date, end: date) -> list[date]:
     days = []
     cur = start
@@ -341,11 +359,12 @@ def _download_fit_if_missing(client: Any, activity_id: str, raw_root: Path | Non
 
     fit_path.parent.mkdir(parents=True, exist_ok=True)
 
-    attempts = [
-        lambda: client.download_activity(int(activity_id), dl_fmt="fit"),
-        lambda: client.download_activity(int(activity_id), dl_fmt="original"),
-        lambda: client.download_original_activity(int(activity_id)),
-    ]
+    attempts: list[Callable[[], Any]] = []
+    if hasattr(client, "download_activity"):
+        attempts.append(lambda: client.download_activity(int(activity_id), dl_fmt="fit"))
+        attempts.append(lambda: client.download_activity(int(activity_id), dl_fmt="original"))
+    if hasattr(client, "download_original_activity"):
+        attempts.append(lambda: client.download_original_activity(int(activity_id)))
 
     last_error: str | None = None
     for attempt in attempts:
@@ -641,11 +660,21 @@ def fetch_garmin_comprehensive(
                 ("get_intensity_minutes_data", "get_intensity_minutes"),
                 cdate,
             )
-            steps_data, steps_err, _ = _safe_call_method(
-                client,
-                ("get_daily_steps", "get_steps_data"),
-                cdate,
-            )
+            steps_data = None
+            steps_err = None
+            # Different garminconnect versions expose either one-day or start/end signatures.
+            if hasattr(client, "get_daily_steps"):
+                steps_data, steps_err = _safe_call_method_with_variants(
+                    client,
+                    "get_daily_steps",
+                    [(cdate,), (cdate, cdate)],
+                )
+            if steps_data is None and hasattr(client, "get_steps_data"):
+                steps_data, steps_err = _safe_call_method_with_variants(
+                    client,
+                    "get_steps_data",
+                    [(cdate,), (cdate, cdate)],
+                )
 
             for label, err in (
                 ("body_battery", bb_err),
