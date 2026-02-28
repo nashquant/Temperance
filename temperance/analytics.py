@@ -54,8 +54,48 @@ def compute_metrics(
     # Persisted per-activity TRIMP proxy is this aerobic load output.
     df["trimp"] = df["aerobic_load"]
 
-    df["mechanical_load"] = pd.NA
+    df["edwards_trimp"] = df.apply(
+        lambda r: edwards_trimp_from_zones(
+            hr_zone_1_s=float(r.get("hr_time_in_zone_1")) if pd.notna(r.get("hr_time_in_zone_1")) else 0.0,
+            hr_zone_2_s=float(r.get("hr_time_in_zone_2")) if pd.notna(r.get("hr_time_in_zone_2")) else 0.0,
+            hr_zone_3_s=float(r.get("hr_time_in_zone_3")) if pd.notna(r.get("hr_time_in_zone_3")) else 0.0,
+            hr_zone_4_s=float(r.get("hr_time_in_zone_4")) if pd.notna(r.get("hr_time_in_zone_4")) else 0.0,
+            hr_zone_5_s=float(r.get("hr_time_in_zone_5")) if pd.notna(r.get("hr_time_in_zone_5")) else 0.0,
+        ),
+        axis=1,
+    )
+
+    if threshold_pace_curve_points:
+        pace_provider = PiecewiseThresholdPaceProvider(
+            default_threshold_pace_sec_per_km=threshold_pace_sec_per_km,
+            points=tuple(threshold_pace_curve_points),
+        )
+    else:
+        pace_provider = ConstantThresholdPaceProvider(threshold_pace_sec_per_km=threshold_pace_sec_per_km)
+    lthr_provider = ConstantLTHRProvider(lthr_bpm=lthr_bpm)
+    df["rtss"] = pd.NA
+    df["tss"] = pd.NA
+
     running_idx = is_running_like.fillna(False)
+    for idx, row in df.iterrows():
+        is_run_like = bool(running_idx.loc[idx]) if idx in running_idx.index else False
+        activity = ActivityTSSInput(
+            activity_duration_seconds=int(float(row.get("duration_s") or 0)),
+            activity_avg_pace_sec_per_km=(
+                float(row.get("avg_pace_s_per_km"))
+                if is_run_like and pd.notna(row.get("avg_pace_s_per_km"))
+                else None
+            ),
+            activity_avg_hr_bpm=float(row.get("avg_hr")) if pd.notna(row.get("avg_hr")) else None,
+            activity_start_datetime=row["start_time_utc"].to_pydatetime(),
+        )
+        bundle = compute_tss_bundle(activity, pace_provider=pace_provider, lthr_provider=lthr_provider)
+        if "rTSS" in bundle:
+            df.at[idx, "rtss"] = bundle["rTSS"]
+        if "hrTSS" in bundle:
+            df.at[idx, "tss"] = bundle["hrTSS"]
+
+    df["mechanical_load"] = pd.NA
     if running_idx.any():
         df.loc[running_idx, "mechanical_load"] = df.loc[running_idx].apply(
             lambda r: mechanical_load(
@@ -102,49 +142,22 @@ def compute_metrics(
                     if pd.notna(r.get("hr_time_in_zone_5"))
                     else None
                 ),
+                rtss=float(r.get("rtss")) if pd.notna(r.get("rtss")) else None,
             ),
             axis=1,
         )
 
-    df["edwards_trimp"] = df.apply(
-        lambda r: edwards_trimp_from_zones(
-            hr_zone_1_s=float(r.get("hr_time_in_zone_1")) if pd.notna(r.get("hr_time_in_zone_1")) else 0.0,
-            hr_zone_2_s=float(r.get("hr_time_in_zone_2")) if pd.notna(r.get("hr_time_in_zone_2")) else 0.0,
-            hr_zone_3_s=float(r.get("hr_time_in_zone_3")) if pd.notna(r.get("hr_time_in_zone_3")) else 0.0,
-            hr_zone_4_s=float(r.get("hr_time_in_zone_4")) if pd.notna(r.get("hr_time_in_zone_4")) else 0.0,
-            hr_zone_5_s=float(r.get("hr_time_in_zone_5")) if pd.notna(r.get("hr_time_in_zone_5")) else 0.0,
-        ),
-        axis=1,
-    )
-
-    if threshold_pace_curve_points:
-        pace_provider = PiecewiseThresholdPaceProvider(
-            default_threshold_pace_sec_per_km=threshold_pace_sec_per_km,
-            points=tuple(threshold_pace_curve_points),
-        )
-    else:
-        pace_provider = ConstantThresholdPaceProvider(threshold_pace_sec_per_km=threshold_pace_sec_per_km)
-    lthr_provider = ConstantLTHRProvider(lthr_bpm=lthr_bpm)
-    df["rtss"] = pd.NA
-    df["tss"] = pd.NA
-
-    for idx, row in df.iterrows():
-        is_run_like = bool(running_idx.loc[idx]) if idx in running_idx.index else False
-        activity = ActivityTSSInput(
-            activity_duration_seconds=int(float(row.get("duration_s") or 0)),
-            activity_avg_pace_sec_per_km=(
-                float(row.get("avg_pace_s_per_km"))
-                if is_run_like and pd.notna(row.get("avg_pace_s_per_km"))
-                else None
-            ),
-            activity_avg_hr_bpm=float(row.get("avg_hr")) if pd.notna(row.get("avg_hr")) else None,
-            activity_start_datetime=row["start_time_utc"].to_pydatetime(),
-        )
-        bundle = compute_tss_bundle(activity, pace_provider=pace_provider, lthr_provider=lthr_provider)
-        if "rTSS" in bundle:
-            df.at[idx, "rtss"] = bundle["rTSS"]
-        if "hrTSS" in bundle:
-            df.at[idx, "tss"] = bundle["hrTSS"]
+    duration = pd.to_numeric(df.get("duration_s"), errors="coerce").replace(0, pd.NA)
+    for zone_col, pct_col in (
+        ("hr_time_in_zone_1", "hr_zone_1_pct"),
+        ("hr_time_in_zone_2", "hr_zone_2_pct"),
+        ("hr_time_in_zone_3", "hr_zone_3_pct"),
+        ("hr_time_in_zone_4", "hr_zone_4_pct"),
+        ("hr_time_in_zone_5", "hr_zone_5_pct"),
+    ):
+        if zone_col in df.columns:
+            zone_s = pd.to_numeric(df[zone_col], errors="coerce")
+            df[pct_col] = (zone_s / duration) * 100.0
 
     return df
 
@@ -170,6 +183,11 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
                 "hr_time_in_zone_3",
                 "hr_time_in_zone_4",
                 "hr_time_in_zone_5",
+                "hr_zone_1_pct",
+                "hr_zone_2_pct",
+                "hr_zone_3_pct",
+                "hr_zone_4_pct",
+                "hr_zone_5_pct",
             ]
         )
 
@@ -196,6 +214,11 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
             hr_time_in_zone_3=("hr_time_in_zone_3", "sum"),
             hr_time_in_zone_4=("hr_time_in_zone_4", "sum"),
             hr_time_in_zone_5=("hr_time_in_zone_5", "sum"),
+            hr_zone_1_pct=("hr_zone_1_pct", "mean"),
+            hr_zone_2_pct=("hr_zone_2_pct", "mean"),
+            hr_zone_3_pct=("hr_zone_3_pct", "mean"),
+            hr_zone_4_pct=("hr_zone_4_pct", "mean"),
+            hr_zone_5_pct=("hr_zone_5_pct", "mean"),
         )
         .sort_values("day_utc")
     )
@@ -251,6 +274,7 @@ def prepare_metric_series(
     end_day: pd.Timestamp,
     fill_method: str = "zero",
     weekly: bool = False,
+    weekly_agg: str = "sum",
 ) -> pd.DataFrame:
     if daily_df.empty:
         return pd.DataFrame(columns=["day", metric])
@@ -275,11 +299,18 @@ def prepare_metric_series(
     if weekly:
         weekly_df = metric_df.copy()
         weekly_df["week_start"] = weekly_df["day"].dt.to_period("W-SUN").dt.start_time
-        weekly_df = (
-            weekly_df.groupby("week_start", as_index=False)[metric]
-            .sum()
-            .rename(columns={"week_start": "day"})
-        )
+        if weekly_agg == "mean":
+            weekly_df = (
+                weekly_df.groupby("week_start", as_index=False)[metric]
+                .mean()
+                .rename(columns={"week_start": "day"})
+            )
+        else:
+            weekly_df = (
+                weekly_df.groupby("week_start", as_index=False)[metric]
+                .sum()
+                .rename(columns={"week_start": "day"})
+            )
         return weekly_df
 
     return metric_df

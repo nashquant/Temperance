@@ -15,7 +15,6 @@ from analytics import (
     ema_alpha_from_days,
     parse_ma_windows,
     prepare_metric_series,
-    sma,
     weekly_summary,
 )
 from config import load_config
@@ -430,7 +429,7 @@ if view == "Dashboard":
             "For your full archive, run Comprehensive Garmin Extract from Jan 1, 2025."
         )
     else:
-        st.caption("Missing-day fill mode applies to chart calculations (SMA/EMA and aggregations).")
+        st.caption("Missing-day fill mode applies to chart calculations (EMA and aggregations).")
         controls = st.columns([1, 1, 1, 1, 1])
         with controls[0]:
             min_day = pd.to_datetime(daily_summary_df["day_utc"]).min().date() if not daily_summary_df.empty else metrics_df["start_time_utc"].min().date()
@@ -458,7 +457,7 @@ if view == "Dashboard":
                 "Non-running factor",
                 min_value=0.0,
                 max_value=1.5,
-                value=0.9,
+                value=0.85,
                 step=0.05,
                 format="%.2f",
                 disabled=not specificity_factor_on,
@@ -479,27 +478,27 @@ if view == "Dashboard":
         )
 
         metric_map = {
-            "Distance (km)": "distance_km",
-            "Garmin Training Load": "training_load_garmin",
-            "Fitness (EWMA 42)": "fitness",
-            "Fatigue (EWMA 7)": "fatigue",
-            "Overreach (Fatigue - Fitness)": "overreach",
-            "Running Economy (EWMA 200, rTSS)": "rfitness",
-            "Pounding (EWMA 7, rTSS)": "rfatigue",
-            "Injury Risk (Pounding - Running Economy)": "rform",
-            "rTSS": "rtss_total",
-            "TSS": "tss_total",
-            "TRIMP": "trimp_total",
-            "Edwards TRIMP": "edwards_trimp_total",
-            "Calories Active": "calories_active",
-            "Calories Total": "calories_total",
-            "Vigorous Minutes": "intensity_minutes_vigorous",
-            "Moderate Minutes": "intensity_minutes_moderate",
-            "HR Zone 1 Time": "hr_time_in_zone_1",
-            "HR Zone 2 Time": "hr_time_in_zone_2",
-            "HR Zone 3 Time": "hr_time_in_zone_3",
-            "HR Zone 4 Time": "hr_time_in_zone_4",
-            "HR Zone 5 Time": "hr_time_in_zone_5",
+            "Distance (km)": ("distance_km", "sum"),
+            "Garmin Training Load": ("training_load_garmin", "sum"),
+            "Fitness (EWMA 42)": ("fitness", "mean"),
+            "Fatigue (EWMA 7)": ("fatigue", "mean"),
+            "Overreach (Fatigue - Fitness)": ("overreach", "mean"),
+            "Running Economy (EWMA 200, rTSS)": ("rfitness", "mean"),
+            "Pounding (EWMA 7, rTSS)": ("rfatigue", "mean"),
+            "Injury Risk (Pounding - Running Economy)": ("rform", "mean"),
+            "rTSS": ("rtss_total", "sum"),
+            "TSS": ("tss_total", "sum"),
+            "TRIMP": ("trimp_total", "sum"),
+            "Edwards TRIMP": ("edwards_trimp_total", "sum"),
+            "Calories Active": ("calories_active", "sum"),
+            "Calories Total": ("calories_total", "sum"),
+            "Vigorous Minutes": ("intensity_minutes_vigorous", "sum"),
+            "Moderate Minutes": ("intensity_minutes_moderate", "sum"),
+            "HR Zone 1 %": ("hr_zone_1_pct", "mean"),
+            "HR Zone 2 %": ("hr_zone_2_pct", "mean"),
+            "HR Zone 3 %": ("hr_zone_3_pct", "mean"),
+            "HR Zone 4 %": ("hr_zone_4_pct", "mean"),
+            "HR Zone 5 %": ("hr_zone_5_pct", "mean"),
         }
 
         base_df = filtered_daily.copy()
@@ -525,9 +524,7 @@ if view == "Dashboard":
                 default_index = metric_labels.index(default_metric) if default_metric in metric_labels else 0
                 selected_labels = [st.selectbox("Metric", metric_labels, index=default_index)]
 
-            sma_windows = st.text_input("SMA windows (days, comma-separated)", value="")
-            ema_windows = st.text_input("EMA windows (days, comma-separated)", value="4,10")
-            sma_ns, sma_pairs = parse_ma_windows(sma_windows)
+            ema_windows = st.text_input("EMA windows (days, comma-separated)", value="4,16")
             ema_ns, ema_pairs = parse_ma_windows(ema_windows)
             if ema_ns:
                 alpha_text = ", ".join([f"EMA {n} -> alpha={ema_alpha_from_days(n):.4f}" for n in ema_ns])
@@ -535,9 +532,6 @@ if view == "Dashboard":
             if ema_pairs:
                 pair_text = ", ".join([f"EMA{a}-EMA{b}" for a, b in ema_pairs])
                 st.caption(f"EMA spread overlays: {pair_text}")
-            if sma_pairs:
-                pair_text = ", ".join([f"SMA{a}-SMA{b}" for a, b in sma_pairs])
-                st.caption(f"SMA spread overlays: {pair_text}")
 
             plot_frames: list[pd.DataFrame] = []
             if compare_mode:
@@ -548,7 +542,7 @@ if view == "Dashboard":
                 labels_and_axis = [(label, "left") for label in selected_labels]
 
             for label, axis_side in labels_and_axis:
-                metric = metric_map[label]
+                metric, weekly_agg = metric_map[label]
                 frame = prepare_metric_series(
                     daily_df=base_df.rename(columns={"day_utc": "day_utc"}),
                     metric=metric,
@@ -556,6 +550,7 @@ if view == "Dashboard":
                     end_day=end_ts,
                     fill_method=fill_mode,
                     weekly=weekly_toggle,
+                    weekly_agg=weekly_agg,
                 )
                 if frame.empty:
                     continue
@@ -570,24 +565,10 @@ if view == "Dashboard":
 
                 if not compare_mode:
                     overlay_cols: list[str] = []
-                    for n in sma_ns:
-                        col = f"SMA{n}"
-                        frame[col] = sma(frame["value"], n)
-                        overlay_cols.append(col)
                     for n in ema_ns:
                         col = f"EMA{n}"
                         frame[col] = ema(frame["value"], n)
                         overlay_cols.append(col)
-                    for a, b in sma_pairs:
-                        col_a = f"SMA{a}"
-                        col_b = f"SMA{b}"
-                        if col_a not in frame.columns:
-                            frame[col_a] = sma(frame["value"], a)
-                        if col_b not in frame.columns:
-                            frame[col_b] = sma(frame["value"], b)
-                        spread_col = f"SMA{a}-SMA{b}"
-                        frame[spread_col] = frame[col_a] - frame[col_b]
-                        overlay_cols.append(spread_col)
                     for a, b in ema_pairs:
                         col_a = f"EMA{a}"
                         col_b = f"EMA{b}"
@@ -607,20 +588,12 @@ if view == "Dashboard":
                     )
                     mark = alt.Chart(overlay_long)
                     legend_sel = alt.selection_point(fields=["series"], bind="legend") if legend_toggle else None
-                    if chart_type == "bar":
-                        chart = mark.mark_bar().encode(
-                            x="day:T",
-                            y=alt.Y("metric_value:Q", axis=alt.Axis(format=".0f")),
-                            color="series:N",
-                            tooltip=["day:T", "series:N", alt.Tooltip("metric_value:Q", format=".0f")],
-                        )
-                    else:
-                        chart = mark.mark_line(point=True).encode(
-                            x="day:T",
-                            y=alt.Y("metric_value:Q", axis=alt.Axis(format=".0f")),
-                            color="series:N",
-                            tooltip=["day:T", "series:N", alt.Tooltip("metric_value:Q", format=".0f")],
-                        )
+                    chart = mark.mark_line(point=True, opacity=0.65).encode(
+                        x="day:T",
+                        y=alt.Y("metric_value:Q", axis=alt.Axis(format=".0f")),
+                        color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
+                        tooltip=["day:T", "series:N", alt.Tooltip("metric_value:Q", format=".0f")],
+                    )
                     if legend_sel is not None:
                         chart = chart.encode(
                             opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
@@ -640,21 +613,21 @@ if view == "Dashboard":
 
                 left_chart = (
                     alt.Chart(left_df)
-                    .mark_line(point=True)
+                    .mark_line(point=True, opacity=0.65)
                     .encode(
                         x="day:T",
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Left axis")),
-                        color="series:N",
+                        color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
                         tooltip=["day:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
                 right_chart = (
                     alt.Chart(right_df)
-                    .mark_line(point=True)
+                    .mark_line(point=True, opacity=0.65)
                     .encode(
                         x="day:T",
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Right axis", orient="right")),
-                        color="series:N",
+                        color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
                         tooltip=["day:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )

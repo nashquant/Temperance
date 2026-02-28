@@ -125,6 +125,7 @@ def mechanical_load(
     hr_zone_3_s: float | None = None,
     hr_zone_4_s: float | None = None,
     hr_zone_5_s: float | None = None,
+    rtss: float | None = None,
 ) -> float:
     """
     Mechanical load proxy for running.
@@ -182,12 +183,21 @@ def mechanical_load(
         # Center around 1.0 and allow meaningful differentiation for harder sessions.
         zone_factor = _clamp(weighted_zone, 0.75, 2.4) ** 0.55
 
-    return (
+    # rTSS provides an independent external-load contribution, decoupled from zone-time profile.
+    rtss_factor = 1.0
+    if rtss is not None:
+        rtss_val = _clamp(float(rtss), 0.0, 300.0)
+        rtss_factor = 1.0 + 0.35 * ((rtss_val / 100.0) - 1.0)
+        rtss_factor = _clamp(rtss_factor, 0.65, 1.55)
+
+    base_load = (
         distance_km
         * pace_factor
         * hill_factor
         * step_factor
         * stride_factor
         * power_factor
-        * zone_factor
     )
+    # Two bagged intensity factors: HR-zone profile and independent rTSS contribution.
+    intensity_bag = (0.55 * zone_factor) + (0.45 * rtss_factor)
+    return base_load * intensity_bag
