@@ -60,7 +60,7 @@ DEFAULT_MAX_HR = 200.0
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 INJURY_WINDOWS = [
-    {"label": "Injury 1", "start": "2025-06-02", "end": "2025-07-15"},
+    {"label": "Injury 1", "start": "2025-05-15", "end": "2025-06-18"},
     {"label": "Injury 2", "start": "2025-12-28", "end": "2026-01-20"},
 ]
 
@@ -344,9 +344,9 @@ def cached_filtered_views(
             if "rtss_total" in filtered_daily.columns
             else pd.Series([0.0] * len(filtered_daily), index=filtered_daily.index)
         )
-        filtered_daily["leg_tightness"] = ema(rtss_series, 100)
+        filtered_daily["leg_elasticity"] = ema(rtss_series, 100)
         filtered_daily["pounding"] = ema(rtss_series, 7)
-        filtered_daily["injury_risk"] = (filtered_daily["pounding"] - filtered_daily["leg_tightness"]).clip(lower=0.0)
+        filtered_daily["injury_risk"] = (filtered_daily["pounding"] - filtered_daily["leg_elasticity"]).clip(lower=0.0)
     return filtered_metrics, filtered_daily
 
 
@@ -573,9 +573,9 @@ if view == "Dashboard":
             "Fitness (EWMA 42)": ("fitness", "mean"),
             "Fatigue (EWMA 7)": ("fatigue", "mean"),
             "Overreach (Fatigue - Fitness)": ("overreach", "mean"),
-            "Leg Tightness (EWMA 100, rTSS)": ("leg_tightness", "mean"),
+            "Leg Elasticity (EWMA 100, rTSS)": ("leg_elasticity", "mean"),
             "Pounding (EWMA 7, rTSS)": ("pounding", "mean"),
-            "Injury Risk (Pounding - Leg Tightness)": ("injury_risk", "mean"),
+            "Injury Risk (Pounding - Leg Elasticity)": ("injury_risk", "mean"),
             "rTSS": ("rtss_total", "sum"),
             "TSS": ("tss_total", "sum"),
             "TRIMP": ("trimp_total", "sum"),
@@ -680,17 +680,20 @@ if view == "Dashboard":
                         var_name="series",
                         value_name="metric_value",
                     )
-                    overlay_long["legend_series"] = overlay_long["series"].replace({"value": "Metric"})
+                    overlay_long["series"] = overlay_long["series"].replace({"value": "Metric"})
                     overlay_long["base_opacity"] = overlay_long["series"].apply(
-                        lambda s: 0.18 if s == "value" else 1.0
+                        lambda s: 0.18 if s == "Metric" else 1.0
                     )
                     mark = alt.Chart(overlay_long)
-                    legend_sel = alt.selection_point(fields=["legend_series"], bind="legend") if legend_toggle else None
+                    legend_sel = alt.selection_point(fields=["series"], bind="legend") if legend_toggle else None
                     chart = mark.mark_line(point=True).encode(
                         x=alt.X("day:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=12)),
                         y=alt.Y("metric_value:Q", axis=alt.Axis(format=".0f")),
-                        color=alt.Color("legend_series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
-                        tooltip=["day:T", "legend_series:N", alt.Tooltip("metric_value:Q", format=".0f")],
+                        color=alt.Color(
+                            "series:N",
+                            legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
+                        ),
+                        tooltip=["day:T", "series:N", alt.Tooltip("metric_value:Q", format=".0f")],
                     )
                     if legend_sel is not None:
                         chart = chart.encode(
@@ -702,7 +705,7 @@ if view == "Dashboard":
                         ).add_params(legend_sel)
                     else:
                         chart = chart.encode(opacity=alt.Opacity("base_opacity:Q", legend=None))
-                    chart = alt.layer(build_injury_layer(start_ts, end_ts), chart)
+                    chart = alt.layer(build_injury_layer(start_ts, end_ts), chart).properties(height=320)
                     if enable_zoom:
                         chart = chart.interactive()
                         st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
@@ -781,7 +784,7 @@ if view == "Dashboard":
                 var_name="series",
                 value_name="value",
             )
-            weekly_tss_plot["legend_series"] = weekly_tss_plot["series"].replace(
+            weekly_tss_plot["series"] = weekly_tss_plot["series"].replace(
                 {"total_tss": "TSS", "total_rtss": "rTSS"}
             )
             st.subheader("Weekly TSS vs rTSS")
@@ -792,19 +795,21 @@ if view == "Dashboard":
                     x=alt.X("week_start:T", axis=alt.Axis(title="")),
                     y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
                     color=alt.Color(
-                        "legend_series:N",
-                        legend=alt.Legend(orient="bottom", direction="horizontal"),
+                        "series:N",
+                        legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
                         scale=alt.Scale(domain=["TSS", "rTSS"], range=["#60a5fa", "#f59e0b"]),
                     ),
-                    tooltip=["week_start:T", "legend_series:N", alt.Tooltip("value:Q", format=".0f")],
+                    tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                 )
             )
             if legend_toggle:
-                weekly_tss_sel = alt.selection_point(fields=["legend_series"], bind="legend")
+                weekly_tss_sel = alt.selection_point(fields=["series"], bind="legend")
                 weekly_tss_chart = weekly_tss_chart.encode(
                     opacity=alt.condition(weekly_tss_sel, alt.value(1.0), alt.value(0.08))
                 ).add_params(weekly_tss_sel)
-            weekly_tss_chart = alt.layer(build_injury_layer(start_ts, end_ts), weekly_tss_chart)
+            weekly_tss_chart = alt.layer(build_injury_layer(start_ts, end_ts), weekly_tss_chart).properties(
+                height=280
+            )
             if enable_zoom:
                 weekly_tss_chart = weekly_tss_chart.interactive()
             st.altair_chart(weekly_tss_chart, use_container_width=True)
@@ -840,7 +845,7 @@ if view == "Dashboard":
                     color=alt.Color(
                         "series:N",
                         legend=alt.Legend(orient="bottom", direction="horizontal"),
-                        scale=alt.Scale(domain=["Fitness", "Fatigue"], range=["#60a5fa", "#f59e0b"]),
+                        scale=alt.Scale(domain=["Fitness", "Fatigue"], range=["#22c55e", "#ef4444"]),
                     ),
                     tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                 )
@@ -857,27 +862,27 @@ if view == "Dashboard":
         else:
             st.caption("No fitness/fatigue data to plot.")
 
-        st.subheader("Weekly Leg Tightness vs Pounding")
-        if not filtered_daily_range.empty and "leg_tightness" in filtered_daily_range.columns and "pounding" in filtered_daily_range.columns:
-            weekly_rff = filtered_daily_range[["day_utc", "leg_tightness", "pounding"]].copy()
+        st.subheader("Weekly Leg Elasticity vs Pounding")
+        if not filtered_daily_range.empty and "leg_elasticity" in filtered_daily_range.columns and "pounding" in filtered_daily_range.columns:
+            weekly_rff = filtered_daily_range[["day_utc", "leg_elasticity", "pounding"]].copy()
             weekly_rff["day"] = pd.to_datetime(weekly_rff["day_utc"], errors="coerce")
             weekly_rff = weekly_rff.dropna(subset=["day"])
-            weekly_rff["leg_tightness"] = pd.to_numeric(weekly_rff["leg_tightness"], errors="coerce").fillna(0.0)
+            weekly_rff["leg_elasticity"] = pd.to_numeric(weekly_rff["leg_elasticity"], errors="coerce").fillna(0.0)
             weekly_rff["pounding"] = pd.to_numeric(weekly_rff["pounding"], errors="coerce").fillna(0.0)
             weekly_rff["week_start"] = weekly_rff["day"].dt.to_period("W-SUN").dt.start_time
             weekly_rff = (
-                weekly_rff.groupby("week_start", as_index=False)[["leg_tightness", "pounding"]]
+                weekly_rff.groupby("week_start", as_index=False)[["leg_elasticity", "pounding"]]
                 .mean()
                 .sort_values("week_start")
             )
             weekly_rff_long = weekly_rff.melt(
                 id_vars=["week_start"],
-                value_vars=["leg_tightness", "pounding"],
+                value_vars=["leg_elasticity", "pounding"],
                 var_name="series",
                 value_name="value",
             )
             weekly_rff_long["series"] = weekly_rff_long["series"].replace(
-                {"leg_tightness": "Leg Tightness", "pounding": "Pounding"}
+                {"leg_elasticity": "Leg Elasticity", "pounding": "Pounding"}
             )
             rff_chart = (
                 alt.Chart(weekly_rff_long)
@@ -888,7 +893,7 @@ if view == "Dashboard":
                     color=alt.Color(
                         "series:N",
                         legend=alt.Legend(orient="bottom", direction="horizontal"),
-                        scale=alt.Scale(domain=["Leg Tightness", "Pounding"], range=["#22c55e", "#ef4444"]),
+                        scale=alt.Scale(domain=["Leg Elasticity", "Pounding"], range=["#22c55e", "#ef4444"]),
                     ),
                     tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                 )
@@ -903,7 +908,7 @@ if view == "Dashboard":
                 rff_chart = rff_chart.interactive()
             st.altair_chart(rff_chart, use_container_width=True)
         else:
-            st.caption("No Leg Tightness/Pounding data to plot.")
+            st.caption("No Leg Elasticity/Pounding data to plot.")
 
         st.subheader("Weekly Overreach vs Injury Risk")
         if not filtered_daily_range.empty and "overreach" in filtered_daily_range.columns and "injury_risk" in filtered_daily_range.columns:
