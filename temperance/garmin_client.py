@@ -566,6 +566,7 @@ def fetch_garmin_comprehensive(
     include_wellness: bool = True,
     page_size: int = 100,
     raw_export_dir: Path | None = None,
+    progress_cb: Callable[[dict[str, Any]], None] | None = None,
 ) -> GarminExtractResult:
     """
     Pull a broad local archive from Garmin with incremental behavior:
@@ -578,6 +579,15 @@ def fetch_garmin_comprehensive(
     from garminconnect import Garmin
 
     end_day = end_day or datetime.now(timezone.utc).date()
+
+    def _progress(payload: dict[str, Any]) -> None:
+        if progress_cb is None:
+            return
+        try:
+            progress_cb(payload)
+        except Exception:
+            return
+
     client = Garmin(email=email, password=password)
     client.login()
 
@@ -587,6 +597,15 @@ def fetch_garmin_comprehensive(
     activity_records: list[dict[str, Any]] = []
 
     offset = 0
+    total_days = max((end_day - start_day).days + 1, 1)
+    _progress(
+        {
+            "phase": "activities",
+            "message": "Fetching activity summaries",
+            "fraction": 0.0,
+            "total_days": total_days,
+        }
+    )
     while True:
         batch, err = _safe_call(client.get_activities, offset, page_size)
         if err:
@@ -661,6 +680,19 @@ def fetch_garmin_comprehensive(
             activities.append(normalized)
 
         offset += page_size
+        if oldest_in_batch:
+            clamped_oldest = max(oldest_in_batch, start_day)
+            covered_days = max((end_day - clamped_oldest).days + 1, 0)
+            fraction = min(max(covered_days / float(total_days), 0.0), 1.0)
+            _progress(
+                {
+                    "phase": "activities",
+                    "message": "Fetching activity summaries",
+                    "fraction": fraction,
+                    "oldest_in_batch": clamped_oldest.isoformat(),
+                    "offset": offset,
+                }
+            )
         if not keep_going:
             break
         if oldest_in_batch and oldest_in_batch < start_day:
@@ -681,7 +713,18 @@ def fetch_garmin_comprehensive(
     wellness_daily: list[dict[str, Any]] = []
 
     if include_wellness:
-        for day in _iter_days(start_day, end_day):
+        days = _iter_days(start_day, end_day)
+        total_wellness_days = len(days)
+        _progress(
+            {
+                "phase": "wellness",
+                "message": "Fetching daily wellness endpoints",
+                "current": 0,
+                "total": total_wellness_days,
+                "fraction": 0.0,
+            }
+        )
+        for idx, day in enumerate(days, start=1):
             cdate = day.isoformat()
 
             sleep_data, sleep_err, _ = _safe_call_method(client, ("get_sleep_data",), cdate)
@@ -760,6 +803,18 @@ def fetch_garmin_comprehensive(
                     steps_payload=steps_data,
                 )
             )
+            _progress(
+                {
+                    "phase": "wellness",
+                    "message": "Fetching daily wellness endpoints",
+                    "current": idx,
+                    "total": total_wellness_days,
+                    "fraction": (idx / float(total_wellness_days)) if total_wellness_days else 1.0,
+                    "day": cdate,
+                }
+            )
+
+    _progress({"phase": "complete", "message": "Fetch completed", "fraction": 1.0})
 
     return GarminExtractResult(
         activities=activities,
