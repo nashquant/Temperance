@@ -273,9 +273,9 @@ def cached_filtered_views(
             if "rtss_total" in filtered_daily.columns
             else pd.Series([0.0] * len(filtered_daily), index=filtered_daily.index)
         )
-        filtered_daily["rfitness"] = ema(rtss_series, 200)
-        filtered_daily["rfatigue"] = ema(rtss_series, 7)
-        filtered_daily["rform"] = (filtered_daily["rfatigue"] - filtered_daily["rfitness"]).clip(lower=0.0)
+        filtered_daily["leg_tightness"] = ema(rtss_series, 100)
+        filtered_daily["pounding"] = ema(rtss_series, 7)
+        filtered_daily["injury_risk"] = (filtered_daily["pounding"] - filtered_daily["leg_tightness"]).clip(lower=0.0)
     return filtered_metrics, filtered_daily
 
 
@@ -483,9 +483,9 @@ if view == "Dashboard":
             "Fitness (EWMA 42)": ("fitness", "mean"),
             "Fatigue (EWMA 7)": ("fatigue", "mean"),
             "Overreach (Fatigue - Fitness)": ("overreach", "mean"),
-            "Running Economy (EWMA 200, rTSS)": ("rfitness", "mean"),
-            "Pounding (EWMA 7, rTSS)": ("rfatigue", "mean"),
-            "Injury Risk (Pounding - Running Economy)": ("rform", "mean"),
+            "Leg Tightness (EWMA 100, rTSS)": ("leg_tightness", "mean"),
+            "Pounding (EWMA 7, rTSS)": ("pounding", "mean"),
+            "Injury Risk (Pounding - Leg Tightness)": ("injury_risk", "mean"),
             "rTSS": ("rtss_total", "sum"),
             "TSS": ("tss_total", "sum"),
             "TRIMP": ("trimp_total", "sum"),
@@ -755,27 +755,27 @@ if view == "Dashboard":
         else:
             st.caption("No fitness/fatigue data to plot.")
 
-        st.subheader("Weekly Running Economy vs Pounding")
-        if not filtered_daily.empty and "rfitness" in filtered_daily.columns and "rfatigue" in filtered_daily.columns:
-            weekly_rff = filtered_daily[["day_utc", "rfitness", "rfatigue"]].copy()
+        st.subheader("Weekly Leg Tightness vs Pounding")
+        if not filtered_daily.empty and "leg_tightness" in filtered_daily.columns and "pounding" in filtered_daily.columns:
+            weekly_rff = filtered_daily[["day_utc", "leg_tightness", "pounding"]].copy()
             weekly_rff["day"] = pd.to_datetime(weekly_rff["day_utc"], errors="coerce")
             weekly_rff = weekly_rff.dropna(subset=["day"])
-            weekly_rff["rfitness"] = pd.to_numeric(weekly_rff["rfitness"], errors="coerce").fillna(0.0)
-            weekly_rff["rfatigue"] = pd.to_numeric(weekly_rff["rfatigue"], errors="coerce").fillna(0.0)
+            weekly_rff["leg_tightness"] = pd.to_numeric(weekly_rff["leg_tightness"], errors="coerce").fillna(0.0)
+            weekly_rff["pounding"] = pd.to_numeric(weekly_rff["pounding"], errors="coerce").fillna(0.0)
             weekly_rff["week_start"] = weekly_rff["day"].dt.to_period("W-SUN").dt.start_time
             weekly_rff = (
-                weekly_rff.groupby("week_start", as_index=False)[["rfitness", "rfatigue"]]
+                weekly_rff.groupby("week_start", as_index=False)[["leg_tightness", "pounding"]]
                 .mean()
                 .sort_values("week_start")
             )
             weekly_rff_long = weekly_rff.melt(
                 id_vars=["week_start"],
-                value_vars=["rfitness", "rfatigue"],
+                value_vars=["leg_tightness", "pounding"],
                 var_name="series",
                 value_name="value",
             )
             weekly_rff_long["series"] = weekly_rff_long["series"].replace(
-                {"rfitness": "Running Economy", "rfatigue": "Pounding"}
+                {"leg_tightness": "Leg Tightness", "pounding": "Pounding"}
             )
             rff_chart = (
                 alt.Chart(weekly_rff_long)
@@ -786,7 +786,7 @@ if view == "Dashboard":
                     color=alt.Color(
                         "series:N",
                         legend=alt.Legend(orient="bottom", direction="horizontal"),
-                        scale=alt.Scale(domain=["Running Economy", "Pounding"], range=["#22c55e", "#ef4444"]),
+                        scale=alt.Scale(domain=["Leg Tightness", "Pounding"], range=["#22c55e", "#ef4444"]),
                     ),
                     tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                 )
@@ -801,29 +801,29 @@ if view == "Dashboard":
                 rff_chart = rff_chart.interactive()
             st.altair_chart(rff_chart, use_container_width=True)
         else:
-            st.caption("No Running Economy/Pounding data to plot.")
+            st.caption("No Leg Tightness/Pounding data to plot.")
 
         st.subheader("Weekly Overreach vs Injury Risk")
-        if not filtered_daily.empty and "overreach" in filtered_daily.columns and "rform" in filtered_daily.columns:
-            weekly_fr = filtered_daily[["day_utc", "overreach", "rform"]].copy()
+        if not filtered_daily.empty and "overreach" in filtered_daily.columns and "injury_risk" in filtered_daily.columns:
+            weekly_fr = filtered_daily[["day_utc", "overreach", "injury_risk"]].copy()
             weekly_fr["day"] = pd.to_datetime(weekly_fr["day_utc"], errors="coerce")
             weekly_fr = weekly_fr.dropna(subset=["day"])
             weekly_fr["overreach"] = pd.to_numeric(weekly_fr["overreach"], errors="coerce").fillna(0.0)
-            weekly_fr["rform"] = pd.to_numeric(weekly_fr["rform"], errors="coerce").fillna(0.0)
+            weekly_fr["injury_risk"] = pd.to_numeric(weekly_fr["injury_risk"], errors="coerce").fillna(0.0)
             weekly_fr["week_start"] = weekly_fr["day"].dt.to_period("W-SUN").dt.start_time
             weekly_fr = (
-                weekly_fr.groupby("week_start", as_index=False)[["overreach", "rform"]]
+                weekly_fr.groupby("week_start", as_index=False)[["overreach", "injury_risk"]]
                 .mean()
                 .sort_values("week_start")
             )
             weekly_fr_long = weekly_fr.melt(
                 id_vars=["week_start"],
-                value_vars=["overreach", "rform"],
+                value_vars=["overreach", "injury_risk"],
                 var_name="series",
                 value_name="value",
             )
             weekly_fr_long["series"] = weekly_fr_long["series"].replace(
-                {"overreach": "Overreach", "rform": "Injury Risk"}
+                {"overreach": "Overreach", "injury_risk": "Injury Risk"}
             )
             fr_chart = (
                 alt.Chart(weekly_fr_long)
