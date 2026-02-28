@@ -1328,11 +1328,9 @@ if view == "Data Extract":
                 if include_wellness:
                     _log("[fetch] daily wellness endpoints: sleep/stress/hrv/rhr/readiness/respiration/steps")
                 progress.progress(15, text="Fetching Garmin data...")
-                last_activity_logged_pct = -1
-                last_wellness_logged_idx = -1
+                progress_state = {"last_activity_pct": -1, "last_wellness_idx": -1}
 
                 def _on_fetch_progress(payload: dict) -> None:
-                    nonlocal last_activity_logged_pct, last_wellness_logged_idx
                     phase = str(payload.get("phase") or "")
                     if phase == "activities":
                         frac = float(payload.get("fraction") or 0.0)
@@ -1350,12 +1348,12 @@ if view == "Data Extract":
                             ),
                         )
                         rounded = (pct // 5) * 5
-                        if rounded > last_activity_logged_pct:
+                        if rounded > int(progress_state["last_activity_pct"]):
                             _log(
                                 f"[progress] activities {pct}%"
                                 + (f" | oldest_seen={oldest}" if oldest else "")
                             )
-                            last_activity_logged_pct = rounded
+                            progress_state["last_activity_pct"] = rounded
                     elif phase == "wellness" and include_wellness:
                         cur = int(payload.get("current") or 0)
                         total = int(payload.get("total") or 0)
@@ -1371,12 +1369,12 @@ if view == "Data Extract":
                                 + (f" | {day_s}" if day_s else "")
                             ),
                         )
-                        if cur != last_wellness_logged_idx and (cur == 1 or (cur % 7 == 0) or cur == total):
+                        if cur != int(progress_state["last_wellness_idx"]) and (cur == 1 or (cur % 7 == 0) or cur == total):
                             _log(
                                 f"[progress] wellness {cur}/{total}"
                                 + (f" | day={day_s}" if day_s else "")
                             )
-                            last_wellness_logged_idx = cur
+                            progress_state["last_wellness_idx"] = cur
                     elif phase == "complete":
                         progress.progress(90, text="Fetch completed. Upserting DB...")
 
