@@ -667,6 +667,25 @@ def get_latest_recovery_day(db_path: Path) -> datetime | None:
     return datetime.fromisoformat(f"{latest_day}T00:00:00+00:00")
 
 
+def get_activities_cache_key(db_path: Path) -> str:
+    """
+    Stable digest for activity-table-driven computation caching.
+    Changes whenever activities content is updated (via updated_at/count).
+    """
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS n,
+                   MAX(updated_at) AS max_updated_at,
+                   MAX(start_time_utc) AS max_start_time
+            FROM activities
+            """
+        ).fetchone()
+    if not row:
+        return "0:none:none"
+    return f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}:{row['max_start_time'] or 'none'}"
+
+
 def get_table_counts(db_path: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     tables = [

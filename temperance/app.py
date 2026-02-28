@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import altair as alt
 import pandas as pd
@@ -25,6 +26,7 @@ from db import (
     get_activity_raw,
     get_daily_summary_df,
     get_last_sync,
+    get_activities_cache_key,
     get_latest_activity_time,
     get_latest_recovery_day,
     get_runs_df,
@@ -37,8 +39,6 @@ from db import (
     upsert_activities,
     upsert_activity_details,
     upsert_activity_records,
-    upsert_activity_trimp,
-    upsert_daily_summary,
     upsert_sleep_daily,
     upsert_wellness_daily,
 )
@@ -275,13 +275,17 @@ def apply_specificity_factor(df: pd.DataFrame, enabled: bool, non_running_factor
 
 @st.cache_data(show_spinner=False)
 def cached_compute_metrics(
-    runs_df: pd.DataFrame,
+    db_path_str: str,
+    activities_cache_key: str,
     resting_hr: float,
     max_hr: float,
     sex: str,
     threshold_pace_default_sec: float,
     threshold_pace_curve_points: tuple[tuple[str, float], ...],
 ) -> pd.DataFrame:
+    # activities_cache_key is intentionally unused in the function body; it drives cache invalidation.
+    _ = activities_cache_key
+    runs_df = get_runs_df(Path(db_path_str))
     curve_points = [
         (datetime.fromisoformat(d).replace(tzinfo=timezone.utc), float(p))
         for d, p in threshold_pace_curve_points
@@ -296,7 +300,6 @@ def cached_compute_metrics(
     )
 
 
-@st.cache_data(show_spinner=False)
 def cached_filtered_views(
     metrics_df: pd.DataFrame,
     activity_filter: str,
@@ -459,28 +462,16 @@ else:
         saved_threshold_pace_sec = DEFAULT_THRESHOLD_PACE_SEC_PER_KM
     saved_curve_points = _load_threshold_curve_points(cfg.db_path)
 
-runs_df = get_runs_df(cfg.db_path)
+activities_cache_key = get_activities_cache_key(cfg.db_path)
 metrics_df = cached_compute_metrics(
-    runs_df,
+    db_path_str=str(cfg.db_path),
+    activities_cache_key=activities_cache_key,
     resting_hr=float(resting_hr),
     max_hr=float(max_hr),
     sex=sex,
     threshold_pace_default_sec=float(saved_threshold_pace_sec),
     threshold_pace_curve_points=tuple((dt.date().isoformat(), float(p)) for dt, p in saved_curve_points),
 )
-if not metrics_df.empty:
-    upsert_activity_trimp(
-        cfg.db_path,
-        [
-            {"activity_id": str(r["activity_id"]), "trimp": float(r["trimp"])}
-            for _, r in metrics_df[["activity_id", "trimp"]].iterrows()
-            if pd.notna(r["trimp"])
-        ],
-    )
-    upsert_daily_summary(
-        cfg.db_path,
-        build_daily_summary(metrics_df).to_dict(orient="records"),
-    )
 daily_summary_df = get_daily_summary_df(cfg.db_path)
 
 if view == "Dashboard":
