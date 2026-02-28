@@ -337,11 +337,17 @@ def cached_filtered_views(
     return filtered_metrics, filtered_daily
 
 
-def build_injury_layer() -> alt.Chart:
+def build_injury_layer(start_day: pd.Timestamp | None = None, end_day: pd.Timestamp | None = None) -> alt.Chart:
     injuries = pd.DataFrame(INJURY_WINDOWS).copy()
     injuries["start"] = pd.to_datetime(injuries["start"])
     # Inclusive end-date visual window.
     injuries["end_exclusive"] = pd.to_datetime(injuries["end"]) + pd.Timedelta(days=1)
+    if start_day is not None and end_day is not None:
+        start_ts = pd.Timestamp(start_day)
+        end_exclusive = pd.Timestamp(end_day) + pd.Timedelta(days=1)
+        injuries = injuries[(injuries["end_exclusive"] > start_ts) & (injuries["start"] < end_exclusive)].copy()
+        injuries["start"] = injuries["start"].clip(lower=start_ts)
+        injuries["end_exclusive"] = injuries["end_exclusive"].clip(upper=end_exclusive)
     return (
         alt.Chart(injuries)
         .mark_rect(color="#ef4444", opacity=0.12)
@@ -492,7 +498,7 @@ if view == "Dashboard":
         with controls[0]:
             min_day = pd.to_datetime(daily_summary_df["day_utc"]).min().date() if not daily_summary_df.empty else metrics_df["start_time_utc"].min().date()
             max_day = pd.to_datetime(daily_summary_df["day_utc"]).max().date() if not daily_summary_df.empty else metrics_df["start_time_utc"].max().date()
-            quick_range = st.selectbox("Quick range", ["YTD", "1Y", "2Y", "ALL", "Custom"], index=0)
+            quick_range = st.selectbox("Quick range", ["YTD", "1Y", "2Y", "ALL", "Custom"], index=1)
             if quick_range == "YTD":
                 q_start = max(min_day, date(max_day.year, 1, 1))
                 q_end = max_day
@@ -508,7 +514,11 @@ if view == "Dashboard":
             else:
                 q_start = min_day
                 q_end = max_day
-            date_range = st.date_input("Date range", value=(q_start, q_end), min_value=min_day, max_value=max_day)
+            if quick_range == "Custom":
+                date_range = st.date_input("Date range", value=(q_start, q_end), min_value=min_day, max_value=max_day)
+            else:
+                date_range = (q_start, q_end)
+                st.caption(f"Range: {q_start.isoformat()} -> {q_end.isoformat()}")
         with controls[1]:
             activity_filter = st.selectbox(
                 "Activity filter",
@@ -550,6 +560,14 @@ if view == "Dashboard":
             specificity_enabled=specificity_factor_on,
             specificity_factor=float(specificity_factor_value),
         )
+        range_filtered_metrics = filtered_metrics[
+            (pd.to_datetime(filtered_metrics["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None) >= start_ts)
+            & (pd.to_datetime(filtered_metrics["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None) <= end_ts)
+        ].copy()
+        filtered_daily_range = filtered_daily[
+            (pd.to_datetime(filtered_daily["day_utc"], errors="coerce") >= start_ts)
+            & (pd.to_datetime(filtered_daily["day_utc"], errors="coerce") <= end_ts)
+        ].copy()
 
         metric_map = {
             "Distance (km)": ("distance_km", "sum"),
@@ -575,7 +593,7 @@ if view == "Dashboard":
             "HR Zone 5 %": ("hr_zone_5_pct", "mean"),
         }
 
-        base_df = filtered_daily.copy()
+        base_df = filtered_daily_range.copy()
         if base_df.empty:
             st.info(f"No data for activity filter: {activity_filter}")
         else:
@@ -681,7 +699,7 @@ if view == "Dashboard":
                         ).add_params(legend_sel)
                     else:
                         chart = chart.encode(opacity=alt.Opacity("base_opacity:Q", legend=None))
-                    chart = alt.layer(build_injury_layer(), chart)
+                    chart = alt.layer(build_injury_layer(start_ts, end_ts), chart)
                     if enable_zoom:
                         chart = chart.interactive()
                         st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
@@ -722,7 +740,7 @@ if view == "Dashboard":
                     right_chart = right_chart.encode(
                         opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
                     )
-                compare_chart = alt.layer(build_injury_layer(), left_chart, right_chart).resolve_scale(
+                compare_chart = alt.layer(build_injury_layer(start_ts, end_ts), left_chart, right_chart).resolve_scale(
                     y="independent"
                 )
                 if legend_sel is not None:
@@ -732,7 +750,7 @@ if view == "Dashboard":
                     st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
                 st.altair_chart(compare_chart, use_container_width=True)
 
-        table_df = display_table(filtered_metrics)
+        table_df = display_table(range_filtered_metrics)
         st.subheader("Activities")
         st.dataframe(
             table_df,
@@ -749,7 +767,7 @@ if view == "Dashboard":
                 "specificity_factor": st.column_config.NumberColumn(format="%.2f"),
             },
         )
-        weekly = weekly_summary(filtered_metrics)
+        weekly = weekly_summary(range_filtered_metrics)
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
 
         if "total_tss" in weekly.columns and "total_rtss" in weekly.columns and not weekly.empty:
@@ -776,14 +794,14 @@ if view == "Dashboard":
                 weekly_tss_chart = weekly_tss_chart.encode(
                     opacity=alt.condition(weekly_tss_sel, alt.value(1.0), alt.value(0.08))
                 ).add_params(weekly_tss_sel)
-            weekly_tss_chart = alt.layer(build_injury_layer(), weekly_tss_chart)
+            weekly_tss_chart = alt.layer(build_injury_layer(start_ts, end_ts), weekly_tss_chart)
             if enable_zoom:
                 weekly_tss_chart = weekly_tss_chart.interactive()
             st.altair_chart(weekly_tss_chart, use_container_width=True)
 
         st.subheader("Weekly Fitness vs Fatigue")
-        if not filtered_daily.empty and "fitness" in filtered_daily.columns and "fatigue" in filtered_daily.columns:
-            weekly_ff = filtered_daily[["day_utc", "fitness", "fatigue"]].copy()
+        if not filtered_daily_range.empty and "fitness" in filtered_daily_range.columns and "fatigue" in filtered_daily_range.columns:
+            weekly_ff = filtered_daily_range[["day_utc", "fitness", "fatigue"]].copy()
             weekly_ff["day"] = pd.to_datetime(weekly_ff["day_utc"], errors="coerce")
             weekly_ff = weekly_ff.dropna(subset=["day"])
             weekly_ff["fitness"] = pd.to_numeric(weekly_ff["fitness"], errors="coerce").fillna(0.0)
@@ -822,7 +840,7 @@ if view == "Dashboard":
                 ff_chart = ff_chart.encode(
                     opacity=alt.condition(ff_sel, alt.value(1.0), alt.value(0.08))
                 ).add_params(ff_sel)
-            ff_chart = alt.layer(build_injury_layer(), ff_chart)
+            ff_chart = alt.layer(build_injury_layer(start_ts, end_ts), ff_chart)
             if enable_zoom:
                 ff_chart = ff_chart.interactive()
             st.altair_chart(ff_chart, use_container_width=True)
@@ -830,8 +848,8 @@ if view == "Dashboard":
             st.caption("No fitness/fatigue data to plot.")
 
         st.subheader("Weekly Leg Tightness vs Pounding")
-        if not filtered_daily.empty and "leg_tightness" in filtered_daily.columns and "pounding" in filtered_daily.columns:
-            weekly_rff = filtered_daily[["day_utc", "leg_tightness", "pounding"]].copy()
+        if not filtered_daily_range.empty and "leg_tightness" in filtered_daily_range.columns and "pounding" in filtered_daily_range.columns:
+            weekly_rff = filtered_daily_range[["day_utc", "leg_tightness", "pounding"]].copy()
             weekly_rff["day"] = pd.to_datetime(weekly_rff["day_utc"], errors="coerce")
             weekly_rff = weekly_rff.dropna(subset=["day"])
             weekly_rff["leg_tightness"] = pd.to_numeric(weekly_rff["leg_tightness"], errors="coerce").fillna(0.0)
@@ -870,7 +888,7 @@ if view == "Dashboard":
                 rff_chart = rff_chart.encode(
                     opacity=alt.condition(rff_sel, alt.value(1.0), alt.value(0.08))
                 ).add_params(rff_sel)
-            rff_chart = alt.layer(build_injury_layer(), rff_chart)
+            rff_chart = alt.layer(build_injury_layer(start_ts, end_ts), rff_chart)
             if enable_zoom:
                 rff_chart = rff_chart.interactive()
             st.altair_chart(rff_chart, use_container_width=True)
@@ -878,8 +896,8 @@ if view == "Dashboard":
             st.caption("No Leg Tightness/Pounding data to plot.")
 
         st.subheader("Weekly Overreach vs Injury Risk")
-        if not filtered_daily.empty and "overreach" in filtered_daily.columns and "injury_risk" in filtered_daily.columns:
-            weekly_fr = filtered_daily[["day_utc", "overreach", "injury_risk"]].copy()
+        if not filtered_daily_range.empty and "overreach" in filtered_daily_range.columns and "injury_risk" in filtered_daily_range.columns:
+            weekly_fr = filtered_daily_range[["day_utc", "overreach", "injury_risk"]].copy()
             weekly_fr["day"] = pd.to_datetime(weekly_fr["day_utc"], errors="coerce")
             weekly_fr = weekly_fr.dropna(subset=["day"])
             weekly_fr["overreach"] = pd.to_numeric(weekly_fr["overreach"], errors="coerce").fillna(0.0)
@@ -918,7 +936,7 @@ if view == "Dashboard":
                 fr_chart = fr_chart.encode(
                     opacity=alt.condition(fr_sel, alt.value(1.0), alt.value(0.08))
                 ).add_params(fr_sel)
-            fr_chart = alt.layer(build_injury_layer(), fr_chart)
+            fr_chart = alt.layer(build_injury_layer(start_ts, end_ts), fr_chart)
             if enable_zoom:
                 fr_chart = fr_chart.interactive()
             st.altair_chart(fr_chart, use_container_width=True)
@@ -1278,21 +1296,63 @@ if view == "Data Extract":
     if run_sync:
         total_rows = 0
         messages: list[str] = []
+        sync_logs: list[str] = []
+        sync_started_at = datetime.now(timezone.utc)
+        sync_log_box = st.empty()
+        sync_progress = st.progress(0, text="Starting quick sync...")
+        max_sync_log_lines = 120
+
+        def _render_sync_logs() -> None:
+            lines = sync_logs[-max_sync_log_lines:]
+            trimmed = len(sync_logs) - len(lines)
+            prefix = [f"[info] showing last {len(lines)} logs (trimmed {trimmed})"] if trimmed > 0 else []
+            sync_log_box.code("\n".join(prefix + lines) if lines else "(no logs)", language="text")
+
+        def _sync_log(line: str) -> None:
+            sync_logs.append(line)
+            _render_sync_logs()
 
         latest = get_latest_activity_time(cfg.db_path)
+        _sync_log(
+            f"[start] {sync_started_at.isoformat()} | source={source} | days_back={int(days_back)} | "
+            f"latest_activity_in_db={(latest.isoformat() if latest else 'None')}"
+        )
+        sync_progress.progress(10, text="Preparing quick sync...")
 
         if source in {"Garmin API", "Both"}:
             if cfg.garmin_email and cfg.garmin_password:
                 try:
+                    _sync_log("[fetch] Garmin quick sync: activity summaries only (no wellness/details)")
+
+                    def _on_quick_progress(payload: dict) -> None:
+                        phase = str(payload.get("phase") or "")
+                        if phase == "activities":
+                            frac = float(payload.get("fraction") or 0.0)
+                            pct = int(10 + frac * 55)
+                            pct = max(10, min(65, pct))
+                            oldest = payload.get("oldest_in_batch")
+                            sync_progress.progress(
+                                pct,
+                                text=(
+                                    f"Quick sync: fetching activities... {pct}%"
+                                    + (f" | oldest seen: {oldest}" if oldest else "")
+                                ),
+                            )
+                        elif phase == "complete":
+                            sync_progress.progress(65, text="Quick sync: Garmin fetch complete.")
+
                     rows = fetch_garmin_runs(
                         email=cfg.garmin_email,
                         password=cfg.garmin_password,
                         days_back=int(days_back),
                         since_utc=latest,
+                        progress_cb=_on_quick_progress,
                     )
+                    sync_progress.progress(72, text="Quick sync: upserting Garmin activities...")
                     changed = upsert_activities(cfg.db_path, rows)
                     total_rows += len(rows)
                     messages.append(f"Garmin: fetched {len(rows)} runs ({changed} DB row changes).")
+                    _sync_log(f"[fetch:done] garmin_rows={len(rows)} | db_changes={changed}")
                 except Exception as exc:
                     msg = (
                         "Garmin login/fetch failed. Verify GARMIN_EMAIL / GARMIN_PASSWORD in .env or env vars. "
@@ -1300,17 +1360,27 @@ if view == "Data Extract":
                     )
                     messages.append(msg)
                     st.warning(msg)
+                    _sync_log(f"[error] garmin_fetch_failed {exc}")
             else:
                 messages.append("Garmin credentials not set. Skipped Garmin API sync.")
+                _sync_log("[skip] Garmin credentials missing.")
 
         if source in {"File Import", "Both"}:
+            sync_progress.progress(80, text="Quick sync: scanning local import folder...")
+            _sync_log(f"[fetch] file import from {cfg.import_dir}")
             rows = import_runs_from_folder(cfg.import_dir, days_back=int(days_back))
+            sync_progress.progress(88, text="Quick sync: upserting imported activities...")
             changed = upsert_activities(cfg.db_path, rows)
             total_rows += len(rows)
             messages.append(f"File import: found {len(rows)} runs ({changed} DB row changes).")
+            _sync_log(f"[fetch:done] file_rows={len(rows)} | db_changes={changed}")
 
         success = total_rows > 0 or any("Skipped" in m for m in messages)
         log_sync(cfg.db_path, source=source.lower().replace(" ", "_"), success=success, message=" | ".join(messages))
+        sync_finished_at = datetime.now(timezone.utc)
+        sync_duration_s = (sync_finished_at - sync_started_at).total_seconds()
+        _sync_log(f"[done] {sync_finished_at.isoformat()} | duration_s={sync_duration_s:.1f}")
+        sync_progress.progress(100, text="Quick sync completed.")
 
         if total_rows > 0:
             st.success("Quick sync complete. " + " ".join(messages))
@@ -1319,6 +1389,8 @@ if view == "Data Extract":
                 "No activities found. If Garmin sync fails, place .FIT/.TCX files in "
                 f"{cfg.import_dir} and run sync again."
             )
+        with st.expander("Quick Sync Logs", expanded=True):
+            _render_sync_logs()
         sync_triggered = True
 
     if generate_demo:

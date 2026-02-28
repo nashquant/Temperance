@@ -537,6 +537,7 @@ def fetch_garmin_runs(
     password: str,
     days_back: int = 90,
     since_utc: datetime | None = None,
+    progress_cb: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Backward-compatible run fetch used by the simple sync path."""
     end_day = datetime.now(timezone.utc).date()
@@ -553,6 +554,7 @@ def fetch_garmin_runs(
         include_wellness=False,
         page_size=100,
         raw_export_dir=None,
+        progress_cb=progress_cb,
     )
     return [a for a in result.activities if _is_running_activity(a.get("sport_type"))]
 
