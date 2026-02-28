@@ -1264,7 +1264,7 @@ if view == "Data Extract":
     with extract_cols[0]:
         extract_start = st.date_input("Start date", value=date(2025, 1, 1))
     with extract_cols[1]:
-        include_details = st.checkbox("Include activity details", value=True)
+        include_details = st.checkbox("Include activity details", value=False)
     with extract_cols[2]:
         include_wellness = st.checkbox("Include sleep + wellness", value=True)
     with extract_cols[3]:
