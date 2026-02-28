@@ -586,18 +586,27 @@ if view == "Dashboard":
                         var_name="series",
                         value_name="metric_value",
                     )
+                    overlay_long["base_opacity"] = overlay_long["series"].apply(
+                        lambda s: 0.18 if s == "value" else 1.0
+                    )
                     mark = alt.Chart(overlay_long)
                     legend_sel = alt.selection_point(fields=["series"], bind="legend") if legend_toggle else None
-                    chart = mark.mark_line(point=True, opacity=0.65).encode(
-                        x="day:T",
+                    chart = mark.mark_line(point=True).encode(
+                        x=alt.X("day:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=12)),
                         y=alt.Y("metric_value:Q", axis=alt.Axis(format=".0f")),
                         color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
                         tooltip=["day:T", "series:N", alt.Tooltip("metric_value:Q", format=".0f")],
                     )
                     if legend_sel is not None:
                         chart = chart.encode(
-                            opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
+                            opacity=alt.condition(
+                                legend_sel,
+                                alt.Opacity("base_opacity:Q", legend=None),
+                                alt.value(0.05),
+                            )
                         ).add_params(legend_sel)
+                    else:
+                        chart = chart.encode(opacity=alt.Opacity("base_opacity:Q", legend=None))
                     chart = alt.layer(build_injury_layer(), chart)
                     if enable_zoom:
                         chart = chart.interactive()
