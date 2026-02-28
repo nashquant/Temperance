@@ -254,6 +254,8 @@ def apply_specificity_factor(df: pd.DataFrame, enabled: bool, non_running_factor
     factor_cols = [
         "distance_m",
         "trimp",
+        "rtss",
+        "tss",
         "edwards_trimp",
         "mechanical_load",
         "training_load_garmin",
