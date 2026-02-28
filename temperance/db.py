@@ -646,6 +646,27 @@ def get_latest_activity_time(db_path: Path) -> datetime | None:
     return datetime.fromisoformat(row["latest"].replace("Z", "+00:00"))
 
 
+def get_latest_recovery_day(db_path: Path) -> datetime | None:
+    """
+    Latest available recovery date across sleep_daily and wellness_daily.
+    Returned as UTC midnight datetime for anchor calculations.
+    """
+    with closing(get_conn(db_path)) as conn:
+        sleep_row = conn.execute("SELECT MAX(day_utc) AS latest FROM sleep_daily").fetchone()
+        wellness_row = conn.execute("SELECT MAX(day_utc) AS latest FROM wellness_daily").fetchone()
+
+    latest_day: str | None = None
+    for row in (sleep_row, wellness_row):
+        if row and row["latest"]:
+            day = str(row["latest"])
+            if latest_day is None or day > latest_day:
+                latest_day = day
+
+    if not latest_day:
+        return None
+    return datetime.fromisoformat(f"{latest_day}T00:00:00+00:00")
+
+
 def get_table_counts(db_path: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     tables = [

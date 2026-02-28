@@ -26,6 +26,7 @@ from db import (
     get_daily_summary_df,
     get_last_sync,
     get_latest_activity_time,
+    get_latest_recovery_day,
     get_runs_df,
     get_sleep_df,
     get_table_counts,
@@ -150,6 +151,63 @@ def _parse_curve_text(text: str) -> list[tuple[datetime, float]]:
         (datetime.fromisoformat(d).replace(tzinfo=timezone.utc), p)
         for d, p in sorted(dedup.items(), key=lambda x: x[0])
     ]
+
+
+def _check_raw_archive_integrity(raw_root, start_day: date, end_day: date) -> dict[str, object]:
+    """
+    Lightweight integrity check for cached raw activity/daily payload files.
+    Flags unreadable JSON and suspicious FIT files.
+    """
+    errors: list[str] = []
+    checked_json = 0
+    checked_fit = 0
+
+    def _check_json(path) -> None:
+        nonlocal checked_json
+        try:
+            if path.exists() and path.is_file():
+                checked_json += 1
+                json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            errors.append(f"corrupt_json {path}: {exc}")
+
+    # Activity raw payloads.
+    activities_dir = raw_root / "activities"
+    if activities_dir.exists():
+        for p in activities_dir.rglob("*.json"):
+            _check_json(p)
+
+    # Daily payloads for selected date range.
+    daily_dir = raw_root / "daily"
+    if daily_dir.exists():
+        cur = start_day
+        while cur <= end_day:
+            day_dir = daily_dir / cur.isoformat()
+            if day_dir.exists():
+                for p in day_dir.glob("*.json"):
+                    _check_json(p)
+            cur += timedelta(days=1)
+
+    # FIT cache sanity.
+    fit_dir = raw_root / "fit"
+    if fit_dir.exists():
+        for p in fit_dir.glob("*.fit"):
+            try:
+                checked_fit += 1
+                data = p.read_bytes()
+                if len(data) < 12:
+                    errors.append(f"corrupt_fit {p}: file too small")
+                    continue
+                if data[8:12] != b".FIT":
+                    errors.append(f"corrupt_fit {p}: invalid FIT signature")
+            except Exception as exc:
+                errors.append(f"corrupt_fit {p}: {exc}")
+
+    return {
+        "checked_json": checked_json,
+        "checked_fit": checked_fit,
+        "errors": errors,
+    }
 
 
 def format_pace_min_per_km(pace_s_per_km: float | None) -> str:
@@ -1276,7 +1334,7 @@ if view == "Data Extract":
         sync_triggered = True
 
     st.subheader("Comprehensive Garmin Extract")
-    extract_cols = st.columns([1, 1, 1, 1, 1])
+    extract_cols = st.columns([1, 1, 1, 1, 1, 1])
     with extract_cols[0]:
         extract_start = st.date_input("Start date", value=date(2025, 1, 1))
     with extract_cols[1]:
@@ -1286,6 +1344,8 @@ if view == "Data Extract":
     with extract_cols[3]:
         incremental_extract = st.checkbox("Incremental only", value=True)
     with extract_cols[4]:
+        verify_raw_integrity = st.checkbox("Verify raw integrity", value=False)
+    with extract_cols[5]:
         run_extract = st.button("Run comprehensive extract")
 
     if run_extract:
@@ -1310,9 +1370,17 @@ if view == "Data Extract":
 
             try:
                 latest = get_latest_activity_time(cfg.db_path)
+                latest_recovery = get_latest_recovery_day(cfg.db_path) if include_wellness else None
                 start_day = extract_start
-                if incremental_extract and latest:
-                    start_day = max(start_day, (latest - timedelta(days=2)).date())
+                if incremental_extract:
+                    anchors: list[datetime] = []
+                    if latest:
+                        anchors.append(latest)
+                    if latest_recovery:
+                        anchors.append(latest_recovery)
+                    if anchors:
+                        anchor = max(anchors)
+                        start_day = max(start_day, (anchor - timedelta(days=2)).date())
                 _log(
                     f"[start] {extract_started_at.isoformat()} | start_day={start_day} | "
                     f"end_day={datetime.now(timezone.utc).date()} | incremental_only={incremental_extract} | "
@@ -1322,6 +1390,11 @@ if view == "Data Extract":
                     _log(f"[info] latest_activity_in_db={latest.isoformat()}")
                 else:
                     _log("[info] latest_activity_in_db=None")
+                if include_wellness:
+                    if latest_recovery:
+                        _log(f"[info] latest_recovery_day_in_db={latest_recovery.date().isoformat()}")
+                    else:
+                        _log("[info] latest_recovery_day_in_db=None")
                 _log("[fetch] activity summaries + FIT records")
                 if include_details:
                     _log("[fetch] activity details endpoints: details/splits/split_summaries/weather/hr_timezones")
@@ -1434,6 +1507,21 @@ if view == "Data Extract":
                 if extract.errors:
                     for err in extract.errors[:50]:
                         _log(f"[error] {err}")
+
+                if verify_raw_integrity:
+                    progress.progress(95, text="Running raw archive integrity check...")
+                    _log("[verify] checking raw activities/wellness/FIT cache integrity...")
+                    integrity = _check_raw_archive_integrity(
+                        cfg.private_export_dir / "raw",
+                        start_day=start_day,
+                        end_day=datetime.now(timezone.utc).date(),
+                    )
+                    _log(
+                        f"[verify:done] checked_json={integrity['checked_json']} checked_fit={integrity['checked_fit']} "
+                        f"errors={len(integrity['errors'])}"
+                    )
+                    for err in list(integrity["errors"])[:40]:
+                        _log(f"[verify:error] {err}")
                 progress.progress(100, text="Comprehensive extract completed.")
                 with st.expander("Comprehensive Extract Logs", expanded=True):
                     _render_logs()
