@@ -5,14 +5,11 @@ import re
 from datetime import datetime
 
 import pandas as pd
+import numpy as np
 
 from models import aerobic_load, edwards_trimp_from_zones, mechanical_load
 from tss import (
-    ActivityTSSInput,
-    ConstantLTHRProvider,
-    ConstantThresholdPaceProvider,
     PiecewiseThresholdPaceProvider,
-    compute_tss_bundle,
 )
 
 
@@ -65,35 +62,48 @@ def compute_metrics(
         axis=1,
     )
 
+    pace_provider = None
     if threshold_pace_curve_points:
         pace_provider = PiecewiseThresholdPaceProvider(
             default_threshold_pace_sec_per_km=threshold_pace_sec_per_km,
             points=tuple(threshold_pace_curve_points),
         )
-    else:
-        pace_provider = ConstantThresholdPaceProvider(threshold_pace_sec_per_km=threshold_pace_sec_per_km)
-    lthr_provider = ConstantLTHRProvider(lthr_bpm=lthr_bpm)
     df["rtss"] = pd.NA
     df["tss"] = pd.NA
 
     running_idx = is_running_like.fillna(False)
-    for idx, row in df.iterrows():
-        is_run_like = bool(running_idx.loc[idx]) if idx in running_idx.index else False
-        activity = ActivityTSSInput(
-            activity_duration_seconds=int(float(row.get("duration_s") or 0)),
-            activity_avg_pace_sec_per_km=(
-                float(row.get("avg_pace_s_per_km"))
-                if is_run_like and pd.notna(row.get("avg_pace_s_per_km"))
-                else None
-            ),
-            activity_avg_hr_bpm=float(row.get("avg_hr")) if pd.notna(row.get("avg_hr")) else None,
-            activity_start_datetime=row["start_time_utc"].to_pydatetime(),
+    duration_s = pd.to_numeric(df["duration_s"], errors="coerce")
+    avg_hr = pd.to_numeric(df["avg_hr"], errors="coerce") if "avg_hr" in df.columns else pd.Series(float("nan"), index=df.index)
+    avg_pace = (
+        pd.to_numeric(df["avg_pace_s_per_km"], errors="coerce")
+        if "avg_pace_s_per_km" in df.columns
+        else pd.Series(float("nan"), index=df.index)
+    )
+
+    # Vectorized hrTSS.
+    if lthr_bpm > 0:
+        tss_mask = (duration_s > 0) & (avg_hr > 0) & (avg_hr <= 260)
+        df.loc[tss_mask, "tss"] = (
+            duration_s[tss_mask] * ((avg_hr[tss_mask] / float(lthr_bpm)) ** 2) / 3600.0 * 100.0
         )
-        bundle = compute_tss_bundle(activity, pace_provider=pace_provider, lthr_provider=lthr_provider)
-        if "rTSS" in bundle:
-            df.at[idx, "rtss"] = bundle["rTSS"]
-        if "hrTSS" in bundle:
-            df.at[idx, "tss"] = bundle["hrTSS"]
+
+    # rTSS for running/treadmill only.
+    rtss_mask = running_idx & (duration_s > 0) & (avg_pace > 0)
+    if threshold_pace_sec_per_km > 0 and not threshold_pace_curve_points:
+        df.loc[rtss_mask, "rtss"] = (
+            duration_s[rtss_mask]
+            * ((float(threshold_pace_sec_per_km) / avg_pace[rtss_mask]) ** 2)
+            / 3600.0
+            * 100.0
+        )
+    elif threshold_pace_sec_per_km > 0 and pace_provider is not None:
+        for idx in df.index[rtss_mask]:
+            tp = float(pace_provider.get_threshold_pace_sec_per_km(df.at[idx, "start_time_utc"].to_pydatetime()))
+            if tp <= 0:
+                continue
+            pace_v = float(avg_pace.loc[idx])
+            dur_v = float(duration_s.loc[idx])
+            df.at[idx, "rtss"] = (dur_v * ((tp / pace_v) ** 2) / 3600.0) * 100.0
 
     df["mechanical_load"] = pd.NA
     if running_idx.any():
@@ -238,8 +248,21 @@ def ema_alpha_from_days(window: int) -> float:
 
 
 def ema(series: pd.Series, window: int) -> pd.Series:
+    """
+    EMA via recurrence:
+    ema[t] = alpha * x[t] + (1-alpha) * ema[t-1]
+    """
     alpha = ema_alpha_from_days(window)
-    return series.ewm(alpha=alpha, adjust=False).mean()
+    if series.empty:
+        return series
+
+    values = pd.to_numeric(series, errors="coerce").fillna(0.0).to_numpy(dtype=float)
+    out = np.empty_like(values, dtype=float)
+    out[0] = values[0]
+    one_minus_alpha = 1.0 - alpha
+    for i in range(1, len(values)):
+        out[i] = (alpha * values[i]) + (one_minus_alpha * out[i - 1])
+    return pd.Series(out, index=series.index, dtype=float)
 
 
 def parse_ma_windows(text: str) -> tuple[list[int], list[tuple[int, int]]]:
@@ -275,18 +298,23 @@ def prepare_metric_series(
     fill_method: str = "zero",
     weekly: bool = False,
     weekly_agg: str = "sum",
+    full_index: pd.DatetimeIndex | None = None,
 ) -> pd.DataFrame:
     if daily_df.empty:
         return pd.DataFrame(columns=["day", metric])
 
     series = daily_df.copy()
-    series["day"] = pd.to_datetime(series["day_utc"], utc=False, errors="coerce")
+    if "day" in series.columns:
+        series["day"] = pd.to_datetime(series["day"], utc=False, errors="coerce")
+    else:
+        series["day"] = pd.to_datetime(series["day_utc"], utc=False, errors="coerce")
     series = series[(series["day"] >= start_day) & (series["day"] <= end_day)]
 
     if series.empty:
         return pd.DataFrame(columns=["day", metric])
 
-    full_index = pd.date_range(start=start_day, end=end_day, freq="D")
+    if full_index is None:
+        full_index = pd.date_range(start=start_day, end=end_day, freq="D")
     metric_df = series.set_index("day")[[metric]].reindex(full_index)
 
     if fill_method == "ffill":

@@ -240,7 +240,7 @@ def filter_by_activity_type(df: pd.DataFrame, mode: str) -> pd.DataFrame:
     return df.loc[mask].copy()
 
 
-def apply_specificity_factor(df: pd.DataFrame, enabled: bool, non_running_factor: float) -> pd.DataFrame:
+def apply_specificity_factor(df: pd.DataFrame, non_running_factor: float) -> pd.DataFrame:
     if df.empty:
         return df
 
@@ -248,8 +248,7 @@ def apply_specificity_factor(df: pd.DataFrame, enabled: bool, non_running_factor
     sport = out["sport_type"].fillna("").astype(str).str.lower()
     is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
     out["specificity_factor"] = 1.0
-    if enabled:
-        out.loc[~is_running_like, "specificity_factor"] = float(non_running_factor)
+    out.loc[~is_running_like, "specificity_factor"] = float(non_running_factor)
 
     factor_cols = [
         "distance_m",
@@ -275,9 +274,8 @@ def apply_specificity_factor(df: pd.DataFrame, enabled: bool, non_running_factor
     return out
 
 
-@st.cache_data(show_spinner=False)
-def cached_compute_metrics(
-    db_path_str: str,
+def get_metrics_df_fast(
+    db_path: Path,
     activities_cache_key: str,
     resting_hr: float,
     max_hr: float,
@@ -285,14 +283,25 @@ def cached_compute_metrics(
     threshold_pace_default_sec: float,
     threshold_pace_curve_points: tuple[tuple[str, float], ...],
 ) -> pd.DataFrame:
-    # activities_cache_key is intentionally unused in the function body; it drives cache invalidation.
-    _ = activities_cache_key
-    runs_df = get_runs_df(Path(db_path_str))
+    key = (
+        str(db_path),
+        activities_cache_key,
+        float(resting_hr),
+        float(max_hr),
+        str(sex),
+        float(threshold_pace_default_sec),
+        tuple(threshold_pace_curve_points),
+    )
+    cache = st.session_state.get("_metrics_df_cache")
+    if isinstance(cache, dict) and cache.get("key") == key and isinstance(cache.get("df"), pd.DataFrame):
+        return cache["df"]
+
+    runs_df = get_runs_df(db_path)
     curve_points = [
         (datetime.fromisoformat(d).replace(tzinfo=timezone.utc), float(p))
         for d, p in threshold_pace_curve_points
     ]
-    return compute_metrics(
+    df = compute_metrics(
         runs_df,
         resting_hr=resting_hr,
         max_hr=max_hr,
@@ -300,18 +309,17 @@ def cached_compute_metrics(
         threshold_pace_sec_per_km=threshold_pace_default_sec,
         threshold_pace_curve_points=curve_points,
     )
+    st.session_state["_metrics_df_cache"] = {"key": key, "df": df}
+    return df
 
 
 def cached_filtered_views(
     metrics_df: pd.DataFrame,
     activity_filter: str,
-    specificity_enabled: bool,
     specificity_factor: float,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     filtered_metrics = filter_by_activity_type(metrics_df, activity_filter)
-    filtered_metrics = apply_specificity_factor(
-        filtered_metrics, specificity_enabled, specificity_factor
-    )
+    filtered_metrics = apply_specificity_factor(filtered_metrics, specificity_factor)
     filtered_daily = build_daily_summary(filtered_metrics)
     if not filtered_daily.empty:
         filtered_daily = filtered_daily.sort_values("day_utc").copy()
@@ -451,8 +459,7 @@ if view != "Data Extract":
                 ]
                 save_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_DEFAULT, str(default_sec))
                 save_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_CURVE, json.dumps(curve_payload))
-                cached_compute_metrics.clear()
-                cached_filtered_views.clear()
+                st.session_state.pop("_metrics_df_cache", None)
                 st.success("Threshold pace settings saved.")
             except Exception as exc:
                 st.error(f"Could not save threshold pace settings: {exc}")
@@ -465,8 +472,8 @@ else:
     saved_curve_points = _load_threshold_curve_points(cfg.db_path)
 
 activities_cache_key = get_activities_cache_key(cfg.db_path)
-metrics_df = cached_compute_metrics(
-    db_path_str=str(cfg.db_path),
+metrics_df = get_metrics_df_fast(
+    db_path=cfg.db_path,
     activities_cache_key=activities_cache_key,
     resting_hr=float(resting_hr),
     max_hr=float(max_hr),
@@ -529,15 +536,14 @@ if view == "Dashboard":
             normalize_compare = st.checkbox("Normalize compare (index=100)", value=False, disabled=not compare_mode)
             enable_zoom = st.checkbox("Zoom/pan", value=False)
             legend_toggle = st.checkbox("Legend toggle", value=True)
-            specificity_factor_on = st.checkbox("Specificity factor", value=True)
             specificity_factor_value = st.number_input(
                 "Non-running factor",
                 min_value=0.0,
                 max_value=1.5,
-                value=0.85,
+                value=0.8,
                 step=0.05,
                 format="%.2f",
-                disabled=not specificity_factor_on,
+                help="Set to 1.00 to disable non-running adjustment.",
             )
 
         if isinstance(date_range, tuple) and len(date_range) == 2:
@@ -550,7 +556,6 @@ if view == "Dashboard":
         filtered_metrics, filtered_daily = cached_filtered_views(
             metrics_df,
             activity_filter=activity_filter,
-            specificity_enabled=specificity_factor_on,
             specificity_factor=float(specificity_factor_value),
         )
         range_filtered_metrics = filtered_metrics[
@@ -590,6 +595,9 @@ if view == "Dashboard":
         if base_df.empty:
             st.info(f"No data for activity filter: {activity_filter}")
         else:
+            prepared_base_df = base_df.copy()
+            prepared_base_df["day"] = pd.to_datetime(prepared_base_df["day_utc"], errors="coerce")
+            series_full_index = pd.date_range(start=start_ts, end=end_ts, freq="D")
             if compare_mode:
                 left_axis_labels = st.multiselect(
                     "Left axis metrics",
@@ -629,13 +637,14 @@ if view == "Dashboard":
             for label, axis_side in labels_and_axis:
                 metric, weekly_agg = metric_map[label]
                 frame = prepare_metric_series(
-                    daily_df=base_df.rename(columns={"day_utc": "day_utc"}),
+                    daily_df=prepared_base_df,
                     metric=metric,
                     start_day=start_ts,
                     end_day=end_ts,
                     fill_method=fill_mode,
                     weekly=weekly_toggle,
                     weekly_agg=weekly_agg,
+                    full_index=series_full_index,
                 )
                 if frame.empty:
                     continue
@@ -671,16 +680,17 @@ if view == "Dashboard":
                         var_name="series",
                         value_name="metric_value",
                     )
+                    overlay_long["legend_series"] = overlay_long["series"].replace({"value": "Metric"})
                     overlay_long["base_opacity"] = overlay_long["series"].apply(
                         lambda s: 0.18 if s == "value" else 1.0
                     )
                     mark = alt.Chart(overlay_long)
-                    legend_sel = alt.selection_point(fields=["series"], bind="legend") if legend_toggle else None
+                    legend_sel = alt.selection_point(fields=["legend_series"], bind="legend") if legend_toggle else None
                     chart = mark.mark_line(point=True).encode(
                         x=alt.X("day:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=12)),
                         y=alt.Y("metric_value:Q", axis=alt.Axis(format=".0f")),
-                        color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
-                        tooltip=["day:T", "series:N", alt.Tooltip("metric_value:Q", format=".0f")],
+                        color=alt.Color("legend_series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
+                        tooltip=["day:T", "legend_series:N", alt.Tooltip("metric_value:Q", format=".0f")],
                     )
                     if legend_sel is not None:
                         chart = chart.encode(
@@ -771,6 +781,9 @@ if view == "Dashboard":
                 var_name="series",
                 value_name="value",
             )
+            weekly_tss_plot["legend_series"] = weekly_tss_plot["series"].replace(
+                {"total_tss": "TSS", "total_rtss": "rTSS"}
+            )
             st.subheader("Weekly TSS vs rTSS")
             weekly_tss_chart = (
                 alt.Chart(weekly_tss_plot)
@@ -778,12 +791,16 @@ if view == "Dashboard":
                 .encode(
                     x=alt.X("week_start:T", axis=alt.Axis(title="")),
                     y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
-                    color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
-                    tooltip=["week_start", "series", alt.Tooltip("value:Q", format=".0f")],
+                    color=alt.Color(
+                        "legend_series:N",
+                        legend=alt.Legend(orient="bottom", direction="horizontal"),
+                        scale=alt.Scale(domain=["TSS", "rTSS"], range=["#60a5fa", "#f59e0b"]),
+                    ),
+                    tooltip=["week_start:T", "legend_series:N", alt.Tooltip("value:Q", format=".0f")],
                 )
             )
             if legend_toggle:
-                weekly_tss_sel = alt.selection_point(fields=["series"], bind="legend")
+                weekly_tss_sel = alt.selection_point(fields=["legend_series"], bind="legend")
                 weekly_tss_chart = weekly_tss_chart.encode(
                     opacity=alt.condition(weekly_tss_sel, alt.value(1.0), alt.value(0.08))
                 ).add_params(weekly_tss_sel)
