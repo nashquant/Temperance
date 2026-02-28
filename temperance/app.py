@@ -434,7 +434,23 @@ if view == "Dashboard":
         with controls[0]:
             min_day = pd.to_datetime(daily_summary_df["day_utc"]).min().date() if not daily_summary_df.empty else metrics_df["start_time_utc"].min().date()
             max_day = pd.to_datetime(daily_summary_df["day_utc"]).max().date() if not daily_summary_df.empty else metrics_df["start_time_utc"].max().date()
-            date_range = st.date_input("Date range", value=(min_day, max_day), min_value=min_day, max_value=max_day)
+            quick_range = st.selectbox("Quick range", ["YTD", "1Y", "2Y", "ALL", "Custom"], index=0)
+            if quick_range == "YTD":
+                q_start = max(min_day, date(max_day.year, 1, 1))
+                q_end = max_day
+            elif quick_range == "1Y":
+                q_start = max(min_day, max_day - timedelta(days=365))
+                q_end = max_day
+            elif quick_range == "2Y":
+                q_start = max(min_day, max_day - timedelta(days=730))
+                q_end = max_day
+            elif quick_range == "ALL":
+                q_start = min_day
+                q_end = max_day
+            else:
+                q_start = min_day
+                q_end = max_day
+            date_range = st.date_input("Date range", value=(q_start, q_end), min_value=min_day, max_value=max_day)
         with controls[1]:
             activity_filter = st.selectbox(
                 "Activity filter",
@@ -1276,11 +1292,42 @@ if view == "Data Extract":
         if not (cfg.garmin_email and cfg.garmin_password):
             st.error("GARMIN_EMAIL / GARMIN_PASSWORD missing. Add them in environment or .env.")
         else:
+            extract_logs: list[str] = []
+            extract_started_at = datetime.now(timezone.utc)
+            log_box = st.empty()
+            progress = st.progress(0, text="Starting comprehensive extract...")
+            max_log_lines = 120
+
+            def _render_logs() -> None:
+                lines = extract_logs[-max_log_lines:]
+                trimmed = len(extract_logs) - len(lines)
+                prefix = [f"[info] showing last {len(lines)} logs (trimmed {trimmed})"] if trimmed > 0 else []
+                log_box.code("\n".join(prefix + lines) if lines else "(no logs)", language="text")
+
+            def _log(line: str) -> None:
+                extract_logs.append(line)
+                _render_logs()
+
             try:
                 latest = get_latest_activity_time(cfg.db_path)
                 start_day = extract_start
                 if incremental_extract and latest:
                     start_day = max(start_day, (latest - timedelta(days=2)).date())
+                _log(
+                    f"[start] {extract_started_at.isoformat()} | start_day={start_day} | "
+                    f"end_day={datetime.now(timezone.utc).date()} | incremental_only={incremental_extract} | "
+                    f"include_details={include_details} | include_wellness={include_wellness}"
+                )
+                if latest:
+                    _log(f"[info] latest_activity_in_db={latest.isoformat()}")
+                else:
+                    _log("[info] latest_activity_in_db=None")
+                _log("[fetch] activity summaries + FIT records")
+                if include_details:
+                    _log("[fetch] activity details endpoints: details/splits/split_summaries/weather/hr_timezones")
+                if include_wellness:
+                    _log("[fetch] daily wellness endpoints: sleep/stress/hrv/rhr/readiness/respiration/steps")
+                progress.progress(15, text="Fetching Garmin data...")
                 with st.spinner("Extracting Garmin data. This can take a few minutes..."):
                     extract = fetch_garmin_comprehensive(
                         email=cfg.garmin_email,
@@ -1291,15 +1338,28 @@ if view == "Data Extract":
                         include_wellness=include_wellness,
                         raw_export_dir=cfg.private_export_dir / "raw",
                     )
+                progress.progress(55, text="Fetch complete. Upserting DB...")
+                _log(
+                    f"[fetch:done] activities={len(extract.activities)} details={len(extract.activity_details)} "
+                    f"records={len(extract.activity_records)} sleep={len(extract.sleep_daily)} "
+                    f"wellness={len(extract.wellness_daily)} errors={len(extract.errors)}"
+                )
 
+                _log("[db] upserting activities/details/records/sleep/wellness...")
                 n_a = upsert_activities(cfg.db_path, extract.activities)
                 n_d = upsert_activity_details(cfg.db_path, extract.activity_details)
                 n_r = upsert_activity_records(cfg.db_path, extract.activity_records)
                 n_s = upsert_sleep_daily(cfg.db_path, extract.sleep_daily)
                 n_w = upsert_wellness_daily(cfg.db_path, extract.wellness_daily)
+                _log(
+                    f"[db:done] activities_changes={n_a} details_changes={n_d} records_changes={n_r} "
+                    f"sleep_changes={n_s} wellness_changes={n_w}"
+                )
 
                 snapshot_file = cfg.private_export_dir / f"garmin_extract_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
                 dump_extract_to_json(snapshot_file, extract)
+                _log(f"[snapshot] {snapshot_file}")
+                progress.progress(80, text="Writing snapshot and finalizing...")
 
                 msg = (
                     f"activities={len(extract.activities)} (db_changes={n_a}), "
@@ -1315,8 +1375,21 @@ if view == "Data Extract":
                 if extract.errors:
                     st.warning("Some endpoints failed for specific days/activities. First 20 errors:")
                     st.code("\n".join(extract.errors[:20]))
+                    _log("[errors] first 50 shown below")
+
+                extract_finished_at = datetime.now(timezone.utc)
+                duration_s = (extract_finished_at - extract_started_at).total_seconds()
+                _log(f"[done] {extract_finished_at.isoformat()} | duration_s={duration_s:.1f}")
+                if extract.errors:
+                    for err in extract.errors[:50]:
+                        _log(f"[error] {err}")
+                progress.progress(100, text="Comprehensive extract completed.")
+                with st.expander("Comprehensive Extract Logs", expanded=True):
+                    _render_logs()
                 sync_triggered = True
             except Exception as exc:
+                _log(f"[fatal] {exc}")
+                progress.progress(100, text="Comprehensive extract failed.")
                 log_sync(cfg.db_path, source="garmin_comprehensive", success=False, message=str(exc))
                 st.error(f"Comprehensive extract failed: {exc}")
 
