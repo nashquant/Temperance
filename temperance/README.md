@@ -96,11 +96,11 @@ python migrate.py
 
 ## Main workflow for your archive
 1. Open app.
-2. Go to **Sync**.
+2. Go to **Data Extract**.
 3. In **Comprehensive Garmin Extract**:
 - start date: `2025-01-01`
 - keep **Incremental only** enabled to fetch only new windows from latest local activity
-- enable activity details
+- activity details are optional (off by default)
 - enable sleep + wellness
 4. Click **Run comprehensive extract**.
 
@@ -108,6 +108,26 @@ After extraction, use:
 - **Dashboard** for TradingView-lite metric plots with overlays and compare mode.
 - **Activity Detail** for per-run deep payloads.
 - **Recovery Data** for sleep/wellness tables.
+
+## Which sync to use (important)
+Use this exactly:
+
+1. **Comprehensive Garmin Extract**: for historical backfill and deep data.
+- Pulls activity summaries in range.
+- Can pull activity detail endpoints (if enabled).
+- Attempts FIT download/cache per activity (`raw/fit/<activity_id>.fit`) when missing.
+- Parses FIT per-record series into `activity_records` when FIT is available.
+- Can pull sleep + daily wellness (if enabled).
+
+2. **Sync activities (Quick Sync)**: for daily maintenance.
+- Fast incremental update of activity summaries.
+- Good for day-to-day upkeep.
+- Does **not** do full deep backfill behavior of comprehensive extract.
+- Does **not** perform the comprehensive wellness/detail extraction flow.
+
+Recommended pattern:
+- Run **Comprehensive** initially (or occasionally) for full archive + FIT/wellness backfill.
+- Run **Quick Sync** regularly for daily updates.
 
 ## Load model notes
 - Aerobic load:
