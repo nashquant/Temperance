@@ -576,6 +576,7 @@ if view == "Dashboard":
             "Garmin Training Load": ("training_load_garmin", "sum"),
             "Fitness (EWMA 42)": ("fitness", "mean"),
             "Fatigue (EWMA 7)": ("fatigue", "mean"),
+            "Last Fatigue (week-end)": ("fatigue", "last"),
             "Overreach (Fatigue - Fitness)": ("overreach", "mean"),
             "Leg Elasticity (EWMA 100, rTSS)": ("leg_elasticity", "mean"),
             "Pounding (EWMA 7, rTSS)": ("pounding", "mean"),

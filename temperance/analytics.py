@@ -334,6 +334,13 @@ def prepare_metric_series(
                 .mean()
                 .rename(columns={"week_start": "day"})
             )
+        elif weekly_agg == "last":
+            weekly_df = (
+                weekly_df.sort_values("day")
+                .groupby("week_start", as_index=False)[metric]
+                .last()
+                .rename(columns={"week_start": "day"})
+            )
         else:
             weekly_df = (
                 weekly_df.groupby("week_start", as_index=False)[metric]
