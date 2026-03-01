@@ -1229,6 +1229,65 @@ if view == "Dashboard":
                 if enable_zoom:
                     zone_chart = zone_chart.interactive()
                 st.altair_chart(zone_chart, use_container_width=True)
+
+                weekly_zone_hours = pd.DataFrame(
+                    {
+                        "week_start": weekly_zone["week_start"],
+                        "Z1": pd.to_numeric(weekly_zone["hr_time_in_zone_1"], errors="coerce").fillna(0.0) / 3600.0,
+                        "Z2": pd.to_numeric(weekly_zone["hr_time_in_zone_2"], errors="coerce").fillna(0.0) / 3600.0,
+                        "Z3": pd.to_numeric(weekly_zone["hr_time_in_zone_3"], errors="coerce").fillna(0.0) / 3600.0,
+                        "Z4": pd.to_numeric(weekly_zone["hr_time_in_zone_4"], errors="coerce").fillna(0.0) / 3600.0,
+                        "Z5": pd.to_numeric(weekly_zone["hr_time_in_zone_5"], errors="coerce").fillna(0.0) / 3600.0,
+                    }
+                )
+                weekly_zone_hours_long = weekly_zone_hours.melt(
+                    id_vars=["week_start"],
+                    value_vars=["Z1", "Z2", "Z3", "Z4", "Z5"],
+                    var_name="zone",
+                    value_name="hours",
+                )
+                weekly_zone_hours_long["hours"] = pd.to_numeric(
+                    weekly_zone_hours_long["hours"], errors="coerce"
+                ).fillna(0.0)
+                weekly_zone_hours_long["hours_label"] = weekly_zone_hours_long["hours"].map(lambda h: f"{h:.1f}h")
+                weekly_zone_hours_long["base_opacity"] = weekly_zone_hours_long["zone"].map(
+                    {"Z1": 0.18, "Z2": 1.0, "Z3": 1.0, "Z4": 0.18, "Z5": 0.18}
+                ).fillna(1.0)
+                zone_hours_chart = (
+                    alt.Chart(weekly_zone_hours_long)
+                    .mark_line(point=True)
+                    .encode(
+                        x=alt.X(
+                            "week_start:T",
+                            axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
+                        ),
+                        y=alt.Y("hours:Q", axis=alt.Axis(title="hours", format=".1f")),
+                        color=alt.Color(
+                            "zone:N",
+                            legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
+                            scale=alt.Scale(
+                                domain=["Z1", "Z2", "Z3", "Z4", "Z5"],
+                                range=["#3b82f6", "#facc15", "#ef4444", "#a855f7", "#f97316"],
+                            ),
+                        ),
+                        tooltip=["week_start:T", "zone:N", alt.Tooltip("hours_label:N", title="hours")],
+                        opacity=alt.Opacity("base_opacity:Q", legend=None),
+                    )
+                    .properties(height=260)
+                )
+                if legend_toggle:
+                    zone_hours_sel = alt.selection_point(fields=["zone"], bind="legend")
+                    zone_hours_chart = zone_hours_chart.encode(
+                        opacity=alt.condition(
+                            zone_hours_sel,
+                            alt.Opacity("base_opacity:Q", legend=None),
+                            alt.value(0.08),
+                            empty=True,
+                        )
+                    ).add_params(zone_hours_sel)
+                if enable_zoom:
+                    zone_hours_chart = zone_hours_chart.interactive()
+                st.altair_chart(zone_hours_chart, use_container_width=True)
                 st.caption("Zone % is computed as zone_time / total_active_time, where total_active_time = Z1+Z2+Z3+Z4+Z5.")
         else:
             st.caption("No heart-rate zone time data to plot.")
