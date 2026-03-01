@@ -1585,7 +1585,10 @@ if view == "Calendar":
             cal_metrics.loc[~is_running_like, "distance_km"] = 0.0
             day_activity_stats = (
                 cal_metrics.groupby("day", as_index=False)
-                .agg(day_calories=("calories_total", "sum"))
+                .agg(
+                    day_calories=("calories_total", "sum"),
+                    day_distance_eqv_km=("distance_proxy_km", "sum"),
+                )
                 .sort_values("day")
             )
 
@@ -1597,6 +1600,13 @@ if view == "Calendar":
                 cal_daily_lookup["fitness"] = pd.to_numeric(cal_daily_lookup.get("fitness"), errors="coerce")
                 cal_daily_lookup["fatigue"] = pd.to_numeric(cal_daily_lookup.get("fatigue"), errors="coerce")
                 cal_daily_lookup = cal_daily_lookup[["day", "fitness", "fatigue"]]
+            daily_fitfat_lookup = {}
+            if not cal_daily_lookup.empty:
+                daily_fitfat_lookup = (
+                    cal_daily_lookup.drop_duplicates(subset=["day"], keep="last")
+                    .set_index("day")[["fitness", "fatigue"]]
+                    .to_dict("index")
+                )
 
             wellness_day_lookup = pd.DataFrame(columns=["day", "resting_hr", "stress_avg"])
             wellness_df = get_wellness_df(cfg.db_path)
@@ -1781,10 +1791,12 @@ if view == "Calendar":
                             unsafe_allow_html=True,
                         )
                         day_cal = 0.0
+                        day_distance_eqv = 0.0
                         if not day_activity_stats.empty:
                             day_cal_rows = day_activity_stats[day_activity_stats["day"] == day_ts]
                             if not day_cal_rows.empty:
                                 day_cal = float(day_cal_rows.iloc[0]["day_calories"])
+                                day_distance_eqv = float(day_cal_rows.iloc[0]["day_distance_eqv_km"])
                         day_resting_hr = float("nan")
                         day_stress_avg = float("nan")
                         if not wellness_day_lookup.empty:
@@ -1792,7 +1804,15 @@ if view == "Calendar":
                             if not day_well_rows.empty:
                                 day_resting_hr = float(day_well_rows.iloc[0]["resting_hr"]) if pd.notna(day_well_rows.iloc[0]["resting_hr"]) else float("nan")
                                 day_stress_avg = float(day_well_rows.iloc[0]["stress_avg"]) if pd.notna(day_well_rows.iloc[0]["stress_avg"]) else float("nan")
-                        day_meta_parts = [f"{day_cal:.0f} kcal"]
+                        day_meta_parts = [f"{day_distance_eqv:.1f} km eqv.", f"{day_cal:.0f} kcal"]
+                        fitfat_row = daily_fitfat_lookup.get(day_ts)
+                        if fitfat_row:
+                            day_fit = fitfat_row.get("fitness")
+                            day_fat = fitfat_row.get("fatigue")
+                            if pd.notna(day_fit):
+                                day_meta_parts.append(f"Fit {float(day_fit):.0f}")
+                            if pd.notna(day_fat):
+                                day_meta_parts.append(f"Fat {float(day_fat):.0f}")
                         if not pd.isna(day_resting_hr):
                             day_meta_parts.append(f"RHR {day_resting_hr:.0f}")
                         if not pd.isna(day_stress_avg):
