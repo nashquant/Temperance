@@ -326,7 +326,7 @@ def cached_filtered_views(
         ).fillna(0.0)
         filtered_daily["fitness"] = ema(training_series, 42)
         filtered_daily["fatigue"] = ema(training_series, 7)
-        filtered_daily["overreach"] = (filtered_daily["fatigue"] - filtered_daily["fitness"]).clip(lower=0.0)
+        filtered_daily["overreach"] = (ema(training_series, 10) - 70.0).clip(lower=0.0)
         rtss_series = (
             pd.to_numeric(filtered_daily["rtss_total"], errors="coerce").fillna(0.0)
             if "rtss_total" in filtered_daily.columns
@@ -334,7 +334,7 @@ def cached_filtered_views(
         )
         filtered_daily["leg_elasticity"] = ema(rtss_series, 100)
         filtered_daily["pounding"] = ema(rtss_series, 7)
-        filtered_daily["injury_risk"] = (filtered_daily["pounding"] - filtered_daily["leg_elasticity"]).clip(lower=0.0)
+        filtered_daily["injury_risk"] = (ema(rtss_series, 10) - 70.0).clip(lower=0.0)
     return filtered_metrics, filtered_daily
 
 
@@ -577,10 +577,10 @@ if view == "Dashboard":
             "Fitness (EWMA 42)": ("fitness", "mean"),
             "Fatigue (EWMA 7)": ("fatigue", "mean"),
             "Last Fatigue (week-end)": ("fatigue", "last"),
-            "Overreach (Fatigue - Fitness)": ("overreach", "mean"),
+            "Overreach (EMA10 TSS - 70)": ("overreach", "mean"),
             "Leg Elasticity (EWMA 100, rTSS)": ("leg_elasticity", "mean"),
             "Pounding (EWMA 7, rTSS)": ("pounding", "mean"),
-            "Injury Risk (Pounding - Leg Elasticity)": ("injury_risk", "mean"),
+            "Injury Risk (EMA10 rTSS - 70)": ("injury_risk", "mean"),
             "rTSS": ("rtss_total", "sum"),
             "TSS": ("tss_total", "sum"),
             "TRIMP": ("trimp_total", "sum"),
@@ -743,6 +743,13 @@ if view == "Dashboard":
                                 empty=True,
                             )
                         ).add_params(top_sel)
+                    if label == "rTSS":
+                        threshold_rule = (
+                            alt.Chart(pd.DataFrame({"threshold": [500.0]}))
+                            .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
+                            .encode(y="threshold:Q")
+                        )
+                        chart = alt.layer(chart, threshold_rule)
                     chart = chart.properties(
                         height=chart_height, padding={"left": 72, "right": 12, "top": 6, "bottom": 44}
                     )
@@ -911,6 +918,12 @@ if view == "Dashboard":
                 weekly_tss_chart = weekly_tss_chart.encode(
                     opacity=alt.condition(weekly_tss_sel, alt.value(1.0), alt.value(0.08), empty=True)
                 ).add_params(weekly_tss_sel)
+            weekly_tss_threshold = (
+                alt.Chart(pd.DataFrame({"threshold": [500.0]}))
+                .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
+                .encode(y="threshold:Q")
+            )
+            weekly_tss_chart = alt.layer(weekly_tss_chart, weekly_tss_threshold)
             weekly_tss_chart = alt.layer(build_injury_layer(start_ts, end_ts), weekly_tss_chart).properties(
                 height=280
             )
