@@ -498,8 +498,16 @@ if view == "Dashboard":
         st.caption("Missing-day fill mode applies to chart calculations (EMA and aggregations).")
         controls = st.columns([1, 1, 1, 1, 1])
         with controls[0]:
-            min_day = pd.to_datetime(daily_summary_df["day_utc"]).min().date() if not daily_summary_df.empty else metrics_df["start_time_utc"].min().date()
-            max_day = pd.to_datetime(daily_summary_df["day_utc"]).max().date() if not daily_summary_df.empty else metrics_df["start_time_utc"].max().date()
+            metrics_min_day = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).min().date()
+            metrics_max_day = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).max().date()
+            if daily_summary_df.empty:
+                min_day = metrics_min_day
+                max_day = metrics_max_day
+            else:
+                daily_min_day = pd.to_datetime(daily_summary_df["day_utc"], errors="coerce").min().date()
+                daily_max_day = pd.to_datetime(daily_summary_df["day_utc"], errors="coerce").max().date()
+                min_day = min(metrics_min_day, daily_min_day)
+                max_day = max(metrics_max_day, daily_max_day)
             quick_range = st.selectbox("Quick range", ["YTD", "1Y", "2Y", "ALL", "Custom"], index=1)
             if quick_range == "YTD":
                 q_start = max(min_day, date(max_day.year, 1, 1))
