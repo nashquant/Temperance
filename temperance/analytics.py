@@ -178,6 +178,7 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
             columns=[
                 "day_utc",
                 "distance_km",
+                "duration_s_total",
                 "trimp_total",
                 "mechanical_load_total",
                 "edwards_trimp_total",
@@ -209,6 +210,7 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
         daily.groupby("day_utc", as_index=False)
         .agg(
             distance_km=("distance_km", "sum"),
+            duration_s_total=("duration_s", "sum"),
             trimp_total=("trimp", "sum"),
             mechanical_load_total=("mechanical_load", "sum"),
             edwards_trimp_total=("edwards_trimp", "sum"),
@@ -224,14 +226,21 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
             hr_time_in_zone_3=("hr_time_in_zone_3", "sum"),
             hr_time_in_zone_4=("hr_time_in_zone_4", "sum"),
             hr_time_in_zone_5=("hr_time_in_zone_5", "sum"),
-            hr_zone_1_pct=("hr_zone_1_pct", "mean"),
-            hr_zone_2_pct=("hr_zone_2_pct", "mean"),
-            hr_zone_3_pct=("hr_zone_3_pct", "mean"),
-            hr_zone_4_pct=("hr_zone_4_pct", "mean"),
-            hr_zone_5_pct=("hr_zone_5_pct", "mean"),
         )
         .sort_values("day_utc")
     )
+    zone_total = (
+        pd.to_numeric(grouped["hr_time_in_zone_1"], errors="coerce").fillna(0.0)
+        + pd.to_numeric(grouped["hr_time_in_zone_2"], errors="coerce").fillna(0.0)
+        + pd.to_numeric(grouped["hr_time_in_zone_3"], errors="coerce").fillna(0.0)
+        + pd.to_numeric(grouped["hr_time_in_zone_4"], errors="coerce").fillna(0.0)
+        + pd.to_numeric(grouped["hr_time_in_zone_5"], errors="coerce").fillna(0.0)
+    ).replace(0, np.nan)
+    grouped["hr_zone_1_pct"] = (pd.to_numeric(grouped["hr_time_in_zone_1"], errors="coerce") / zone_total * 100.0).fillna(0.0)
+    grouped["hr_zone_2_pct"] = (pd.to_numeric(grouped["hr_time_in_zone_2"], errors="coerce") / zone_total * 100.0).fillna(0.0)
+    grouped["hr_zone_3_pct"] = (pd.to_numeric(grouped["hr_time_in_zone_3"], errors="coerce") / zone_total * 100.0).fillna(0.0)
+    grouped["hr_zone_4_pct"] = (pd.to_numeric(grouped["hr_time_in_zone_4"], errors="coerce") / zone_total * 100.0).fillna(0.0)
+    grouped["hr_zone_5_pct"] = (pd.to_numeric(grouped["hr_time_in_zone_5"], errors="coerce") / zone_total * 100.0).fillna(0.0)
     return grouped
 
 

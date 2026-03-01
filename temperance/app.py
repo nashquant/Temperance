@@ -743,13 +743,6 @@ if view == "Dashboard":
                                 empty=True,
                             )
                         ).add_params(top_sel)
-                    if label == "rTSS":
-                        threshold_rule = (
-                            alt.Chart(pd.DataFrame({"threshold": [500.0]}))
-                            .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
-                            .encode(y="threshold:Q")
-                        )
-                        chart = alt.layer(chart, threshold_rule)
                     chart = chart.properties(
                         height=chart_height, padding={"left": 72, "right": 12, "top": 6, "bottom": 44}
                     )
@@ -1024,6 +1017,12 @@ if view == "Dashboard":
                 rff_chart = rff_chart.encode(
                     opacity=alt.condition(rff_sel, alt.value(1.0), alt.value(0.08), empty=True)
                 ).add_params(rff_sel)
+            rff_threshold = (
+                alt.Chart(pd.DataFrame({"threshold": [70.0]}))
+                .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
+                .encode(y="threshold:Q")
+            )
+            rff_chart = alt.layer(rff_chart, rff_threshold)
             rff_chart = alt.layer(build_injury_layer(start_ts, end_ts), rff_chart)
             if enable_zoom:
                 rff_chart = rff_chart.interactive()
@@ -1147,12 +1146,13 @@ if view == "Dashboard":
         else:
             st.caption("No weekly Garmin training load/calories data to plot.")
 
-        st.subheader("Weekly HR Zone Time % (Z1-Z4)")
+        st.subheader("Weekly HR Zone Time % (Z1-Z5)")
         zone_cols = [
             "hr_time_in_zone_1",
             "hr_time_in_zone_2",
             "hr_time_in_zone_3",
             "hr_time_in_zone_4",
+            "hr_time_in_zone_5",
         ]
         if not range_filtered_metrics.empty and all(col in range_filtered_metrics.columns for col in zone_cols):
             zone_df = range_filtered_metrics.copy()
@@ -1172,20 +1172,27 @@ if view == "Dashboard":
                     .sum()
                     .sort_values("week_start")
                 )
-                duration = weekly_zone["duration_s"].replace(0, float("nan"))
-                weekly_zone["Z1"] = (weekly_zone["hr_time_in_zone_1"] / duration * 100.0).fillna(0.0)
-                weekly_zone["Z2"] = (weekly_zone["hr_time_in_zone_2"] / duration * 100.0).fillna(0.0)
-                weekly_zone["Z3"] = (weekly_zone["hr_time_in_zone_3"] / duration * 100.0).fillna(0.0)
-                weekly_zone["Z4"] = (weekly_zone["hr_time_in_zone_4"] / duration * 100.0).fillna(0.0)
+                active_zone_time = (
+                    pd.to_numeric(weekly_zone["hr_time_in_zone_1"], errors="coerce").fillna(0.0)
+                    + pd.to_numeric(weekly_zone["hr_time_in_zone_2"], errors="coerce").fillna(0.0)
+                    + pd.to_numeric(weekly_zone["hr_time_in_zone_3"], errors="coerce").fillna(0.0)
+                    + pd.to_numeric(weekly_zone["hr_time_in_zone_4"], errors="coerce").fillna(0.0)
+                    + pd.to_numeric(weekly_zone["hr_time_in_zone_5"], errors="coerce").fillna(0.0)
+                ).replace(0, float("nan"))
+                weekly_zone["Z1"] = (weekly_zone["hr_time_in_zone_1"] / active_zone_time * 100.0).fillna(0.0)
+                weekly_zone["Z2"] = (weekly_zone["hr_time_in_zone_2"] / active_zone_time * 100.0).fillna(0.0)
+                weekly_zone["Z3"] = (weekly_zone["hr_time_in_zone_3"] / active_zone_time * 100.0).fillna(0.0)
+                weekly_zone["Z4"] = (weekly_zone["hr_time_in_zone_4"] / active_zone_time * 100.0).fillna(0.0)
+                weekly_zone["Z5"] = (weekly_zone["hr_time_in_zone_5"] / active_zone_time * 100.0).fillna(0.0)
 
                 weekly_zone_long = weekly_zone.melt(
                     id_vars=["week_start"],
-                    value_vars=["Z1", "Z2", "Z3", "Z4"],
+                    value_vars=["Z1", "Z2", "Z3", "Z4", "Z5"],
                     var_name="zone",
                     value_name="pct",
                 )
                 weekly_zone_long["base_opacity"] = weekly_zone_long["zone"].map(
-                    {"Z1": 0.18, "Z2": 1.0, "Z3": 1.0, "Z4": 0.18}
+                    {"Z1": 0.18, "Z2": 1.0, "Z3": 1.0, "Z4": 0.18, "Z5": 0.18}
                 ).fillna(1.0)
                 zone_chart = (
                     alt.Chart(weekly_zone_long)
@@ -1200,8 +1207,8 @@ if view == "Dashboard":
                             "zone:N",
                             legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
                             scale=alt.Scale(
-                                domain=["Z1", "Z2", "Z3", "Z4"],
-                                range=["#3b82f6", "#facc15", "#ef4444", "#a855f7"],
+                                domain=["Z1", "Z2", "Z3", "Z4", "Z5"],
+                                range=["#3b82f6", "#facc15", "#ef4444", "#a855f7", "#f97316"],
                             ),
                         ),
                         tooltip=["week_start:T", "zone:N", alt.Tooltip("pct:Q", format=".1f")],
@@ -1222,6 +1229,7 @@ if view == "Dashboard":
                 if enable_zoom:
                     zone_chart = zone_chart.interactive()
                 st.altair_chart(zone_chart, use_container_width=True)
+                st.caption("Zone % is computed as zone_time / total_active_time, where total_active_time = Z1+Z2+Z3+Z4+Z5.")
         else:
             st.caption("No heart-rate zone time data to plot.")
 
