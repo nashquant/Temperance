@@ -60,8 +60,9 @@ DEFAULT_MAX_HR = 200.0
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 INJURY_WINDOWS = [
-    {"label": "Injury 1", "start": "2025-05-15", "end": "2025-06-18"},
-    {"label": "Injury 2", "start": "2025-12-28", "end": "2026-01-20"},
+    {"label": "Injury 1", "start": "2025-05-15", "end": "2025-06-18", "severity": "injury"},
+    {"label": "Light Injury", "start": "2025-11-03", "end": "2025-11-20", "severity": "light_injury"},
+    {"label": "Injury 2", "start": "2025-12-28", "end": "2026-01-20", "severity": "injury"},
 ]
 
 cfg = load_config()
@@ -353,6 +354,7 @@ def cached_filtered_views(
 def build_injury_layer(start_day: pd.Timestamp | None = None, end_day: pd.Timestamp | None = None) -> alt.Chart:
     injuries = pd.DataFrame(INJURY_WINDOWS).copy()
     injuries["start"] = pd.to_datetime(injuries["start"])
+    injuries["severity"] = injuries.get("severity", "injury").fillna("injury")
     # Inclusive end-date visual window.
     injuries["end_exclusive"] = pd.to_datetime(injuries["end"]) + pd.Timedelta(days=1)
     if start_day is not None and end_day is not None:
@@ -363,11 +365,19 @@ def build_injury_layer(start_day: pd.Timestamp | None = None, end_day: pd.Timest
         injuries["end_exclusive"] = injuries["end_exclusive"].clip(upper=end_exclusive)
     return (
         alt.Chart(injuries)
-        .mark_rect(color="#ef4444", opacity=0.12)
+        .mark_rect(opacity=0.12)
         .encode(
             x="start:T",
             x2="end_exclusive:T",
-            tooltip=["label:N", "start:T", "end:T"],
+            color=alt.Color(
+                "severity:N",
+                legend=None,
+                scale=alt.Scale(
+                    domain=["injury", "light_injury"],
+                    range=["#ef4444", "#facc15"],
+                ),
+            ),
+            tooltip=["label:N", "severity:N", "start:T", "end:T"],
         )
     )
 
@@ -833,8 +843,12 @@ if view == "Dashboard":
                 var_name="series",
                 value_name="value",
             )
-            weekly_ff_long["series"] = weekly_ff_long["series"].replace(
-                {"fitness": "Fitness", "fatigue": "Fatigue"}
+            weekly_ff_long["series"] = (
+                weekly_ff_long["series"]
+                .astype(str)
+                .str.strip()
+                .map({"fitness": "Fitness", "fatigue": "Fatigue"})
+                .fillna("Unknown")
             )
             ff_chart = (
                 alt.Chart(weekly_ff_long)
@@ -1025,6 +1039,75 @@ if view == "Dashboard":
                 st.altair_chart(weekly_chart, use_container_width=True)
         else:
             st.caption("No weekly Garmin training load/calories data to plot.")
+
+        st.subheader("Weekly HR Zone Time % (Z1-Z4)")
+        zone_cols = [
+            "hr_time_in_zone_1",
+            "hr_time_in_zone_2",
+            "hr_time_in_zone_3",
+            "hr_time_in_zone_4",
+        ]
+        if not range_filtered_metrics.empty and all(col in range_filtered_metrics.columns for col in zone_cols):
+            zone_df = range_filtered_metrics.copy()
+            zone_df["day"] = pd.to_datetime(zone_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
+            zone_df = zone_df.dropna(subset=["day"])
+            zone_df["duration_s"] = pd.to_numeric(zone_df.get("duration_s"), errors="coerce").fillna(0.0)
+            for col in zone_cols:
+                zone_df[col] = pd.to_numeric(zone_df.get(col), errors="coerce").fillna(0.0)
+            zone_df = zone_df[zone_df["duration_s"] > 0].copy()
+
+            if zone_df.empty:
+                st.caption("No heart-rate zone time data to plot.")
+            else:
+                zone_df["week_start"] = zone_df["day"].dt.to_period("W-SUN").dt.start_time
+                weekly_zone = (
+                    zone_df.groupby("week_start", as_index=False)[["duration_s"] + zone_cols]
+                    .sum()
+                    .sort_values("week_start")
+                )
+                duration = weekly_zone["duration_s"].replace(0, np.nan)
+                weekly_zone["Z1"] = (weekly_zone["hr_time_in_zone_1"] / duration * 100.0).fillna(0.0)
+                weekly_zone["Z2"] = (weekly_zone["hr_time_in_zone_2"] / duration * 100.0).fillna(0.0)
+                weekly_zone["Z3"] = (weekly_zone["hr_time_in_zone_3"] / duration * 100.0).fillna(0.0)
+                weekly_zone["Z4"] = (weekly_zone["hr_time_in_zone_4"] / duration * 100.0).fillna(0.0)
+
+                weekly_zone_long = weekly_zone.melt(
+                    id_vars=["week_start"],
+                    value_vars=["Z1", "Z2", "Z3", "Z4"],
+                    var_name="zone",
+                    value_name="pct",
+                )
+                zone_chart = (
+                    alt.Chart(weekly_zone_long)
+                    .mark_line(point=True)
+                    .encode(
+                        x=alt.X(
+                            "week_start:T",
+                            axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
+                        ),
+                        y=alt.Y("pct:Q", axis=alt.Axis(title="% of time", format=".0f"), scale=alt.Scale(domain=[0, 100])),
+                        color=alt.Color(
+                            "zone:N",
+                            legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
+                            scale=alt.Scale(
+                                domain=["Z1", "Z2", "Z3", "Z4"],
+                                range=["#3b82f6", "#facc15", "#ef4444", "#a855f7"],
+                            ),
+                        ),
+                        tooltip=["week_start:T", "zone:N", alt.Tooltip("pct:Q", format=".1f")],
+                    )
+                    .properties(height=280)
+                )
+                if legend_toggle:
+                    zone_sel = alt.selection_point(fields=["zone"], bind="legend")
+                    zone_chart = zone_chart.encode(
+                        opacity=alt.condition(zone_sel, alt.value(1.0), alt.value(0.08))
+                    ).add_params(zone_sel)
+                if enable_zoom:
+                    zone_chart = zone_chart.interactive()
+                st.altair_chart(zone_chart, use_container_width=True)
+        else:
+            st.caption("No heart-rate zone time data to plot.")
 
 if view == "Activity Detail":
     st.divider()
