@@ -538,6 +538,7 @@ if view == "Dashboard":
             normalize_compare = st.checkbox("Normalize compare (index=100)", value=False, disabled=not compare_mode)
             enable_zoom = st.checkbox("Zoom/pan", value=False)
             legend_toggle = st.checkbox("Legend toggle", value=True)
+            top_injury_overlay = st.checkbox("Top injury overlay (experimental)", value=False)
             specificity_factor_value = st.number_input(
                 "Non-running factor",
                 min_value=0.0,
@@ -706,21 +707,29 @@ if view == "Dashboard":
                         y_format = ".1f"
                     else:
                         y_format = ".0f"
+                    x_scale = alt.Scale(
+                        domain=[pd.Timestamp(start_ts), pd.Timestamp(end_ts) + pd.Timedelta(days=1)]
+                    )
+                    chart_height = 320
                     chart = (
                         alt.Chart(overlay_long)
                         .mark_line(point=True)
                         .encode(
-                            x=alt.X("day:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=12)),
+                            x=alt.X(
+                                "day:T",
+                                axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=12),
+                                scale=x_scale,
+                            ),
                             y=alt.Y(
                                 "metric_value:Q",
-                                axis=alt.Axis(format=".0f", title=""),
+                                axis=alt.Axis(format=y_format, title=""),
                                 scale=alt.Scale(zero=False, nice=True),
                             ),
                             color=alt.Color("series:N", legend=alt.Legend(title="", orient="bottom", direction="horizontal")),
                             opacity=alt.Opacity("base_opacity:Q", legend=None),
                             tooltip=["day:T", "series:N", alt.Tooltip("metric_value:Q", format=y_format)],
                         )
-                        .properties(height=320, padding={"left": 56, "right": 12, "top": 6, "bottom": 44})
+                        .properties(height=chart_height)
                     )
                     if legend_toggle:
                         top_sel = alt.selection_point(fields=["series"], bind="legend")
@@ -732,6 +741,59 @@ if view == "Dashboard":
                                 empty=True,
                             )
                         ).add_params(top_sel)
+                    chart = chart.properties(
+                        height=chart_height, padding={"left": 72, "right": 12, "top": 6, "bottom": 44}
+                    )
+                    if top_injury_overlay:
+                        overlay_df = pd.DataFrame(INJURY_WINDOWS).copy()
+                        overlay_df["start"] = pd.to_datetime(overlay_df["start"], errors="coerce")
+                        overlay_df["end"] = pd.to_datetime(overlay_df["end"], errors="coerce")
+                        overlay_df["severity"] = overlay_df.get("severity", "injury").fillna("injury")
+                        range_start = pd.Timestamp(start_ts)
+                        range_end_exclusive = pd.Timestamp(end_ts) + pd.Timedelta(days=1)
+                        total_seconds = max((range_end_exclusive - range_start).total_seconds(), 1.0)
+                        blocks: list[str] = []
+                        for _, win in overlay_df.iterrows():
+                            s = win.get("start")
+                            e = win.get("end")
+                            if pd.isna(s) or pd.isna(e):
+                                continue
+                            e_exclusive = pd.Timestamp(e) + pd.Timedelta(days=1)
+                            if e_exclusive <= range_start or s >= range_end_exclusive:
+                                continue
+                            clipped_start = max(pd.Timestamp(s), range_start)
+                            clipped_end = min(e_exclusive, range_end_exclusive)
+                            left_pct = ((clipped_start - range_start).total_seconds() / total_seconds) * 100.0
+                            width_pct = max(
+                                ((clipped_end - clipped_start).total_seconds() / total_seconds) * 100.0,
+                                0.6,
+                            )
+                            sev = str(win.get("severity") or "injury")
+                            color = "#facc15" if sev == "light_injury" else "#ef4444"
+                            label = str(win.get("label") or "Injury")
+                            blocks.append(
+                                f"<div title='{label}' style='position:absolute;left:{left_pct:.4f}%;"
+                                f"width:{width_pct:.4f}%;top:1px;bottom:1px;background:{color};opacity:0.32;"
+                                "border-radius:999px;'></div>"
+                            )
+                        if blocks:
+                            strip_html = (
+                                "<div style='display:flex;align-items:center;gap:10px;margin:2px 0 6px 0;"
+                                "font-size:11px;color:rgba(226,232,240,0.72);'>"
+                                "<span style='display:inline-flex;align-items:center;gap:4px;'>"
+                                "<span style='display:inline-block;width:8px;height:8px;border-radius:999px;"
+                                "background:#ef4444;opacity:0.8;'></span>injury</span>"
+                                "<span style='display:inline-flex;align-items:center;gap:4px;'>"
+                                "<span style='display:inline-block;width:8px;height:8px;border-radius:999px;"
+                                "background:#facc15;opacity:0.8;'></span>light injury</span>"
+                                "</div>"
+                                "<div style='position:relative;height:10px;border-radius:999px;"
+                                "background:linear-gradient(90deg, rgba(148,163,184,0.10), rgba(148,163,184,0.16));"
+                                "border:1px solid rgba(148,163,184,0.25);margin:0 0 8px 0;overflow:hidden;'>"
+                                + "".join(blocks)
+                                + "</div>"
+                            )
+                            st.markdown(strip_html, unsafe_allow_html=True)
                     if enable_zoom:
                         chart = chart.interactive()
                     st.altair_chart(chart, use_container_width=True)
