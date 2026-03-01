@@ -295,6 +295,27 @@ def apply_specificity_factor(df: pd.DataFrame, non_running_factor: float) -> pd.
     out["specificity_factor"] = 1.0
     out.loc[~is_running_like, "specificity_factor"] = float(non_running_factor)
 
+    # Distance equivalent is computed at ingest time with base non-running specificity 0.8.
+    # Re-scale it at view time so UI specificity changes are reflected without full recompute.
+    if "distance_proxy_km" in out.columns:
+        base_proxy_factor = 0.8
+        ratio = max(float(non_running_factor), 0.0) / base_proxy_factor if base_proxy_factor > 0 else 1.0
+        proxy_scale = ratio ** 0.5
+        pace_scale = (1.0 / proxy_scale) if proxy_scale > 0 else float("nan")
+        proxy_mask = ~is_running_like
+        if "distance_proxy_method" in out.columns:
+            proxy_mask = proxy_mask & out["distance_proxy_method"].fillna("").astype(str).eq("tss_parity_root_solve")
+        out.loc[proxy_mask, "distance_proxy_km"] = (
+            pd.to_numeric(out.loc[proxy_mask, "distance_proxy_km"], errors="coerce").fillna(0.0) * proxy_scale
+        )
+        if "pace_proxy_sec_per_km" in out.columns:
+            if proxy_scale > 0:
+                out.loc[proxy_mask, "pace_proxy_sec_per_km"] = (
+                    pd.to_numeric(out.loc[proxy_mask, "pace_proxy_sec_per_km"], errors="coerce").fillna(0.0) * pace_scale
+                )
+            else:
+                out.loc[proxy_mask, "pace_proxy_sec_per_km"] = pd.NA
+
     factor_cols = [
         "distance_m",
         "trimp",
@@ -1051,10 +1072,6 @@ if view == "Dashboard":
                         tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
-                rff_sel = alt.selection_point(fields=["series"], bind="legend")
-                rff_chart = rff_chart.encode(
-                    opacity=alt.condition(rff_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                ).add_params(rff_sel)
                 rff_threshold = (
                     alt.Chart(pd.DataFrame({"threshold": [70.0]}))
                     .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
@@ -1153,10 +1170,6 @@ if view == "Dashboard":
                         tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
-                fr_sel = alt.selection_point(fields=["series"], bind="legend")
-                fr_chart = fr_chart.encode(
-                    opacity=alt.condition(fr_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                ).add_params(fr_sel)
                 fr_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), fr_chart)
                 if enable_zoom:
                     fr_chart = fr_chart.interactive()
@@ -1238,11 +1251,13 @@ if view == "Dashboard":
                 "hr_time_in_zone_2",
                 "hr_time_in_zone_3",
                 "hr_time_in_zone_4",
+                "hr_time_in_zone_5",
             ]
             if not range_filtered_metrics.empty and all(col in range_filtered_metrics.columns for col in zone_cols):
                 zone_df = range_filtered_metrics.copy()
                 zone_df["day"] = pd.to_datetime(zone_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
                 zone_df = zone_df.dropna(subset=["day"])
+                zone_df["duration_s"] = pd.to_numeric(zone_df.get("duration_s"), errors="coerce").fillna(0.0)
                 for col in zone_cols:
                     zone_df[col] = pd.to_numeric(zone_df.get(col), errors="coerce").fillna(0.0)
 
@@ -1251,7 +1266,7 @@ if view == "Dashboard":
                 else:
                     zone_df["week_start"] = zone_df["day"].dt.to_period("W-SUN").dt.start_time
                     weekly_zone = (
-                        zone_df.groupby("week_start", as_index=False)[zone_cols]
+                        zone_df.groupby("week_start", as_index=False)[["duration_s"] + zone_cols]
                         .sum()
                         .sort_values("week_start")
                     )
@@ -1265,11 +1280,14 @@ if view == "Dashboard":
                                 + pd.to_numeric(weekly_zone["hr_time_in_zone_4"], errors="coerce").fillna(0.0)
                             )
                             / 3600.0,
+                            "Total Time": (
+                                pd.to_numeric(weekly_zone["duration_s"], errors="coerce").fillna(0.0) / 3600.0
+                            ),
                         }
                     )
                     weekly_zone_hours_long = weekly_zone_hours.melt(
                         id_vars=["week_start"],
-                        value_vars=["Low Aerobic", "Moderate Aerobic", "High Aerobic"],
+                        value_vars=["Low Aerobic", "Moderate Aerobic", "High Aerobic", "Total Time"],
                         var_name="zone",
                         value_name="hours",
                     )
@@ -1277,31 +1295,48 @@ if view == "Dashboard":
                         weekly_zone_hours_long["hours"], errors="coerce"
                     ).fillna(0.0)
                     weekly_zone_hours_long["hours_label"] = weekly_zone_hours_long["hours"].map(lambda h: f"{h:.1f}h")
-                    zone_hours_chart = (
-                        alt.Chart(weekly_zone_hours_long)
-                        .mark_line(point=True)
-                        .encode(
-                            x=alt.X(
-                                "week_start:T",
-                                axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
+                    weekly_zone_hours_long["axis_side"] = weekly_zone_hours_long["zone"].map(
+                        lambda z: "right" if z == "Total Time" else "left"
+                    )
+
+                    base = alt.Chart(weekly_zone_hours_long).encode(
+                        x=alt.X(
+                            "week_start:T",
+                            axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
+                        ),
+                        color=alt.Color(
+                            "zone:N",
+                            legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
+                            scale=alt.Scale(
+                                domain=["Low Aerobic", "Moderate Aerobic", "High Aerobic", "Total Time"],
+                                range=["#3b82f6", "#facc15", "#ef4444", "#cbd5e1"],
                             ),
-                            y=alt.Y("hours:Q", axis=alt.Axis(title="hours", format=".1f")),
-                            color=alt.Color(
-                                "zone:N",
-                                legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
-                                scale=alt.Scale(
-                                    domain=["Low Aerobic", "Moderate Aerobic", "High Aerobic"],
-                                    range=["#3b82f6", "#facc15", "#ef4444"],
-                                ),
-                            ),
-                            tooltip=["week_start:T", "zone:N", alt.Tooltip("hours_label:N", title="hours")],
-                        )
-                        .properties(height=260)
+                        ),
+                        tooltip=["week_start:T", "zone:N", alt.Tooltip("hours_label:N", title="hours")],
                     )
                     zone_hours_sel = alt.selection_point(fields=["zone"], bind="legend")
-                    zone_hours_chart = zone_hours_chart.encode(
-                        opacity=alt.condition(zone_hours_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                    ).add_params(zone_hours_sel)
+                    left_layer = (
+                        base.transform_filter(alt.datum.axis_side == "left")
+                        .mark_line(point=True)
+                        .encode(
+                            y=alt.Y("hours:Q", axis=alt.Axis(title="hours", format=".1f")),
+                            opacity=alt.condition(zone_hours_sel, alt.value(1.0), alt.value(0.08), empty=True),
+                        )
+                    )
+                    right_layer = (
+                        base.transform_filter(alt.datum.axis_side == "right")
+                        .mark_line(point=True, strokeDash=[6, 4])
+                        .encode(
+                            y=alt.Y("hours:Q", axis=alt.Axis(title="total hours", format=".1f", orient="right")),
+                            opacity=alt.condition(zone_hours_sel, alt.value(1.0), alt.value(0.08), empty=True),
+                        )
+                    )
+                    zone_hours_chart = (
+                        alt.layer(left_layer, right_layer)
+                        .resolve_scale(y="independent")
+                        .add_params(zone_hours_sel)
+                        .properties(height=260)
+                    )
                     if enable_zoom:
                         zone_hours_chart = zone_hours_chart.interactive()
                     st.altair_chart(zone_hours_chart, use_container_width=True)
