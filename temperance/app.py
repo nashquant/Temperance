@@ -72,6 +72,7 @@ cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
 
 SETTINGS_KEY_THRESHOLD_PACE_DEFAULT = "threshold_pace_default_sec_per_km"
 SETTINGS_KEY_THRESHOLD_PACE_CURVE = "threshold_pace_curve_v1"
+SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 
 
 def _pace_sec_to_mmss(pace_sec_per_km: float) -> str:
@@ -152,6 +153,49 @@ def _parse_curve_text(text: str) -> list[tuple[datetime, float]]:
         (datetime.fromisoformat(d).replace(tzinfo=timezone.utc), p)
         for d, p in sorted(dedup.items(), key=lambda x: x[0])
     ]
+
+
+def _normalize_injury_windows(rows: list[dict]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            label = str(row.get("label") or "").strip() or "Injury"
+            start_s = str(row.get("start") or "").strip()
+            end_s = str(row.get("end") or "").strip()
+            severity = str(row.get("severity") or "injury").strip().lower()
+            if severity not in {"injury", "light_injury"}:
+                severity = "injury"
+            start_d = date.fromisoformat(start_s)
+            end_d = date.fromisoformat(end_s)
+            if end_d < start_d:
+                start_d, end_d = end_d, start_d
+            out.append(
+                {
+                    "label": label,
+                    "start": start_d.isoformat(),
+                    "end": end_d.isoformat(),
+                    "severity": severity,
+                }
+            )
+        except Exception:
+            continue
+    if not out:
+        return [dict(x) for x in INJURY_WINDOWS]
+    return out
+
+
+def _load_injury_windows(db_path) -> list[dict[str, str]]:
+    raw = get_setting(db_path, SETTINGS_KEY_INJURY_WINDOWS)
+    if not raw:
+        return [dict(x) for x in INJURY_WINDOWS]
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return [dict(x) for x in INJURY_WINDOWS]
+    if not isinstance(payload, list):
+        return [dict(x) for x in INJURY_WINDOWS]
+    rows = [r for r in payload if isinstance(r, dict)]
+    return _normalize_injury_windows(rows)
 
 
 def _check_raw_archive_integrity(raw_root, start_day: date, end_day: date) -> dict[str, object]:
@@ -338,8 +382,12 @@ def cached_filtered_views(
     return filtered_metrics, filtered_daily
 
 
-def build_injury_layer(start_day: pd.Timestamp | None = None, end_day: pd.Timestamp | None = None) -> alt.Chart:
-    injuries = pd.DataFrame(INJURY_WINDOWS).copy()
+def build_injury_layer(
+    injury_windows: list[dict[str, str]],
+    start_day: pd.Timestamp | None = None,
+    end_day: pd.Timestamp | None = None,
+) -> alt.Chart:
+    injuries = pd.DataFrame(injury_windows).copy()
     injuries["start"] = pd.to_datetime(injuries["start"])
     injuries["severity"] = injuries.get("severity", "injury").fillna("injury")
     # Inclusive end-date visual window.
@@ -419,25 +467,26 @@ def build_recovery_daily_frame(sleep_df: pd.DataFrame, wellness_df: pd.DataFrame
 
 with st.sidebar:
     st.header("Navigation")
-    view = st.radio("Page", ["Dashboard", "Activity Detail", "Recovery Data", "Data Extract"], index=0)
+    view = st.radio("Page", ["Dashboard", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs"], index=0)
 resting_hr = DEFAULT_RESTING_HR
 max_hr = DEFAULT_MAX_HR
 sex = "male"
 
-st.divider()
-if view != "Data Extract":
-    st.header("Visualization")
+saved_tp_raw = get_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_DEFAULT)
+try:
+    saved_threshold_pace_sec = float(saved_tp_raw) if saved_tp_raw else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+except Exception:
+    saved_threshold_pace_sec = DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+saved_curve_points = _load_threshold_curve_points(cfg.db_path)
+saved_injury_windows = _load_injury_windows(cfg.db_path)
+
+if view == "User Inputs":
+    st.divider()
+    st.header("User Inputs")
     st.caption(
         f"TRIMP defaults: resting HR={int(DEFAULT_RESTING_HR)}, max HR={int(DEFAULT_MAX_HR)}, "
         f"LTHR={int(DEFAULT_LTHR)} bpm"
     )
-    saved_tp_raw = get_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_DEFAULT)
-    try:
-        saved_threshold_pace_sec = float(saved_tp_raw) if saved_tp_raw else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-    except Exception:
-        saved_threshold_pace_sec = DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-    saved_curve_points = _load_threshold_curve_points(cfg.db_path)
-
     with st.expander("rTSS Threshold Pace Curve", expanded=False):
         st.caption("Default applies when no curve point is active for an activity date.")
         tp_default_text = st.text_input(
@@ -465,13 +514,34 @@ if view != "Data Extract":
                 st.success("Threshold pace settings saved.")
             except Exception as exc:
                 st.error(f"Could not save threshold pace settings: {exc}")
-else:
-    saved_tp_raw = get_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_DEFAULT)
-    try:
-        saved_threshold_pace_sec = float(saved_tp_raw) if saved_tp_raw else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-    except Exception:
-        saved_threshold_pace_sec = DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-    saved_curve_points = _load_threshold_curve_points(cfg.db_path)
+    with st.expander("Injury Overlays", expanded=False):
+        st.caption("Edit injury windows used for chart shading.")
+        editor_df = pd.DataFrame(saved_injury_windows)
+        if editor_df.empty:
+            editor_df = pd.DataFrame(columns=["label", "start", "end", "severity"])
+        edited = st.data_editor(
+            editor_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "label": st.column_config.TextColumn("Label"),
+                "start": st.column_config.TextColumn("Start (YYYY-MM-DD)"),
+                "end": st.column_config.TextColumn("End (YYYY-MM-DD)"),
+                "severity": st.column_config.SelectboxColumn(
+                    "Severity", options=["injury", "light_injury"]
+                ),
+            },
+            key="injury_windows_editor",
+        )
+        if st.button("Save Injury Overlays", key="save_injury_windows_btn"):
+            try:
+                rows = edited.fillna("").to_dict(orient="records")
+                normalized = _normalize_injury_windows(rows)
+                save_setting(cfg.db_path, SETTINGS_KEY_INJURY_WINDOWS, json.dumps(normalized))
+                st.success("Injury overlays saved.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not save injury overlays: {exc}")
 
 activities_cache_key = get_activities_cache_key(cfg.db_path)
 metrics_df = get_metrics_df_fast(
@@ -495,7 +565,7 @@ if view == "Dashboard":
             "For your full archive, run Comprehensive Garmin Extract from Jan 1, 2025."
         )
     else:
-        st.caption("Missing-day fill mode applies to chart calculations (EMA and aggregations).")
+        st.caption("Missing-day fill mode is fixed to zero for chart calculations (EMA and aggregations).")
         controls = st.columns([1, 1, 1, 1, 1])
         with controls[0]:
             metrics_min_day = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).min().date()
@@ -540,13 +610,11 @@ if view == "Dashboard":
             st.caption("Chart type: line")
             weekly_toggle = st.checkbox("Weekly aggregation", value=True)
         with controls[3]:
-            fill_mode = st.selectbox("Missing days", ["zero", "ffill"], index=0)
             compare_mode = st.checkbox("Compare mode (up to 3 metrics)", value=False)
         with controls[4]:
             normalize_compare = st.checkbox("Normalize compare (index=100)", value=False, disabled=not compare_mode)
             enable_zoom = st.checkbox("Zoom/pan", value=False)
-            legend_toggle = st.checkbox("Legend toggle", value=True)
-            top_injury_overlay = st.checkbox("Top injury overlay (experimental)", value=False)
+            top_injury_overlay = st.checkbox("Top injury overlay", value=False)
             specificity_factor_value = st.number_input(
                 "Non-running factor",
                 min_value=0.0,
@@ -580,14 +648,14 @@ if view == "Dashboard":
         ].copy()
 
         metric_map = {
+            "rTSS": ("rtss_total", "sum"),
+            "TSS": ("tss_total", "sum"),
             "Distance (km)": ("distance_km", "sum"),
-            "Garmin Training Load": ("training_load_garmin", "sum"),
-            "Fitness (EWMA 42)": ("fitness", "mean"),
+            "Distance Eqv. (km)": ("distance_proxy_km", "sum"),
             "Fatigue (EWMA 7)": ("fatigue", "mean"),
             "Last Fatigue (week-end)": ("fatigue", "last"),
             "Pounding (EWMA 7, rTSS)": ("pounding", "mean"),
-            "rTSS": ("rtss_total", "sum"),
-            "TSS": ("tss_total", "sum"),
+            "Garmin Training Load": ("training_load_garmin", "sum"),
             "TRIMP": ("trimp_total", "sum"),
             "Edwards TRIMP": ("edwards_trimp_total", "sum"),
             "Calories Active": ("calories_active", "sum"),
@@ -650,7 +718,7 @@ if view == "Dashboard":
                     metric=metric,
                     start_day=start_ts,
                     end_day=end_ts,
-                    fill_method=fill_mode,
+                    fill_method="zero",
                     weekly=weekly_toggle,
                     weekly_agg=weekly_agg,
                     full_index=series_full_index,
@@ -733,21 +801,20 @@ if view == "Dashboard":
                         )
                         .properties(height=chart_height)
                     )
-                    if legend_toggle:
-                        top_sel = alt.selection_point(fields=["series"], bind="legend")
-                        chart = chart.encode(
-                            opacity=alt.condition(
-                                top_sel,
-                                alt.Opacity("base_opacity:Q", legend=None),
-                                alt.value(0.08),
-                                empty=True,
-                            )
-                        ).add_params(top_sel)
+                    top_sel = alt.selection_point(fields=["series"], bind="legend")
+                    chart = chart.encode(
+                        opacity=alt.condition(
+                            top_sel,
+                            alt.Opacity("base_opacity:Q", legend=None),
+                            alt.value(0.08),
+                            empty=True,
+                        )
+                    ).add_params(top_sel)
                     chart = chart.properties(
                         height=chart_height, padding={"left": 72, "right": 12, "top": 6, "bottom": 44}
                     )
                     if top_injury_overlay:
-                        overlay_df = pd.DataFrame(INJURY_WINDOWS).copy()
+                        overlay_df = pd.DataFrame(saved_injury_windows).copy()
                         overlay_df["start"] = pd.to_datetime(overlay_df["start"], errors="coerce")
                         overlay_df["end"] = pd.to_datetime(overlay_df["end"], errors="coerce")
                         overlay_df["severity"] = overlay_df.get("severity", "injury").fillna("injury")
@@ -802,7 +869,7 @@ if view == "Dashboard":
 
             if compare_mode and plot_frames:
                 compare_df = pd.concat(plot_frames, ignore_index=True)
-                legend_sel = alt.selection_point(fields=["series"], bind="legend") if legend_toggle else None
+                legend_sel = alt.selection_point(fields=["series"], bind="legend")
 
                 left_df = compare_df[compare_df["axis_side"] == "left"]
                 right_df = compare_df[compare_df["axis_side"] == "right"]
@@ -828,18 +895,16 @@ if view == "Dashboard":
                     )
                 )
 
-                if legend_sel is not None:
-                    left_chart = left_chart.encode(
-                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                    )
-                    right_chart = right_chart.encode(
-                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                    )
-                compare_chart = alt.layer(build_injury_layer(start_ts, end_ts), left_chart, right_chart).resolve_scale(
+                left_chart = left_chart.encode(
+                    opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                )
+                right_chart = right_chart.encode(
+                    opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                )
+                compare_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), left_chart, right_chart).resolve_scale(
                     y="independent"
                 )
-                if legend_sel is not None:
-                    compare_chart = compare_chart.add_params(legend_sel)
+                compare_chart = compare_chart.add_params(legend_sel)
                 if enable_zoom:
                     compare_chart = compare_chart.interactive()
                     st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
@@ -882,17 +947,17 @@ if view == "Dashboard":
                     )
                     .properties(height=280)
                 )
-                if legend_toggle:
-                    weekly_tss_sel = alt.selection_point(fields=["series"], bind="legend")
-                    weekly_tss_chart = weekly_tss_chart.encode(
-                        opacity=alt.condition(weekly_tss_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                    ).add_params(weekly_tss_sel)
+                weekly_tss_sel = alt.selection_point(fields=["series"], bind="legend")
+                weekly_tss_chart = weekly_tss_chart.encode(
+                    opacity=alt.condition(weekly_tss_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                ).add_params(weekly_tss_sel)
                 weekly_tss_threshold = (
                     alt.Chart(pd.DataFrame({"threshold": [500.0]}))
                     .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
                     .encode(y="threshold:Q")
                 )
                 weekly_tss_chart = alt.layer(weekly_tss_chart, weekly_tss_threshold)
+                weekly_tss_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), weekly_tss_chart)
                 if enable_zoom:
                     weekly_tss_chart = weekly_tss_chart.interactive()
                 st.altair_chart(weekly_tss_chart, use_container_width=True)
@@ -938,12 +1003,11 @@ if view == "Dashboard":
                         tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
-                if legend_toggle:
-                    ff_sel = alt.selection_point(fields=["series"], bind="legend")
-                    ff_chart = ff_chart.encode(
-                        opacity=alt.condition(ff_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                    ).add_params(ff_sel)
-                ff_chart = alt.layer(build_injury_layer(start_ts, end_ts), ff_chart)
+                ff_sel = alt.selection_point(fields=["series"], bind="legend")
+                ff_chart = ff_chart.encode(
+                    opacity=alt.condition(ff_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                ).add_params(ff_sel)
+                ff_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), ff_chart)
                 if enable_zoom:
                     ff_chart = ff_chart.interactive()
                 st.altair_chart(ff_chart, use_container_width=True)
@@ -987,18 +1051,17 @@ if view == "Dashboard":
                         tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
-                if legend_toggle:
-                    rff_sel = alt.selection_point(fields=["series"], bind="legend")
-                    rff_chart = rff_chart.encode(
-                        opacity=alt.condition(rff_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                    ).add_params(rff_sel)
+                rff_sel = alt.selection_point(fields=["series"], bind="legend")
+                rff_chart = rff_chart.encode(
+                    opacity=alt.condition(rff_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                ).add_params(rff_sel)
                 rff_threshold = (
                     alt.Chart(pd.DataFrame({"threshold": [70.0]}))
                     .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
                     .encode(y="threshold:Q")
                 )
                 rff_chart = alt.layer(rff_chart, rff_threshold)
-                rff_chart = alt.layer(build_injury_layer(start_ts, end_ts), rff_chart)
+                rff_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), rff_chart)
                 if enable_zoom:
                     rff_chart = rff_chart.interactive()
                 st.altair_chart(rff_chart, use_container_width=True)
@@ -1038,15 +1101,18 @@ if view == "Dashboard":
                     )
                     .properties(height=280)
                 )
-                if legend_toggle:
-                    weekly_dist_sel = alt.selection_point(fields=["series"], bind="legend")
-                    weekly_dist_chart = weekly_dist_chart.encode(
-                        opacity=alt.condition(weekly_dist_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                    ).add_params(weekly_dist_sel)
-                weekly_dist_chart = alt.layer(build_injury_layer(start_ts, end_ts), weekly_dist_chart)
+                weekly_dist_sel = alt.selection_point(fields=["series"], bind="legend")
+                weekly_dist_chart = weekly_dist_chart.encode(
+                    opacity=alt.condition(weekly_dist_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                ).add_params(weekly_dist_sel)
+                weekly_dist_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), weekly_dist_chart)
                 if enable_zoom:
                     weekly_dist_chart = weekly_dist_chart.interactive()
                 st.altair_chart(weekly_dist_chart, use_container_width=True)
+                st.caption(
+                    "Distance Eqv. = running-equivalent weekly distance inferred from non-running sessions by matching "
+                    "running rTSS to HR-based TSS scaled by specificity (applied once)."
+                )
             else:
                 st.caption("No weekly distance-equivalent data to plot.")
 
@@ -1087,12 +1153,11 @@ if view == "Dashboard":
                         tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
-                if legend_toggle:
-                    fr_sel = alt.selection_point(fields=["series"], bind="legend")
-                    fr_chart = fr_chart.encode(
-                        opacity=alt.condition(fr_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                    ).add_params(fr_sel)
-                fr_chart = alt.layer(build_injury_layer(start_ts, end_ts), fr_chart)
+                fr_sel = alt.selection_point(fields=["series"], bind="legend")
+                fr_chart = fr_chart.encode(
+                    opacity=alt.condition(fr_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                ).add_params(fr_sel)
+                fr_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), fr_chart)
                 if enable_zoom:
                     fr_chart = fr_chart.interactive()
                 st.altair_chart(fr_chart, use_container_width=True)
@@ -1145,23 +1210,21 @@ if view == "Dashboard":
                         ),
                         tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
-                    legend_sel = alt.selection_point(fields=["series"], bind="legend") if legend_toggle else None
+                    legend_sel = alt.selection_point(fields=["series"], bind="legend")
                     left_chart = base.transform_filter(alt.datum.series == "Garmin Training Load").mark_line(point=True).encode(
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Garmin Training Load"))
                     )
                     right_chart = base.transform_filter(alt.datum.series == "Total Calories").mark_line(point=True).encode(
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Total Calories", orient="right"))
                     )
-                    if legend_sel is not None:
-                        left_chart = left_chart.encode(
-                            opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                        )
-                        right_chart = right_chart.encode(
-                            opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                        )
+                    left_chart = left_chart.encode(
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                    )
+                    right_chart = right_chart.encode(
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                    )
                     weekly_chart = alt.layer(left_chart, right_chart).resolve_scale(y="independent")
-                    if legend_sel is not None:
-                        weekly_chart = weekly_chart.add_params(legend_sel)
+                    weekly_chart = weekly_chart.add_params(legend_sel)
                     if enable_zoom:
                         weekly_chart = weekly_chart.interactive()
                     st.altair_chart(weekly_chart, use_container_width=True)
@@ -1169,103 +1232,44 @@ if view == "Dashboard":
                 st.caption("No weekly Garmin training load/calories data to plot.")
 
         if section_choice == "Fitness":
-            st.subheader("Weekly HR Zone Time % (Z1-Z5)")
+            st.subheader("Weekly HR Zone Time (hours)")
             zone_cols = [
                 "hr_time_in_zone_1",
                 "hr_time_in_zone_2",
                 "hr_time_in_zone_3",
                 "hr_time_in_zone_4",
-                "hr_time_in_zone_5",
             ]
             if not range_filtered_metrics.empty and all(col in range_filtered_metrics.columns for col in zone_cols):
                 zone_df = range_filtered_metrics.copy()
                 zone_df["day"] = pd.to_datetime(zone_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
                 zone_df = zone_df.dropna(subset=["day"])
-                zone_df["duration_s"] = pd.to_numeric(zone_df.get("duration_s"), errors="coerce").fillna(0.0)
                 for col in zone_cols:
                     zone_df[col] = pd.to_numeric(zone_df.get(col), errors="coerce").fillna(0.0)
-                zone_df = zone_df[zone_df["duration_s"] > 0].copy()
 
                 if zone_df.empty:
                     st.caption("No heart-rate zone time data to plot.")
                 else:
                     zone_df["week_start"] = zone_df["day"].dt.to_period("W-SUN").dt.start_time
                     weekly_zone = (
-                        zone_df.groupby("week_start", as_index=False)[["duration_s"] + zone_cols]
+                        zone_df.groupby("week_start", as_index=False)[zone_cols]
                         .sum()
                         .sort_values("week_start")
                     )
-                    active_zone_time = (
-                        pd.to_numeric(weekly_zone["hr_time_in_zone_1"], errors="coerce").fillna(0.0)
-                        + pd.to_numeric(weekly_zone["hr_time_in_zone_2"], errors="coerce").fillna(0.0)
-                        + pd.to_numeric(weekly_zone["hr_time_in_zone_3"], errors="coerce").fillna(0.0)
-                        + pd.to_numeric(weekly_zone["hr_time_in_zone_4"], errors="coerce").fillna(0.0)
-                        + pd.to_numeric(weekly_zone["hr_time_in_zone_5"], errors="coerce").fillna(0.0)
-                    ).replace(0, float("nan"))
-                    weekly_zone["Z1"] = (weekly_zone["hr_time_in_zone_1"] / active_zone_time * 100.0).fillna(0.0)
-                    weekly_zone["Z2"] = (weekly_zone["hr_time_in_zone_2"] / active_zone_time * 100.0).fillna(0.0)
-                    weekly_zone["Z3"] = (weekly_zone["hr_time_in_zone_3"] / active_zone_time * 100.0).fillna(0.0)
-                    weekly_zone["Z4"] = (weekly_zone["hr_time_in_zone_4"] / active_zone_time * 100.0).fillna(0.0)
-                    weekly_zone["Z5"] = (weekly_zone["hr_time_in_zone_5"] / active_zone_time * 100.0).fillna(0.0)
-
-                    weekly_zone_long = weekly_zone.melt(
-                        id_vars=["week_start"],
-                        value_vars=["Z1", "Z2", "Z3", "Z4", "Z5"],
-                        var_name="zone",
-                        value_name="pct",
-                    )
-                    weekly_zone_long["base_opacity"] = weekly_zone_long["zone"].map(
-                        {"Z1": 0.18, "Z2": 1.0, "Z3": 1.0, "Z4": 0.18, "Z5": 0.18}
-                    ).fillna(1.0)
-                    zone_chart = (
-                        alt.Chart(weekly_zone_long)
-                        .mark_line(point=True)
-                        .encode(
-                            x=alt.X(
-                                "week_start:T",
-                                axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
-                            ),
-                            y=alt.Y("pct:Q", axis=alt.Axis(title="% of time", format=".0f"), scale=alt.Scale(domain=[0, 100])),
-                            color=alt.Color(
-                                "zone:N",
-                                legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
-                                scale=alt.Scale(
-                                    domain=["Z1", "Z2", "Z3", "Z4", "Z5"],
-                                    range=["#3b82f6", "#facc15", "#ef4444", "#a855f7", "#f97316"],
-                                ),
-                            ),
-                            tooltip=["week_start:T", "zone:N", alt.Tooltip("pct:Q", format=".1f")],
-                            opacity=alt.Opacity("base_opacity:Q", legend=None),
-                        )
-                        .properties(height=280)
-                    )
-                    if legend_toggle:
-                        zone_sel = alt.selection_point(fields=["zone"], bind="legend")
-                        zone_chart = zone_chart.encode(
-                            opacity=alt.condition(
-                                zone_sel,
-                                alt.Opacity("base_opacity:Q", legend=None),
-                                alt.value(0.08),
-                                empty=True,
-                            )
-                        ).add_params(zone_sel)
-                    if enable_zoom:
-                        zone_chart = zone_chart.interactive()
-                    st.altair_chart(zone_chart, use_container_width=True)
-
                     weekly_zone_hours = pd.DataFrame(
                         {
                             "week_start": weekly_zone["week_start"],
-                            "Z1": pd.to_numeric(weekly_zone["hr_time_in_zone_1"], errors="coerce").fillna(0.0) / 3600.0,
-                            "Z2": pd.to_numeric(weekly_zone["hr_time_in_zone_2"], errors="coerce").fillna(0.0) / 3600.0,
-                            "Z3": pd.to_numeric(weekly_zone["hr_time_in_zone_3"], errors="coerce").fillna(0.0) / 3600.0,
-                            "Z4": pd.to_numeric(weekly_zone["hr_time_in_zone_4"], errors="coerce").fillna(0.0) / 3600.0,
-                            "Z5": pd.to_numeric(weekly_zone["hr_time_in_zone_5"], errors="coerce").fillna(0.0) / 3600.0,
+                            "Low Aerobic": pd.to_numeric(weekly_zone["hr_time_in_zone_1"], errors="coerce").fillna(0.0) / 3600.0,
+                            "Moderate Aerobic": pd.to_numeric(weekly_zone["hr_time_in_zone_2"], errors="coerce").fillna(0.0) / 3600.0,
+                            "High Aerobic": (
+                                pd.to_numeric(weekly_zone["hr_time_in_zone_3"], errors="coerce").fillna(0.0)
+                                + pd.to_numeric(weekly_zone["hr_time_in_zone_4"], errors="coerce").fillna(0.0)
+                            )
+                            / 3600.0,
                         }
                     )
                     weekly_zone_hours_long = weekly_zone_hours.melt(
                         id_vars=["week_start"],
-                        value_vars=["Z1", "Z2", "Z3", "Z4", "Z5"],
+                        value_vars=["Low Aerobic", "Moderate Aerobic", "High Aerobic"],
                         var_name="zone",
                         value_name="hours",
                     )
@@ -1273,9 +1277,6 @@ if view == "Dashboard":
                         weekly_zone_hours_long["hours"], errors="coerce"
                     ).fillna(0.0)
                     weekly_zone_hours_long["hours_label"] = weekly_zone_hours_long["hours"].map(lambda h: f"{h:.1f}h")
-                    weekly_zone_hours_long["base_opacity"] = weekly_zone_hours_long["zone"].map(
-                        {"Z1": 0.18, "Z2": 1.0, "Z3": 1.0, "Z4": 0.18, "Z5": 0.18}
-                    ).fillna(1.0)
                     zone_hours_chart = (
                         alt.Chart(weekly_zone_hours_long)
                         .mark_line(point=True)
@@ -1289,29 +1290,22 @@ if view == "Dashboard":
                                 "zone:N",
                                 legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
                                 scale=alt.Scale(
-                                    domain=["Z1", "Z2", "Z3", "Z4", "Z5"],
-                                    range=["#3b82f6", "#facc15", "#ef4444", "#a855f7", "#f97316"],
+                                    domain=["Low Aerobic", "Moderate Aerobic", "High Aerobic"],
+                                    range=["#3b82f6", "#facc15", "#ef4444"],
                                 ),
                             ),
                             tooltip=["week_start:T", "zone:N", alt.Tooltip("hours_label:N", title="hours")],
-                            opacity=alt.Opacity("base_opacity:Q", legend=None),
                         )
                         .properties(height=260)
                     )
-                    if legend_toggle:
-                        zone_hours_sel = alt.selection_point(fields=["zone"], bind="legend")
-                        zone_hours_chart = zone_hours_chart.encode(
-                            opacity=alt.condition(
-                                zone_hours_sel,
-                                alt.Opacity("base_opacity:Q", legend=None),
-                                alt.value(0.08),
-                                empty=True,
-                            )
-                        ).add_params(zone_hours_sel)
+                    zone_hours_sel = alt.selection_point(fields=["zone"], bind="legend")
+                    zone_hours_chart = zone_hours_chart.encode(
+                        opacity=alt.condition(zone_hours_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                    ).add_params(zone_hours_sel)
                     if enable_zoom:
                         zone_hours_chart = zone_hours_chart.interactive()
                     st.altair_chart(zone_hours_chart, use_container_width=True)
-                    st.caption("Zone % is computed as zone_time / total_active_time, where total_active_time = Z1+Z2+Z3+Z4+Z5.")
+                    st.caption("Anaerobic (Z5) is tracked but not plotted in this view.")
             else:
                 st.caption("No heart-rate zone time data to plot.")
 
@@ -1335,6 +1329,7 @@ if view == "Dashboard":
                 table_df,
                 use_container_width=True,
                 column_config={
+                    "sport_type": st.column_config.TextColumn("Activity Type"),
                     "distance_km": st.column_config.NumberColumn(format="%.2f km"),
                     "duration_min": st.column_config.NumberColumn(format="%.1f min"),
                     "avg_pace_display": st.column_config.TextColumn("Pace"),
@@ -1347,7 +1342,7 @@ if view == "Dashboard":
                     "fitness": st.column_config.NumberColumn("Fitness", format="%.1f"),
                     "fatigue": st.column_config.NumberColumn("Fatigue", format="%.1f"),
                     "distance_proxy_km": st.column_config.NumberColumn("Distance Proxy", format="%.2f km"),
-                    "pace_proxy_sec_per_km": st.column_config.NumberColumn("Pace Proxy (s/km)", format="%.0f"),
+                    "pace_proxy_display": st.column_config.TextColumn("Pace Proxy"),
                     "distance_proxy_method": st.column_config.TextColumn("Distance Proxy Method"),
                 },
             )

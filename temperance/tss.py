@@ -211,6 +211,14 @@ def compute_distance_proxy(
             "distance_proxy_method": "none_running",
         }
 
+    # Explicitly disable distance-equivalent conversion for strength sessions.
+    if "strength_training" in str(activity.sport_type or "").lower():
+        return {
+            "distance_proxy_km": None,
+            "pace_proxy_sec_per_km": None,
+            "distance_proxy_method": "unavailable",
+        }
+
     duration_s = float(activity.activity_duration_seconds) if activity.activity_duration_seconds is not None else 0.0
     tp = float(threshold_pace_sec_per_km) if threshold_pace_sec_per_km is not None else 0.0
     tss_value = float(tss) if tss is not None else float("nan")

@@ -225,6 +225,7 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
             columns=[
                 "day_utc",
                 "distance_km",
+                "distance_proxy_km",
                 "duration_s_total",
                 "trimp_total",
                 "mechanical_load_total",
@@ -251,12 +252,16 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
 
     daily = df.copy()
     daily["day_utc"] = daily["start_time_utc"].dt.date.astype(str)
-    daily["distance_km"] = daily["distance_m"].fillna(0.0) / 1000.0
+    sport = daily["sport_type"].fillna("").astype(str).str.lower()
+    is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
+    distance_m = pd.to_numeric(daily["distance_m"], errors="coerce").fillna(0.0)
+    daily["distance_km"] = (distance_m.where(is_running_like, 0.0)) / 1000.0
 
     grouped = (
         daily.groupby("day_utc", as_index=False)
         .agg(
             distance_km=("distance_km", "sum"),
+            distance_proxy_km=("distance_proxy_km", "sum"),
             duration_s_total=("duration_s", "sum"),
             trimp_total=("trimp", "sum"),
             mechanical_load_total=("mechanical_load", "sum"),
@@ -414,7 +419,10 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
 
     weekly = df.copy()
     weekly["week_start"] = weekly["start_time_utc"].dt.to_period("W-SUN").dt.start_time
-    weekly["distance_km"] = weekly["distance_m"] / 1000.0
+    sport = weekly["sport_type"].fillna("").astype(str).str.lower()
+    is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
+    distance_m = pd.to_numeric(weekly["distance_m"], errors="coerce").fillna(0.0)
+    weekly["distance_km"] = (distance_m.where(is_running_like, 0.0)) / 1000.0
 
     agg_spec: dict[str, tuple[str, str]] = {
         "total_distance_km": ("distance_km", "sum"),
@@ -469,9 +477,26 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         axis=1,
     )
 
+    def _pace_proxy_str(pace_s_per_km: float | None) -> str:
+        if pace_s_per_km is None or pd.isna(pace_s_per_km):
+            return "-"
+        try:
+            pace_value = float(pace_s_per_km)
+        except (TypeError, ValueError):
+            return "-"
+        if not math.isfinite(pace_value) or pace_value <= 0:
+            return "-"
+        total_seconds = int(round(pace_value))
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        return f"{minutes}:{seconds:02d}min/km"
+
+    table["pace_proxy_display"] = table["pace_proxy_sec_per_km"].apply(_pace_proxy_str)
+
     cols = [
         "activity_id",
         "date",
+        "sport_type",
         "distance_km",
         "duration_min",
         "avg_hr",
@@ -488,7 +513,7 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
 
     optional = [
         "distance_proxy_km",
-        "pace_proxy_sec_per_km",
+        "pace_proxy_display",
         "distance_proxy_method",
         "avg_cadence",
         "running_power_avg",

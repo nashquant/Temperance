@@ -222,3 +222,20 @@ def test_distance_proxy_unavailable_when_inputs_missing() -> None:
     assert proxy["distance_proxy_km"] is None
     assert proxy["pace_proxy_sec_per_km"] is None
     assert proxy["distance_proxy_method"] == "unavailable"
+
+
+def test_distance_proxy_unavailable_for_strength_training() -> None:
+    proxy = compute_distance_proxy(
+        activity=ActivityDistanceProxyInput(
+            sport_type="strength_training",
+            activity_duration_seconds=3600.0,
+            activity_distance_km=None,
+            activity_avg_pace_sec_per_km=None,
+        ),
+        threshold_pace_sec_per_km=300.0,
+        tss=80.0,
+        specificity_ratio=0.8,
+    )
+    assert proxy["distance_proxy_km"] is None
+    assert proxy["pace_proxy_sec_per_km"] is None
+    assert proxy["distance_proxy_method"] == "unavailable"
