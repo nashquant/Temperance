@@ -603,9 +603,18 @@ if view == "Dashboard":
                 daily_max_day = pd.to_datetime(daily_summary_df["day_utc"], errors="coerce").max().date()
                 min_day = min(metrics_min_day, daily_min_day)
                 max_day = max(metrics_max_day, daily_max_day)
-            quick_range = st.selectbox("Quick range", ["YTD", "1Y", "2Y", "ALL", "Custom"], index=1)
+            quick_range = st.selectbox("Quick range", ["YTD", "3M", "6M", "9M", "1Y", "2Y", "ALL", "Custom"], index=4)
             if quick_range == "YTD":
                 q_start = max(min_day, date(max_day.year, 1, 1))
+                q_end = max_day
+            elif quick_range == "3M":
+                q_start = max(min_day, max_day - timedelta(days=90))
+                q_end = max_day
+            elif quick_range == "6M":
+                q_start = max(min_day, max_day - timedelta(days=180))
+                q_end = max_day
+            elif quick_range == "9M":
+                q_start = max(min_day, max_day - timedelta(days=270))
                 q_end = max_day
             elif quick_range == "1Y":
                 q_start = max(min_day, max_day - timedelta(days=365))
