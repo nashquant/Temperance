@@ -677,6 +677,7 @@ if view == "Dashboard":
             "TSS": ("tss_total", "sum"),
             "Distance (km)": ("distance_km", "sum"),
             "Distance Eqv. (km)": ("distance_proxy_km", "sum"),
+            "Mechanical Load": ("mechanical_load_total", "sum"),
             "Fatigue (EWMA 7)": ("fatigue", "mean"),
             "Last Fatigue (week-end)": ("fatigue", "last"),
             "Pounding (EWMA 7, rTSS)": ("pounding", "mean"),
@@ -945,64 +946,79 @@ if view == "Dashboard":
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
 
         if section_choice == "Summary":
-            if "total_tss" in weekly.columns and "total_rtss" in weekly.columns and not weekly.empty:
-                weekly_tss = weekly[["week_start", "total_tss", "total_rtss"]].copy().sort_values("week_start")
-                weekly_tss_plot = weekly_tss.melt(
-                    id_vars=["week_start"],
-                    value_vars=["total_tss", "total_rtss"],
+            if (
+                (weekly_toggle and "total_tss" in weekly.columns and "total_rtss" in weekly.columns and not weekly.empty)
+                or (
+                    (not weekly_toggle)
+                    and (not filtered_daily_range.empty)
+                    and "tss_total" in filtered_daily_range.columns
+                    and "rtss_total" in filtered_daily_range.columns
+                )
+            ):
+                if weekly_toggle:
+                    tss_base = weekly[["week_start", "total_tss", "total_rtss"]].copy().sort_values("week_start")
+                    tss_base = tss_base.rename(
+                        columns={"week_start": "period_start", "total_tss": "tss", "total_rtss": "rtss"}
+                    )
+                else:
+                    tss_base = filtered_daily_range[["day_utc", "tss_total", "rtss_total"]].copy()
+                    tss_base["period_start"] = pd.to_datetime(tss_base["day_utc"], errors="coerce")
+                    tss_base["tss"] = pd.to_numeric(tss_base["tss_total"], errors="coerce").fillna(0.0)
+                    tss_base["rtss"] = pd.to_numeric(tss_base["rtss_total"], errors="coerce").fillna(0.0)
+                    tss_base = tss_base[["period_start", "tss", "rtss"]].dropna(subset=["period_start"]).sort_values("period_start")
+                tss_plot = tss_base.melt(
+                    id_vars=["period_start"],
+                    value_vars=["tss", "rtss"],
                     var_name="series",
                     value_name="value",
                 )
-                weekly_tss_plot["series"] = weekly_tss_plot["series"].replace(
-                    {"total_tss": "TSS", "total_rtss": "rTSS"}
+                tss_plot["series"] = tss_plot["series"].replace(
+                    {"tss": "TSS", "rtss": "rTSS"}
                 )
-                st.subheader("Weekly TSS vs rTSS")
-                weekly_tss_chart = (
-                    alt.Chart(weekly_tss_plot)
+                st.subheader("TSS vs rTSS")
+                tss_chart = (
+                    alt.Chart(tss_plot)
                     .mark_line(point=True)
                     .encode(
-                        x=alt.X("week_start:T", axis=alt.Axis(title="")),
+                        x=alt.X("period_start:T", axis=alt.Axis(title="")),
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
                         color=alt.Color(
                             "series:N",
                             legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
                             scale=alt.Scale(domain=["TSS", "rTSS"], range=["#60a5fa", "#f59e0b"]),
                         ),
-                        tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                        tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                     .properties(height=280)
                 )
-                weekly_tss_sel = alt.selection_point(fields=["series"], bind="legend")
-                weekly_tss_chart = weekly_tss_chart.encode(
-                    opacity=alt.condition(weekly_tss_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                ).add_params(weekly_tss_sel)
-                weekly_tss_threshold = (
+                tss_sel = alt.selection_point(fields=["series"], bind="legend")
+                tss_chart = tss_chart.encode(
+                    opacity=alt.condition(tss_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                ).add_params(tss_sel)
+                tss_threshold = (
                     alt.Chart(pd.DataFrame({"threshold": [500.0]}))
                     .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
                     .encode(y="threshold:Q")
                 )
-                weekly_tss_chart = alt.layer(weekly_tss_chart, weekly_tss_threshold)
-                weekly_tss_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), weekly_tss_chart)
+                tss_chart = alt.layer(tss_chart, tss_threshold)
+                tss_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), tss_chart)
                 if enable_zoom:
-                    weekly_tss_chart = weekly_tss_chart.interactive()
-                st.altair_chart(weekly_tss_chart, use_container_width=True)
+                    tss_chart = tss_chart.interactive()
+                st.altair_chart(tss_chart, use_container_width=True)
 
         if section_choice == "Fitness":
-            st.subheader("Weekly Fitness vs Fatigue")
+            st.subheader("Fitness vs Fatigue")
             if not filtered_daily_range.empty and "fitness" in filtered_daily_range.columns and "fatigue" in filtered_daily_range.columns:
-                weekly_ff = filtered_daily_range[["day_utc", "fitness", "fatigue"]].copy()
-                weekly_ff["day"] = pd.to_datetime(weekly_ff["day_utc"], errors="coerce")
-                weekly_ff = weekly_ff.dropna(subset=["day"])
-                weekly_ff["fitness"] = pd.to_numeric(weekly_ff["fitness"], errors="coerce").fillna(0.0)
-                weekly_ff["fatigue"] = pd.to_numeric(weekly_ff["fatigue"], errors="coerce").fillna(0.0)
-                weekly_ff["week_start"] = weekly_ff["day"].dt.to_period("W-SUN").dt.start_time
-                weekly_ff = (
-                    weekly_ff.groupby("week_start", as_index=False)[["fitness", "fatigue"]]
-                    .mean()
-                    .sort_values("week_start")
-                )
-                weekly_ff_long = weekly_ff.melt(
-                    id_vars=["week_start"],
+                ff_base = filtered_daily_range[["day_utc", "fitness", "fatigue"]].copy()
+                ff_base["period_start"] = pd.to_datetime(ff_base["day_utc"], errors="coerce")
+                ff_base = ff_base.dropna(subset=["period_start"])
+                ff_base["fitness"] = pd.to_numeric(ff_base["fitness"], errors="coerce").fillna(0.0)
+                ff_base["fatigue"] = pd.to_numeric(ff_base["fatigue"], errors="coerce").fillna(0.0)
+                if weekly_toggle:
+                    ff_base["period_start"] = ff_base["period_start"].dt.to_period("W-SUN").dt.start_time
+                    ff_base = ff_base.groupby("period_start", as_index=False)[["fitness", "fatigue"]].mean().sort_values("period_start")
+                weekly_ff_long = ff_base.melt(
+                    id_vars=["period_start"],
                     value_vars=["fitness", "fatigue"],
                     var_name="series",
                     value_name="value",
@@ -1018,14 +1034,14 @@ if view == "Dashboard":
                     alt.Chart(weekly_ff_long)
                     .mark_line(point=True)
                     .encode(
-                        x=alt.X("week_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                        x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
                         color=alt.Color(
                             "series:N",
                             legend=alt.Legend(orient="bottom", direction="horizontal"),
                             scale=alt.Scale(domain=["Fitness", "Fatigue"], range=["#22c55e", "#ef4444"]),
                         ),
-                        tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                        tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
                 ff_sel = alt.selection_point(fields=["series"], bind="legend")
@@ -1040,21 +1056,18 @@ if view == "Dashboard":
                 st.caption("No fitness/fatigue data to plot.")
 
         if section_choice == "Injury Risk":
-            st.subheader("Weekly Leg Elasticity vs Pounding")
+            st.subheader("Leg Elasticity vs Pounding")
             if not filtered_daily_range.empty and "leg_elasticity" in filtered_daily_range.columns and "pounding" in filtered_daily_range.columns:
-                weekly_rff = filtered_daily_range[["day_utc", "leg_elasticity", "pounding"]].copy()
-                weekly_rff["day"] = pd.to_datetime(weekly_rff["day_utc"], errors="coerce")
-                weekly_rff = weekly_rff.dropna(subset=["day"])
-                weekly_rff["leg_elasticity"] = pd.to_numeric(weekly_rff["leg_elasticity"], errors="coerce").fillna(0.0)
-                weekly_rff["pounding"] = pd.to_numeric(weekly_rff["pounding"], errors="coerce").fillna(0.0)
-                weekly_rff["week_start"] = weekly_rff["day"].dt.to_period("W-SUN").dt.start_time
-                weekly_rff = (
-                    weekly_rff.groupby("week_start", as_index=False)[["leg_elasticity", "pounding"]]
-                    .mean()
-                    .sort_values("week_start")
-                )
-                weekly_rff_long = weekly_rff.melt(
-                    id_vars=["week_start"],
+                rff_base = filtered_daily_range[["day_utc", "leg_elasticity", "pounding"]].copy()
+                rff_base["period_start"] = pd.to_datetime(rff_base["day_utc"], errors="coerce")
+                rff_base = rff_base.dropna(subset=["period_start"])
+                rff_base["leg_elasticity"] = pd.to_numeric(rff_base["leg_elasticity"], errors="coerce").fillna(0.0)
+                rff_base["pounding"] = pd.to_numeric(rff_base["pounding"], errors="coerce").fillna(0.0)
+                if weekly_toggle:
+                    rff_base["period_start"] = rff_base["period_start"].dt.to_period("W-SUN").dt.start_time
+                    rff_base = rff_base.groupby("period_start", as_index=False)[["leg_elasticity", "pounding"]].mean().sort_values("period_start")
+                weekly_rff_long = rff_base.melt(
+                    id_vars=["period_start"],
                     value_vars=["leg_elasticity", "pounding"],
                     var_name="series",
                     value_name="value",
@@ -1066,14 +1079,14 @@ if view == "Dashboard":
                     alt.Chart(weekly_rff_long)
                     .mark_line(point=True)
                     .encode(
-                        x=alt.X("week_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                        x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
                         color=alt.Color(
                             "series:N",
                             legend=alt.Legend(orient="bottom", direction="horizontal"),
                             scale=alt.Scale(domain=["Leg Elasticity", "Pounding"], range=["#22c55e", "#ef4444"]),
                         ),
-                        tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                        tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
                 rff_threshold = (
@@ -1090,35 +1103,50 @@ if view == "Dashboard":
                 st.caption("No Leg Elasticity/Pounding data to plot.")
 
         if section_choice == "Summary":
-            st.subheader("Weekly Distance vs Distance Eqv.")
-            if "total_distance_km" in weekly.columns and "total_distance_proxy_km" in weekly.columns and not weekly.empty:
-                weekly_dist = weekly[["week_start", "total_distance_km", "total_distance_proxy_km"]].copy().sort_values(
-                    "week_start"
+            st.subheader("Distance vs Distance Eqv.")
+            if (
+                (weekly_toggle and "total_distance_km" in weekly.columns and "total_distance_proxy_km" in weekly.columns and not weekly.empty)
+                or (
+                    (not weekly_toggle)
+                    and (not filtered_daily_range.empty)
+                    and "distance_km" in filtered_daily_range.columns
+                    and "distance_proxy_km" in filtered_daily_range.columns
                 )
-                weekly_dist_long = weekly_dist.melt(
-                    id_vars=["week_start"],
-                    value_vars=["total_distance_km", "total_distance_proxy_km"],
+            ):
+                if weekly_toggle:
+                    dist_base = weekly[["week_start", "total_distance_km", "total_distance_proxy_km"]].copy()
+                    dist_base = dist_base.rename(
+                        columns={"week_start": "period_start", "total_distance_km": "distance_km", "total_distance_proxy_km": "distance_proxy_km"}
+                    )
+                else:
+                    dist_base = filtered_daily_range[["day_utc", "distance_km", "distance_proxy_km"]].copy()
+                    dist_base["period_start"] = pd.to_datetime(dist_base["day_utc"], errors="coerce")
+                    dist_base = dist_base.dropna(subset=["period_start"])
+                dist_base = dist_base.sort_values("period_start")
+                weekly_dist_long = dist_base.melt(
+                    id_vars=["period_start"],
+                    value_vars=["distance_km", "distance_proxy_km"],
                     var_name="series",
                     value_name="value",
                 )
                 weekly_dist_long["series"] = weekly_dist_long["series"].replace(
                     {
-                        "total_distance_km": "Distance",
-                        "total_distance_proxy_km": "Distance Eqv.",
+                        "distance_km": "Distance",
+                        "distance_proxy_km": "Distance Eqv.",
                     }
                 )
                 weekly_dist_chart = (
                     alt.Chart(weekly_dist_long)
                     .mark_line(point=True)
                     .encode(
-                        x=alt.X("week_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                        x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
                         y=alt.Y("value:Q", axis=alt.Axis(format=".1f", title="km")),
                         color=alt.Color(
                             "series:N",
                             legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
                             scale=alt.Scale(domain=["Distance", "Distance Eqv."], range=["#60a5fa", "#22c55e"]),
                         ),
-                        tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".1f")],
+                        tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".1f")],
                     )
                     .properties(height=280)
                 )
@@ -1131,28 +1159,25 @@ if view == "Dashboard":
                     weekly_dist_chart = weekly_dist_chart.interactive()
                 st.altair_chart(weekly_dist_chart, use_container_width=True)
                 st.caption(
-                    "Distance Eqv. = running-equivalent weekly distance inferred from non-running sessions by matching "
+                    "Distance Eqv. = running-equivalent distance inferred from non-running sessions by matching "
                     "running rTSS to HR-based TSS scaled by specificity (applied once)."
                 )
             else:
-                st.caption("No weekly distance-equivalent data to plot.")
+                st.caption("No distance-equivalent data to plot.")
 
         if section_choice == "Injury Risk":
-            st.subheader("Weekly Overreach vs Injury Risk")
+            st.subheader("Overreach vs Injury Risk")
             if not filtered_daily_range.empty and "overreach" in filtered_daily_range.columns and "injury_risk" in filtered_daily_range.columns:
-                weekly_fr = filtered_daily_range[["day_utc", "overreach", "injury_risk"]].copy()
-                weekly_fr["day"] = pd.to_datetime(weekly_fr["day_utc"], errors="coerce")
-                weekly_fr = weekly_fr.dropna(subset=["day"])
-                weekly_fr["overreach"] = pd.to_numeric(weekly_fr["overreach"], errors="coerce").fillna(0.0)
-                weekly_fr["injury_risk"] = pd.to_numeric(weekly_fr["injury_risk"], errors="coerce").fillna(0.0)
-                weekly_fr["week_start"] = weekly_fr["day"].dt.to_period("W-SUN").dt.start_time
-                weekly_fr = (
-                    weekly_fr.groupby("week_start", as_index=False)[["overreach", "injury_risk"]]
-                    .mean()
-                    .sort_values("week_start")
-                )
-                weekly_fr_long = weekly_fr.melt(
-                    id_vars=["week_start"],
+                fr_base = filtered_daily_range[["day_utc", "overreach", "injury_risk"]].copy()
+                fr_base["period_start"] = pd.to_datetime(fr_base["day_utc"], errors="coerce")
+                fr_base = fr_base.dropna(subset=["period_start"])
+                fr_base["overreach"] = pd.to_numeric(fr_base["overreach"], errors="coerce").fillna(0.0)
+                fr_base["injury_risk"] = pd.to_numeric(fr_base["injury_risk"], errors="coerce").fillna(0.0)
+                if weekly_toggle:
+                    fr_base["period_start"] = fr_base["period_start"].dt.to_period("W-SUN").dt.start_time
+                    fr_base = fr_base.groupby("period_start", as_index=False)[["overreach", "injury_risk"]].mean().sort_values("period_start")
+                weekly_fr_long = fr_base.melt(
+                    id_vars=["period_start"],
                     value_vars=["overreach", "injury_risk"],
                     var_name="series",
                     value_name="value",
@@ -1164,14 +1189,14 @@ if view == "Dashboard":
                     alt.Chart(weekly_fr_long)
                     .mark_line(point=True)
                     .encode(
-                        x=alt.X("week_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                        x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
                         color=alt.Color(
                             "series:N",
                             legend=alt.Legend(orient="bottom", direction="horizontal"),
                             scale=alt.Scale(domain=["Overreach", "Injury Risk"], range=["#60a5fa", "#ef4444"]),
                         ),
-                        tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                        tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
                 fr_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), fr_chart)
@@ -1184,29 +1209,35 @@ if view == "Dashboard":
         if section_choice == "Fitness":
             st.subheader("Garmin Training Load vs. Total Calories")
             if (
-                "total_garmin_training_load" in weekly.columns
-                and "total_calories" in weekly.columns
-                and not weekly.empty
+                (weekly_toggle and "total_garmin_training_load" in weekly.columns and "total_calories" in weekly.columns and not weekly.empty)
+                or (
+                    (not weekly_toggle)
+                    and (not filtered_daily_range.empty)
+                    and "training_load_garmin" in filtered_daily_range.columns
+                    and "calories_total" in filtered_daily_range.columns
+                )
             ):
-                weekly_gc = weekly[["week_start", "total_garmin_training_load", "total_calories"]].copy()
-                weekly_gc["week_start"] = pd.to_datetime(weekly_gc["week_start"], errors="coerce")
-                weekly_gc["total_garmin_training_load"] = pd.to_numeric(
-                    weekly_gc["total_garmin_training_load"], errors="coerce"
-                ).fillna(0.0)
-                weekly_gc["total_calories"] = pd.to_numeric(
-                    weekly_gc["total_calories"], errors="coerce"
-                ).fillna(0.0)
-                weekly_gc = weekly_gc.dropna(subset=["week_start"]).sort_values("week_start")
+                if weekly_toggle:
+                    weekly_gc = weekly[["week_start", "total_garmin_training_load", "total_calories"]].copy()
+                    weekly_gc = weekly_gc.rename(columns={"week_start": "period_start", "total_garmin_training_load": "garmin", "total_calories": "calories"})
+                else:
+                    weekly_gc = filtered_daily_range[["day_utc", "training_load_garmin", "calories_total"]].copy()
+                    weekly_gc["period_start"] = pd.to_datetime(weekly_gc["day_utc"], errors="coerce")
+                    weekly_gc = weekly_gc.rename(columns={"training_load_garmin": "garmin", "calories_total": "calories"})
+                weekly_gc["period_start"] = pd.to_datetime(weekly_gc["period_start"], errors="coerce")
+                weekly_gc["garmin"] = pd.to_numeric(weekly_gc["garmin"], errors="coerce").fillna(0.0)
+                weekly_gc["calories"] = pd.to_numeric(weekly_gc["calories"], errors="coerce").fillna(0.0)
+                weekly_gc = weekly_gc.dropna(subset=["period_start"]).sort_values("period_start")
 
                 if weekly_gc.empty:
-                    st.caption("No weekly Garmin training load/calories data to plot.")
+                    st.caption("No Garmin training load/calories data to plot.")
                 else:
                     weekly_gc_long = pd.DataFrame(
                         {
-                            "week_start": pd.concat([weekly_gc["week_start"], weekly_gc["week_start"]], ignore_index=True),
+                            "period_start": pd.concat([weekly_gc["period_start"], weekly_gc["period_start"]], ignore_index=True),
                             "series": ["Garmin Training Load"] * len(weekly_gc) + ["Total Calories"] * len(weekly_gc),
                             "value": pd.concat(
-                                [weekly_gc["total_garmin_training_load"], weekly_gc["total_calories"]],
+                                [weekly_gc["garmin"], weekly_gc["calories"]],
                                 ignore_index=True,
                             ),
                         }
@@ -1214,7 +1245,7 @@ if view == "Dashboard":
 
                     base = alt.Chart(weekly_gc_long).encode(
                         x=alt.X(
-                            "week_start:T",
+                            "period_start:T",
                             axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
                         ),
                         color=alt.Color(
@@ -1225,7 +1256,7 @@ if view == "Dashboard":
                                 range=["#60a5fa", "#f59e0b"],
                             ),
                         ),
-                        tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                        tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                     legend_sel = alt.selection_point(fields=["series"], bind="legend")
                     left_chart = base.transform_filter(alt.datum.series == "Garmin Training Load").mark_line(point=True).encode(
@@ -1246,10 +1277,10 @@ if view == "Dashboard":
                         weekly_chart = weekly_chart.interactive()
                     st.altair_chart(weekly_chart, use_container_width=True)
             else:
-                st.caption("No weekly Garmin training load/calories data to plot.")
+                st.caption("No Garmin training load/calories data to plot.")
 
         if section_choice == "Fitness":
-            st.subheader("Weekly HR Zone Time (hours)")
+            st.subheader("HR Zone Time (hours)")
             zone_cols = [
                 "hr_time_in_zone_1",
                 "hr_time_in_zone_2",
@@ -1268,29 +1299,31 @@ if view == "Dashboard":
                 if zone_df.empty:
                     st.caption("No heart-rate zone time data to plot.")
                 else:
-                    zone_df["week_start"] = zone_df["day"].dt.to_period("W-SUN").dt.start_time
-                    weekly_zone = (
-                        zone_df.groupby("week_start", as_index=False)[["duration_s"] + zone_cols]
+                    zone_df["period_start"] = zone_df["day"]
+                    if weekly_toggle:
+                        zone_df["period_start"] = zone_df["period_start"].dt.to_period("W-SUN").dt.start_time
+                    period_zone = (
+                        zone_df.groupby("period_start", as_index=False)[["duration_s"] + zone_cols]
                         .sum()
-                        .sort_values("week_start")
+                        .sort_values("period_start")
                     )
                     weekly_zone_hours = pd.DataFrame(
                         {
-                            "week_start": weekly_zone["week_start"],
-                            "Low Aerobic": pd.to_numeric(weekly_zone["hr_time_in_zone_1"], errors="coerce").fillna(0.0) / 3600.0,
-                            "Moderate Aerobic": pd.to_numeric(weekly_zone["hr_time_in_zone_2"], errors="coerce").fillna(0.0) / 3600.0,
+                            "period_start": period_zone["period_start"],
+                            "Low Aerobic": pd.to_numeric(period_zone["hr_time_in_zone_1"], errors="coerce").fillna(0.0) / 3600.0,
+                            "Moderate Aerobic": pd.to_numeric(period_zone["hr_time_in_zone_2"], errors="coerce").fillna(0.0) / 3600.0,
                             "High Aerobic": (
-                                pd.to_numeric(weekly_zone["hr_time_in_zone_3"], errors="coerce").fillna(0.0)
-                                + pd.to_numeric(weekly_zone["hr_time_in_zone_4"], errors="coerce").fillna(0.0)
+                                pd.to_numeric(period_zone["hr_time_in_zone_3"], errors="coerce").fillna(0.0)
+                                + pd.to_numeric(period_zone["hr_time_in_zone_4"], errors="coerce").fillna(0.0)
                             )
                             / 3600.0,
                             "Total Time": (
-                                pd.to_numeric(weekly_zone["duration_s"], errors="coerce").fillna(0.0) / 3600.0
+                                pd.to_numeric(period_zone["duration_s"], errors="coerce").fillna(0.0) / 3600.0
                             ),
                         }
                     )
                     weekly_zone_hours_long = weekly_zone_hours.melt(
-                        id_vars=["week_start"],
+                        id_vars=["period_start"],
                         value_vars=["Low Aerobic", "Moderate Aerobic", "High Aerobic", "Total Time"],
                         var_name="zone",
                         value_name="hours",
@@ -1305,7 +1338,7 @@ if view == "Dashboard":
 
                     base = alt.Chart(weekly_zone_hours_long).encode(
                         x=alt.X(
-                            "week_start:T",
+                            "period_start:T",
                             axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
                         ),
                         color=alt.Color(
@@ -1316,7 +1349,7 @@ if view == "Dashboard":
                                 range=["#3b82f6", "#facc15", "#ef4444", "#cbd5e1"],
                             ),
                         ),
-                        tooltip=["week_start:T", "zone:N", alt.Tooltip("hours_label:N", title="hours")],
+                        tooltip=["period_start:T", "zone:N", alt.Tooltip("hours_label:N", title="hours")],
                     )
                     zone_hours_sel = alt.selection_point(fields=["zone"], bind="legend")
                     left_layer = (
