@@ -622,7 +622,7 @@ if view == "Dashboard":
                 )
             else:
                 metric_labels = list(metric_map.keys())
-                default_metric = "rTSS"
+                default_metric = "TSS"
                 default_index = metric_labels.index(default_metric) if default_metric in metric_labels else 0
                 selected_labels = [st.selectbox("Metric", metric_labels, index=default_index)]
 
@@ -1375,20 +1375,45 @@ if view == "Recovery Data":
             with rc1:
                 r_min = recovery_df["day"].min().date()
                 r_max = recovery_df["day"].max().date()
-                r_range = st.date_input(
-                    "Recovery date range",
-                    value=(r_min, r_max),
-                    min_value=r_min,
-                    max_value=r_max,
-                    key="recovery_range",
+                recovery_quick_range = st.selectbox(
+                    "Quick range",
+                    ["YTD", "1Y", "2Y", "ALL", "Custom"],
+                    index=1,
+                    key="recovery_quick_range",
                 )
+                if recovery_quick_range == "YTD":
+                    rq_start = max(r_min, date(r_max.year, 1, 1))
+                    rq_end = r_max
+                elif recovery_quick_range == "1Y":
+                    rq_start = max(r_min, r_max - timedelta(days=365))
+                    rq_end = r_max
+                elif recovery_quick_range == "2Y":
+                    rq_start = max(r_min, r_max - timedelta(days=730))
+                    rq_end = r_max
+                elif recovery_quick_range == "ALL":
+                    rq_start = r_min
+                    rq_end = r_max
+                else:
+                    rq_start = r_min
+                    rq_end = r_max
+                if recovery_quick_range == "Custom":
+                    r_range = st.date_input(
+                        "Recovery date range",
+                        value=(rq_start, rq_end),
+                        min_value=r_min,
+                        max_value=r_max,
+                        key="recovery_range",
+                    )
+                else:
+                    r_range = (rq_start, rq_end)
+                    st.caption(f"Range: {rq_start.isoformat()} -> {rq_end.isoformat()}")
             with rc2:
                 recovery_weekly = st.checkbox("Weekly aggregation", value=True, key="recovery_weekly")
             with rc3:
                 selected_recovery_metrics = st.multiselect(
                     "Recovery metrics",
                     list(metric_map.keys()),
-                    default=["Resting HR (avg)", "Sleep Duration (h, sum)"],
+                    default=["Stress Avg (avg)", "Resting HR (avg)"],
                     key="recovery_metrics",
                 )
 
