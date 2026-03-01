@@ -284,19 +284,6 @@ def get_metrics_df_fast(
     threshold_pace_default_sec: float,
     threshold_pace_curve_points: tuple[tuple[str, float], ...],
 ) -> pd.DataFrame:
-    key = (
-        str(db_path),
-        activities_cache_key,
-        float(resting_hr),
-        float(max_hr),
-        str(sex),
-        float(threshold_pace_default_sec),
-        tuple(threshold_pace_curve_points),
-    )
-    cache = st.session_state.get("_metrics_df_cache")
-    if isinstance(cache, dict) and cache.get("key") == key and isinstance(cache.get("df"), pd.DataFrame):
-        return cache["df"]
-
     runs_df = get_runs_df(db_path)
     curve_points = [
         (datetime.fromisoformat(d).replace(tzinfo=timezone.utc), float(p))
@@ -310,7 +297,6 @@ def get_metrics_df_fast(
         threshold_pace_sec_per_km=threshold_pace_default_sec,
         threshold_pace_curve_points=curve_points,
     )
-    st.session_state["_metrics_df_cache"] = {"key": key, "df": df}
     return df
 
 
@@ -332,16 +318,17 @@ def cached_filtered_views(
         complete_daily = pd.DataFrame({"day_utc": daily_index.strftime("%Y-%m-%d")})
         filtered_daily = complete_daily.merge(filtered_daily, on="day_utc", how="left")
         # Fitness/Fatigue are always computed on continuous daily data with missing days as zero load.
-        training_series = (
-            filtered_daily["tss_total"].fillna(0.0)
+        training_series = pd.to_numeric(
+            filtered_daily["tss_total"]
             if "tss_total" in filtered_daily.columns
-            else filtered_daily["training_load_garmin"].fillna(0.0)
-        )
+            else filtered_daily["training_load_garmin"],
+            errors="coerce",
+        ).fillna(0.0)
         filtered_daily["fitness"] = ema(training_series, 42)
         filtered_daily["fatigue"] = ema(training_series, 7)
         filtered_daily["overreach"] = (filtered_daily["fatigue"] - filtered_daily["fitness"]).clip(lower=0.0)
         rtss_series = (
-            filtered_daily["rtss_total"].fillna(0.0)
+            pd.to_numeric(filtered_daily["rtss_total"], errors="coerce").fillna(0.0)
             if "rtss_total" in filtered_daily.columns
             else pd.Series([0.0] * len(filtered_daily), index=filtered_daily.index)
         )
@@ -611,6 +598,10 @@ if view == "Dashboard":
             st.info(f"No data for activity filter: {activity_filter}")
         else:
             prepared_base_df = base_df.copy()
+            numeric_metric_cols = sorted({m for m, _ in metric_map.values()})
+            for col in numeric_metric_cols:
+                if col in prepared_base_df.columns:
+                    prepared_base_df[col] = pd.to_numeric(prepared_base_df[col], errors="coerce").fillna(0.0)
             prepared_base_df["day"] = pd.to_datetime(prepared_base_df["day_utc"], errors="coerce")
             series_full_index = pd.date_range(start=start_ts, end=end_ts, freq="D")
             if compare_mode:
@@ -663,6 +654,7 @@ if view == "Dashboard":
                 )
                 if frame.empty:
                     continue
+                frame[metric] = pd.to_numeric(frame[metric], errors="coerce").fillna(0.0)
                 frame = frame.rename(columns={metric: "value"})
                 frame["series"] = label
                 frame["axis_side"] = axis_side
@@ -695,35 +687,54 @@ if view == "Dashboard":
                         var_name="series",
                         value_name="metric_value",
                     )
+                    overlay_long["metric_value"] = pd.to_numeric(
+                        overlay_long["metric_value"], errors="coerce"
+                    ).fillna(0.0)
                     overlay_long["series"] = overlay_long["series"].replace({"value": "Metric"})
                     overlay_long["base_opacity"] = overlay_long["series"].apply(
                         lambda s: 0.18 if s == "Metric" else 1.0
                     )
-                    mark = alt.Chart(overlay_long)
-                    legend_sel = alt.selection_point(fields=["series"], bind="legend") if legend_toggle else None
-                    chart = mark.mark_line(point=True).encode(
-                        x=alt.X("day:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=12)),
-                        y=alt.Y("metric_value:Q", axis=alt.Axis(format=".0f")),
-                        color=alt.Color(
-                            "series:N",
-                            legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
-                        ),
-                        tooltip=["day:T", "series:N", alt.Tooltip("metric_value:Q", format=".0f")],
+                    metric_max_abs = float(
+                        pd.to_numeric(overlay_long["metric_value"], errors="coerce")
+                        .abs()
+                        .max()
+                        or 0.0
                     )
-                    if legend_sel is not None:
-                        chart = chart.encode(
-                            opacity=alt.condition(
-                                legend_sel,
-                                alt.Opacity("base_opacity:Q", legend=None),
-                                alt.value(0.05),
-                            )
-                        ).add_params(legend_sel)
+                    if metric_max_abs < 10:
+                        y_format = ".2f"
+                    elif metric_max_abs < 100:
+                        y_format = ".1f"
                     else:
-                        chart = chart.encode(opacity=alt.Opacity("base_opacity:Q", legend=None))
-                    chart = alt.layer(build_injury_layer(start_ts, end_ts), chart).properties(height=320)
+                        y_format = ".0f"
+                    y_vals = pd.to_numeric(overlay_long["metric_value"], errors="coerce").fillna(0.0)
+                    y_min = float(y_vals.min()) if not y_vals.empty else 0.0
+                    y_max = float(y_vals.max()) if not y_vals.empty else 1.0
+                    if y_max <= y_min:
+                        y_pad = max(abs(y_max) * 0.05, 1.0)
+                    else:
+                        y_pad = max((y_max - y_min) * 0.08, 1.0)
+                    y_low = y_min - y_pad
+                    y_high = y_max + y_pad
+                    if y_min >= 0:
+                        y_low = max(0.0, y_low)
+                    chart = (
+                        alt.Chart(overlay_long)
+                        .mark_line(point=True)
+                        .encode(
+                            x=alt.X("day:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=12)),
+                            y=alt.Y(
+                                "metric_value:Q",
+                                axis=alt.Axis(format=y_format, title="value"),
+                                scale=alt.Scale(domain=[y_low, y_high], zero=False, nice=False),
+                            ),
+                            color=alt.Color("series:N", legend=alt.Legend(title="", orient="bottom", direction="horizontal")),
+                            opacity=alt.Opacity("base_opacity:Q", legend=None),
+                            tooltip=["day:T", "series:N", alt.Tooltip("metric_value:Q", format=y_format)],
+                        )
+                        .properties(height=320)
+                    )
                     if enable_zoom:
                         chart = chart.interactive()
-                        st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
                     st.altair_chart(chart, use_container_width=True)
 
             if compare_mode and plot_frames:
@@ -756,10 +767,10 @@ if view == "Dashboard":
 
                 if legend_sel is not None:
                     left_chart = left_chart.encode(
-                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
                     )
                     right_chart = right_chart.encode(
-                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
                     )
                 compare_chart = alt.layer(build_injury_layer(start_ts, end_ts), left_chart, right_chart).resolve_scale(
                     y="independent"
@@ -820,7 +831,7 @@ if view == "Dashboard":
             if legend_toggle:
                 weekly_tss_sel = alt.selection_point(fields=["series"], bind="legend")
                 weekly_tss_chart = weekly_tss_chart.encode(
-                    opacity=alt.condition(weekly_tss_sel, alt.value(1.0), alt.value(0.08))
+                    opacity=alt.condition(weekly_tss_sel, alt.value(1.0), alt.value(0.08), empty=True)
                 ).add_params(weekly_tss_sel)
             weekly_tss_chart = alt.layer(build_injury_layer(start_ts, end_ts), weekly_tss_chart).properties(
                 height=280
@@ -872,7 +883,7 @@ if view == "Dashboard":
             if legend_toggle:
                 ff_sel = alt.selection_point(fields=["series"], bind="legend")
                 ff_chart = ff_chart.encode(
-                    opacity=alt.condition(ff_sel, alt.value(1.0), alt.value(0.08))
+                    opacity=alt.condition(ff_sel, alt.value(1.0), alt.value(0.08), empty=True)
                 ).add_params(ff_sel)
             ff_chart = alt.layer(build_injury_layer(start_ts, end_ts), ff_chart)
             if enable_zoom:
@@ -920,7 +931,7 @@ if view == "Dashboard":
             if legend_toggle:
                 rff_sel = alt.selection_point(fields=["series"], bind="legend")
                 rff_chart = rff_chart.encode(
-                    opacity=alt.condition(rff_sel, alt.value(1.0), alt.value(0.08))
+                    opacity=alt.condition(rff_sel, alt.value(1.0), alt.value(0.08), empty=True)
                 ).add_params(rff_sel)
             rff_chart = alt.layer(build_injury_layer(start_ts, end_ts), rff_chart)
             if enable_zoom:
@@ -968,7 +979,7 @@ if view == "Dashboard":
             if legend_toggle:
                 fr_sel = alt.selection_point(fields=["series"], bind="legend")
                 fr_chart = fr_chart.encode(
-                    opacity=alt.condition(fr_sel, alt.value(1.0), alt.value(0.08))
+                    opacity=alt.condition(fr_sel, alt.value(1.0), alt.value(0.08), empty=True)
                 ).add_params(fr_sel)
             fr_chart = alt.layer(build_injury_layer(start_ts, end_ts), fr_chart)
             if enable_zoom:
@@ -1031,10 +1042,10 @@ if view == "Dashboard":
                 )
                 if legend_sel is not None:
                     left_chart = left_chart.encode(
-                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
                     )
                     right_chart = right_chart.encode(
-                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08))
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
                     )
                 weekly_chart = alt.layer(left_chart, right_chart).resolve_scale(y="independent")
                 if legend_sel is not None:
@@ -1110,7 +1121,12 @@ if view == "Dashboard":
                 if legend_toggle:
                     zone_sel = alt.selection_point(fields=["zone"], bind="legend")
                     zone_chart = zone_chart.encode(
-                        opacity=alt.condition(zone_sel, alt.Opacity("base_opacity:Q", legend=None), alt.value(0.08))
+                        opacity=alt.condition(
+                            zone_sel,
+                            alt.Opacity("base_opacity:Q", legend=None),
+                            alt.value(0.08),
+                            empty=True,
+                        )
                     ).add_params(zone_sel)
                 if enable_zoom:
                     zone_chart = zone_chart.interactive()
@@ -1344,7 +1360,7 @@ if view == "Recovery Data":
                             y=alt.Y("value:Q", axis=alt.Axis(format=".2f")),
                             color="series:N",
                             tooltip=["day:T", "series:N", alt.Tooltip("value:Q", format=".2f")],
-                            opacity=alt.condition(rec_sel, alt.value(1.0), alt.value(0.08)),
+                            opacity=alt.condition(rec_sel, alt.value(1.0), alt.value(0.08), empty=True),
                         )
                         .add_params(rec_sel)
                     )

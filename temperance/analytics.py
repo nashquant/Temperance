@@ -316,6 +316,7 @@ def prepare_metric_series(
     if full_index is None:
         full_index = pd.date_range(start=start_day, end=end_day, freq="D")
     metric_df = series.set_index("day")[[metric]].reindex(full_index)
+    metric_df[metric] = pd.to_numeric(metric_df[metric], errors="coerce")
 
     if fill_method == "ffill":
         metric_df[metric] = metric_df[metric].ffill().fillna(0.0)
