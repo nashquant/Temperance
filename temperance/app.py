@@ -363,23 +363,28 @@ def build_injury_layer(start_day: pd.Timestamp | None = None, end_day: pd.Timest
         injuries = injuries[(injuries["end_exclusive"] > start_ts) & (injuries["start"] < end_exclusive)].copy()
         injuries["start"] = injuries["start"].clip(lower=start_ts)
         injuries["end_exclusive"] = injuries["end_exclusive"].clip(upper=end_exclusive)
-    return (
-        alt.Chart(injuries)
-        .mark_rect(opacity=0.12)
+    red = injuries[injuries["severity"] == "injury"].copy()
+    yellow = injuries[injuries["severity"] == "light_injury"].copy()
+
+    red_layer = (
+        alt.Chart(red)
+        .mark_rect(color="#ef4444", opacity=0.12)
         .encode(
             x="start:T",
             x2="end_exclusive:T",
-            color=alt.Color(
-                "severity:N",
-                legend=None,
-                scale=alt.Scale(
-                    domain=["injury", "light_injury"],
-                    range=["#ef4444", "#facc15"],
-                ),
-            ),
             tooltip=["label:N", "severity:N", "start:T", "end:T"],
         )
     )
+    yellow_layer = (
+        alt.Chart(yellow)
+        .mark_rect(color="#facc15", opacity=0.12)
+        .encode(
+            x="start:T",
+            x2="end_exclusive:T",
+            tooltip=["label:N", "severity:N", "start:T", "end:T"],
+        )
+    )
+    return alt.layer(red_layer, yellow_layer)
 
 
 @st.cache_data(show_spinner=False)
@@ -1065,7 +1070,7 @@ if view == "Dashboard":
                     .sum()
                     .sort_values("week_start")
                 )
-                duration = weekly_zone["duration_s"].replace(0, np.nan)
+                duration = weekly_zone["duration_s"].replace(0, float("nan"))
                 weekly_zone["Z1"] = (weekly_zone["hr_time_in_zone_1"] / duration * 100.0).fillna(0.0)
                 weekly_zone["Z2"] = (weekly_zone["hr_time_in_zone_2"] / duration * 100.0).fillna(0.0)
                 weekly_zone["Z3"] = (weekly_zone["hr_time_in_zone_3"] / duration * 100.0).fillna(0.0)
@@ -1077,6 +1082,9 @@ if view == "Dashboard":
                     var_name="zone",
                     value_name="pct",
                 )
+                weekly_zone_long["base_opacity"] = weekly_zone_long["zone"].map(
+                    {"Z1": 0.18, "Z2": 1.0, "Z3": 1.0, "Z4": 0.18}
+                ).fillna(1.0)
                 zone_chart = (
                     alt.Chart(weekly_zone_long)
                     .mark_line(point=True)
@@ -1095,13 +1103,14 @@ if view == "Dashboard":
                             ),
                         ),
                         tooltip=["week_start:T", "zone:N", alt.Tooltip("pct:Q", format=".1f")],
+                        opacity=alt.Opacity("base_opacity:Q", legend=None),
                     )
                     .properties(height=280)
                 )
                 if legend_toggle:
                     zone_sel = alt.selection_point(fields=["zone"], bind="legend")
                     zone_chart = zone_chart.encode(
-                        opacity=alt.condition(zone_sel, alt.value(1.0), alt.value(0.08))
+                        opacity=alt.condition(zone_sel, alt.Opacity("base_opacity:Q", legend=None), alt.value(0.08))
                     ).add_params(zone_sel)
                 if enable_zoom:
                     zone_chart = zone_chart.interactive()
