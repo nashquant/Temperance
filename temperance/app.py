@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import html
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -264,6 +265,48 @@ def format_pace_min_per_km(pace_s_per_km: float | None) -> str:
     return f"{minutes}:{seconds:02d} min/km"
 
 
+def _duration_short(seconds: float | int | None) -> str:
+    if seconds is None:
+        return "-"
+    try:
+        total = int(round(float(seconds)))
+    except Exception:
+        return "-"
+    if total <= 0:
+        return "0m"
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    if hours > 0:
+        return f"{hours}h{minutes:02d}m"
+    return f"{minutes}m"
+
+
+def _duration_zone(seconds: float | int | None) -> str:
+    if seconds is None:
+        return "0m"
+    try:
+        total = int(round(float(seconds)))
+    except Exception:
+        return "0m"
+    if total <= 0:
+        return "0m"
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    if hours > 0:
+        return f"{hours}h{minutes:02d}m"
+    if minutes > 0:
+        return f"{minutes}m{secs:02d}s"
+    return f"{secs}s"
+
+
+def _sport_label(sport_type: str | None) -> str:
+    raw = str(sport_type or "").strip().replace("_", " ")
+    if not raw:
+        return "Activity"
+    return raw.title()
+
+
 def filter_by_activity_type(df: pd.DataFrame, mode: str) -> pd.DataFrame:
     if df.empty or mode == "All Activities":
         return df
@@ -492,7 +535,7 @@ def build_recovery_daily_frame(sleep_df: pd.DataFrame, wellness_df: pd.DataFrame
 
 with st.sidebar:
     st.header("Navigation")
-    view = st.radio("Page", ["Dashboard", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs"], index=0)
+    view = st.radio("Page", ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs"], index=0)
 resting_hr = DEFAULT_RESTING_HR
 max_hr = DEFAULT_MAX_HR
 sex = "male"
@@ -1448,6 +1491,346 @@ if view == "Dashboard":
                     "distance_proxy_method": st.column_config.TextColumn("Distance Proxy Method"),
                 },
             )
+
+if view == "Calendar":
+    st.divider()
+    st.header("Calendar")
+    st.caption("Week grid with activity cards and weekly summary.")
+
+    if metrics_df.empty:
+        st.info("No activities available.")
+    else:
+        cal_base = metrics_df.copy()
+        cal_base["start_local"] = pd.to_datetime(cal_base["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
+        cal_base = cal_base.dropna(subset=["start_local"]).copy()
+
+        if cal_base.empty:
+            st.info("No valid activity timestamps available.")
+        else:
+            controls = st.columns([1.2, 1.0, 1.0])
+            with controls[0]:
+                cal_min_day = cal_base["start_local"].min().date()
+                cal_max_day = cal_base["start_local"].max().date()
+                cal_range = st.selectbox(
+                    "Quick range",
+                    ["3M", "6M", "9M", "1Y", "2Y", "ALL"],
+                    index=3,
+                    key="calendar_quick_range",
+                )
+                if cal_range == "3M":
+                    range_start_day = max(cal_min_day, cal_max_day - timedelta(days=90))
+                elif cal_range == "6M":
+                    range_start_day = max(cal_min_day, cal_max_day - timedelta(days=180))
+                elif cal_range == "9M":
+                    range_start_day = max(cal_min_day, cal_max_day - timedelta(days=270))
+                elif cal_range == "1Y":
+                    range_start_day = max(cal_min_day, cal_max_day - timedelta(days=365))
+                elif cal_range == "2Y":
+                    range_start_day = max(cal_min_day, cal_max_day - timedelta(days=730))
+                else:
+                    range_start_day = cal_min_day
+                range_end_day = cal_max_day
+            with controls[1]:
+                cal_activity_filter = st.selectbox(
+                    "Activity filter",
+                    ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
+                    index=0,
+                    key="calendar_activity_filter",
+                )
+            with controls[2]:
+                cal_specificity = st.number_input(
+                    "Non-running factor",
+                    min_value=0.0,
+                    max_value=1.5,
+                    value=0.8,
+                    step=0.05,
+                    format="%.2f",
+                    key="calendar_specificity_factor",
+                )
+
+            range_start_ts = pd.Timestamp(range_start_day)
+            range_end_ts = pd.Timestamp(range_end_day)
+            grid_start = range_start_ts - pd.Timedelta(days=int(range_start_ts.weekday()))
+            grid_end = range_end_ts + pd.Timedelta(days=int(6 - range_end_ts.weekday()))
+
+            cal_metrics, cal_daily = cached_filtered_views(
+                metrics_df,
+                activity_filter=cal_activity_filter,
+                specificity_factor=float(cal_specificity),
+            )
+            cal_metrics = cal_metrics.copy()
+            cal_metrics["start_local"] = pd.to_datetime(
+                cal_metrics["start_time_utc"], utc=True, errors="coerce"
+            ).dt.tz_localize(None)
+            cal_metrics = cal_metrics.dropna(subset=["start_local"]).copy()
+            cal_metrics["day"] = cal_metrics["start_local"].dt.floor("D")
+            cal_metrics = cal_metrics[
+                (cal_metrics["start_local"] >= grid_start)
+                & (cal_metrics["start_local"] < (grid_end + pd.Timedelta(days=1)))
+            ].copy()
+            cal_metrics["duration_s"] = pd.to_numeric(cal_metrics.get("duration_s"), errors="coerce").fillna(0.0)
+            cal_metrics["avg_hr"] = pd.to_numeric(cal_metrics.get("avg_hr"), errors="coerce")
+            cal_metrics["tss"] = pd.to_numeric(cal_metrics.get("tss"), errors="coerce").fillna(0.0)
+            cal_metrics["rtss"] = pd.to_numeric(cal_metrics.get("rtss"), errors="coerce").fillna(0.0)
+            cal_metrics["distance_km"] = pd.to_numeric(cal_metrics.get("distance_m"), errors="coerce").fillna(0.0) / 1000.0
+            cal_metrics["distance_proxy_km"] = pd.to_numeric(
+                cal_metrics.get("distance_proxy_km"), errors="coerce"
+            ).fillna(0.0)
+            cal_metrics["calories_total"] = pd.to_numeric(
+                cal_metrics.get("calories_total"), errors="coerce"
+            ).fillna(0.0)
+
+            sport = cal_metrics["sport_type"].fillna("").astype(str).str.lower()
+            is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
+            cal_metrics.loc[~is_running_like, "distance_km"] = 0.0
+            day_activity_stats = (
+                cal_metrics.groupby("day", as_index=False)
+                .agg(day_calories=("calories_total", "sum"))
+                .sort_values("day")
+            )
+
+            cal_daily_lookup = pd.DataFrame()
+            if not cal_daily.empty:
+                cal_daily_lookup = cal_daily.copy()
+                cal_daily_lookup["day"] = pd.to_datetime(cal_daily_lookup["day_utc"], errors="coerce")
+                cal_daily_lookup = cal_daily_lookup.dropna(subset=["day"]).sort_values("day")
+                cal_daily_lookup["fitness"] = pd.to_numeric(cal_daily_lookup.get("fitness"), errors="coerce")
+                cal_daily_lookup["fatigue"] = pd.to_numeric(cal_daily_lookup.get("fatigue"), errors="coerce")
+                cal_daily_lookup = cal_daily_lookup[["day", "fitness", "fatigue"]]
+
+            wellness_day_lookup = pd.DataFrame(columns=["day", "resting_hr", "stress_avg"])
+            wellness_df = get_wellness_df(cfg.db_path)
+            if not wellness_df.empty:
+                wellness_day_lookup = wellness_df.copy()
+                wellness_day_lookup["day"] = pd.to_datetime(
+                    wellness_day_lookup.get("day_utc"), errors="coerce"
+                )
+                wellness_day_lookup["resting_hr"] = pd.to_numeric(
+                    wellness_day_lookup.get("resting_hr"), errors="coerce"
+                )
+                wellness_day_lookup["stress_avg"] = pd.to_numeric(
+                    wellness_day_lookup.get("stress_avg"), errors="coerce"
+                )
+                wellness_day_lookup = (
+                    wellness_day_lookup.dropna(subset=["day"])
+                    .sort_values("day")
+                    .drop_duplicates(subset=["day"], keep="last")[["day", "resting_hr", "stress_avg"]]
+                )
+
+            st.markdown(
+                """
+                <style>
+                .cal-week-summary {
+                    background: rgba(148,163,184,0.10);
+                    border: 1px solid rgba(148,163,184,0.24);
+                    border-radius: 12px;
+                    padding: 10px 12px;
+                    margin-bottom: 8px;
+                    font-size: 0.90rem;
+                    line-height: 1.35;
+                }
+                .cal-day-header {
+                    font-size: 0.82rem;
+                    color: rgba(226,232,240,0.86);
+                    margin-bottom: 6px;
+                    font-weight: 600;
+                }
+                .cal-day-muted { opacity: 0.45; }
+                .cal-card {
+                    background: rgba(15,23,42,0.78);
+                    border: 1px solid rgba(148,163,184,0.26);
+                    border-radius: 10px;
+                    padding: 8px 10px;
+                    margin-bottom: 8px;
+                }
+                .cal-card-title {
+                    font-size: 0.78rem;
+                    font-weight: 700;
+                    color: rgba(226,232,240,0.94);
+                    margin-bottom: 3px;
+                }
+                .cal-card-meta {
+                    font-size: 0.76rem;
+                    color: rgba(226,232,240,0.80);
+                }
+                .cal-card-load {
+                    font-size: 0.74rem;
+                    color: rgba(148,163,184,0.94);
+                    margin-top: 2px;
+                }
+                .cal-zones {
+                    margin-top: 8px;
+                    padding-top: 8px;
+                    border-top: 1px solid rgba(148,163,184,0.22);
+                }
+                .cal-zone-row {
+                    display: grid;
+                    grid-template-columns: 18px 1fr 54px 40px;
+                    gap: 6px;
+                    align-items: center;
+                    margin-top: 4px;
+                    font-size: 0.72rem;
+                    color: rgba(226,232,240,0.90);
+                }
+                .cal-zone-track {
+                    height: 10px;
+                    border-radius: 999px;
+                    background: rgba(148,163,184,0.22);
+                    overflow: hidden;
+                }
+                .cal-zone-fill {
+                    height: 100%;
+                    border-radius: 999px;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            header_cols = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1])
+            with header_cols[0]:
+                st.markdown("**Week**")
+            for i, day_name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
+                with header_cols[i + 1]:
+                    st.markdown(f"**{day_name}**")
+
+            week_starts = pd.date_range(start=grid_start, end=grid_end, freq="7D")
+            week_starts = week_starts.sort_values(ascending=False)
+            for ws in week_starts:
+                we = ws + pd.Timedelta(days=6)
+                week_df = cal_metrics[(cal_metrics["day"] >= ws) & (cal_metrics["day"] <= we)].copy()
+                if week_df.empty:
+                    continue
+                total_duration_h = float(pd.to_numeric(week_df["duration_s"], errors="coerce").fillna(0.0).sum() / 3600.0)
+                total_distance = float(pd.to_numeric(week_df["distance_km"], errors="coerce").fillna(0.0).sum())
+                total_distance_eqv = float(pd.to_numeric(week_df["distance_proxy_km"], errors="coerce").fillna(0.0).sum())
+                total_tss = float(pd.to_numeric(week_df["tss"], errors="coerce").fillna(0.0).sum())
+                total_rtss = float(pd.to_numeric(week_df["rtss"], errors="coerce").fillna(0.0).sum())
+                zone_totals = {
+                    "Z1": float(pd.to_numeric(week_df.get("hr_time_in_zone_1"), errors="coerce").fillna(0.0).sum()),
+                    "Z2": float(pd.to_numeric(week_df.get("hr_time_in_zone_2"), errors="coerce").fillna(0.0).sum()),
+                    "Z3": float(pd.to_numeric(week_df.get("hr_time_in_zone_3"), errors="coerce").fillna(0.0).sum()),
+                    "Z4": float(pd.to_numeric(week_df.get("hr_time_in_zone_4"), errors="coerce").fillna(0.0).sum()),
+                    "Z5": float(pd.to_numeric(week_df.get("hr_time_in_zone_5"), errors="coerce").fillna(0.0).sum()),
+                }
+                zone_total_s = sum(zone_totals.values())
+                zone_colors = {
+                    "Z1": "#3b82f6",
+                    "Z2": "#65a30d",
+                    "Z3": "#facc15",
+                    "Z4": "#fb923c",
+                    "Z5": "#e11d48",
+                }
+                zone_rows_html = []
+                for zone in ["Z1", "Z2", "Z3", "Z4", "Z5"]:
+                    z_seconds = zone_totals.get(zone, 0.0)
+                    z_pct = (z_seconds / zone_total_s * 100.0) if zone_total_s > 0 else 0.0
+                    zone_rows_html.append(
+                        "<div class='cal-zone-row'>"
+                        f"<div>{zone}</div>"
+                        "<div class='cal-zone-track'>"
+                        f"<div class='cal-zone-fill' style='width:{z_pct:.1f}%;background:{zone_colors[zone]};'></div>"
+                        "</div>"
+                        f"<div>{_duration_zone(z_seconds)}</div>"
+                        f"<div>{z_pct:.1f}%</div>"
+                        "</div>"
+                    )
+
+                week_fitness = float("nan")
+                week_fatigue = float("nan")
+                if not cal_daily_lookup.empty:
+                    week_daily = cal_daily_lookup[cal_daily_lookup["day"] <= we]
+                    if not week_daily.empty:
+                        last_row = week_daily.iloc[-1]
+                        week_fitness = float(last_row["fitness"]) if pd.notna(last_row["fitness"]) else float("nan")
+                        week_fatigue = float(last_row["fatigue"]) if pd.notna(last_row["fatigue"]) else float("nan")
+
+                row_cols = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1])
+                with row_cols[0]:
+                    fitness_txt = "-" if pd.isna(week_fitness) else f"{week_fitness:.0f}"
+                    fatigue_txt = "-" if pd.isna(week_fatigue) else f"{week_fatigue:.0f}"
+                    st.markdown(
+                        (
+                            "<div class='cal-week-summary'>"
+                            f"<div><b>Week {int(ws.isocalendar().week)}</b></div>"
+                            f"<div>{ws:%d %b} - {we:%d %b}</div>"
+                            f"<div style='margin-top:6px;'>Time: <b>{total_duration_h:.1f}h</b></div>"
+                            f"<div>Dist: <b>{total_distance:.1f} km</b></div>"
+                            f"<div>Dist Eqv.: <b>{total_distance_eqv:.1f} km</b></div>"
+                            f"<div>TSS: <b>{total_tss:.0f}</b> | rTSS: <b>{total_rtss:.0f}</b></div>"
+                            f"<div>Fitness: <b>{fitness_txt}</b> | Fatigue: <b>{fatigue_txt}</b></div>"
+                            "<div class='cal-zones'><b>Zones</b>"
+                            + "".join(zone_rows_html)
+                            + "</div>"
+                            "</div>"
+                        ),
+                        unsafe_allow_html=True,
+                    )
+
+                for day_offset in range(7):
+                    day_ts = ws + pd.Timedelta(days=day_offset)
+                    day_df = week_df[week_df["day"] == day_ts].sort_values("start_local", ascending=False)
+                    with row_cols[day_offset + 1]:
+                        st.markdown(
+                            f"<div class='cal-day-header'>{day_ts:%d %b}</div>",
+                            unsafe_allow_html=True,
+                        )
+                        day_cal = 0.0
+                        if not day_activity_stats.empty:
+                            day_cal_rows = day_activity_stats[day_activity_stats["day"] == day_ts]
+                            if not day_cal_rows.empty:
+                                day_cal = float(day_cal_rows.iloc[0]["day_calories"])
+                        day_resting_hr = float("nan")
+                        day_stress_avg = float("nan")
+                        if not wellness_day_lookup.empty:
+                            day_well_rows = wellness_day_lookup[wellness_day_lookup["day"] == day_ts]
+                            if not day_well_rows.empty:
+                                day_resting_hr = float(day_well_rows.iloc[0]["resting_hr"]) if pd.notna(day_well_rows.iloc[0]["resting_hr"]) else float("nan")
+                                day_stress_avg = float(day_well_rows.iloc[0]["stress_avg"]) if pd.notna(day_well_rows.iloc[0]["stress_avg"]) else float("nan")
+                        day_meta_parts = [f"{day_cal:.0f} kcal"]
+                        if not pd.isna(day_resting_hr):
+                            day_meta_parts.append(f"RHR {day_resting_hr:.0f}")
+                        if not pd.isna(day_stress_avg):
+                            day_meta_parts.append(f"Stress {day_stress_avg:.0f}")
+                        st.markdown(
+                            f"<div class='cal-card-meta' style='margin-bottom:6px;'>{' · '.join(day_meta_parts)}</div>",
+                            unsafe_allow_html=True,
+                        )
+                        for _, act in day_df.iterrows():
+                            sport_label = html.escape(_sport_label(act.get("sport_type")))
+                            dur_text = _duration_short(act.get("duration_s"))
+                            hr_v = pd.to_numeric(act.get("avg_hr"), errors="coerce")
+                            hr_text = "-" if pd.isna(hr_v) else f"{int(round(float(hr_v)))} bpm"
+                            sport_lower = str(act.get("sport_type") or "").lower()
+                            is_running_activity = ("run" in sport_lower) or ("treadmill" in sport_lower)
+                            distance_v = pd.to_numeric(act.get("distance_km"), errors="coerce")
+                            distance_eqv_v = pd.to_numeric(act.get("distance_proxy_km"), errors="coerce")
+                            if is_running_activity:
+                                dist_text = (
+                                    f"{float(distance_v):.1f} km"
+                                    if pd.notna(distance_v) and float(distance_v) > 0
+                                    else ""
+                                )
+                            else:
+                                dist_text = (
+                                    f"{float(distance_eqv_v):.1f} km eqv."
+                                    if pd.notna(distance_eqv_v) and float(distance_eqv_v) > 0
+                                    else ""
+                                )
+                            tss_v = float(pd.to_numeric(act.get("tss"), errors="coerce") or 0.0)
+                            rtss_v = float(pd.to_numeric(act.get("rtss"), errors="coerce") or 0.0)
+                            subtitle = f"{dur_text}" + (f" · {dist_text}" if dist_text else "")
+                            st.markdown(
+                                (
+                                    "<div class='cal-card'>"
+                                    f"<div class='cal-card-title'>{sport_label}</div>"
+                                    f"<div class='cal-card-meta'>{subtitle}</div>"
+                                    f"<div class='cal-card-meta'>{hr_text}</div>"
+                                    f"<div class='cal-card-load'>TSS {tss_v:.0f} · rTSS {rtss_v:.0f}</div>"
+                                    "</div>"
+                                ),
+                                unsafe_allow_html=True,
+                            )
 
 if view == "Activity Detail":
     st.divider()
