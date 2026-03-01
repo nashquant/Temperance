@@ -87,6 +87,30 @@ From `temperance/`:
 streamlit run app.py
 ```
 
+## Remote Run (Tailscale)
+Use the helper script to keep Streamlit running in the background with logs:
+
+```bash
+cd temperance
+./run_remote.sh start
+```
+
+Useful commands:
+
+```bash
+./run_remote.sh status
+./run_remote.sh logs
+./run_remote.sh stop
+./run_remote.sh restart
+```
+
+Default URL format (from iPad connected to same Tailscale tailnet):
+- `http://<your_tailscale_ip>:8501`
+
+Logs and pid files:
+- `temperance/data/private/logs/streamlit_remote.log`
+- `temperance/data/private/logs/streamlit_remote.pid`
+
 ## Migrations
 Run schema migrations manually (non-destructive, preserves existing rows):
 
