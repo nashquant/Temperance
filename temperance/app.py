@@ -555,6 +555,7 @@ if view == "Dashboard":
             start_date = end_date = max_day
         start_ts = pd.Timestamp(start_date)
         end_ts = pd.Timestamp(end_date)
+        end_exclusive_ts = end_ts + pd.Timedelta(days=1)
 
         filtered_metrics, filtered_daily = cached_filtered_views(
             metrics_df,
@@ -563,11 +564,11 @@ if view == "Dashboard":
         )
         range_filtered_metrics = filtered_metrics[
             (pd.to_datetime(filtered_metrics["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None) >= start_ts)
-            & (pd.to_datetime(filtered_metrics["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None) <= end_ts)
+            & (pd.to_datetime(filtered_metrics["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None) < end_exclusive_ts)
         ].copy()
         filtered_daily_range = filtered_daily[
             (pd.to_datetime(filtered_daily["day_utc"], errors="coerce") >= start_ts)
-            & (pd.to_datetime(filtered_daily["day_utc"], errors="coerce") <= end_ts)
+            & (pd.to_datetime(filtered_daily["day_utc"], errors="coerce") < end_exclusive_ts)
         ].copy()
 
         metric_map = {
