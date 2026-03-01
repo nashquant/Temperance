@@ -837,18 +837,16 @@ if view == "Dashboard":
                     st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
                 st.altair_chart(compare_chart, use_container_width=True)
 
-        sec_weekly_tss = st.container()
-        sec_weekly_leg = st.container()
-        sec_weekly_overreach = st.container()
-        sec_weekly_fitfat = st.container()
-        sec_weekly_zone = st.container()
-        sec_weekly_gc = st.container()
-        sec_activities = st.container()
+        section_choice = st.selectbox(
+            "Section",
+            ["Summary", "Injury Risk", "Fitness", "Activities"],
+            index=0,
+        )
 
         weekly = weekly_summary(range_filtered_metrics)
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
 
-        with sec_weekly_tss:
+        if section_choice == "Summary":
             if "total_tss" in weekly.columns and "total_rtss" in weekly.columns and not weekly.empty:
                 weekly_tss = weekly[["week_start", "total_tss", "total_rtss"]].copy().sort_values("week_start")
                 weekly_tss_plot = weekly_tss.melt(
@@ -891,7 +889,7 @@ if view == "Dashboard":
                     weekly_tss_chart = weekly_tss_chart.interactive()
                 st.altair_chart(weekly_tss_chart, use_container_width=True)
 
-        with sec_weekly_fitfat:
+        if section_choice == "Fitness":
             st.subheader("Weekly Fitness vs Fatigue")
             if not filtered_daily_range.empty and "fitness" in filtered_daily_range.columns and "fatigue" in filtered_daily_range.columns:
                 weekly_ff = filtered_daily_range[["day_utc", "fitness", "fatigue"]].copy()
@@ -944,7 +942,7 @@ if view == "Dashboard":
             else:
                 st.caption("No fitness/fatigue data to plot.")
 
-        with sec_weekly_leg:
+        if section_choice == "Injury Risk":
             st.subheader("Weekly Leg Elasticity vs Pounding")
             if not filtered_daily_range.empty and "leg_elasticity" in filtered_daily_range.columns and "pounding" in filtered_daily_range.columns:
                 weekly_rff = filtered_daily_range[["day_utc", "leg_elasticity", "pounding"]].copy()
@@ -999,7 +997,52 @@ if view == "Dashboard":
             else:
                 st.caption("No Leg Elasticity/Pounding data to plot.")
 
-        with sec_weekly_overreach:
+        if section_choice == "Summary":
+            st.subheader("Weekly Distance vs Distance Eqv.")
+            if "total_distance_km" in weekly.columns and "total_distance_proxy_km" in weekly.columns and not weekly.empty:
+                weekly_dist = weekly[["week_start", "total_distance_km", "total_distance_proxy_km"]].copy().sort_values(
+                    "week_start"
+                )
+                weekly_dist_long = weekly_dist.melt(
+                    id_vars=["week_start"],
+                    value_vars=["total_distance_km", "total_distance_proxy_km"],
+                    var_name="series",
+                    value_name="value",
+                )
+                weekly_dist_long["series"] = weekly_dist_long["series"].replace(
+                    {
+                        "total_distance_km": "Distance",
+                        "total_distance_proxy_km": "Distance Eqv.",
+                    }
+                )
+                weekly_dist_chart = (
+                    alt.Chart(weekly_dist_long)
+                    .mark_line(point=True)
+                    .encode(
+                        x=alt.X("week_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                        y=alt.Y("value:Q", axis=alt.Axis(format=".1f", title="km")),
+                        color=alt.Color(
+                            "series:N",
+                            legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
+                            scale=alt.Scale(domain=["Distance", "Distance Eqv."], range=["#60a5fa", "#22c55e"]),
+                        ),
+                        tooltip=["week_start:T", "series:N", alt.Tooltip("value:Q", format=".1f")],
+                    )
+                    .properties(height=280)
+                )
+                if legend_toggle:
+                    weekly_dist_sel = alt.selection_point(fields=["series"], bind="legend")
+                    weekly_dist_chart = weekly_dist_chart.encode(
+                        opacity=alt.condition(weekly_dist_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                    ).add_params(weekly_dist_sel)
+                weekly_dist_chart = alt.layer(build_injury_layer(start_ts, end_ts), weekly_dist_chart)
+                if enable_zoom:
+                    weekly_dist_chart = weekly_dist_chart.interactive()
+                st.altair_chart(weekly_dist_chart, use_container_width=True)
+            else:
+                st.caption("No weekly distance-equivalent data to plot.")
+
+        if section_choice == "Injury Risk":
             st.subheader("Weekly Overreach vs Injury Risk")
             if not filtered_daily_range.empty and "overreach" in filtered_daily_range.columns and "injury_risk" in filtered_daily_range.columns:
                 weekly_fr = filtered_daily_range[["day_utc", "overreach", "injury_risk"]].copy()
@@ -1048,7 +1091,7 @@ if view == "Dashboard":
             else:
                 st.caption("No Overreach/Injury Risk data to plot.")
 
-        with sec_weekly_gc:
+        if section_choice == "Fitness":
             st.subheader("Garmin Training Load vs. Total Calories")
             if (
                 "total_garmin_training_load" in weekly.columns
@@ -1117,7 +1160,7 @@ if view == "Dashboard":
             else:
                 st.caption("No weekly Garmin training load/calories data to plot.")
 
-        with sec_weekly_zone:
+        if section_choice == "Fitness":
             st.subheader("Weekly HR Zone Time % (Z1-Z5)")
             zone_cols = [
                 "hr_time_in_zone_1",
@@ -1278,7 +1321,7 @@ if view == "Dashboard":
             )
             table_source = table_source.merge(daily_fit, on="day_utc", how="left")
         table_df = display_table(table_source)
-        with sec_activities:
+        if section_choice == "Activities":
             st.subheader("Activities")
             st.dataframe(
                 table_df,
@@ -1295,6 +1338,9 @@ if view == "Dashboard":
                     "specificity_factor": st.column_config.NumberColumn(format="%.2f"),
                     "fitness": st.column_config.NumberColumn("Fitness", format="%.1f"),
                     "fatigue": st.column_config.NumberColumn("Fatigue", format="%.1f"),
+                    "distance_proxy_km": st.column_config.NumberColumn("Distance Proxy", format="%.2f km"),
+                    "pace_proxy_sec_per_km": st.column_config.NumberColumn("Pace Proxy (s/km)", format="%.0f"),
+                    "distance_proxy_method": st.column_config.TextColumn("Distance Proxy Method"),
                 },
             )
 

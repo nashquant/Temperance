@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -121,3 +122,38 @@ def test_rtss_only_for_running_or_treadmill() -> None:
     bike_rtss = out.loc[out["activity_id"] == "bike", "rtss"].iloc[0]
     assert pd.notna(run_rtss)
     assert pd.isna(bike_rtss)
+
+
+def test_compute_metrics_adds_distance_proxy_fields() -> None:
+    runs_df = pd.DataFrame(
+        [
+            {
+                "activity_id": "run",
+                "start_time_utc": "2026-01-01T10:00:00Z",
+                "sport_type": "running",
+                "distance_m": 5000.0,
+                "duration_s": 1500.0,
+                "avg_pace_s_per_km": 300.0,
+                "avg_hr": 160.0,
+            },
+            {
+                "activity_id": "bike",
+                "start_time_utc": "2026-01-01T12:00:00Z",
+                "sport_type": "cycling",
+                "distance_m": 20000.0,
+                "duration_s": 3600.0,
+                "avg_pace_s_per_km": None,
+                "avg_hr": 150.0,
+            },
+        ]
+    )
+    out = compute_metrics(runs_df, resting_hr=45.0, max_hr=200.0)
+
+    run = out.loc[out["activity_id"] == "run"].iloc[0]
+    bike = out.loc[out["activity_id"] == "bike"].iloc[0]
+
+    assert float(run["distance_proxy_km"]) == pytest.approx(5.0, rel=1e-9)
+    assert str(run["distance_proxy_method"]) == "none_running"
+    assert pd.notna(bike["distance_proxy_km"])
+    assert pd.notna(bike["pace_proxy_sec_per_km"])
+    assert str(bike["distance_proxy_method"]) == "tss_parity_root_solve"

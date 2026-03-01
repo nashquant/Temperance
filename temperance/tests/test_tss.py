@@ -9,6 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tss import (  # noqa: E402
+    ActivityDistanceProxyInput,
     ActivityTSSInput,
     ConstantLTHRProvider,
     ConstantThresholdPaceProvider,
@@ -16,6 +17,7 @@ from tss import (  # noqa: E402
     PiecewiseThresholdPaceProvider,
     ThresholdPaceProvider,
     compute_hrtss,
+    compute_distance_proxy,
     compute_rtss,
     compute_tss_bundle,
 )
@@ -137,3 +139,86 @@ def test_piecewise_threshold_provider_selects_latest_point() -> None:
     assert provider.get_threshold_pace_sec_per_km(datetime(2024, 12, 1, tzinfo=timezone.utc)) == 300.0
     assert provider.get_threshold_pace_sec_per_km(datetime(2025, 6, 1, tzinfo=timezone.utc)) == 220.0
     assert provider.get_threshold_pace_sec_per_km(datetime(2026, 2, 1, tzinfo=timezone.utc)) == 210.0
+
+
+def test_distance_proxy_running_returns_original_distance() -> None:
+    proxy = compute_distance_proxy(
+        activity=ActivityDistanceProxyInput(
+            sport_type="running",
+            activity_duration_seconds=1800.0,
+            activity_distance_km=5.0,
+            activity_avg_pace_sec_per_km=360.0,
+        ),
+        threshold_pace_sec_per_km=300.0,
+        tss=75.0,
+        specificity_ratio=0.8,
+    )
+    assert proxy["distance_proxy_km"] == pytest.approx(5.0, rel=1e-9)
+    assert proxy["pace_proxy_sec_per_km"] == 360
+    assert proxy["distance_proxy_method"] == "none_running"
+
+
+def test_distance_proxy_non_running_parity_matches_effective_rtss_target() -> None:
+    duration_s = 3600.0
+    threshold_pace = 300.0
+    tss = 100.0
+    specificity = 0.8
+    proxy = compute_distance_proxy(
+        activity=ActivityDistanceProxyInput(
+            sport_type="cycling",
+            activity_duration_seconds=duration_s,
+            activity_distance_km=None,
+            activity_avg_pace_sec_per_km=None,
+        ),
+        threshold_pace_sec_per_km=threshold_pace,
+        tss=tss,
+        specificity_ratio=specificity,
+    )
+    assert proxy["distance_proxy_method"] == "tss_parity_root_solve"
+    assert proxy["distance_proxy_km"] is not None
+    assert proxy["pace_proxy_sec_per_km"] is not None
+
+    pace = float(proxy["pace_proxy_sec_per_km"])
+    reconstructed_rtss = (duration_s * ((threshold_pace / pace) ** 2) / 3600.0) * 100.0
+    assert reconstructed_rtss == pytest.approx(tss * specificity, rel=0.02)
+
+
+def test_distance_proxy_specificity_not_applied_twice() -> None:
+    duration_s = 3600.0
+    threshold_pace = 300.0
+    tss = 100.0
+    specificity = 0.8
+    proxy = compute_distance_proxy(
+        activity=ActivityDistanceProxyInput(
+            sport_type="elliptical",
+            activity_duration_seconds=duration_s,
+            activity_distance_km=None,
+            activity_avg_pace_sec_per_km=None,
+        ),
+        threshold_pace_sec_per_km=threshold_pace,
+        tss=tss,
+        specificity_ratio=specificity,
+    )
+    assert proxy["distance_proxy_method"] == "tss_parity_root_solve"
+    expected_pace_once = threshold_pace / ((tss * specificity / 100.0) ** 0.5)
+    expected_distance_once = duration_s / expected_pace_once
+    expected_distance_twice = expected_distance_once * specificity
+    assert proxy["distance_proxy_km"] == pytest.approx(expected_distance_once, rel=1e-9)
+    assert float(proxy["distance_proxy_km"]) != pytest.approx(expected_distance_twice, rel=1e-9)
+
+
+def test_distance_proxy_unavailable_when_inputs_missing() -> None:
+    proxy = compute_distance_proxy(
+        activity=ActivityDistanceProxyInput(
+            sport_type="cycling",
+            activity_duration_seconds=0.0,
+            activity_distance_km=None,
+            activity_avg_pace_sec_per_km=None,
+        ),
+        threshold_pace_sec_per_km=300.0,
+        tss=80.0,
+        specificity_ratio=0.8,
+    )
+    assert proxy["distance_proxy_km"] is None
+    assert proxy["pace_proxy_sec_per_km"] is None
+    assert proxy["distance_proxy_method"] == "unavailable"

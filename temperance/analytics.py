@@ -9,7 +9,9 @@ import numpy as np
 
 from models import aerobic_load, edwards_trimp_from_zones, mechanical_load
 from tss import (
+    ActivityDistanceProxyInput,
     PiecewiseThresholdPaceProvider,
+    compute_distance_proxy,
 )
 
 
@@ -104,6 +106,51 @@ def compute_metrics(
             pace_v = float(avg_pace.loc[idx])
             dur_v = float(duration_s.loc[idx])
             df.at[idx, "rtss"] = (dur_v * ((tp / pace_v) ** 2) / 3600.0) * 100.0
+
+    def _specificity_ratio_for_activity(sport_type: str | None) -> float:
+        lower = str(sport_type or "").lower()
+        if ("run" in lower) or ("treadmill" in lower):
+            return 1.0
+        return 0.8
+
+    df["distance_proxy_km"] = pd.NA
+    df["pace_proxy_sec_per_km"] = pd.NA
+    df["distance_proxy_method"] = "unavailable"
+    for idx, row in df.iterrows():
+        tp = float(threshold_pace_sec_per_km)
+        if pace_provider is not None and pd.notna(row.get("start_time_utc")):
+            tp = float(pace_provider.get_threshold_pace_sec_per_km(row["start_time_utc"].to_pydatetime()))
+        distance_m = pd.to_numeric(row.get("distance_m"), errors="coerce")
+        proxy = compute_distance_proxy(
+            activity=ActivityDistanceProxyInput(
+                sport_type=row.get("sport_type"),
+                activity_duration_seconds=(
+                    float(pd.to_numeric(row.get("duration_s"), errors="coerce"))
+                    if pd.notna(pd.to_numeric(row.get("duration_s"), errors="coerce"))
+                    else None
+                ),
+                activity_distance_km=(
+                    float(distance_m) / 1000.0
+                    if pd.notna(distance_m)
+                    else None
+                ),
+                activity_avg_pace_sec_per_km=(
+                    float(pd.to_numeric(row.get("avg_pace_s_per_km"), errors="coerce"))
+                    if pd.notna(pd.to_numeric(row.get("avg_pace_s_per_km"), errors="coerce"))
+                    else None
+                ),
+            ),
+            threshold_pace_sec_per_km=tp,
+            tss=(
+                float(pd.to_numeric(row.get("tss"), errors="coerce"))
+                if pd.notna(pd.to_numeric(row.get("tss"), errors="coerce"))
+                else None
+            ),
+            specificity_ratio=_specificity_ratio_for_activity(row.get("sport_type")),
+        )
+        df.at[idx, "distance_proxy_km"] = proxy["distance_proxy_km"]
+        df.at[idx, "pace_proxy_sec_per_km"] = proxy["pace_proxy_sec_per_km"]
+        df.at[idx, "distance_proxy_method"] = proxy["distance_proxy_method"]
 
     df["mechanical_load"] = pd.NA
     if running_idx.any():
@@ -378,6 +425,8 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
         "total_mechanical_load": ("mechanical_load", "sum"),
         "runs": ("activity_id", "count"),
     }
+    if "distance_proxy_km" in weekly.columns:
+        agg_spec["total_distance_proxy_km"] = ("distance_proxy_km", "sum")
     if "training_load_garmin" in weekly.columns:
         agg_spec["total_garmin_training_load"] = ("training_load_garmin", "sum")
     if "calories_total" in weekly.columns:
@@ -438,6 +487,9 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
     cols = [c for c in cols if c in table.columns]
 
     optional = [
+        "distance_proxy_km",
+        "pace_proxy_sec_per_km",
+        "distance_proxy_method",
         "avg_cadence",
         "running_power_avg",
         "training_load_garmin",
