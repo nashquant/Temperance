@@ -116,11 +116,15 @@ def compute_metrics(
     df["distance_proxy_km"] = pd.NA
     df["pace_proxy_sec_per_km"] = pd.NA
     df["distance_proxy_method"] = "unavailable"
+    df["if_proxy"] = pd.NA
     for idx, row in df.iterrows():
         tp = float(threshold_pace_sec_per_km)
         if pace_provider is not None and pd.notna(row.get("start_time_utc")):
             tp = float(pace_provider.get_threshold_pace_sec_per_km(row["start_time_utc"].to_pydatetime()))
+        sport_lower = str(row.get("sport_type") or "").lower()
+        is_running_like_row = ("run" in sport_lower) or ("treadmill" in sport_lower)
         distance_m = pd.to_numeric(row.get("distance_m"), errors="coerce")
+        avg_pace_row = pd.to_numeric(row.get("avg_pace_s_per_km"), errors="coerce")
         proxy = compute_distance_proxy(
             activity=ActivityDistanceProxyInput(
                 sport_type=row.get("sport_type"),
@@ -135,8 +139,8 @@ def compute_metrics(
                     else None
                 ),
                 activity_avg_pace_sec_per_km=(
-                    float(pd.to_numeric(row.get("avg_pace_s_per_km"), errors="coerce"))
-                    if pd.notna(pd.to_numeric(row.get("avg_pace_s_per_km"), errors="coerce"))
+                    float(avg_pace_row)
+                    if pd.notna(avg_pace_row)
                     else None
                 ),
             ),
@@ -151,6 +155,11 @@ def compute_metrics(
         df.at[idx, "distance_proxy_km"] = proxy["distance_proxy_km"]
         df.at[idx, "pace_proxy_sec_per_km"] = proxy["pace_proxy_sec_per_km"]
         df.at[idx, "distance_proxy_method"] = proxy["distance_proxy_method"]
+        if tp > 0:
+            if is_running_like_row and pd.notna(avg_pace_row) and float(avg_pace_row) > 0:
+                df.at[idx, "if_proxy"] = tp / float(avg_pace_row)
+            elif proxy["pace_proxy_sec_per_km"] is not None and float(proxy["pace_proxy_sec_per_km"]) > 0:
+                df.at[idx, "if_proxy"] = tp / float(proxy["pace_proxy_sec_per_km"])
 
     df["mechanical_load"] = pd.NA
     if running_idx.any():
@@ -500,6 +509,7 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "distance_km",
         "duration_min",
         "avg_hr",
+        "if_proxy",
         "fitness",
         "fatigue",
         "rtss",
@@ -512,6 +522,7 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
     cols = [c for c in cols if c in table.columns]
 
     optional = [
+        "if_proxy",
         "distance_proxy_km",
         "pace_proxy_display",
         "distance_proxy_method",

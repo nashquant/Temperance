@@ -315,6 +315,10 @@ def apply_specificity_factor(df: pd.DataFrame, non_running_factor: float) -> pd.
                 )
             else:
                 out.loc[proxy_mask, "pace_proxy_sec_per_km"] = pd.NA
+        if "if_proxy" in out.columns:
+            out.loc[proxy_mask, "if_proxy"] = (
+                pd.to_numeric(out.loc[proxy_mask, "if_proxy"], errors="coerce").fillna(0.0) * proxy_scale
+            )
 
     factor_cols = [
         "distance_m",
@@ -1371,6 +1375,7 @@ if view == "Dashboard":
                     "trimp": st.column_config.NumberColumn(format="%.1f"),
                     "rtss": st.column_config.NumberColumn("rTSS", format="%.1f"),
                     "tss": st.column_config.NumberColumn("TSS", format="%.1f"),
+                    "if_proxy": st.column_config.NumberColumn("IF", format="%.3f"),
                     "edwards_trimp": st.column_config.NumberColumn(format="%.1f"),
                     "training_load_garmin": st.column_config.NumberColumn(format="%.1f"),
                     "specificity_factor": st.column_config.NumberColumn(format="%.2f"),
