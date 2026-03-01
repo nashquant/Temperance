@@ -705,13 +705,13 @@ if view == "Dashboard":
                 left_axis_labels = st.multiselect(
                     "Left axis metrics",
                     list(metric_map.keys()),
-                    default=["Garmin Training Load"],
+                    default=["Mechanical Load"],
                     max_selections=3,
                 )
                 right_axis_labels = st.multiselect(
                     "Right axis metrics",
                     list(metric_map.keys()),
-                    default=["TRIMP"],
+                    default=["rTSS"],
                     max_selections=3,
                 )
             else:
@@ -720,14 +720,17 @@ if view == "Dashboard":
                 default_index = metric_labels.index(default_metric) if default_metric in metric_labels else 0
                 selected_labels = [st.selectbox("Metric", metric_labels, index=default_index)]
 
-            ema_windows = st.text_input("EMA windows (days, comma-separated)", value="4,16")
-            ema_ns, ema_pairs = parse_ma_windows(ema_windows)
-            if ema_ns:
-                alpha_text = ", ".join([f"EMA {n} -> alpha={ema_alpha_from_days(n):.4f}" for n in ema_ns])
-                st.caption(alpha_text)
-            if ema_pairs:
-                pair_text = ", ".join([f"EMA{a}-EMA{b}" for a, b in ema_pairs])
-                st.caption(f"EMA spread overlays: {pair_text}")
+            ema_ns: list[int] = []
+            ema_pairs: list[tuple[int, int]] = []
+            if not compare_mode:
+                ema_windows = st.text_input("EMA windows (days, comma-separated)", value="4,16")
+                ema_ns, ema_pairs = parse_ma_windows(ema_windows)
+                if ema_ns:
+                    alpha_text = ", ".join([f"EMA {n} -> alpha={ema_alpha_from_days(n):.4f}" for n in ema_ns])
+                    st.caption(alpha_text)
+                if ema_pairs:
+                    pair_text = ", ".join([f"EMA{a}-EMA{b}" for a, b in ema_pairs])
+                    st.caption(f"EMA spread overlays: {pair_text}")
 
             plot_frames: list[pd.DataFrame] = []
             if compare_mode:
@@ -895,16 +898,22 @@ if view == "Dashboard":
 
             if compare_mode and plot_frames:
                 compare_df = pd.concat(plot_frames, ignore_index=True)
-                legend_sel = alt.selection_point(fields=["series"], bind="legend")
 
                 left_df = compare_df[compare_df["axis_side"] == "left"]
                 right_df = compare_df[compare_df["axis_side"] == "right"]
+                x_scale = alt.Scale(
+                    domain=[pd.Timestamp(start_ts), pd.Timestamp(end_ts) + pd.Timedelta(days=1)]
+                )
 
                 left_chart = (
                     alt.Chart(left_df)
                     .mark_line(point=True, opacity=0.65)
                     .encode(
-                        x="day:T",
+                        x=alt.X(
+                            "day:T",
+                            axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=12),
+                            scale=x_scale,
+                        ),
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Left axis")),
                         color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
                         tooltip=["day:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
@@ -914,27 +923,32 @@ if view == "Dashboard":
                     alt.Chart(right_df)
                     .mark_line(point=True, opacity=0.65)
                     .encode(
-                        x="day:T",
+                        x=alt.X(
+                            "day:T",
+                            axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=12),
+                            scale=x_scale,
+                        ),
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Right axis", orient="right")),
                         color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="horizontal")),
                         tooltip=["day:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
-
-                left_chart = left_chart.encode(
-                    opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                compare_chart = alt.layer(left_chart, right_chart).resolve_scale(y="independent")
+                if top_injury_overlay:
+                    compare_chart = alt.layer(
+                        build_injury_layer(saved_injury_windows, start_ts, end_ts),
+                        left_chart,
+                        right_chart,
+                    ).resolve_scale(y="independent")
+                compare_chart = compare_chart.properties(
+                    height=360, padding={"left": 72, "right": 42, "top": 8, "bottom": 44}
                 )
-                right_chart = right_chart.encode(
-                    opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
-                )
-                compare_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), left_chart, right_chart).resolve_scale(
-                    y="independent"
-                )
-                compare_chart = compare_chart.add_params(legend_sel)
                 if enable_zoom:
                     compare_chart = compare_chart.interactive()
                     st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
                 st.altair_chart(compare_chart, use_container_width=True)
+            elif compare_mode:
+                st.caption("No comparable data found for the selected metrics/date range.")
 
         section_choice = st.selectbox(
             "Section",
@@ -995,8 +1009,9 @@ if view == "Dashboard":
                 tss_chart = tss_chart.encode(
                     opacity=alt.condition(tss_sel, alt.value(1.0), alt.value(0.08), empty=True)
                 ).add_params(tss_sel)
+                threshold_value = 500.0 if weekly_toggle else 70.0
                 tss_threshold = (
-                    alt.Chart(pd.DataFrame({"threshold": [500.0]}))
+                    alt.Chart(pd.DataFrame({"threshold": [threshold_value]}))
                     .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
                     .encode(y="threshold:Q")
                 )
@@ -1005,6 +1020,11 @@ if view == "Dashboard":
                 if enable_zoom:
                     tss_chart = tss_chart.interactive()
                 st.altair_chart(tss_chart, use_container_width=True)
+                st.caption(
+                    f"The dotted line is Stress Score {int(threshold_value)} "
+                    f"({'weekly' if weekly_toggle else 'daily'} mode). "
+                    "For good training, keep TSS above it while rTSS stays below it."
+                )
 
         if section_choice == "Fitness":
             st.subheader("Fitness vs Fatigue")
