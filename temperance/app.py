@@ -535,7 +535,7 @@ def build_recovery_daily_frame(sleep_df: pd.DataFrame, wellness_df: pd.DataFrame
 
 with st.sidebar:
     st.header("Navigation")
-    view = st.radio("Page", ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs"], index=0)
+    view = st.radio("Page", ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs"], index=1)
 resting_hr = DEFAULT_RESTING_HR
 max_hr = DEFAULT_MAX_HR
 sex = "male"
@@ -1658,6 +1658,11 @@ if view == "Calendar":
                     color: rgba(148,163,184,0.94);
                     margin-top: 2px;
                 }
+                .cal-card-placeholder {
+                    min-height: 98px;
+                    opacity: 0.0;
+                    pointer-events: none;
+                }
                 .cal-zones {
                     margin-top: 8px;
                     padding-top: 8px;
@@ -1796,6 +1801,7 @@ if view == "Calendar":
                             f"<div class='cal-card-meta' style='margin-bottom:6px;'>{' · '.join(day_meta_parts)}</div>",
                             unsafe_allow_html=True,
                         )
+                        rendered_cards = 0
                         for _, act in day_df.iterrows():
                             sport_label = html.escape(_sport_label(act.get("sport_type")))
                             dur_text = _duration_short(act.get("duration_s"))
@@ -1829,6 +1835,12 @@ if view == "Calendar":
                                     f"<div class='cal-card-load'>TSS {tss_v:.0f} · rTSS {rtss_v:.0f}</div>"
                                     "</div>"
                                 ),
+                                unsafe_allow_html=True,
+                            )
+                            rendered_cards += 1
+                        for _ in range(max(0, 4 - rendered_cards)):
+                            st.markdown(
+                                "<div class='cal-card cal-card-placeholder'>&nbsp;</div>",
                                 unsafe_allow_html=True,
                             )
 
