@@ -706,17 +706,6 @@ if view == "Dashboard":
                         y_format = ".1f"
                     else:
                         y_format = ".0f"
-                    y_vals = pd.to_numeric(overlay_long["metric_value"], errors="coerce").fillna(0.0)
-                    y_min = float(y_vals.min()) if not y_vals.empty else 0.0
-                    y_max = float(y_vals.max()) if not y_vals.empty else 1.0
-                    if y_max <= y_min:
-                        y_pad = max(abs(y_max) * 0.05, 1.0)
-                    else:
-                        y_pad = max((y_max - y_min) * 0.08, 1.0)
-                    y_low = y_min - y_pad
-                    y_high = y_max + y_pad
-                    if y_min >= 0:
-                        y_low = max(0.0, y_low)
                     chart = (
                         alt.Chart(overlay_long)
                         .mark_line(point=True)
@@ -724,15 +713,25 @@ if view == "Dashboard":
                             x=alt.X("day:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=12)),
                             y=alt.Y(
                                 "metric_value:Q",
-                                axis=alt.Axis(format=y_format, title="value"),
-                                scale=alt.Scale(domain=[y_low, y_high], zero=False, nice=False),
+                                axis=alt.Axis(format=".0f", title=""),
+                                scale=alt.Scale(zero=False, nice=True),
                             ),
                             color=alt.Color("series:N", legend=alt.Legend(title="", orient="bottom", direction="horizontal")),
                             opacity=alt.Opacity("base_opacity:Q", legend=None),
                             tooltip=["day:T", "series:N", alt.Tooltip("metric_value:Q", format=y_format)],
                         )
-                        .properties(height=320)
+                        .properties(height=320, padding={"left": 56, "right": 12, "top": 6, "bottom": 44})
                     )
+                    if legend_toggle:
+                        top_sel = alt.selection_point(fields=["series"], bind="legend")
+                        chart = chart.encode(
+                            opacity=alt.condition(
+                                top_sel,
+                                alt.Opacity("base_opacity:Q", legend=None),
+                                alt.value(0.08),
+                                empty=True,
+                            )
+                        ).add_params(top_sel)
                     if enable_zoom:
                         chart = chart.interactive()
                     st.altair_chart(chart, use_container_width=True)
