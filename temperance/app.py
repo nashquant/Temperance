@@ -844,7 +844,20 @@ if view == "Dashboard":
                     st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
                 st.altair_chart(compare_chart, use_container_width=True)
 
-        table_df = display_table(range_filtered_metrics)
+        table_source = range_filtered_metrics.copy()
+        if not table_source.empty and not filtered_daily.empty:
+            table_source["day_utc"] = (
+                pd.to_datetime(table_source["start_time_utc"], utc=True, errors="coerce")
+                .dt.tz_localize(None)
+                .dt.date.astype(str)
+            )
+            daily_fit = (
+                filtered_daily[["day_utc", "fitness", "fatigue"]]
+                .dropna(subset=["day_utc"])
+                .drop_duplicates(subset=["day_utc"], keep="last")
+            )
+            table_source = table_source.merge(daily_fit, on="day_utc", how="left")
+        table_df = display_table(table_source)
         st.subheader("Activities")
         st.dataframe(
             table_df,
@@ -859,6 +872,8 @@ if view == "Dashboard":
                 "edwards_trimp": st.column_config.NumberColumn(format="%.1f"),
                 "training_load_garmin": st.column_config.NumberColumn(format="%.1f"),
                 "specificity_factor": st.column_config.NumberColumn(format="%.2f"),
+                "fitness": st.column_config.NumberColumn("Fitness", format="%.1f"),
+                "fatigue": st.column_config.NumberColumn("Fatigue", format="%.1f"),
             },
         )
         weekly = weekly_summary(range_filtered_metrics)

@@ -410,6 +410,8 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "distance_km",
         "duration_min",
         "avg_hr",
+        "fitness",
+        "fatigue",
         "rtss",
         "tss",
         "avg_pace_display",
@@ -417,6 +419,7 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "edwards_trimp",
         "mechanical_load",
     ]
+    cols = [c for c in cols if c in table.columns]
 
     optional = [
         "avg_cadence",
