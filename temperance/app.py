@@ -4,6 +4,7 @@ import json
 import html
 import hashlib
 import io
+import os
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -94,6 +95,38 @@ ZONE_ANCHORS_DEFAULT = {
     "Z4": "Superthreshold",
     "Z5": "Anaerobic",
 }
+
+AUTH_ALL_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs", "Benchmark"]
+AUTH_VIEWER_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Benchmark"]
+
+
+def _auth_enabled() -> bool:
+    return str(os.getenv("TEMPERANCE_AUTH_ENABLED", "1")).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _auth_hash(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _auth_users() -> dict[str, dict[str, str]]:
+    users: dict[str, dict[str, str]] = {}
+    admin_user = str(os.getenv("TEMPERANCE_ADMIN_USER", "admin")).strip()
+    admin_pass = os.getenv("TEMPERANCE_ADMIN_PASSWORD", "")
+    admin_pass_hash = os.getenv("TEMPERANCE_ADMIN_PASSWORD_SHA256", "")
+    if admin_user and (admin_pass or admin_pass_hash):
+        users[admin_user] = {
+            "password_hash": admin_pass_hash.strip() or _auth_hash(admin_pass),
+            "role": "admin",
+        }
+    viewer_user = str(os.getenv("TEMPERANCE_VIEWER_USER", "")).strip()
+    viewer_pass = os.getenv("TEMPERANCE_VIEWER_PASSWORD", "")
+    viewer_pass_hash = os.getenv("TEMPERANCE_VIEWER_PASSWORD_SHA256", "")
+    if viewer_user and (viewer_pass or viewer_pass_hash):
+        users[viewer_user] = {
+            "password_hash": viewer_pass_hash.strip() or _auth_hash(viewer_pass),
+            "role": "viewer",
+        }
+    return users
 
 
 def _pace_sec_to_mmss(pace_sec_per_km: float) -> str:
@@ -1241,12 +1274,50 @@ def build_recovery_daily_frame(sleep_df: pd.DataFrame, wellness_df: pd.DataFrame
 
 with st.sidebar:
     st.header("Navigation")
+    auth_on = _auth_enabled()
+    users = _auth_users()
+    if "auth_user" not in st.session_state:
+        st.session_state["auth_user"] = None
+    if "auth_role" not in st.session_state:
+        st.session_state["auth_role"] = None
+
+    if auth_on and not users:
+        st.error("Auth enabled but no credentials configured. Set TEMPERANCE_ADMIN_PASSWORD.")
+        st.stop()
+
+    if auth_on and not st.session_state.get("auth_user"):
+        st.subheader("Login")
+        login_user = st.text_input("User", key="login_user")
+        login_pass = st.text_input("Password", type="password", key="login_pass")
+        if st.button("Sign in", key="login_submit"):
+            u = users.get(login_user.strip())
+            if u and _auth_hash(login_pass) == u["password_hash"]:
+                st.session_state["auth_user"] = login_user.strip()
+                st.session_state["auth_role"] = u["role"]
+                st.rerun()
+            st.error("Invalid credentials.")
+        st.stop()
+
+    if auth_on:
+        st.caption(f"Signed in as `{st.session_state.get('auth_user')}` ({st.session_state.get('auth_role')})")
+        if st.button("Logout", key="logout_btn"):
+            st.session_state["auth_user"] = None
+            st.session_state["auth_role"] = None
+            st.rerun()
+
+    role = str(st.session_state.get("auth_role") or "admin")
+    allowed_tabs = AUTH_ALL_TABS if (not auth_on or role == "admin") else AUTH_VIEWER_TABS
+    default_idx = allowed_tabs.index("Calendar") if "Calendar" in allowed_tabs else 0
     view = st.radio(
         "Page",
-        ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs", "Benchmark"],
-        index=1,
+        allowed_tabs,
+        index=default_idx,
     )
     use_split_method = st.checkbox("Use splits for metrics", value=False)
+
+if view not in allowed_tabs:
+    st.error("You do not have access to this page.")
+    st.stop()
 resting_hr = DEFAULT_RESTING_HR
 sex = "male"
 saved_injury_windows = _load_injury_windows(cfg.db_path)
