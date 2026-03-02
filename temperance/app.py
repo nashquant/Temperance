@@ -307,6 +307,21 @@ def _sport_label(sport_type: str | None) -> str:
     return raw.title()
 
 
+def _pace_compact(pace_s_per_km: float | int | None) -> str:
+    if pace_s_per_km is None:
+        return "-"
+    try:
+        val = float(pace_s_per_km)
+    except Exception:
+        return "-"
+    if not pd.notna(val) or val <= 0:
+        return "-"
+    total_seconds = int(round(val))
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    return f"{minutes}:{seconds:02d}/km"
+
+
 def filter_by_activity_type(df: pd.DataFrame, mode: str) -> pd.DataFrame:
     if df.empty or mode == "All Activities":
         return df
@@ -1856,6 +1871,22 @@ if view == "Calendar":
                                 )
                             tss_v = float(pd.to_numeric(act.get("tss"), errors="coerce") or 0.0)
                             rtss_v = float(pd.to_numeric(act.get("rtss"), errors="coerce") or 0.0)
+                            pace_actual_v = pd.to_numeric(act.get("avg_pace_s_per_km"), errors="coerce")
+                            pace_eqv_v = pd.to_numeric(act.get("pace_proxy_sec_per_km"), errors="coerce")
+                            if_v = pd.to_numeric(act.get("if_proxy"), errors="coerce")
+                            if is_running_activity:
+                                pace_text = (
+                                    f"Pace {_pace_compact(pace_actual_v)}"
+                                    if pd.notna(pace_actual_v) and float(pace_actual_v) > 0
+                                    else "Pace -"
+                                )
+                            else:
+                                pace_text = (
+                                    f"Pace Eqv {_pace_compact(pace_eqv_v)}"
+                                    if pd.notna(pace_eqv_v) and float(pace_eqv_v) > 0
+                                    else "Pace Eqv -"
+                                )
+                            if_text = f"IF {float(if_v):.2f}" if pd.notna(if_v) and float(if_v) > 0 else "IF -"
                             subtitle = f"{dur_text}" + (f" · {dist_text}" if dist_text else "")
                             st.markdown(
                                 (
@@ -1863,6 +1894,7 @@ if view == "Calendar":
                                     f"<div class='cal-card-title'>{sport_label}</div>"
                                     f"<div class='cal-card-meta'>{subtitle}</div>"
                                     f"<div class='cal-card-meta'>{hr_text}</div>"
+                                    f"<div class='cal-card-meta'>{pace_text} · {if_text}</div>"
                                     f"<div class='cal-card-load'>TSS {tss_v:.0f} · rTSS {rtss_v:.0f}</div>"
                                     "</div>"
                                 ),
