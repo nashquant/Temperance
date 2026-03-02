@@ -19,6 +19,7 @@ class GarminExtractResult:
     activities: list[dict[str, Any]]
     activity_details: list[dict[str, Any]]
     activity_records: list[dict[str, Any]]
+    activity_splits: list[dict[str, Any]]
     sleep_daily: list[dict[str, Any]]
     wellness_daily: list[dict[str, Any]]
     errors: list[str]
@@ -532,6 +533,48 @@ def _merge_session_into_activity(activity: dict[str, Any], session_data: dict[st
     return merged
 
 
+def _parse_split_payload(split_payload: Any, split_summaries_payload: Any, activity_id: str) -> dict[str, Any]:
+    laps: list[dict[str, Any]] = []
+    if isinstance(split_payload, dict):
+        lap_rows = split_payload.get("lapDTOs")
+        if isinstance(lap_rows, list):
+            laps = [x for x in lap_rows if isinstance(x, dict)]
+
+    # Fall back to split summaries if lapDTOs are unavailable.
+    if not laps and isinstance(split_summaries_payload, list):
+        laps = [x for x in split_summaries_payload if isinstance(x, dict)]
+    elif not laps and isinstance(split_summaries_payload, dict):
+        maybe = split_summaries_payload.get("splitSummaries")
+        if isinstance(maybe, list):
+            laps = [x for x in maybe if isinstance(x, dict)]
+
+    total_duration_s = 0.0
+    total_distance_m = 0.0
+    lap_count = float(len(laps))
+
+    for lap in laps:
+        d = _to_float(
+            lap.get("duration")
+            or lap.get("elapsedDuration")
+            or lap.get("movingDuration")
+            or lap.get("totalTimerTime")
+        )
+        if d is not None and d > 0:
+            total_duration_s += d
+        dist = _to_float(lap.get("distance") or lap.get("totalDistance") or lap.get("distanceMeters"))
+        if dist is not None and dist > 0:
+            total_distance_m += dist
+
+    return {
+        "activity_id": str(activity_id),
+        "split": split_payload,
+        "split_summaries": split_summaries_payload,
+        "lap_count": lap_count if lap_count > 0 else None,
+        "total_duration_s": total_duration_s if total_duration_s > 0 else None,
+        "total_distance_m": total_distance_m if total_distance_m > 0 else None,
+    }
+
+
 def fetch_garmin_runs(
     email: str,
     password: str,
@@ -565,6 +608,7 @@ def fetch_garmin_comprehensive(
     start_day: date,
     end_day: date | None = None,
     include_activity_details: bool = True,
+    include_splits: bool = False,
     include_wellness: bool = True,
     page_size: int = 100,
     raw_export_dir: Path | None = None,
@@ -597,6 +641,7 @@ def fetch_garmin_comprehensive(
     activities: list[dict[str, Any]] = []
     activity_details: list[dict[str, Any]] = []
     activity_records: list[dict[str, Any]] = []
+    activity_splits: list[dict[str, Any]] = []
 
     offset = 0
     total_days = max((end_day - start_day).days + 1, 1)
@@ -643,8 +688,6 @@ def fetch_garmin_comprehensive(
                 details_bundle = {}
                 for endpoint_name, method_name in (
                     ("details", "get_activity_details"),
-                    ("splits", "get_activity_splits"),
-                    ("split_summaries", "get_activity_split_summaries"),
                     ("weather", "get_activity_weather"),
                     ("hr_timezones", "get_activity_hr_in_timezones"),
                 ):
@@ -662,6 +705,28 @@ def fetch_garmin_comprehensive(
                         "activity_id": activity_id,
                         "details": details_bundle,
                     }
+                )
+
+            if include_splits:
+                split_payload = None
+                split_summaries_payload = None
+                for endpoint_name, method_name in (
+                    ("splits", "get_activity_splits"),
+                    ("split_summaries", "get_activity_split_summaries"),
+                ):
+                    method = getattr(client, method_name, None)
+                    if method is None:
+                        continue
+                    payload, call_err = _safe_call(method, int(activity_id))
+                    if call_err:
+                        errors.append(f"activity_id={activity_id} {endpoint_name}: {call_err}")
+                    if endpoint_name == "splits":
+                        split_payload = payload
+                    else:
+                        split_summaries_payload = payload
+                    _archive_activity_payload(raw_export_dir, activity_id, endpoint_name, payload)
+                activity_splits.append(
+                    _parse_split_payload(split_payload, split_summaries_payload, activity_id)
                 )
 
             normalized = _normalize_activity(row, source="garmin_api", details_bundle=details_bundle) or normalized
@@ -710,6 +775,7 @@ def fetch_garmin_comprehensive(
             if row.get("record_time_utc")
         }.values()
     )
+    activity_splits = list({row["activity_id"]: row for row in activity_splits}.values())
 
     sleep_daily: list[dict[str, Any]] = []
     wellness_daily: list[dict[str, Any]] = []
@@ -822,6 +888,7 @@ def fetch_garmin_comprehensive(
         activities=activities,
         activity_details=activity_details,
         activity_records=activity_records,
+        activity_splits=activity_splits,
         sleep_daily=sleep_daily,
         wellness_daily=wellness_daily,
         errors=errors,
@@ -1034,6 +1101,7 @@ def dump_extract_to_json(path: Path, extract: GarminExtractResult) -> None:
         "activities": extract.activities,
         "activity_details": extract.activity_details,
         "activity_records": extract.activity_records,
+        "activity_splits": extract.activity_splits,
         "sleep_daily": extract.sleep_daily,
         "wellness_daily": extract.wellness_daily,
         "errors": extract.errors,

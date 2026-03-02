@@ -29,6 +29,8 @@ from config import load_config
 from db import (
     delete_benchmark_activities,
     get_setting,
+    get_activity_splits_cache_key,
+    get_activity_splits_summary_df,
     get_activity_records_df,
     get_activity_detail_raw,
     get_activity_raw,
@@ -48,6 +50,7 @@ from db import (
     upsert_activities,
     upsert_activity_details,
     upsert_activity_records,
+    upsert_activity_splits,
     upsert_sleep_daily,
     upsert_wellness_daily,
     upsert_benchmark_activities,
@@ -570,6 +573,75 @@ def _parse_fit_upload(
     return [row], errors
 
 
+def _sync_splits_from_raw_activity_cache(raw_root: Path) -> tuple[list[dict[str, object]], list[str]]:
+    rows: list[dict[str, object]] = []
+    errors: list[str] = []
+    activities_dir = raw_root / "activities"
+    if not activities_dir.exists():
+        return rows, [f"raw activities directory not found: {activities_dir}"]
+
+    for act_dir in activities_dir.iterdir():
+        if not act_dir.is_dir():
+            continue
+        activity_id = act_dir.name
+        splits_path = act_dir / "splits.json"
+        split_summaries_path = act_dir / "split_summaries.json"
+        if not splits_path.exists() and not split_summaries_path.exists():
+            continue
+        try:
+            split_payload = {}
+            split_summaries_payload = {}
+            if splits_path.exists():
+                split_payload = json.loads(splits_path.read_text(encoding="utf-8"))
+            if split_summaries_path.exists():
+                split_summaries_payload = json.loads(split_summaries_path.read_text(encoding="utf-8"))
+
+            laps: list[dict[str, object]] = []
+            if isinstance(split_payload, dict):
+                lap_rows = split_payload.get("lapDTOs")
+                if isinstance(lap_rows, list):
+                    laps = [x for x in lap_rows if isinstance(x, dict)]
+            if not laps and isinstance(split_summaries_payload, list):
+                laps = [x for x in split_summaries_payload if isinstance(x, dict)]
+            elif not laps and isinstance(split_summaries_payload, dict):
+                maybe = split_summaries_payload.get("splitSummaries")
+                if isinstance(maybe, list):
+                    laps = [x for x in maybe if isinstance(x, dict)]
+
+            total_duration_s = 0.0
+            total_distance_m = 0.0
+            for lap in laps:
+                d = pd.to_numeric(
+                    lap.get("duration")
+                    or lap.get("elapsedDuration")
+                    or lap.get("movingDuration")
+                    or lap.get("totalTimerTime"),
+                    errors="coerce",
+                )
+                if pd.notna(d) and float(d) > 0:
+                    total_duration_s += float(d)
+                dist = pd.to_numeric(
+                    lap.get("distance") or lap.get("totalDistance") or lap.get("distanceMeters"),
+                    errors="coerce",
+                )
+                if pd.notna(dist) and float(dist) > 0:
+                    total_distance_m += float(dist)
+
+            rows.append(
+                {
+                    "activity_id": str(activity_id),
+                    "split": split_payload,
+                    "split_summaries": split_summaries_payload,
+                    "lap_count": float(len(laps)) if len(laps) > 0 else None,
+                    "total_duration_s": total_duration_s if total_duration_s > 0 else None,
+                    "total_distance_m": total_distance_m if total_distance_m > 0 else None,
+                }
+            )
+        except Exception as exc:
+            errors.append(f"activity_id={activity_id}: {exc}")
+    return rows, errors
+
+
 def filter_by_activity_type(df: pd.DataFrame, mode: str) -> pd.DataFrame:
     if df.empty or mode == "All Activities":
         return df
@@ -653,11 +725,13 @@ def apply_specificity_factor(df: pd.DataFrame, non_running_factor: float) -> pd.
 def get_metrics_df_fast(
     db_path: Path,
     activities_cache_key: str,
+    activity_splits_cache_key: str,
     resting_hr: float,
     max_hr: float,
     sex: str,
     threshold_pace_default_sec: float,
     threshold_pace_curve_points: tuple[tuple[str, float], ...],
+    use_split_method: bool,
 ) -> pd.DataFrame:
     runs_df = get_runs_df(db_path)
     curve_points = [
@@ -672,6 +746,57 @@ def get_metrics_df_fast(
         threshold_pace_sec_per_km=threshold_pace_default_sec,
         threshold_pace_curve_points=curve_points,
     )
+    if use_split_method and not df.empty:
+        splits_df = get_activity_splits_summary_df(db_path)
+        if not splits_df.empty:
+            work = df.merge(
+                splits_df[["activity_id", "total_distance_m", "total_duration_s"]],
+                on="activity_id",
+                how="left",
+            )
+            split_dist = pd.to_numeric(work["total_distance_m"], errors="coerce")
+            split_dur = pd.to_numeric(work["total_duration_s"], errors="coerce")
+            split_valid = (split_dist > 0) & (split_dur > 0)
+
+            if split_valid.any():
+                split_pace = split_dur / (split_dist / 1000.0)
+                avg_hr = pd.to_numeric(work.get("avg_hr"), errors="coerce")
+                tss_valid = split_valid & (avg_hr > 0) & (avg_hr <= 260)
+                if tss_valid.any():
+                    work.loc[tss_valid, "tss"] = (
+                        split_dur[tss_valid] * ((avg_hr[tss_valid] / float(DEFAULT_LTHR)) ** 2) / 3600.0 * 100.0
+                    )
+
+                sport = work["sport_type"].fillna("").astype(str).str.lower()
+                running_like = sport.str.contains("run") | sport.str.contains("treadmill")
+                rtss_valid = split_valid & running_like
+                if rtss_valid.any():
+                    if curve_points:
+                        points = sorted(curve_points, key=lambda x: x[0])
+
+                        def _threshold_for(ts: pd.Timestamp) -> float:
+                            ts_utc = ts.to_pydatetime().replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.to_pydatetime()
+                            selected = float(threshold_pace_default_sec)
+                            for dt, pace in points:
+                                if dt <= ts_utc:
+                                    selected = float(pace)
+                                else:
+                                    break
+                            return selected
+
+                        tp_series = pd.to_datetime(work["start_time_utc"], utc=True, errors="coerce").apply(
+                            lambda ts: _threshold_for(ts) if pd.notna(ts) else float(threshold_pace_default_sec)
+                        )
+                    else:
+                        tp_series = pd.Series(float(threshold_pace_default_sec), index=work.index)
+
+                    work.loc[rtss_valid, "rtss"] = (
+                        split_dur[rtss_valid]
+                        * ((tp_series[rtss_valid] / split_pace[rtss_valid]) ** 2)
+                        / 3600.0
+                        * 100.0
+                    )
+            df = work.drop(columns=["total_distance_m", "total_duration_s"], errors="ignore")
     return df
 
 
@@ -803,6 +928,7 @@ with st.sidebar:
         ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs", "Benchmark"],
         index=1,
     )
+    use_split_method = st.checkbox("Use splits for metrics", value=False)
 resting_hr = DEFAULT_RESTING_HR
 max_hr = DEFAULT_MAX_HR
 sex = "male"
@@ -879,14 +1005,17 @@ if view == "User Inputs":
                 st.error(f"Could not save injury overlays: {exc}")
 
 activities_cache_key = get_activities_cache_key(cfg.db_path)
+activity_splits_cache_key = get_activity_splits_cache_key(cfg.db_path)
 metrics_df = get_metrics_df_fast(
     db_path=cfg.db_path,
     activities_cache_key=activities_cache_key,
+    activity_splits_cache_key=activity_splits_cache_key,
     resting_hr=float(resting_hr),
     max_hr=float(max_hr),
     sex=sex,
     threshold_pace_default_sec=float(saved_threshold_pace_sec),
     threshold_pace_curve_points=tuple((dt.date().isoformat(), float(p)) for dt, p in saved_curve_points),
+    use_split_method=bool(use_split_method),
 )
 daily_summary_df = get_daily_summary_df(cfg.db_path)
 
@@ -2670,14 +2799,15 @@ if view == "Data Extract":
     st.caption(
         "Local records | "
         f"activities={counts['activities']}, details={counts['activity_details']}, "
-        f"records={counts['activity_records']}, sleep={counts['sleep_daily']}, wellness={counts['wellness_daily']}, "
+        f"records={counts['activity_records']}, splits={counts['activity_splits']}, "
+        f"sleep={counts['sleep_daily']}, wellness={counts['wellness_daily']}, "
         f"daily_summary={counts['daily_summary']}"
     )
     st.caption(f"Private DB: {cfg.db_path}")
     st.caption(f"Private exports: {cfg.private_export_dir}")
 
     st.subheader("Quick Sync")
-    quick_cols = st.columns([1, 1, 1, 1])
+    quick_cols = st.columns([1, 1, 1, 1, 1])
     with quick_cols[0]:
         days_back = st.number_input("Days to sync", min_value=7, max_value=365, value=90)
     with quick_cols[1]:
@@ -2686,6 +2816,8 @@ if view == "Data Extract":
         run_sync = st.button("Sync activities")
     with quick_cols[3]:
         generate_demo = st.button("Generate demo data")
+    with quick_cols[4]:
+        run_split_sync = st.button("Sync splits")
 
     st.caption(f"Import folder: {cfg.import_dir}")
 
@@ -2803,20 +2935,41 @@ if view == "Data Extract":
         st.success(f"Added {len(demo_rows)} synthetic runs for demo.")
         sync_triggered = True
 
+    if run_split_sync:
+        split_rows, split_errors = _sync_splits_from_raw_activity_cache(cfg.private_export_dir / "raw")
+        split_changes = upsert_activity_splits(cfg.db_path, split_rows)
+        log_sync(
+            cfg.db_path,
+            source="splits_from_raw",
+            success=True,
+            message=f"rows={len(split_rows)} changes={split_changes} errors={len(split_errors)}",
+        )
+        st.success(f"Split sync complete. rows={len(split_rows)} changes={split_changes}")
+        if split_errors:
+            st.warning("Some split files failed to parse. First 20:")
+            st.code("\n".join(split_errors[:20]))
+        sync_triggered = True
+
     st.subheader("Comprehensive Garmin Extract")
-    extract_cols = st.columns([1, 1, 1, 1, 1, 1])
-    with extract_cols[0]:
+    extract_row1 = st.columns([1.3, 1.0, 1.2, 1.0])
+    with extract_row1[0]:
         extract_start = st.date_input("Start date", value=date(2025, 1, 1))
-    with extract_cols[1]:
-        include_details = st.checkbox("Include activity details", value=False)
-    with extract_cols[2]:
-        include_wellness = st.checkbox("Include sleep + wellness", value=True)
-    with extract_cols[3]:
+    with extract_row1[1]:
         incremental_extract = st.checkbox("Incremental only", value=True)
-    with extract_cols[4]:
+    with extract_row1[2]:
+        run_extract = st.button("Run comprehensive extract", use_container_width=True)
+    with extract_row1[3]:
+        st.write("")
+
+    extract_row2 = st.columns([1.3, 1.0, 1.2, 1.0])
+    with extract_row2[0]:
+        include_details = st.checkbox("Include activity details", value=False)
+    with extract_row2[1]:
+        include_wellness = st.checkbox("Include sleep + wellness", value=True)
+    with extract_row2[2]:
         verify_raw_integrity = st.checkbox("Verify raw integrity", value=False)
-    with extract_cols[5]:
-        run_extract = st.button("Run comprehensive extract")
+    with extract_row2[3]:
+        st.write("")
 
     if run_extract:
         if not (cfg.garmin_email and cfg.garmin_password):
@@ -2851,10 +3004,14 @@ if view == "Data Extract":
                     if anchors:
                         anchor = max(anchors)
                         start_day = max(start_day, (anchor - timedelta(days=2)).date())
+                        _log(
+                            f"[info] incremental_anchor={anchor.isoformat()} -> computed_start_day={start_day.isoformat()}"
+                        )
                 _log(
                     f"[start] {extract_started_at.isoformat()} | start_day={start_day} | "
                     f"end_day={datetime.now(timezone.utc).date()} | incremental_only={incremental_extract} | "
-                    f"include_details={include_details} | include_wellness={include_wellness}"
+                    f"include_details={include_details} | "
+                    f"include_wellness={include_wellness}"
                 )
                 if latest:
                     _log(f"[info] latest_activity_in_db={latest.isoformat()}")
@@ -2867,7 +3024,7 @@ if view == "Data Extract":
                         _log("[info] latest_recovery_day_in_db=None")
                 _log("[fetch] activity summaries + FIT records")
                 if include_details:
-                    _log("[fetch] activity details endpoints: details/splits/split_summaries/weather/hr_timezones")
+                    _log("[fetch] activity details endpoints: details/weather/hr_timezones + splits")
                 if include_wellness:
                     _log("[fetch] daily wellness endpoints: sleep/stress/hrv/rhr/readiness/respiration/steps")
                 progress.progress(15, text="Fetching Garmin data...")
@@ -2928,6 +3085,7 @@ if view == "Data Extract":
                         start_day=start_day,
                         end_day=datetime.now(timezone.utc).date(),
                         include_activity_details=include_details,
+                        include_splits=include_details,
                         include_wellness=include_wellness,
                         raw_export_dir=cfg.private_export_dir / "raw",
                         progress_cb=_on_fetch_progress,
@@ -2935,18 +3093,21 @@ if view == "Data Extract":
                 progress.progress(55, text="Fetch complete. Upserting DB...")
                 _log(
                     f"[fetch:done] activities={len(extract.activities)} details={len(extract.activity_details)} "
-                    f"records={len(extract.activity_records)} sleep={len(extract.sleep_daily)} "
+                    f"records={len(extract.activity_records)} splits={len(extract.activity_splits)} "
+                    f"sleep={len(extract.sleep_daily)} "
                     f"wellness={len(extract.wellness_daily)} errors={len(extract.errors)}"
                 )
 
-                _log("[db] upserting activities/details/records/sleep/wellness...")
+                _log("[db] upserting activities/details/records/splits/sleep/wellness...")
                 n_a = upsert_activities(cfg.db_path, extract.activities)
                 n_d = upsert_activity_details(cfg.db_path, extract.activity_details)
                 n_r = upsert_activity_records(cfg.db_path, extract.activity_records)
+                n_sp = upsert_activity_splits(cfg.db_path, extract.activity_splits)
                 n_s = upsert_sleep_daily(cfg.db_path, extract.sleep_daily)
                 n_w = upsert_wellness_daily(cfg.db_path, extract.wellness_daily)
                 _log(
                     f"[db:done] activities_changes={n_a} details_changes={n_d} records_changes={n_r} "
+                    f"splits_changes={n_sp} "
                     f"sleep_changes={n_s} wellness_changes={n_w}"
                 )
 
@@ -2959,6 +3120,7 @@ if view == "Data Extract":
                     f"activities={len(extract.activities)} (db_changes={n_a}), "
                     f"details={len(extract.activity_details)} (db_changes={n_d}), "
                     f"records={len(extract.activity_records)} (db_changes={n_r}), "
+                    f"splits={len(extract.activity_splits)} (db_changes={n_sp}), "
                     f"sleep={len(extract.sleep_daily)} (db_changes={n_s}), "
                     f"wellness={len(extract.wellness_daily)} (db_changes={n_w}), "
                     f"errors={len(extract.errors)}"

@@ -96,6 +96,17 @@ CREATE TABLE IF NOT EXISTS activity_records (
     FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
 );
 
+CREATE TABLE IF NOT EXISTS activity_splits (
+    activity_id TEXT PRIMARY KEY,
+    split_json TEXT,
+    split_summaries_json TEXT,
+    lap_count REAL,
+    total_duration_s REAL,
+    total_distance_m REAL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
+);
+
 CREATE TABLE IF NOT EXISTS sleep_daily (
     day_utc TEXT PRIMARY KEY,
     sleep_score REAL,
@@ -179,6 +190,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 CREATE INDEX IF NOT EXISTS idx_activities_start_time ON activities(start_time_utc);
 CREATE INDEX IF NOT EXISTS idx_activity_records_activity_time ON activity_records(activity_id, record_time_utc);
+CREATE INDEX IF NOT EXISTS idx_activity_splits_activity ON activity_splits(activity_id);
 CREATE INDEX IF NOT EXISTS idx_daily_summary_day ON daily_summary(day_utc);
 CREATE INDEX IF NOT EXISTS idx_sync_log_time ON sync_log(sync_time_utc DESC);
 CREATE INDEX IF NOT EXISTS idx_benchmark_start_time ON benchmark_activities(start_time_utc);
@@ -232,6 +244,20 @@ def run_migrations(db_path: Path) -> None:
             conn.execute("ALTER TABLE benchmark_activities ADD COLUMN avg_cadence REAL")
         if "avg_power" not in existing_cols:
             conn.execute("ALTER TABLE benchmark_activities ADD COLUMN avg_power REAL")
+        # Ensure split table exists for optional split-based method.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS activity_splits (
+                activity_id TEXT PRIMARY KEY,
+                split_json TEXT,
+                split_summaries_json TEXT,
+                lap_count REAL,
+                total_duration_s REAL,
+                total_distance_m REAL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
 
 
@@ -475,6 +501,46 @@ def upsert_activity_records(db_path: Path, records: list[dict[str, Any]]) -> int
         return conn.total_changes
 
 
+def upsert_activity_splits(db_path: Path, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+
+    now = UTC_NOW()
+    with closing(get_conn(db_path)) as conn:
+        conn.executemany(
+            """
+            INSERT INTO activity_splits (
+                activity_id, split_json, split_summaries_json, lap_count,
+                total_duration_s, total_distance_m, updated_at
+            ) VALUES (
+                :activity_id, :split_json, :split_summaries_json, :lap_count,
+                :total_duration_s, :total_distance_m, :updated_at
+            )
+            ON CONFLICT(activity_id) DO UPDATE SET
+                split_json=excluded.split_json,
+                split_summaries_json=excluded.split_summaries_json,
+                lap_count=excluded.lap_count,
+                total_duration_s=excluded.total_duration_s,
+                total_distance_m=excluded.total_distance_m,
+                updated_at=excluded.updated_at
+            """,
+            [
+                {
+                    "activity_id": row.get("activity_id"),
+                    "split_json": json.dumps(row.get("split"), default=str),
+                    "split_summaries_json": json.dumps(row.get("split_summaries"), default=str),
+                    "lap_count": row.get("lap_count"),
+                    "total_duration_s": row.get("total_duration_s"),
+                    "total_distance_m": row.get("total_distance_m"),
+                    "updated_at": now,
+                }
+                for row in rows
+            ],
+        )
+        conn.commit()
+        return conn.total_changes
+
+
 def upsert_sleep_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
@@ -703,6 +769,18 @@ def get_daily_summary_df(db_path: Path) -> pd.DataFrame:
         )
 
 
+def get_activity_splits_summary_df(db_path: Path) -> pd.DataFrame:
+    with closing(get_conn(db_path)) as conn:
+        return pd.read_sql_query(
+            """
+            SELECT activity_id, lap_count, total_duration_s, total_distance_m
+            FROM activity_splits
+            ORDER BY activity_id
+            """,
+            conn,
+        )
+
+
 def get_benchmark_df(db_path: Path) -> pd.DataFrame:
     with closing(get_conn(db_path)) as conn:
         return pd.read_sql_query(
@@ -816,6 +894,19 @@ def get_activities_cache_key(db_path: Path) -> str:
     return f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}:{row['max_start_time'] or 'none'}"
 
 
+def get_activity_splits_cache_key(db_path: Path) -> str:
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at
+            FROM activity_splits
+            """
+        ).fetchone()
+    if not row:
+        return "0:none"
+    return f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}"
+
+
 def get_table_counts(db_path: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     tables = [
@@ -823,6 +914,7 @@ def get_table_counts(db_path: Path) -> dict[str, int]:
         "benchmark_activities",
         "activity_details",
         "activity_records",
+        "activity_splits",
         "sleep_daily",
         "wellness_daily",
         "daily_summary",
