@@ -2705,15 +2705,39 @@ if view == "Calendar":
                         plot_df["distance_eqv_km"] = pd.to_numeric(
                             plot_df.get("distance_eqv_km"), errors="coerce"
                         ).fillna(0.0)
+                        plot_df["pace_eqv_s_per_km"] = pd.to_numeric(
+                            plot_df.get("pace_eqv_s_per_km"), errors="coerce"
+                        )
+                        plot_df["speed_eqv_kmh"] = pd.NA
+                        valid_pace = plot_df["pace_eqv_s_per_km"] > 0
+                        plot_df.loc[valid_pace, "speed_eqv_kmh"] = 3600.0 / plot_df.loc[valid_pace, "pace_eqv_s_per_km"]
+                        plot_df["speed_eqv_kmh"] = pd.to_numeric(
+                            plot_df["speed_eqv_kmh"], errors="coerce"
+                        ).fillna(0.0)
                         plot_df["intensity_factor"] = pd.to_numeric(
                             plot_df.get("intensity_factor"), errors="coerce"
                         ).fillna(0.0).clip(lower=0.0, upper=1.0)
+                        plot_df = plot_df.sort_values("split_idx").reset_index(drop=True)
+                        if float(plot_df["distance_eqv_km"].sum()) <= 0:
+                            plot_df["distance_eqv_km"] = 1.0
+                        plot_df["x_end"] = plot_df["distance_eqv_km"].cumsum()
+                        plot_df["x_start"] = plot_df["x_end"] - plot_df["distance_eqv_km"]
+                        plot_df["y_zero"] = 0.0
                         chart = (
                             alt.Chart(plot_df)
                             .mark_bar()
                             .encode(
-                                x=alt.X("split_idx:O", title="Split"),
-                                y=alt.Y("distance_eqv_km:Q", title="Distance Eqv. (km)"),
+                                x=alt.X(
+                                    "x_start:Q",
+                                    title="Equivalent Distance Progression (km)",
+                                ),
+                                x2="x_end:Q",
+                                y=alt.Y(
+                                    "speed_eqv_kmh:Q",
+                                    title="Equivalent Speed (km/h)",
+                                    scale=alt.Scale(zero=True),
+                                ),
+                                y2=alt.Y2("y_zero:Q"),
                                 color=alt.Color(
                                     "intensity_factor:Q",
                                     title="IF",
@@ -2730,6 +2754,7 @@ if view == "Calendar":
                                     alt.Tooltip("duration_s:Q", title="Duration (s)", format=".0f"),
                                     alt.Tooltip("distance_km:Q", title="Distance (km)", format=".2f"),
                                     alt.Tooltip("distance_eqv_km:Q", title="Dist Eqv (km)", format=".2f"),
+                                    alt.Tooltip("speed_eqv_kmh:Q", title="Speed Eqv (km/h)", format=".2f"),
                                     alt.Tooltip("avg_hr:Q", title="Avg HR", format=".0f"),
                                     alt.Tooltip("intensity_factor:Q", title="IF", format=".2f"),
                                     alt.Tooltip("pace_s_per_km:Q", title="Pace s/km", format=".1f"),
