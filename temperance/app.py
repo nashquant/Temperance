@@ -1257,38 +1257,6 @@ max_hr = float(derived_max_hr)
 if view == "User Inputs":
     st.divider()
     st.header("User Inputs")
-    st.caption(
-        f"TRIMP defaults: resting HR={int(DEFAULT_RESTING_HR)}, max HR={int(derived_max_hr)}, "
-        f"LTHR={int(derived_lthr_bpm)} bpm, threshold pace={_pace_sec_to_mmss(derived_threshold_pace_sec)}/km"
-    )
-    with st.expander("Injury Overlays", expanded=False):
-        st.caption("Edit injury windows used for chart shading.")
-        editor_df = pd.DataFrame(saved_injury_windows)
-        if editor_df.empty:
-            editor_df = pd.DataFrame(columns=["label", "start", "end", "severity"])
-        edited = st.data_editor(
-            editor_df,
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "label": st.column_config.TextColumn("Label"),
-                "start": st.column_config.TextColumn("Start (YYYY-MM-DD)"),
-                "end": st.column_config.TextColumn("End (YYYY-MM-DD)"),
-                "severity": st.column_config.SelectboxColumn(
-                    "Severity", options=["injury", "light_injury"]
-                ),
-            },
-            key="injury_windows_editor",
-        )
-        if st.button("Save Injury Overlays", key="save_injury_windows_btn"):
-            try:
-                rows = edited.fillna("").to_dict(orient="records")
-                normalized = _normalize_injury_windows(rows)
-                save_setting(cfg.db_path, SETTINGS_KEY_INJURY_WINDOWS, json.dumps(normalized))
-                st.success("Injury overlays saved.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Could not save injury overlays: {exc}")
     with st.expander("Custom Zones (HR + Pace)", expanded=False):
         st.caption(
             "Define your HR/pace zones. Z4 HR max is LTHR, Z5 HR max is max HR, and Z4 fastest pace is threshold pace."
@@ -1356,6 +1324,34 @@ if view == "User Inputs":
                 save_setting(cfg.db_path, SETTINGS_KEY_CUSTOM_ZONES, json.dumps(defaults))
                 st.success("Custom zones reset to defaults.")
                 st.rerun()
+    with st.expander("Injury Overlays", expanded=False):
+        st.caption("Edit injury windows used for chart shading.")
+        editor_df = pd.DataFrame(saved_injury_windows)
+        if editor_df.empty:
+            editor_df = pd.DataFrame(columns=["label", "start", "end", "severity"])
+        edited = st.data_editor(
+            editor_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "label": st.column_config.TextColumn("Label"),
+                "start": st.column_config.TextColumn("Start (YYYY-MM-DD)"),
+                "end": st.column_config.TextColumn("End (YYYY-MM-DD)"),
+                "severity": st.column_config.SelectboxColumn(
+                    "Severity", options=["injury", "light_injury"]
+                ),
+            },
+            key="injury_windows_editor",
+        )
+        if st.button("Save Injury Overlays", key="save_injury_windows_btn"):
+            try:
+                rows = edited.fillna("").to_dict(orient="records")
+                normalized = _normalize_injury_windows(rows)
+                save_setting(cfg.db_path, SETTINGS_KEY_INJURY_WINDOWS, json.dumps(normalized))
+                st.success("Injury overlays saved.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not save injury overlays: {exc}")
 
 activities_cache_key = get_activities_cache_key(cfg.db_path)
 activity_splits_cache_key = get_activity_splits_cache_key(cfg.db_path)
