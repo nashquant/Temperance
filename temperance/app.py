@@ -83,9 +83,17 @@ init_db(cfg.db_path)
 cfg.import_dir.mkdir(parents=True, exist_ok=True)
 cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
 
-SETTINGS_KEY_THRESHOLD_PACE_DEFAULT = "threshold_pace_default_sec_per_km"
-SETTINGS_KEY_THRESHOLD_PACE_CURVE = "threshold_pace_curve_v1"
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
+SETTINGS_KEY_CUSTOM_ZONES = "custom_zones_v1"
+
+ZONE_ORDER = ["Z1", "Z2", "Z3", "Z4", "Z5"]
+ZONE_ANCHORS_DEFAULT = {
+    "Z1": "Recovery",
+    "Z2": "Endurance (below LT1)",
+    "Z3": "Subthreshold",
+    "Z4": "Superthreshold",
+    "Z5": "Anaerobic",
+}
 
 
 def _pace_sec_to_mmss(pace_sec_per_km: float) -> str:
@@ -109,63 +117,6 @@ def _pace_mmss_to_sec(text: str) -> float:
     if value <= 0:
         raise ValueError("pace must be > 0")
     return float(value)
-
-
-def _load_threshold_curve_points(db_path) -> list[tuple[datetime, float]]:
-    raw = get_setting(db_path, SETTINGS_KEY_THRESHOLD_PACE_CURVE)
-    if not raw:
-        return []
-    try:
-        payload = json.loads(raw)
-    except Exception:
-        return []
-
-    points: list[tuple[datetime, float]] = []
-    if not isinstance(payload, list):
-        return points
-    for row in payload:
-        if not isinstance(row, dict):
-            continue
-        date_s = str(row.get("date", "")).strip()
-        pace = row.get("pace_sec_per_km")
-        if not date_s:
-            continue
-        try:
-            dt = datetime.fromisoformat(date_s).replace(tzinfo=timezone.utc)
-            pace_v = float(pace)
-            if pace_v > 0:
-                points.append((dt, pace_v))
-        except Exception:
-            continue
-    points.sort(key=lambda x: x[0])
-    return points
-
-
-def _curve_points_to_text(points: list[tuple[datetime, float]]) -> str:
-    lines = [f"{dt.date().isoformat()}, {_pace_sec_to_mmss(pace)}" for dt, pace in points]
-    return "\n".join(lines)
-
-
-def _parse_curve_text(text: str) -> list[tuple[datetime, float]]:
-    points: list[tuple[datetime, float]] = []
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if "," not in line:
-            raise ValueError(f"Invalid curve row (missing comma): {line}")
-        date_part, pace_part = [p.strip() for p in line.split(",", 1)]
-        dt = datetime.fromisoformat(date_part).replace(tzinfo=timezone.utc)
-        pace_sec = _pace_mmss_to_sec(pace_part)
-        points.append((dt, pace_sec))
-    points.sort(key=lambda x: x[0])
-    dedup: dict[str, float] = {}
-    for dt, pace in points:
-        dedup[dt.date().isoformat()] = pace
-    return [
-        (datetime.fromisoformat(d).replace(tzinfo=timezone.utc), p)
-        for d, p in sorted(dedup.items(), key=lambda x: x[0])
-    ]
 
 
 def _normalize_injury_windows(rows: list[dict]) -> list[dict[str, str]]:
@@ -209,6 +160,205 @@ def _load_injury_windows(db_path) -> list[dict[str, str]]:
         return [dict(x) for x in INJURY_WINDOWS]
     rows = [r for r in payload if isinstance(r, dict)]
     return _normalize_injury_windows(rows)
+
+
+def _pace_text_or_blank(seconds: float | None) -> str:
+    if seconds is None:
+        return ""
+    try:
+        if pd.isna(seconds):
+            return ""
+    except Exception:
+        pass
+    try:
+        value = float(seconds)
+    except Exception:
+        return ""
+    if value <= 0:
+        return ""
+    return _pace_sec_to_mmss(value)
+
+
+def _pace_optional_to_sec(text: object) -> float | None:
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+    return _pace_mmss_to_sec(raw)
+
+
+def _default_custom_zones() -> list[dict[str, object]]:
+    lthr_i = int(round(float(DEFAULT_LTHR)))
+    tp = float(DEFAULT_THRESHOLD_PACE_SEC_PER_KM)
+    return [
+        {
+            "zone": "Z1",
+            "anchor": ZONE_ANCHORS_DEFAULT["Z1"],
+            "hr_min": 100,
+            "hr_max": 141,
+            "pace_fast_sec": 280.0,
+            "pace_slow_sec": 600.0,
+        },
+        {
+            "zone": "Z2",
+            "anchor": ZONE_ANCHORS_DEFAULT["Z2"],
+            "hr_min": 142,
+            "hr_max": 157,
+            "pace_fast_sec": 255.0,
+            "pace_slow_sec": 280.0,
+        },
+        {
+            "zone": "Z3",
+            "anchor": ZONE_ANCHORS_DEFAULT["Z3"],
+            "hr_min": 157,
+            "hr_max": 170,
+            "pace_fast_sec": 230.0,
+            "pace_slow_sec": 255.0,
+        },
+        {
+            "zone": "Z4",
+            "anchor": ZONE_ANCHORS_DEFAULT["Z4"],
+            "hr_min": 171,
+            "hr_max": lthr_i,
+            "pace_fast_sec": tp,
+            "pace_slow_sec": 220.0,
+        },
+        {
+            "zone": "Z5",
+            "anchor": ZONE_ANCHORS_DEFAULT["Z5"],
+            "hr_min": lthr_i + 1,
+            "hr_max": int(DEFAULT_MAX_HR),
+            "pace_fast_sec": 60.0,
+            "pace_slow_sec": tp,
+        },
+    ]
+
+
+def _enforce_custom_zone_constraints(zones: list[dict[str, object]]) -> list[dict[str, object]]:
+    by_zone = {str(z.get("zone")): dict(z) for z in zones if str(z.get("zone")) in ZONE_ORDER}
+    for z in ZONE_ORDER:
+        by_zone.setdefault(
+            z,
+            {
+                "zone": z,
+                "anchor": ZONE_ANCHORS_DEFAULT.get(z, z),
+                "hr_min": None,
+                "hr_max": None,
+                "pace_fast_sec": None,
+                "pace_slow_sec": None,
+            },
+        )
+
+    z4_hr_max_raw = by_zone["Z4"].get("hr_max")
+    try:
+        z4_hr_max = int(round(float(z4_hr_max_raw))) if z4_hr_max_raw not in ("", None) else int(DEFAULT_LTHR)
+    except Exception:
+        z4_hr_max = int(DEFAULT_LTHR)
+    if z4_hr_max < 1:
+        z4_hr_max = int(DEFAULT_LTHR)
+
+    z4_pace_fast_raw = by_zone["Z4"].get("pace_fast_sec")
+    try:
+        z4_pace_fast = (
+            float(z4_pace_fast_raw) if z4_pace_fast_raw not in ("", None) else float(DEFAULT_THRESHOLD_PACE_SEC_PER_KM)
+        )
+    except Exception:
+        z4_pace_fast = float(DEFAULT_THRESHOLD_PACE_SEC_PER_KM)
+    if z4_pace_fast <= 0:
+        z4_pace_fast = float(DEFAULT_THRESHOLD_PACE_SEC_PER_KM)
+
+    z5_hr_max_raw = by_zone["Z5"].get("hr_max")
+    try:
+        z5_hr_max = int(round(float(z5_hr_max_raw))) if z5_hr_max_raw not in ("", None) else int(DEFAULT_MAX_HR)
+    except Exception:
+        z5_hr_max = int(DEFAULT_MAX_HR)
+    if z5_hr_max < (z4_hr_max + 1):
+        z5_hr_max = max(int(DEFAULT_MAX_HR), z4_hr_max + 1)
+
+    by_zone["Z1"]["hr_min"] = (
+        int(by_zone["Z1"]["hr_min"])
+        if by_zone["Z1"].get("hr_min") not in ("", None)
+        else 100
+    )
+    by_zone["Z1"]["pace_slow_sec"] = (
+        float(by_zone["Z1"]["pace_slow_sec"])
+        if by_zone["Z1"].get("pace_slow_sec") not in ("", None)
+        else 600.0
+    )
+    by_zone["Z4"]["hr_max"] = z4_hr_max
+    by_zone["Z4"]["pace_fast_sec"] = z4_pace_fast
+    by_zone["Z5"]["hr_min"] = z4_hr_max + 1
+    by_zone["Z5"]["hr_max"] = z5_hr_max
+    by_zone["Z5"]["pace_slow_sec"] = z4_pace_fast
+    by_zone["Z5"]["pace_fast_sec"] = (
+        float(by_zone["Z5"]["pace_fast_sec"])
+        if by_zone["Z5"].get("pace_fast_sec") not in ("", None)
+        else 60.0
+    )
+    return [by_zone[z] for z in ZONE_ORDER]
+
+
+def _load_custom_zones(db_path: Path) -> list[dict[str, object]]:
+    raw = get_setting(db_path, SETTINGS_KEY_CUSTOM_ZONES)
+    if not raw:
+        return _default_custom_zones()
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return _default_custom_zones()
+    if not isinstance(payload, list):
+        return _default_custom_zones()
+    parsed: list[dict[str, object]] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        zone = str(row.get("zone") or "").strip().upper()
+        if zone not in ZONE_ORDER:
+            continue
+        anchor = str(row.get("anchor") or ZONE_ANCHORS_DEFAULT.get(zone, zone)).strip()
+        hr_min = row.get("hr_min")
+        hr_max = row.get("hr_max")
+        pace_fast = row.get("pace_fast_sec")
+        pace_slow = row.get("pace_slow_sec")
+        try:
+            hr_min = int(hr_min) if hr_min not in ("", None) else None
+        except Exception:
+            hr_min = None
+        try:
+            hr_max = int(hr_max) if hr_max not in ("", None) else None
+        except Exception:
+            hr_max = None
+        try:
+            pace_fast = float(pace_fast) if pace_fast not in ("", None) else None
+        except Exception:
+            pace_fast = None
+        try:
+            pace_slow = float(pace_slow) if pace_slow not in ("", None) else None
+        except Exception:
+            pace_slow = None
+        parsed.append(
+            {
+                "zone": zone,
+                "anchor": anchor,
+                "hr_min": hr_min,
+                "hr_max": hr_max,
+                "pace_fast_sec": pace_fast,
+                "pace_slow_sec": pace_slow,
+            }
+        )
+    if not parsed:
+        parsed = _default_custom_zones()
+    return _enforce_custom_zone_constraints(parsed)
+
+
+def _derive_load_params_from_zones(zones: list[dict[str, object]]) -> tuple[float, float, float]:
+    constrained = _enforce_custom_zone_constraints(zones)
+    by_zone = {str(z.get("zone")): z for z in constrained}
+    z4 = by_zone.get("Z4", {})
+    z5 = by_zone.get("Z5", {})
+    lthr = float(z4.get("hr_max") or DEFAULT_LTHR)
+    max_hr = float(z5.get("hr_max") or DEFAULT_MAX_HR)
+    threshold_pace = float(z4.get("pace_fast_sec") or DEFAULT_THRESHOLD_PACE_SEC_PER_KM)
+    return lthr, max_hr, threshold_pace
 
 
 def _check_raw_archive_integrity(raw_root, start_day: date, end_day: date) -> dict[str, object]:
@@ -729,22 +879,19 @@ def get_metrics_df_fast(
     resting_hr: float,
     max_hr: float,
     sex: str,
+    lthr_bpm: float,
     threshold_pace_default_sec: float,
-    threshold_pace_curve_points: tuple[tuple[str, float], ...],
     use_split_method: bool,
 ) -> pd.DataFrame:
     runs_df = get_runs_df(db_path)
-    curve_points = [
-        (datetime.fromisoformat(d).replace(tzinfo=timezone.utc), float(p))
-        for d, p in threshold_pace_curve_points
-    ]
     df = compute_metrics(
         runs_df,
         resting_hr=resting_hr,
         max_hr=max_hr,
         sex=sex,
+        lthr_bpm=lthr_bpm,
         threshold_pace_sec_per_km=threshold_pace_default_sec,
-        threshold_pace_curve_points=curve_points,
+        threshold_pace_curve_points=None,
     )
     if use_split_method and not df.empty:
         splits_df = get_activity_splits_df(db_path)
@@ -754,8 +901,6 @@ def get_metrics_df_fast(
                 for r in splits_df.to_dict(orient="records")
                 if r.get("activity_id") is not None
             }
-            points = sorted(curve_points, key=lambda x: x[0]) if curve_points else []
-
             def _num(d: dict, keys: list[str]) -> float | None:
                 for k in keys:
                     if k not in d:
@@ -767,18 +912,6 @@ def get_metrics_df_fast(
                     except Exception:
                         continue
                 return None
-
-            def _threshold_for(ts: pd.Timestamp) -> float:
-                if not points:
-                    return float(threshold_pace_default_sec)
-                ts_utc = ts.to_pydatetime().replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.to_pydatetime()
-                selected = float(threshold_pace_default_sec)
-                for dt, pace in points:
-                    if dt <= ts_utc:
-                        selected = float(pace)
-                    else:
-                        break
-                return selected
 
             def _rel_diff(a: float | None, b: float | None) -> float | None:
                 if a is None or b is None:
@@ -816,8 +949,7 @@ def get_metrics_df_fast(
                 avg_hr_activity = float(avg_hr_activity) if pd.notna(avg_hr_activity) else None
                 sport = str(row.get("sport_type") or "").lower()
                 running_like = ("run" in sport) or ("treadmill" in sport)
-                start_ts = pd.to_datetime(row.get("start_time_utc"), utc=True, errors="coerce")
-                tp_sec = _threshold_for(start_ts) if pd.notna(start_ts) else float(threshold_pace_default_sec)
+                tp_sec = float(threshold_pace_default_sec)
 
                 tss_sum = 0.0
                 rtss_sum = 0.0
@@ -848,7 +980,7 @@ def get_metrics_df_fast(
                     )
                     hr_for_tss = lap_avg_hr if lap_avg_hr is not None else avg_hr_activity
                     if hr_for_tss is not None and 0 < hr_for_tss <= 260:
-                        tss_sum += (lap_duration_s * ((float(hr_for_tss) / float(DEFAULT_LTHR)) ** 2) / 3600.0) * 100.0
+                        tss_sum += (lap_duration_s * ((float(hr_for_tss) / float(lthr_bpm)) ** 2) / 3600.0) * 100.0
                         tss_any = True
 
                     if running_like and lap_distance_m is not None and lap_distance_m > 0 and tp_sec > 0:
@@ -872,6 +1004,118 @@ def get_metrics_df_fast(
                 if rtss_any:
                     df.at[idx, "rtss"] = rtss_sum
     return df
+
+
+def _build_split_metrics_for_activity(
+    activity_row: pd.Series,
+    split_row: dict | None,
+    lthr: float,
+    threshold_pace_default_sec: float,
+) -> pd.DataFrame:
+    if not split_row:
+        return pd.DataFrame()
+    try:
+        split_payload = json.loads(split_row.get("split_json") or "{}")
+    except Exception:
+        split_payload = {}
+    laps = split_payload.get("lapDTOs") if isinstance(split_payload, dict) else None
+    if not isinstance(laps, list) or not laps:
+        return pd.DataFrame()
+
+    def _num(d: dict, keys: list[str]) -> float | None:
+        for k in keys:
+            if k not in d:
+                continue
+            try:
+                v = float(d.get(k))
+                if pd.notna(v):
+                    return v
+            except Exception:
+                continue
+        return None
+
+    sport = str(activity_row.get("sport_type") or "").lower()
+    is_running = ("run" in sport) or ("treadmill" in sport)
+
+    tp_sec = float(threshold_pace_default_sec)
+
+    avg_hr_activity = pd.to_numeric(pd.Series([activity_row.get("avg_hr")]), errors="coerce").iloc[0]
+    avg_hr_activity = float(avg_hr_activity) if pd.notna(avg_hr_activity) else None
+
+    rows: list[dict[str, float | int | str | None]] = []
+    raw_tss_sum = 0.0
+    raw_rtss_sum = 0.0
+    for i, lap in enumerate(laps, start=1):
+        if not isinstance(lap, dict):
+            continue
+        dur_s = _num(lap, ["duration", "movingDuration", "elapsedDuration", "lapDuration", "totalDuration"])
+        dist_m = _num(lap, ["distance", "totalDistance", "sumDistance", "distanceInMeters", "distanceMeters"])
+        if dur_s is None or dur_s <= 0:
+            continue
+        dist_km = (float(dist_m) / 1000.0) if (dist_m is not None and dist_m > 0) else 0.0
+        pace_s = (float(dur_s) / dist_km) if dist_km > 0 else None
+        avg_hr_lap = _num(lap, ["averageHR", "avgHR", "averageHeartRate", "meanHeartRate", "avgHeartRate"])
+        hr_for_tss = avg_hr_lap if avg_hr_lap is not None else avg_hr_activity
+
+        tss_lap = 0.0
+        if hr_for_tss is not None and 0 < float(hr_for_tss) <= 260 and lthr > 0:
+            tss_lap = (float(dur_s) * ((float(hr_for_tss) / float(lthr)) ** 2) / 3600.0) * 100.0
+        rtss_lap = 0.0
+        if is_running and pace_s is not None and pace_s > 0 and tp_sec > 0:
+            rtss_lap = (float(dur_s) * ((float(tp_sec) / float(pace_s)) ** 2) / 3600.0) * 100.0
+
+        raw_tss_sum += tss_lap
+        raw_rtss_sum += rtss_lap
+        rows.append(
+            {
+                "split_idx": int(lap.get("lapIndex") or i),
+                "intensity_type": str(lap.get("intensityType") or ""),
+                "duration_s": float(dur_s),
+                "distance_km": float(dist_km),
+                "distance_eqv_km": float(dist_km) if is_running else 0.0,
+                "avg_hr": float(avg_hr_lap) if avg_hr_lap is not None else None,
+                "pace_s_per_km": float(pace_s) if pace_s is not None else None,
+                "pace_eqv_s_per_km": float(pace_s) if is_running and pace_s is not None else None,
+                "intensity_factor": (float(tp_sec) / float(pace_s)) if (is_running and pace_s is not None and pace_s > 0 and tp_sec > 0) else None,
+                "tss": float(tss_lap),
+                "rtss": float(rtss_lap),
+            }
+        )
+
+    out = pd.DataFrame(rows).sort_values("split_idx")
+    if out.empty:
+        return out
+
+    # Keep lap totals coherent with the activity-level values shown in the calendar.
+    act_tss = float(pd.to_numeric(pd.Series([activity_row.get("tss")]), errors="coerce").fillna(0.0).iloc[0])
+    act_rtss = float(pd.to_numeric(pd.Series([activity_row.get("rtss")]), errors="coerce").fillna(0.0).iloc[0])
+    if raw_tss_sum > 0 and act_tss >= 0:
+        out["tss"] = pd.to_numeric(out["tss"], errors="coerce").fillna(0.0) * (act_tss / raw_tss_sum)
+    if raw_rtss_sum > 0 and act_rtss >= 0:
+        out["rtss"] = pd.to_numeric(out["rtss"], errors="coerce").fillna(0.0) * (act_rtss / raw_rtss_sum)
+
+    if is_running:
+        out["distance_eqv_km"] = pd.to_numeric(out.get("distance_km"), errors="coerce").fillna(0.0)
+        out["pace_eqv_s_per_km"] = pd.to_numeric(out.get("pace_s_per_km"), errors="coerce")
+        pace_eqv = pd.to_numeric(out.get("pace_eqv_s_per_km"), errors="coerce")
+        out["intensity_factor"] = pd.NA
+        running_valid_if = (pace_eqv > 0) & (float(tp_sec) > 0)
+        out.loc[running_valid_if, "intensity_factor"] = float(tp_sec) / pace_eqv[running_valid_if]
+    else:
+        # Non-running laps: derive running-equivalent pace/distance from split TSS parity and fixed threshold pace.
+        dur = pd.to_numeric(out.get("duration_s"), errors="coerce").fillna(0.0)
+        tss = pd.to_numeric(out.get("tss"), errors="coerce").fillna(0.0)
+        valid = (dur > 0) & (tss > 0) & (float(tp_sec) > 0)
+        out["pace_eqv_s_per_km"] = pd.NA
+        out["distance_eqv_km"] = 0.0
+        out["intensity_factor"] = pd.NA
+        if valid.any():
+            if_equiv = ((tss[valid] * 3600.0) / (dur[valid] * 100.0)) ** 0.5
+            pace_eqv = float(tp_sec) / if_equiv
+            out.loc[valid, "pace_eqv_s_per_km"] = pace_eqv
+            out.loc[valid, "distance_eqv_km"] = dur[valid] / pace_eqv
+            out.loc[valid, "intensity_factor"] = if_equiv
+    return out
 
 
 def cached_filtered_views(
@@ -1004,51 +1248,19 @@ with st.sidebar:
     )
     use_split_method = st.checkbox("Use splits for metrics", value=False)
 resting_hr = DEFAULT_RESTING_HR
-max_hr = DEFAULT_MAX_HR
 sex = "male"
-
-saved_tp_raw = get_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_DEFAULT)
-try:
-    saved_threshold_pace_sec = float(saved_tp_raw) if saved_tp_raw else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-except Exception:
-    saved_threshold_pace_sec = DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-saved_curve_points = _load_threshold_curve_points(cfg.db_path)
 saved_injury_windows = _load_injury_windows(cfg.db_path)
+saved_custom_zones = _load_custom_zones(cfg.db_path)
+derived_lthr_bpm, derived_max_hr, derived_threshold_pace_sec = _derive_load_params_from_zones(saved_custom_zones)
+max_hr = float(derived_max_hr)
 
 if view == "User Inputs":
     st.divider()
     st.header("User Inputs")
     st.caption(
-        f"TRIMP defaults: resting HR={int(DEFAULT_RESTING_HR)}, max HR={int(DEFAULT_MAX_HR)}, "
-        f"LTHR={int(DEFAULT_LTHR)} bpm"
+        f"TRIMP defaults: resting HR={int(DEFAULT_RESTING_HR)}, max HR={int(derived_max_hr)}, "
+        f"LTHR={int(derived_lthr_bpm)} bpm, threshold pace={_pace_sec_to_mmss(derived_threshold_pace_sec)}/km"
     )
-    with st.expander("rTSS Threshold Pace Curve", expanded=False):
-        st.caption("Default applies when no curve point is active for an activity date.")
-        tp_default_text = st.text_input(
-            "Default Threshold Pace (mm:ss per km)",
-            value=_pace_sec_to_mmss(saved_threshold_pace_sec),
-            key="tp_default_text",
-        )
-        tp_curve_text = st.text_area(
-            "Curve (one per line: YYYY-MM-DD, mm:ss)",
-            value=_curve_points_to_text(saved_curve_points),
-            height=120,
-            key="tp_curve_text",
-        )
-        if st.button("Save Threshold Curve", key="save_threshold_curve_btn"):
-            try:
-                default_sec = _pace_mmss_to_sec(tp_default_text)
-                parsed_curve = _parse_curve_text(tp_curve_text)
-                curve_payload = [
-                    {"date": dt.date().isoformat(), "pace_sec_per_km": float(p)}
-                    for dt, p in parsed_curve
-                ]
-                save_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_DEFAULT, str(default_sec))
-                save_setting(cfg.db_path, SETTINGS_KEY_THRESHOLD_PACE_CURVE, json.dumps(curve_payload))
-                st.session_state.pop("_metrics_df_cache", None)
-                st.success("Threshold pace settings saved.")
-            except Exception as exc:
-                st.error(f"Could not save threshold pace settings: {exc}")
     with st.expander("Injury Overlays", expanded=False):
         st.caption("Edit injury windows used for chart shading.")
         editor_df = pd.DataFrame(saved_injury_windows)
@@ -1077,6 +1289,73 @@ if view == "User Inputs":
                 st.rerun()
             except Exception as exc:
                 st.error(f"Could not save injury overlays: {exc}")
+    with st.expander("Custom Zones (HR + Pace)", expanded=False):
+        st.caption(
+            "Define your HR/pace zones. Z4 HR max is LTHR, Z5 HR max is max HR, and Z4 fastest pace is threshold pace."
+        )
+        zones_editor_df = pd.DataFrame(saved_custom_zones)
+        if zones_editor_df.empty:
+            zones_editor_df = pd.DataFrame(_default_custom_zones())
+        zones_editor_df = zones_editor_df.copy()
+        zones_editor_df["pace_fast"] = zones_editor_df["pace_fast_sec"].apply(_pace_text_or_blank)
+        zones_editor_df["pace_slow"] = zones_editor_df["pace_slow_sec"].apply(_pace_text_or_blank)
+        zones_editor_df = zones_editor_df[["zone", "anchor", "hr_min", "hr_max", "pace_fast", "pace_slow"]]
+
+        edited_zones = st.data_editor(
+            zones_editor_df,
+            num_rows="fixed",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "zone": st.column_config.TextColumn("Zone", disabled=True),
+                "anchor": st.column_config.TextColumn("Physiological Anchor"),
+                "hr_min": st.column_config.NumberColumn("HR Min (bpm)", format="%d"),
+                "hr_max": st.column_config.NumberColumn("HR Max (bpm)", format="%d"),
+                "pace_fast": st.column_config.TextColumn("Pace Fast (mm:ss)"),
+                "pace_slow": st.column_config.TextColumn("Pace Slow (mm:ss)"),
+            },
+            key="custom_zones_editor",
+        )
+        zc1, zc2 = st.columns([1, 1])
+        with zc1:
+            if st.button("Save Custom Zones", key="save_custom_zones_btn"):
+                try:
+                    parsed_rows: list[dict[str, object]] = []
+                    for _, row in edited_zones.iterrows():
+                        zone = str(row.get("zone") or "").strip().upper()
+                        if zone not in ZONE_ORDER:
+                            continue
+                        anchor = str(row.get("anchor") or ZONE_ANCHORS_DEFAULT.get(zone, zone)).strip()
+                        hr_min_raw = row.get("hr_min")
+                        hr_max_raw = row.get("hr_max")
+                        hr_min = int(float(hr_min_raw)) if pd.notna(hr_min_raw) else None
+                        hr_max = int(float(hr_max_raw)) if pd.notna(hr_max_raw) else None
+                        pace_fast = _pace_optional_to_sec(row.get("pace_fast"))
+                        pace_slow = _pace_optional_to_sec(row.get("pace_slow"))
+                        parsed_rows.append(
+                            {
+                                "zone": zone,
+                                "anchor": anchor,
+                                "hr_min": hr_min,
+                                "hr_max": hr_max,
+                                "pace_fast_sec": pace_fast,
+                                "pace_slow_sec": pace_slow,
+                            }
+                        )
+                    constrained = _enforce_custom_zone_constraints(
+                        parsed_rows
+                    )
+                    save_setting(cfg.db_path, SETTINGS_KEY_CUSTOM_ZONES, json.dumps(constrained))
+                    st.success("Custom zones saved.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Could not save custom zones: {exc}")
+        with zc2:
+            if st.button("Reset Zones to Defaults", key="reset_custom_zones_btn"):
+                defaults = _default_custom_zones()
+                save_setting(cfg.db_path, SETTINGS_KEY_CUSTOM_ZONES, json.dumps(defaults))
+                st.success("Custom zones reset to defaults.")
+                st.rerun()
 
 activities_cache_key = get_activities_cache_key(cfg.db_path)
 activity_splits_cache_key = get_activity_splits_cache_key(cfg.db_path)
@@ -1087,8 +1366,8 @@ metrics_df = get_metrics_df_fast(
     resting_hr=float(resting_hr),
     max_hr=float(max_hr),
     sex=sex,
-    threshold_pace_default_sec=float(saved_threshold_pace_sec),
-    threshold_pace_curve_points=tuple((dt.date().isoformat(), float(p)) for dt, p in saved_curve_points),
+    lthr_bpm=float(derived_lthr_bpm),
+    threshold_pace_default_sec=float(derived_threshold_pace_sec),
     use_split_method=bool(use_split_method),
 )
 daily_summary_df = get_daily_summary_df(cfg.db_path)
@@ -2049,6 +2328,14 @@ if view == "Calendar":
             cal_metrics["calories_total"] = pd.to_numeric(
                 cal_metrics.get("calories_total"), errors="coerce"
             ).fillna(0.0)
+            split_rows_df = get_activity_splits_df(cfg.db_path)
+            split_lookup: dict[str, dict] = {}
+            if not split_rows_df.empty:
+                split_lookup = {
+                    str(r.get("activity_id")): r
+                    for r in split_rows_df.to_dict(orient="records")
+                    if r.get("activity_id") is not None
+                }
 
             sport = cal_metrics["sport_type"].fillna("").astype(str).str.lower()
             is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
@@ -2124,6 +2411,26 @@ if view == "Calendar":
                     border-radius: 10px;
                     padding: 8px 10px;
                     margin-bottom: 8px;
+                }
+                div[data-testid="stButton"] > button[kind="tertiary"] {
+                    background: rgba(15,23,42,0.78);
+                    border: 1px solid rgba(148,163,184,0.26);
+                    border-radius: 10px;
+                    color: rgba(226,232,240,0.80);
+                    text-align: left;
+                    white-space: pre-line;
+                    line-height: 1.12;
+                    min-height: 78px;
+                    padding: 7px 8px;
+                    font-weight: 400;
+                    letter-spacing: 0;
+                }
+                div[data-testid="stButton"] > button[kind="tertiary"] p,
+                div[data-testid="stButton"] > button[kind="tertiary"] span,
+                div[data-testid="stButton"] > button[kind="tertiary"] div {
+                    font-size: 0.8rem !important;
+                    line-height: 1.12 !important;
+                    font-weight: 400 !important;
                 }
                 .cal-card-title {
                     font-size: 0.78rem;
@@ -2304,7 +2611,8 @@ if view == "Calendar":
                         )
                         rendered_cards = 0
                         for _, act in day_df.iterrows():
-                            sport_label = html.escape(_sport_label(act.get("sport_type")))
+                            activity_id = str(act.get("activity_id"))
+                            sport_label_raw = _sport_label(act.get("sport_type"))
                             dur_text = _duration_short(act.get("duration_s"))
                             hr_v = pd.to_numeric(act.get("avg_hr"), errors="coerce")
                             hr_text = "-" if pd.isna(hr_v) else f"{int(round(float(hr_v)))} bpm"
@@ -2343,24 +2651,124 @@ if view == "Calendar":
                                 )
                             if_text = f"IF {float(if_v):.2f}" if pd.notna(if_v) and float(if_v) > 0 else "IF -"
                             subtitle = f"{dur_text}" + (f" · {dist_text}" if dist_text else "")
-                            st.markdown(
-                                (
-                                    "<div class='cal-card'>"
-                                    f"<div class='cal-card-title'>{sport_label}</div>"
-                                    f"<div class='cal-card-meta'>{subtitle}</div>"
-                                    f"<div class='cal-card-meta'>{hr_text}</div>"
-                                    f"<div class='cal-card-meta'>{pace_text} · {if_text}</div>"
-                                    f"<div class='cal-card-load'>TSS {tss_v:.0f} · rTSS {rtss_v:.0f}</div>"
-                                    "</div>"
-                                ),
-                                unsafe_allow_html=True,
+                            card_label = (
+                                f"**{sport_label_raw}**\n"
+                                f"{subtitle}\n"
+                                f"{hr_text}\n"
+                                f"{pace_text} · {if_text}\n"
+                                f"TSS {tss_v:.0f} · rTSS {rtss_v:.0f}"
                             )
+                            if st.button(
+                                card_label,
+                                key=f"calendar_split_title_{activity_id}_{day_ts.date().isoformat()}",
+                                use_container_width=True,
+                                type="tertiary",
+                            ):
+                                st.session_state["calendar_split_activity_id"] = activity_id
                             rendered_cards += 1
                         for _ in range(max(0, 4 - rendered_cards)):
                             st.markdown(
                                 "<div class='cal-card cal-card-placeholder'>&nbsp;</div>",
                                 unsafe_allow_html=True,
                             )
+
+            selected_split_activity_id = st.session_state.get("calendar_split_activity_id")
+            if selected_split_activity_id:
+                selected_activity_df = cal_metrics[
+                    cal_metrics["activity_id"].astype(str) == str(selected_split_activity_id)
+                ]
+                selected_activity_row = (
+                    selected_activity_df.sort_values("start_local", ascending=False).iloc[0]
+                    if not selected_activity_df.empty
+                    else None
+                )
+                split_row = split_lookup.get(str(selected_split_activity_id))
+                split_metrics_df = (
+                    _build_split_metrics_for_activity(
+                        activity_row=selected_activity_row,
+                        split_row=split_row,
+                        lthr=float(derived_lthr_bpm),
+                        threshold_pace_default_sec=float(derived_threshold_pace_sec),
+                    )
+                    if selected_activity_row is not None and split_row is not None
+                    else pd.DataFrame()
+                )
+
+                @st.dialog(f"Activity Splits · {selected_split_activity_id}", width="large")
+                def _show_split_details_dialog() -> None:
+                    if selected_activity_row is not None:
+                        st.caption(
+                            f"{pd.to_datetime(selected_activity_row.get('start_time_utc'), utc=True, errors='coerce'):%Y-%m-%d %H:%M UTC} · "
+                            f"{_sport_label(str(selected_activity_row.get('sport_type')))}"
+                        )
+                    if split_metrics_df.empty:
+                        st.info("No split laps found for this activity.")
+                    else:
+                        plot_df = split_metrics_df.copy()
+                        plot_df["split_label"] = "Lap " + plot_df["split_idx"].astype(int).astype(str)
+                        sport_lower = str(selected_activity_row.get("sport_type") or "").lower() if selected_activity_row is not None else ""
+                        running_like = ("run" in sport_lower) or ("treadmill" in sport_lower)
+                        y_metric = "rtss" if running_like else "tss"
+                        y_title = "rTSS" if running_like else "TSS"
+                        y_color = "#f59e0b" if running_like else "#60a5fa"
+                        plot_df[y_metric] = pd.to_numeric(plot_df.get(y_metric), errors="coerce").fillna(0.0)
+                        chart = (
+                            alt.Chart(plot_df)
+                            .mark_bar(color=y_color)
+                            .encode(
+                                x=alt.X("split_idx:O", title="Split"),
+                                y=alt.Y(f"{y_metric}:Q", title=y_title),
+                                tooltip=[
+                                    alt.Tooltip("split_label:N", title="Split"),
+                                    alt.Tooltip("intensity_type:N", title="Type"),
+                                    alt.Tooltip("duration_s:Q", title="Duration (s)", format=".0f"),
+                                    alt.Tooltip("distance_km:Q", title="Distance (km)", format=".2f"),
+                                    alt.Tooltip("distance_eqv_km:Q", title="Dist Eqv (km)", format=".2f"),
+                                    alt.Tooltip("avg_hr:Q", title="Avg HR", format=".0f"),
+                                    alt.Tooltip("intensity_factor:Q", title="IF", format=".2f"),
+                                    alt.Tooltip("pace_s_per_km:Q", title="Pace s/km", format=".1f"),
+                                    alt.Tooltip("pace_eqv_s_per_km:Q", title="Pace Eqv s/km", format=".1f"),
+                                    alt.Tooltip("tss:Q", title="TSS", format=".1f"),
+                                    alt.Tooltip("rtss:Q", title="rTSS", format=".1f"),
+                                ],
+                            )
+                            .properties(height=280)
+                        )
+                        st.altair_chart(chart, use_container_width=True)
+                        table_df = plot_df.copy()
+                        table_df["duration"] = table_df["duration_s"].apply(_duration_short)
+                        table_df["pace"] = table_df["pace_s_per_km"].apply(_pace_compact)
+                        table_df["pace_eqv"] = table_df["pace_eqv_s_per_km"].apply(_pace_compact)
+                        st.dataframe(
+                            table_df[
+                                [
+                                    "split_idx",
+                                    "duration",
+                                    "distance_km",
+                                    "distance_eqv_km",
+                                    "avg_hr",
+                                    "intensity_factor",
+                                    "pace",
+                                    "pace_eqv",
+                                    "tss",
+                                    "rtss",
+                                ]
+                            ],
+                            use_container_width=True,
+                            column_config={
+                                "split_idx": st.column_config.NumberColumn("Split", format="%d"),
+                                "distance_km": st.column_config.NumberColumn("Distance (km)", format="%.2f"),
+                                "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.2f"),
+                                "avg_hr": st.column_config.NumberColumn("Avg HR", format="%.0f"),
+                                "intensity_factor": st.column_config.NumberColumn("IF", format="%.2f"),
+                                "tss": st.column_config.NumberColumn("TSS", format="%.1f"),
+                                "rtss": st.column_config.NumberColumn("rTSS", format="%.1f"),
+                            },
+                        )
+                    if st.button("Close", key="calendar_split_modal_close"):
+                        st.session_state.pop("calendar_split_activity_id", None)
+                        st.rerun()
+                _show_split_details_dialog()
 
 if view == "Benchmark":
     st.divider()
@@ -2473,8 +2881,9 @@ if view == "Benchmark":
                 resting_hr=float(resting_hr),
                 max_hr=float(max_hr),
                 sex=sex,
-                threshold_pace_sec_per_km=float(saved_threshold_pace_sec),
-                threshold_pace_curve_points=saved_curve_points,
+                lthr_bpm=float(derived_lthr_bpm),
+                threshold_pace_sec_per_km=float(derived_threshold_pace_sec),
+                threshold_pace_curve_points=None,
             )
             bench_metrics["athlete_name"] = bench_view["athlete_name"].values
         else:
