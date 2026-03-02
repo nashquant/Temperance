@@ -2448,6 +2448,28 @@ if view == "Calendar":
                     opacity: 0.0;
                     pointer-events: none;
                 }
+                .cal-rest-card {
+                    background: rgba(15,23,42,0.60);
+                    border: 1px dashed rgba(148,163,184,0.35);
+                    border-radius: 10px;
+                    padding: 10px 10px;
+                    margin-bottom: 8px;
+                    min-height: 78px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    gap: 4px;
+                }
+                .cal-rest-title {
+                    font-size: 0.78rem;
+                    font-weight: 700;
+                    color: rgba(226,232,240,0.92);
+                }
+                .cal-rest-sub {
+                    font-size: 0.72rem;
+                    color: rgba(148,163,184,0.92);
+                    line-height: 1.2;
+                }
                 .cal-zones {
                     margin-top: 8px;
                     padding-top: 8px;
@@ -2662,9 +2684,14 @@ if view == "Calendar":
                             ):
                                 st.session_state["calendar_split_activity_id"] = activity_id
                             rendered_cards += 1
-                        for _ in range(max(0, 4 - rendered_cards)):
+                        if rendered_cards == 0:
                             st.markdown(
-                                "<div class='cal-card cal-card-placeholder'>&nbsp;</div>",
+                                (
+                                    "<div class='cal-rest-card'>"
+                                    "<div class='cal-rest-title'>Rest Day</div>"
+                                    "<div class='cal-rest-sub'>Rest is part of training!</div>"
+                                    "</div>"
+                                ),
                                 unsafe_allow_html=True,
                             )
 
