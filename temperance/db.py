@@ -139,6 +139,24 @@ CREATE TABLE IF NOT EXISTS daily_summary (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS benchmark_activities (
+    benchmark_activity_id TEXT PRIMARY KEY,
+    athlete_name TEXT NOT NULL,
+    source TEXT NOT NULL,
+    start_time_utc TEXT NOT NULL,
+    sport_type TEXT NOT NULL,
+    activity_name TEXT,
+    distance_m REAL,
+    duration_s REAL,
+    avg_hr REAL,
+    avg_cadence REAL,
+    avg_power REAL,
+    avg_pace_s_per_km REAL,
+    raw_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -163,6 +181,7 @@ CREATE INDEX IF NOT EXISTS idx_activities_start_time ON activities(start_time_ut
 CREATE INDEX IF NOT EXISTS idx_activity_records_activity_time ON activity_records(activity_id, record_time_utc);
 CREATE INDEX IF NOT EXISTS idx_daily_summary_day ON daily_summary(day_utc);
 CREATE INDEX IF NOT EXISTS idx_sync_log_time ON sync_log(sync_time_utc DESC);
+CREATE INDEX IF NOT EXISTS idx_benchmark_start_time ON benchmark_activities(start_time_utc);
 """
 
 
@@ -184,6 +203,35 @@ def run_migrations(db_path: Path) -> None:
             )
             """
         )
+        # Ensure benchmark table exists and has latest nullable columns.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS benchmark_activities (
+                benchmark_activity_id TEXT PRIMARY KEY,
+                athlete_name TEXT NOT NULL,
+                source TEXT NOT NULL,
+                start_time_utc TEXT NOT NULL,
+                sport_type TEXT NOT NULL,
+                activity_name TEXT,
+                distance_m REAL,
+                duration_s REAL,
+                avg_hr REAL,
+                avg_cadence REAL,
+                avg_power REAL,
+                avg_pace_s_per_km REAL,
+                raw_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        existing_cols = {
+            str(r["name"]) for r in conn.execute("PRAGMA table_info(benchmark_activities)").fetchall()
+        }
+        if "avg_cadence" not in existing_cols:
+            conn.execute("ALTER TABLE benchmark_activities ADD COLUMN avg_cadence REAL")
+        if "avg_power" not in existing_cols:
+            conn.execute("ALTER TABLE benchmark_activities ADD COLUMN avg_power REAL")
         conn.commit()
 
 
@@ -584,6 +632,63 @@ def upsert_daily_summary(db_path: Path, rows: list[dict[str, Any]]) -> int:
         return conn.total_changes
 
 
+def upsert_benchmark_activities(db_path: Path, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+
+    now = UTC_NOW()
+    with closing(get_conn(db_path)) as conn:
+        conn.executemany(
+            """
+            INSERT INTO benchmark_activities (
+                benchmark_activity_id, athlete_name, source, start_time_utc, sport_type,
+                activity_name, distance_m, duration_s, avg_hr, avg_cadence, avg_power, avg_pace_s_per_km,
+                raw_json, created_at, updated_at
+            ) VALUES (
+                :benchmark_activity_id, :athlete_name, :source, :start_time_utc, :sport_type,
+                :activity_name, :distance_m, :duration_s, :avg_hr, :avg_cadence, :avg_power, :avg_pace_s_per_km,
+                :raw_json, :created_at, :updated_at
+            )
+            ON CONFLICT(benchmark_activity_id) DO UPDATE SET
+                athlete_name=excluded.athlete_name,
+                source=excluded.source,
+                start_time_utc=excluded.start_time_utc,
+                sport_type=excluded.sport_type,
+                activity_name=excluded.activity_name,
+                distance_m=excluded.distance_m,
+                duration_s=excluded.duration_s,
+                avg_hr=excluded.avg_hr,
+                avg_cadence=excluded.avg_cadence,
+                avg_power=excluded.avg_power,
+                avg_pace_s_per_km=excluded.avg_pace_s_per_km,
+                raw_json=excluded.raw_json,
+                updated_at=excluded.updated_at
+            """,
+            [
+                {
+                    "benchmark_activity_id": row.get("benchmark_activity_id"),
+                    "athlete_name": row.get("athlete_name") or "Unknown",
+                    "source": row.get("source") or "manual_import",
+                    "start_time_utc": row.get("start_time_utc"),
+                    "sport_type": row.get("sport_type") or "unknown",
+                    "activity_name": row.get("activity_name"),
+                    "distance_m": row.get("distance_m"),
+                    "duration_s": row.get("duration_s"),
+                    "avg_hr": row.get("avg_hr"),
+                    "avg_cadence": row.get("avg_cadence"),
+                    "avg_power": row.get("avg_power"),
+                    "avg_pace_s_per_km": row.get("avg_pace_s_per_km"),
+                    "raw_json": json.dumps(row.get("raw", {}), default=str),
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                for row in rows
+            ],
+        )
+        conn.commit()
+        return conn.total_changes
+
+
 def get_daily_summary_df(db_path: Path) -> pd.DataFrame:
     with closing(get_conn(db_path)) as conn:
         return pd.read_sql_query(
@@ -596,6 +701,31 @@ def get_daily_summary_df(db_path: Path) -> pd.DataFrame:
             """,
             conn,
         )
+
+
+def get_benchmark_df(db_path: Path) -> pd.DataFrame:
+    with closing(get_conn(db_path)) as conn:
+        return pd.read_sql_query(
+            """
+            SELECT benchmark_activity_id, athlete_name, source, start_time_utc, sport_type,
+                   activity_name, distance_m, duration_s, avg_hr, avg_cadence, avg_power, avg_pace_s_per_km
+            FROM benchmark_activities
+            ORDER BY start_time_utc DESC
+            """,
+            conn,
+        )
+
+
+def delete_benchmark_activities(db_path: Path, benchmark_activity_ids: list[str]) -> int:
+    if not benchmark_activity_ids:
+        return 0
+    with closing(get_conn(db_path)) as conn:
+        conn.executemany(
+            "DELETE FROM benchmark_activities WHERE benchmark_activity_id = ?",
+            [(x,) for x in benchmark_activity_ids],
+        )
+        conn.commit()
+        return conn.total_changes
 
 
 def get_activity_records_df(db_path: Path, activity_id: str) -> pd.DataFrame:
@@ -690,6 +820,7 @@ def get_table_counts(db_path: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     tables = [
         "activities",
+        "benchmark_activities",
         "activity_details",
         "activity_records",
         "sleep_daily",
