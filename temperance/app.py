@@ -1599,7 +1599,9 @@ if view == "Calendar":
                 cal_daily_lookup = cal_daily_lookup.dropna(subset=["day"]).sort_values("day")
                 cal_daily_lookup["fitness"] = pd.to_numeric(cal_daily_lookup.get("fitness"), errors="coerce")
                 cal_daily_lookup["fatigue"] = pd.to_numeric(cal_daily_lookup.get("fatigue"), errors="coerce")
-                cal_daily_lookup = cal_daily_lookup[["day", "fitness", "fatigue"]]
+                cal_daily_lookup["overreach"] = pd.to_numeric(cal_daily_lookup.get("overreach"), errors="coerce")
+                cal_daily_lookup["injury_risk"] = pd.to_numeric(cal_daily_lookup.get("injury_risk"), errors="coerce")
+                cal_daily_lookup = cal_daily_lookup[["day", "fitness", "fatigue", "overreach", "injury_risk"]]
             daily_fitfat_lookup = {}
             if not cal_daily_lookup.empty:
                 daily_fitfat_lookup = (
@@ -1719,6 +1721,7 @@ if view == "Calendar":
                 total_duration_h = float(pd.to_numeric(week_df["duration_s"], errors="coerce").fillna(0.0).sum() / 3600.0)
                 total_distance = float(pd.to_numeric(week_df["distance_km"], errors="coerce").fillna(0.0).sum())
                 total_distance_eqv = float(pd.to_numeric(week_df["distance_proxy_km"], errors="coerce").fillna(0.0).sum())
+                total_calories = float(pd.to_numeric(week_df["calories_total"], errors="coerce").fillna(0.0).sum())
                 total_tss = float(pd.to_numeric(week_df["tss"], errors="coerce").fillna(0.0).sum())
                 total_rtss = float(pd.to_numeric(week_df["rtss"], errors="coerce").fillna(0.0).sum())
                 zone_totals = {
@@ -1753,17 +1756,23 @@ if view == "Calendar":
 
                 week_fitness = float("nan")
                 week_fatigue = float("nan")
+                week_overreach = float("nan")
+                week_injury_risk = float("nan")
                 if not cal_daily_lookup.empty:
                     week_daily = cal_daily_lookup[cal_daily_lookup["day"] <= we]
                     if not week_daily.empty:
                         last_row = week_daily.iloc[-1]
                         week_fitness = float(last_row["fitness"]) if pd.notna(last_row["fitness"]) else float("nan")
                         week_fatigue = float(last_row["fatigue"]) if pd.notna(last_row["fatigue"]) else float("nan")
+                        week_overreach = float(last_row["overreach"]) if pd.notna(last_row["overreach"]) else float("nan")
+                        week_injury_risk = float(last_row["injury_risk"]) if pd.notna(last_row["injury_risk"]) else float("nan")
 
                 row_cols = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1])
                 with row_cols[0]:
                     fitness_txt = "-" if pd.isna(week_fitness) else f"{week_fitness:.0f}"
                     fatigue_txt = "-" if pd.isna(week_fatigue) else f"{week_fatigue:.0f}"
+                    overreach_txt = "-" if pd.isna(week_overreach) else f"{week_overreach:.0f}"
+                    injury_risk_txt = "-" if pd.isna(week_injury_risk) else f"{week_injury_risk:.0f}"
                     st.markdown(
                         (
                             "<div class='cal-week-summary'>"
@@ -1771,9 +1780,11 @@ if view == "Calendar":
                             f"<div>{ws:%d %b} - {we:%d %b}</div>"
                             f"<div style='margin-top:6px;'>Time: <b>{total_duration_h:.1f}h</b></div>"
                             f"<div>Dist: <b>{total_distance:.1f} km</b></div>"
-                            f"<div>Dist Eqv.: <b>{total_distance_eqv:.1f} km</b></div>"
+                            f"<div>Eqv.: <b>{total_distance_eqv:.1f} km</b></div>"
+                            f"<div>kcal: <b>{total_calories:.0f}</b></div>"
                             f"<div>TSS: <b>{total_tss:.0f}</b> | rTSS: <b>{total_rtss:.0f}</b></div>"
-                            f"<div>Fitness: <b>{fitness_txt}</b> | Fatigue: <b>{fatigue_txt}</b></div>"
+                            f"<div>Fit: <b>{fitness_txt}</b> | Fatg: <b>{fatigue_txt}</b></div>"
+                            f"<div>Ovr: <b>{overreach_txt}</b> | Risk: <b>{injury_risk_txt}</b></div>"
                             "<div class='cal-zones'><b>Zones</b>"
                             + "".join(zone_rows_html)
                             + "</div>"
@@ -1812,7 +1823,7 @@ if view == "Calendar":
                             if pd.notna(day_fit):
                                 day_meta_parts.append(f"Fit {float(day_fit):.0f}")
                             if pd.notna(day_fat):
-                                day_meta_parts.append(f"Fat {float(day_fat):.0f}")
+                                day_meta_parts.append(f"Fatigue {float(day_fat):.0f}")
                         if not pd.isna(day_resting_hr):
                             day_meta_parts.append(f"RHR {day_resting_hr:.0f}")
                         if not pd.isna(day_stress_avg):
