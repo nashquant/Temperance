@@ -781,6 +781,18 @@ def get_activity_splits_summary_df(db_path: Path) -> pd.DataFrame:
         )
 
 
+def get_activity_splits_df(db_path: Path) -> pd.DataFrame:
+    with closing(get_conn(db_path)) as conn:
+        return pd.read_sql_query(
+            """
+            SELECT activity_id, split_json, split_summaries_json, lap_count, total_duration_s, total_distance_m
+            FROM activity_splits
+            ORDER BY activity_id
+            """,
+            conn,
+        )
+
+
 def get_benchmark_df(db_path: Path) -> pd.DataFrame:
     with closing(get_conn(db_path)) as conn:
         return pd.read_sql_query(

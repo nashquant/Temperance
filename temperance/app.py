@@ -30,7 +30,7 @@ from db import (
     delete_benchmark_activities,
     get_setting,
     get_activity_splits_cache_key,
-    get_activity_splits_summary_df,
+    get_activity_splits_df,
     get_activity_records_df,
     get_activity_detail_raw,
     get_activity_raw,
@@ -747,56 +747,130 @@ def get_metrics_df_fast(
         threshold_pace_curve_points=curve_points,
     )
     if use_split_method and not df.empty:
-        splits_df = get_activity_splits_summary_df(db_path)
+        splits_df = get_activity_splits_df(db_path)
         if not splits_df.empty:
-            work = df.merge(
-                splits_df[["activity_id", "total_distance_m", "total_duration_s"]],
-                on="activity_id",
-                how="left",
-            )
-            split_dist = pd.to_numeric(work["total_distance_m"], errors="coerce")
-            split_dur = pd.to_numeric(work["total_duration_s"], errors="coerce")
-            split_valid = (split_dist > 0) & (split_dur > 0)
+            split_lookup = {
+                str(r.get("activity_id")): r
+                for r in splits_df.to_dict(orient="records")
+                if r.get("activity_id") is not None
+            }
+            points = sorted(curve_points, key=lambda x: x[0]) if curve_points else []
 
-            if split_valid.any():
-                split_pace = split_dur / (split_dist / 1000.0)
-                avg_hr = pd.to_numeric(work.get("avg_hr"), errors="coerce")
-                tss_valid = split_valid & (avg_hr > 0) & (avg_hr <= 260)
-                if tss_valid.any():
-                    work.loc[tss_valid, "tss"] = (
-                        split_dur[tss_valid] * ((avg_hr[tss_valid] / float(DEFAULT_LTHR)) ** 2) / 3600.0 * 100.0
-                    )
+            def _num(d: dict, keys: list[str]) -> float | None:
+                for k in keys:
+                    if k not in d:
+                        continue
+                    try:
+                        v = float(d.get(k))
+                        if pd.notna(v):
+                            return v
+                    except Exception:
+                        continue
+                return None
 
-                sport = work["sport_type"].fillna("").astype(str).str.lower()
-                running_like = sport.str.contains("run") | sport.str.contains("treadmill")
-                rtss_valid = split_valid & running_like
-                if rtss_valid.any():
-                    if curve_points:
-                        points = sorted(curve_points, key=lambda x: x[0])
-
-                        def _threshold_for(ts: pd.Timestamp) -> float:
-                            ts_utc = ts.to_pydatetime().replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.to_pydatetime()
-                            selected = float(threshold_pace_default_sec)
-                            for dt, pace in points:
-                                if dt <= ts_utc:
-                                    selected = float(pace)
-                                else:
-                                    break
-                            return selected
-
-                        tp_series = pd.to_datetime(work["start_time_utc"], utc=True, errors="coerce").apply(
-                            lambda ts: _threshold_for(ts) if pd.notna(ts) else float(threshold_pace_default_sec)
-                        )
+            def _threshold_for(ts: pd.Timestamp) -> float:
+                if not points:
+                    return float(threshold_pace_default_sec)
+                ts_utc = ts.to_pydatetime().replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.to_pydatetime()
+                selected = float(threshold_pace_default_sec)
+                for dt, pace in points:
+                    if dt <= ts_utc:
+                        selected = float(pace)
                     else:
-                        tp_series = pd.Series(float(threshold_pace_default_sec), index=work.index)
+                        break
+                return selected
 
-                    work.loc[rtss_valid, "rtss"] = (
-                        split_dur[rtss_valid]
-                        * ((tp_series[rtss_valid] / split_pace[rtss_valid]) ** 2)
-                        / 3600.0
-                        * 100.0
+            def _rel_diff(a: float | None, b: float | None) -> float | None:
+                if a is None or b is None:
+                    return None
+                if a <= 0 or b <= 0:
+                    return None
+                return abs(a - b) / float(a)
+
+            for idx, row in df.iterrows():
+                split_row = split_lookup.get(str(row.get("activity_id")))
+                if not split_row:
+                    continue
+
+                try:
+                    split_payload = json.loads(split_row.get("split_json") or "{}")
+                except Exception:
+                    split_payload = {}
+                laps = split_payload.get("lapDTOs") if isinstance(split_payload, dict) else None
+                if not isinstance(laps, list) or not laps:
+                    try:
+                        summaries_payload = json.loads(split_row.get("split_summaries_json") or "[]")
+                    except Exception:
+                        summaries_payload = []
+                    if isinstance(summaries_payload, list):
+                        laps = [x for x in summaries_payload if isinstance(x, dict)]
+                    elif isinstance(summaries_payload, dict):
+                        maybe = summaries_payload.get("splitSummaries")
+                        laps = [x for x in (maybe or []) if isinstance(x, dict)] if isinstance(maybe, list) else []
+                    else:
+                        laps = []
+                if not laps:
+                    continue
+
+                avg_hr_activity = pd.to_numeric(pd.Series([row.get("avg_hr")]), errors="coerce").iloc[0]
+                avg_hr_activity = float(avg_hr_activity) if pd.notna(avg_hr_activity) else None
+                sport = str(row.get("sport_type") or "").lower()
+                running_like = ("run" in sport) or ("treadmill" in sport)
+                start_ts = pd.to_datetime(row.get("start_time_utc"), utc=True, errors="coerce")
+                tp_sec = _threshold_for(start_ts) if pd.notna(start_ts) else float(threshold_pace_default_sec)
+
+                tss_sum = 0.0
+                rtss_sum = 0.0
+                tss_any = False
+                rtss_any = False
+                lap_duration_total = 0.0
+                lap_distance_total = 0.0
+                for lap in laps:
+                    if not isinstance(lap, dict):
+                        continue
+                    lap_duration_s = _num(
+                        lap,
+                        ["duration", "movingDuration", "elapsedDuration", "lapDuration", "totalDuration", "durationInSeconds"],
                     )
-            df = work.drop(columns=["total_distance_m", "total_duration_s"], errors="ignore")
+                    lap_distance_m = _num(
+                        lap,
+                        ["distance", "totalDistance", "sumDistance", "distanceInMeters", "distanceMeters"],
+                    )
+                    if lap_duration_s is None or lap_duration_s <= 0:
+                        continue
+                    lap_duration_total += float(lap_duration_s)
+                    if lap_distance_m is not None and lap_distance_m > 0:
+                        lap_distance_total += float(lap_distance_m)
+
+                    lap_avg_hr = _num(
+                        lap,
+                        ["averageHR", "avgHR", "averageHeartRate", "meanHeartRate", "avgHeartRate"],
+                    )
+                    hr_for_tss = lap_avg_hr if lap_avg_hr is not None else avg_hr_activity
+                    if hr_for_tss is not None and 0 < hr_for_tss <= 260:
+                        tss_sum += (lap_duration_s * ((float(hr_for_tss) / float(DEFAULT_LTHR)) ** 2) / 3600.0) * 100.0
+                        tss_any = True
+
+                    if running_like and lap_distance_m is not None and lap_distance_m > 0 and tp_sec > 0:
+                        lap_pace = lap_duration_s / (lap_distance_m / 1000.0)
+                        if lap_pace > 0:
+                            rtss_sum += (lap_duration_s * ((tp_sec / lap_pace) ** 2) / 3600.0) * 100.0
+                            rtss_any = True
+
+                summary_duration = _num(row.to_dict(), ["duration_s", "moving_duration_s", "elapsed_duration_s"])
+                summary_distance = _num(row.to_dict(), ["distance_m"])
+                duration_div = _rel_diff(summary_duration, lap_duration_total if lap_duration_total > 0 else None)
+                distance_div = _rel_diff(summary_distance, lap_distance_total if lap_distance_total > 0 else None)
+                if (duration_div is not None and duration_div > 0.05) or (
+                    distance_div is not None and distance_div > 0.05
+                ):
+                    # Split payload diverges materially from summary; keep summary-based metrics.
+                    continue
+
+                if tss_any:
+                    df.at[idx, "tss"] = tss_sum
+                if rtss_any:
+                    df.at[idx, "rtss"] = rtss_sum
     return df
 
 
