@@ -2702,18 +2702,28 @@ if view == "Calendar":
                     else:
                         plot_df = split_metrics_df.copy()
                         plot_df["split_label"] = "Lap " + plot_df["split_idx"].astype(int).astype(str)
-                        sport_lower = str(selected_activity_row.get("sport_type") or "").lower() if selected_activity_row is not None else ""
-                        running_like = ("run" in sport_lower) or ("treadmill" in sport_lower)
-                        y_metric = "rtss" if running_like else "tss"
-                        y_title = "rTSS" if running_like else "TSS"
-                        y_color = "#f59e0b" if running_like else "#60a5fa"
-                        plot_df[y_metric] = pd.to_numeric(plot_df.get(y_metric), errors="coerce").fillna(0.0)
+                        plot_df["distance_eqv_km"] = pd.to_numeric(
+                            plot_df.get("distance_eqv_km"), errors="coerce"
+                        ).fillna(0.0)
+                        plot_df["intensity_factor"] = pd.to_numeric(
+                            plot_df.get("intensity_factor"), errors="coerce"
+                        ).fillna(0.0).clip(lower=0.0, upper=1.0)
                         chart = (
                             alt.Chart(plot_df)
-                            .mark_bar(color=y_color)
+                            .mark_bar()
                             .encode(
                                 x=alt.X("split_idx:O", title="Split"),
-                                y=alt.Y(f"{y_metric}:Q", title=y_title),
+                                y=alt.Y("distance_eqv_km:Q", title="Distance Eqv. (km)"),
+                                color=alt.Color(
+                                    "intensity_factor:Q",
+                                    title="IF",
+                                    scale=alt.Scale(
+                                        domain=[0.0, 0.5, 1.0],
+                                        range=["#2563eb", "#22c55e", "#ef4444"],
+                                        clamp=True,
+                                    ),
+                                    legend=alt.Legend(orient="right"),
+                                ),
                                 tooltip=[
                                     alt.Tooltip("split_label:N", title="Split"),
                                     alt.Tooltip("intensity_type:N", title="Type"),
