@@ -643,6 +643,36 @@ def fetch_garmin_comprehensive(
     activity_records: list[dict[str, Any]] = []
     activity_splits: list[dict[str, Any]] = []
 
+    def _count_activities_in_window() -> int:
+        total = 0
+        probe_offset = 0
+        while True:
+            probe_batch, probe_err = _safe_call(client.get_activities, probe_offset, page_size)
+            if probe_err:
+                return 0
+            probe_rows = probe_batch or []
+            if not probe_rows:
+                break
+            keep = True
+            for probe_row in probe_rows:
+                normalized = _normalize_activity(probe_row, source="garmin_api")
+                if not normalized:
+                    continue
+                start_dt = datetime.fromisoformat(normalized["start_time_utc"].replace("Z", "+00:00"))
+                day = start_dt.date()
+                if day < start_day:
+                    keep = False
+                    continue
+                if day > end_day:
+                    continue
+                total += 1
+            probe_offset += page_size
+            if not keep:
+                break
+        return total
+
+    total_activities_target = _count_activities_in_window()
+
     offset = 0
     effective_page_size = 25 if (include_activity_details or include_splits) else page_size
     processed_activities = 0
@@ -689,8 +719,11 @@ def fetch_garmin_comprehensive(
                     "message": "Processing activity details/FIT",
                     "fraction": fraction_live,
                     "oldest_in_batch": day.isoformat(),
+                    "day": day.isoformat(),
                     "offset": offset,
                     "processed": processed_activities,
+                    "fetched": len(activities) + 1,
+                    "total": total_activities_target,
                 }
             )
 
@@ -771,7 +804,11 @@ def fetch_garmin_comprehensive(
                     "message": "Fetching activity summaries",
                     "fraction": fraction,
                     "oldest_in_batch": clamped_oldest.isoformat(),
+                    "day": clamped_oldest.isoformat(),
                     "offset": offset,
+                    "processed": processed_activities,
+                    "fetched": len(activities),
+                    "total": total_activities_target,
                 }
             )
         if not keep_going:

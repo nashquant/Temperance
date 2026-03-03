@@ -3866,20 +3866,25 @@ if view == "Data Extract":
                         pct = max(15, min(85, pct))
                         oldest = payload.get("oldest_in_batch")
                         processed = int(payload.get("processed") or 0)
+                        fetched = int(payload.get("fetched") or 0)
+                        total = int(payload.get("total") or 0)
+                        day_s = payload.get("day")
                         progress.progress(
                             pct,
                             text=(
                                 f"Fetching activities... {pct}%"
                                 + (f" | oldest seen: {oldest}" if oldest else "")
                                 + (f" | processed: {processed}" if processed > 0 else "")
+                                + (f" | {fetched}/{total}" if total > 0 else "")
                             ),
                         )
                         rounded = (pct // 5) * 5
                         if rounded > int(progress_state["last_activity_pct"]) or (processed > 0 and (processed % 10 == 0)):
                             _log(
-                                f"[progress] activities {pct}%"
+                                f"[progress] activities "
+                                + (f"{fetched}/{total}" if total > 0 and fetched > 0 else f"{pct}%")
+                                + (f" | day={day_s}" if day_s else "")
                                 + (f" | oldest_seen={oldest}" if oldest else "")
-                                + (f" | processed={processed}" if processed > 0 else "")
                             )
                             progress_state["last_activity_pct"] = rounded
                     elif phase == "wellness" and include_wellness:
