@@ -26,10 +26,8 @@ Per activity, Temperance stores first-class Garmin metrics:
 - `training_load_garmin_field_name` + `training_load_garmin_units` (provenance/units metadata)
 - `calories_active`, `calories_total`
 - `intensity_minutes_vigorous`, `intensity_minutes_moderate`
-- `trimp` (model-derived, stored per activity)
 
 Daily aggregates are stored in `daily_summary`:
-- `trimp_total`
 - `training_load_garmin`
 - `calories_active`, `calories_total`
 - `intensity_minutes_vigorous`, `intensity_minutes_moderate`
@@ -159,6 +157,13 @@ Use this exactly:
 Recommended pattern:
 - Run **Comprehensive** initially (or occasionally) for full archive + FIT/wellness backfill.
 - Run **Quick Sync** regularly for daily updates.
+
+## User Inputs (curve-based thresholds)
+- Temperance uses two date-based threshold curves for load calculations:
+  - `LTHR curve` (date -> bpm), used in `TSS` as `IF_hr = avg_hr / LTHR_at_date`.
+  - `LT pace curve` (date -> sec/km), used in `rTSS` as `IF_pace = LT_pace_at_date / avg_pace`.
+- You edit both curves in **User Inputs**.
+- Max HR is not required for `TSS` / `rTSS`.
 
 ### SMA / EMA calculations
 - SMA(N): simple rolling mean over N daily points.

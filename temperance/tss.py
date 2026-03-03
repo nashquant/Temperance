@@ -37,6 +37,35 @@ class ConstantLTHRProvider:
 
 
 @dataclass(frozen=True)
+class PiecewiseLTHRProvider:
+    """
+    Date-based LTHR curve with a constant fallback.
+
+    Points are tuples of (effective_datetime, lthr_bpm).
+    Provider returns the latest point with effective_datetime <= activity time.
+    """
+
+    default_lthr_bpm: float
+    points: tuple[tuple[datetime, float], ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.default_lthr_bpm <= 0:
+            raise ValueError("default LTHR must be > 0")
+        for _, lthr in self.points:
+            if lthr <= 0:
+                raise ValueError("all LTHR curve values must be > 0")
+
+    def get_lthr_bpm(self, at: datetime) -> float:
+        chosen = float(self.default_lthr_bpm)
+        for effective_at, lthr in sorted(self.points, key=lambda x: x[0]):
+            if effective_at <= at:
+                chosen = float(lthr)
+            else:
+                break
+        return chosen
+
+
+@dataclass(frozen=True)
 class PiecewiseThresholdPaceProvider:
     """
     Date-based threshold pace curve with a constant fallback.

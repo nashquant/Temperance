@@ -104,7 +104,6 @@ with text_col:
 st.markdown('</div>', unsafe_allow_html=True)
 
 DEFAULT_RESTING_HR = 45.0
-DEFAULT_MAX_HR = 200.0
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 INJURY_WINDOWS = [
@@ -117,17 +116,9 @@ base_cfg = load_config()
 cfg = base_cfg
 
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
-SETTINGS_KEY_CUSTOM_ZONES = "custom_zones_v1"
+SETTINGS_KEY_LTHR_CURVE = "lthr_curve_v1"
+SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_GARMIN_OWNER_SCOPE = "garmin_owner_scope_v1"
-
-ZONE_ORDER = ["Z1", "Z2", "Z3", "Z4", "Z5"]
-ZONE_ANCHORS_DEFAULT = {
-    "Z1": "Recovery",
-    "Z2": "Endurance (below LT1)",
-    "Z3": "Subthreshold",
-    "Z4": "Superthreshold",
-    "Z5": "Anaerobic",
-}
 
 AUTH_ALL_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs", "Benchmark"]
 AUTH_VIEWER_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "Benchmark"]
@@ -329,179 +320,112 @@ def _pace_optional_to_sec(text: object) -> float | None:
     return _pace_mmss_to_sec(raw)
 
 
-def _default_custom_zones() -> list[dict[str, object]]:
-    lthr_i = int(round(float(DEFAULT_LTHR)))
-    tp = float(DEFAULT_THRESHOLD_PACE_SEC_PER_KM)
-    return [
-        {
-            "zone": "Z1",
-            "anchor": ZONE_ANCHORS_DEFAULT["Z1"],
-            "hr_min": 100,
-            "hr_max": 141,
-            "pace_fast_sec": 280.0,
-            "pace_slow_sec": 600.0,
-        },
-        {
-            "zone": "Z2",
-            "anchor": ZONE_ANCHORS_DEFAULT["Z2"],
-            "hr_min": 142,
-            "hr_max": 157,
-            "pace_fast_sec": 255.0,
-            "pace_slow_sec": 280.0,
-        },
-        {
-            "zone": "Z3",
-            "anchor": ZONE_ANCHORS_DEFAULT["Z3"],
-            "hr_min": 157,
-            "hr_max": 170,
-            "pace_fast_sec": 230.0,
-            "pace_slow_sec": 255.0,
-        },
-        {
-            "zone": "Z4",
-            "anchor": ZONE_ANCHORS_DEFAULT["Z4"],
-            "hr_min": 171,
-            "hr_max": lthr_i,
-            "pace_fast_sec": tp,
-            "pace_slow_sec": 220.0,
-        },
-        {
-            "zone": "Z5",
-            "anchor": ZONE_ANCHORS_DEFAULT["Z5"],
-            "hr_min": lthr_i + 1,
-            "hr_max": int(DEFAULT_MAX_HR),
-            "pace_fast_sec": 60.0,
-            "pace_slow_sec": tp,
-        },
-    ]
+def _default_lthr_curve() -> list[dict[str, object]]:
+    return [{"date": "2025-01-01", "lthr_bpm": float(DEFAULT_LTHR)}]
 
 
-def _enforce_custom_zone_constraints(zones: list[dict[str, object]]) -> list[dict[str, object]]:
-    by_zone = {str(z.get("zone")): dict(z) for z in zones if str(z.get("zone")) in ZONE_ORDER}
-    for z in ZONE_ORDER:
-        by_zone.setdefault(
-            z,
-            {
-                "zone": z,
-                "anchor": ZONE_ANCHORS_DEFAULT.get(z, z),
-                "hr_min": None,
-                "hr_max": None,
-                "pace_fast_sec": None,
-                "pace_slow_sec": None,
-            },
-        )
-
-    z4_hr_max_raw = by_zone["Z4"].get("hr_max")
-    try:
-        z4_hr_max = int(round(float(z4_hr_max_raw))) if z4_hr_max_raw not in ("", None) else int(DEFAULT_LTHR)
-    except Exception:
-        z4_hr_max = int(DEFAULT_LTHR)
-    if z4_hr_max < 1:
-        z4_hr_max = int(DEFAULT_LTHR)
-
-    z4_pace_fast_raw = by_zone["Z4"].get("pace_fast_sec")
-    try:
-        z4_pace_fast = (
-            float(z4_pace_fast_raw) if z4_pace_fast_raw not in ("", None) else float(DEFAULT_THRESHOLD_PACE_SEC_PER_KM)
-        )
-    except Exception:
-        z4_pace_fast = float(DEFAULT_THRESHOLD_PACE_SEC_PER_KM)
-    if z4_pace_fast <= 0:
-        z4_pace_fast = float(DEFAULT_THRESHOLD_PACE_SEC_PER_KM)
-
-    z5_hr_max_raw = by_zone["Z5"].get("hr_max")
-    try:
-        z5_hr_max = int(round(float(z5_hr_max_raw))) if z5_hr_max_raw not in ("", None) else int(DEFAULT_MAX_HR)
-    except Exception:
-        z5_hr_max = int(DEFAULT_MAX_HR)
-    if z5_hr_max < (z4_hr_max + 1):
-        z5_hr_max = max(int(DEFAULT_MAX_HR), z4_hr_max + 1)
-
-    by_zone["Z1"]["hr_min"] = (
-        int(by_zone["Z1"]["hr_min"])
-        if by_zone["Z1"].get("hr_min") not in ("", None)
-        else 100
-    )
-    by_zone["Z1"]["pace_slow_sec"] = (
-        float(by_zone["Z1"]["pace_slow_sec"])
-        if by_zone["Z1"].get("pace_slow_sec") not in ("", None)
-        else 600.0
-    )
-    by_zone["Z4"]["hr_max"] = z4_hr_max
-    by_zone["Z4"]["pace_fast_sec"] = z4_pace_fast
-    by_zone["Z5"]["hr_min"] = z4_hr_max + 1
-    by_zone["Z5"]["hr_max"] = z5_hr_max
-    by_zone["Z5"]["pace_slow_sec"] = z4_pace_fast
-    by_zone["Z5"]["pace_fast_sec"] = (
-        float(by_zone["Z5"]["pace_fast_sec"])
-        if by_zone["Z5"].get("pace_fast_sec") not in ("", None)
-        else 60.0
-    )
-    return [by_zone[z] for z in ZONE_ORDER]
+def _default_lt_pace_curve() -> list[dict[str, object]]:
+    return [{"date": "2025-01-01", "lt_pace_sec_per_km": float(DEFAULT_THRESHOLD_PACE_SEC_PER_KM)}]
 
 
-def _load_custom_zones(db_path: Path) -> list[dict[str, object]]:
-    raw = get_setting(db_path, SETTINGS_KEY_CUSTOM_ZONES)
+def _normalize_lthr_curve(rows: list[dict]) -> list[dict[str, object]]:
+    out: list[dict[str, object]] = []
+    for row in rows:
+        try:
+            d = date.fromisoformat(str(row.get("date") or "").strip())
+            v = float(row.get("lthr_bpm"))
+            if v <= 0:
+                continue
+            out.append({"date": d.isoformat(), "lthr_bpm": v})
+        except Exception:
+            continue
+    if not out:
+        return _default_lthr_curve()
+    out = sorted(out, key=lambda x: x["date"])
+    dedup: dict[str, dict[str, object]] = {str(x["date"]): x for x in out}
+    return [dedup[k] for k in sorted(dedup.keys())]
+
+
+def _normalize_lt_pace_curve(rows: list[dict]) -> list[dict[str, object]]:
+    out: list[dict[str, object]] = []
+    for row in rows:
+        try:
+            d = date.fromisoformat(str(row.get("date") or "").strip())
+            pace_raw = row.get("lt_pace")
+            pace = _pace_optional_to_sec(pace_raw) if pace_raw is not None else float(row.get("lt_pace_sec_per_km"))
+            if pace is None or pace <= 0:
+                continue
+            out.append({"date": d.isoformat(), "lt_pace_sec_per_km": float(pace)})
+        except Exception:
+            continue
+    if not out:
+        return _default_lt_pace_curve()
+    out = sorted(out, key=lambda x: x["date"])
+    dedup: dict[str, dict[str, object]] = {str(x["date"]): x for x in out}
+    return [dedup[k] for k in sorted(dedup.keys())]
+
+
+def _load_lthr_curve(db_path: Path) -> list[dict[str, object]]:
+    raw = get_setting(db_path, SETTINGS_KEY_LTHR_CURVE)
     if not raw:
-        return _default_custom_zones()
+        return _default_lthr_curve()
     try:
         payload = json.loads(raw)
     except Exception:
-        return _default_custom_zones()
+        return _default_lthr_curve()
     if not isinstance(payload, list):
-        return _default_custom_zones()
-    parsed: list[dict[str, object]] = []
-    for row in payload:
-        if not isinstance(row, dict):
-            continue
-        zone = str(row.get("zone") or "").strip().upper()
-        if zone not in ZONE_ORDER:
-            continue
-        anchor = str(row.get("anchor") or ZONE_ANCHORS_DEFAULT.get(zone, zone)).strip()
-        hr_min = row.get("hr_min")
-        hr_max = row.get("hr_max")
-        pace_fast = row.get("pace_fast_sec")
-        pace_slow = row.get("pace_slow_sec")
-        try:
-            hr_min = int(hr_min) if hr_min not in ("", None) else None
-        except Exception:
-            hr_min = None
-        try:
-            hr_max = int(hr_max) if hr_max not in ("", None) else None
-        except Exception:
-            hr_max = None
-        try:
-            pace_fast = float(pace_fast) if pace_fast not in ("", None) else None
-        except Exception:
-            pace_fast = None
-        try:
-            pace_slow = float(pace_slow) if pace_slow not in ("", None) else None
-        except Exception:
-            pace_slow = None
-        parsed.append(
-            {
-                "zone": zone,
-                "anchor": anchor,
-                "hr_min": hr_min,
-                "hr_max": hr_max,
-                "pace_fast_sec": pace_fast,
-                "pace_slow_sec": pace_slow,
-            }
-        )
-    if not parsed:
-        parsed = _default_custom_zones()
-    return _enforce_custom_zone_constraints(parsed)
+        return _default_lthr_curve()
+    rows = [r for r in payload if isinstance(r, dict)]
+    return _normalize_lthr_curve(rows)
 
 
-def _derive_load_params_from_zones(zones: list[dict[str, object]]) -> tuple[float, float, float]:
-    constrained = _enforce_custom_zone_constraints(zones)
-    by_zone = {str(z.get("zone")): z for z in constrained}
-    z4 = by_zone.get("Z4", {})
-    z5 = by_zone.get("Z5", {})
-    lthr = float(z4.get("hr_max") or DEFAULT_LTHR)
-    max_hr = float(z5.get("hr_max") or DEFAULT_MAX_HR)
-    threshold_pace = float(z4.get("pace_fast_sec") or DEFAULT_THRESHOLD_PACE_SEC_PER_KM)
-    return lthr, max_hr, threshold_pace
+def _load_lt_pace_curve(db_path: Path) -> list[dict[str, object]]:
+    raw = get_setting(db_path, SETTINGS_KEY_LT_PACE_CURVE)
+    if not raw:
+        return _default_lt_pace_curve()
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return _default_lt_pace_curve()
+    if not isinstance(payload, list):
+        return _default_lt_pace_curve()
+    rows = [r for r in payload if isinstance(r, dict)]
+    return _normalize_lt_pace_curve(rows)
+
+
+def _curve_points_from_rows(rows: list[dict[str, object]], value_key: str) -> list[tuple[datetime, float]]:
+    points: list[tuple[datetime, float]] = []
+    for row in rows:
+        try:
+            d = datetime.fromisoformat(str(row.get("date")))
+            v = float(row.get(value_key))
+            if v > 0:
+                points.append((d, v))
+        except Exception:
+            continue
+    return sorted(points, key=lambda x: x[0])
+
+
+def _curve_value_at(points: list[tuple[datetime, float]], default_value: float, at_dt: datetime | pd.Timestamp | None) -> float:
+    if at_dt is None or pd.isna(at_dt):
+        return float(default_value)
+    ts = at_dt.to_pydatetime() if isinstance(at_dt, pd.Timestamp) else at_dt
+    chosen = float(default_value)
+    for d, v in points:
+        if d <= ts:
+            chosen = float(v)
+        else:
+            break
+    return float(chosen)
+
+
+def _curve_latest_value(rows: list[dict[str, object]], value_key: str, default_value: float) -> float:
+    if not rows:
+        return float(default_value)
+    try:
+        return float(rows[-1].get(value_key) or default_value)
+    except Exception:
+        return float(default_value)
 
 
 def _check_raw_archive_integrity(raw_root, start_day: date, end_day: date) -> dict[str, object]:
@@ -993,10 +917,8 @@ def apply_specificity_factor(df: pd.DataFrame, non_running_factor: float) -> pd.
 
     factor_cols = [
         "distance_m",
-        "trimp",
         "rtss",
         "tss",
-        "edwards_trimp",
         "mechanical_load",
         "training_load_garmin",
         "calories_active",
@@ -1019,22 +941,19 @@ def get_metrics_df_fast(
     db_path: Path,
     activities_cache_key: str,
     activity_splits_cache_key: str,
-    resting_hr: float,
-    max_hr: float,
-    sex: str,
     lthr_bpm: float,
+    lthr_curve_points: list[tuple[datetime, float]] | None,
     threshold_pace_default_sec: float,
+    threshold_pace_curve_points: list[tuple[datetime, float]] | None,
     use_split_method: bool,
 ) -> pd.DataFrame:
     runs_df = get_runs_df(db_path)
     df = compute_metrics(
         runs_df,
-        resting_hr=resting_hr,
-        max_hr=max_hr,
-        sex=sex,
         lthr_bpm=lthr_bpm,
         threshold_pace_sec_per_km=threshold_pace_default_sec,
-        threshold_pace_curve_points=None,
+        threshold_pace_curve_points=threshold_pace_curve_points,
+        lthr_curve_points=lthr_curve_points,
     )
     if use_split_method and not df.empty:
         splits_df = get_activity_splits_df(db_path)
@@ -1092,7 +1011,17 @@ def get_metrics_df_fast(
                 avg_hr_activity = float(avg_hr_activity) if pd.notna(avg_hr_activity) else None
                 sport = str(row.get("sport_type") or "").lower()
                 running_like = ("run" in sport) or ("treadmill" in sport)
-                tp_sec = float(threshold_pace_default_sec)
+                start_dt = pd.to_datetime(row.get("start_time_utc"), utc=True, errors="coerce")
+                tp_sec = _curve_value_at(
+                    threshold_pace_curve_points or [],
+                    float(threshold_pace_default_sec),
+                    start_dt,
+                )
+                lthr_at = _curve_value_at(
+                    lthr_curve_points or [],
+                    float(lthr_bpm),
+                    start_dt,
+                )
 
                 tss_sum = 0.0
                 rtss_sum = 0.0
@@ -1122,8 +1051,8 @@ def get_metrics_df_fast(
                         ["averageHR", "avgHR", "averageHeartRate", "meanHeartRate", "avgHeartRate"],
                     )
                     hr_for_tss = lap_avg_hr if lap_avg_hr is not None else avg_hr_activity
-                    if hr_for_tss is not None and 0 < hr_for_tss <= 260:
-                        tss_sum += (lap_duration_s * ((float(hr_for_tss) / float(lthr_bpm)) ** 2) / 3600.0) * 100.0
+                    if hr_for_tss is not None and 0 < hr_for_tss <= 260 and lthr_at > 0:
+                        tss_sum += (lap_duration_s * ((float(hr_for_tss) / float(lthr_at)) ** 2) / 3600.0) * 100.0
                         tss_any = True
 
                     if running_like and lap_distance_m is not None and lap_distance_m > 0 and tp_sec > 0:
@@ -1471,84 +1400,82 @@ init_db(cfg.db_path)
 cfg.import_dir.mkdir(parents=True, exist_ok=True)
 cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
 
-resting_hr = DEFAULT_RESTING_HR
-sex = "male"
 saved_injury_windows = _load_injury_windows(cfg.db_path)
-saved_custom_zones = _load_custom_zones(cfg.db_path)
-derived_lthr_bpm, derived_max_hr, derived_threshold_pace_sec = _derive_load_params_from_zones(saved_custom_zones)
-max_hr = float(derived_max_hr)
+saved_lthr_curve = _load_lthr_curve(cfg.db_path)
+saved_lt_pace_curve = _load_lt_pace_curve(cfg.db_path)
+derived_lthr_bpm = _curve_latest_value(saved_lthr_curve, "lthr_bpm", DEFAULT_LTHR)
+derived_threshold_pace_sec = _curve_latest_value(
+    saved_lt_pace_curve, "lt_pace_sec_per_km", DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+)
+lthr_curve_points = _curve_points_from_rows(saved_lthr_curve, "lthr_bpm")
+lt_pace_curve_points = _curve_points_from_rows(saved_lt_pace_curve, "lt_pace_sec_per_km")
 
 if view == "User Inputs":
     st.divider()
     st.header("User Inputs")
-    with st.expander("Custom Zones (HR + Pace)", expanded=False):
-        st.caption(
-            "Define your HR/pace zones. Z4 HR max is LTHR, Z5 HR max is max HR, and Z4 fastest pace is threshold pace."
-        )
-        zones_editor_df = pd.DataFrame(saved_custom_zones)
-        if zones_editor_df.empty:
-            zones_editor_df = pd.DataFrame(_default_custom_zones())
-        zones_editor_df = zones_editor_df.copy()
-        zones_editor_df["pace_fast"] = zones_editor_df["pace_fast_sec"].apply(_pace_text_or_blank)
-        zones_editor_df["pace_slow"] = zones_editor_df["pace_slow_sec"].apply(_pace_text_or_blank)
-        zones_editor_df = zones_editor_df[["zone", "anchor", "hr_min", "hr_max", "pace_fast", "pace_slow"]]
-
-        edited_zones = st.data_editor(
-            zones_editor_df,
-            num_rows="fixed",
+    with st.expander("LTHR Curve (date -> bpm)", expanded=True):
+        lthr_df = pd.DataFrame(saved_lthr_curve)[["date", "lthr_bpm"]]
+        edited_lthr = st.data_editor(
+            lthr_df,
+            num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
             column_config={
-                "zone": st.column_config.TextColumn("Zone", disabled=True),
-                "anchor": st.column_config.TextColumn("Physiological Anchor"),
-                "hr_min": st.column_config.NumberColumn("HR Min (bpm)", format="%d"),
-                "hr_max": st.column_config.NumberColumn("HR Max (bpm)", format="%d"),
-                "pace_fast": st.column_config.TextColumn("Pace Fast (mm:ss)"),
-                "pace_slow": st.column_config.TextColumn("Pace Slow (mm:ss)"),
+                "date": st.column_config.TextColumn("Date (YYYY-MM-DD)"),
+                "lthr_bpm": st.column_config.NumberColumn("LTHR (bpm)", format="%.1f"),
             },
-            key="custom_zones_editor",
+            key="lthr_curve_editor",
         )
-        zc1, zc2 = st.columns([1, 1])
-        with zc1:
-            if st.button("Save Custom Zones", key="save_custom_zones_btn"):
-                try:
-                    parsed_rows: list[dict[str, object]] = []
-                    for _, row in edited_zones.iterrows():
-                        zone = str(row.get("zone") or "").strip().upper()
-                        if zone not in ZONE_ORDER:
-                            continue
-                        anchor = str(row.get("anchor") or ZONE_ANCHORS_DEFAULT.get(zone, zone)).strip()
-                        hr_min_raw = row.get("hr_min")
-                        hr_max_raw = row.get("hr_max")
-                        hr_min = int(float(hr_min_raw)) if pd.notna(hr_min_raw) else None
-                        hr_max = int(float(hr_max_raw)) if pd.notna(hr_max_raw) else None
-                        pace_fast = _pace_optional_to_sec(row.get("pace_fast"))
-                        pace_slow = _pace_optional_to_sec(row.get("pace_slow"))
-                        parsed_rows.append(
-                            {
-                                "zone": zone,
-                                "anchor": anchor,
-                                "hr_min": hr_min,
-                                "hr_max": hr_max,
-                                "pace_fast_sec": pace_fast,
-                                "pace_slow_sec": pace_slow,
-                            }
-                        )
-                    constrained = _enforce_custom_zone_constraints(
-                        parsed_rows
-                    )
-                    payload = _settings_json(constrained)
-                    changed = save_setting_if_changed(cfg.db_path, SETTINGS_KEY_CUSTOM_ZONES, payload)
-                    st.success("Custom zones saved." if changed else "Custom zones unchanged.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Could not save custom zones: {exc}")
-        with zc2:
-            if st.button("Reset Zones to Defaults", key="reset_custom_zones_btn"):
-                defaults = _default_custom_zones()
-                payload = _settings_json(defaults)
-                changed = save_setting_if_changed(cfg.db_path, SETTINGS_KEY_CUSTOM_ZONES, payload)
-                st.success("Custom zones reset to defaults." if changed else "Custom zones already at defaults.")
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            if st.button("Save LTHR Curve", key="save_lthr_curve_btn"):
+                normalized = _normalize_lthr_curve(edited_lthr.fillna("").to_dict(orient="records"))
+                changed = save_setting_if_changed(
+                    cfg.db_path, SETTINGS_KEY_LTHR_CURVE, _settings_json(normalized)
+                )
+                st.success("LTHR curve saved." if changed else "LTHR curve unchanged.")
+                st.rerun()
+        with c2:
+            if st.button("Reset LTHR Curve", key="reset_lthr_curve_btn"):
+                defaults = _default_lthr_curve()
+                changed = save_setting_if_changed(
+                    cfg.db_path, SETTINGS_KEY_LTHR_CURVE, _settings_json(defaults)
+                )
+                st.success("LTHR curve reset." if changed else "LTHR curve unchanged.")
+                st.rerun()
+
+    with st.expander("LT Pace Curve (date -> mm:ss /km)", expanded=True):
+        pace_df = pd.DataFrame(saved_lt_pace_curve)[["date", "lt_pace_sec_per_km"]].copy()
+        pace_df["lt_pace"] = pace_df["lt_pace_sec_per_km"].apply(_pace_text_or_blank)
+        pace_df = pace_df[["date", "lt_pace"]]
+        edited_pace = st.data_editor(
+            pace_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "date": st.column_config.TextColumn("Date (YYYY-MM-DD)"),
+                "lt_pace": st.column_config.TextColumn("LT Pace (mm:ss)"),
+            },
+            key="lt_pace_curve_editor",
+        )
+        c3, c4 = st.columns([1, 1])
+        with c3:
+            if st.button("Save LT Pace Curve", key="save_lt_pace_curve_btn"):
+                rows = edited_pace.fillna("").to_dict(orient="records")
+                normalized = _normalize_lt_pace_curve(rows)
+                changed = save_setting_if_changed(
+                    cfg.db_path, SETTINGS_KEY_LT_PACE_CURVE, _settings_json(normalized)
+                )
+                st.success("LT pace curve saved." if changed else "LT pace curve unchanged.")
+                st.rerun()
+        with c4:
+            if st.button("Reset LT Pace Curve", key="reset_lt_pace_curve_btn"):
+                defaults = _default_lt_pace_curve()
+                changed = save_setting_if_changed(
+                    cfg.db_path, SETTINGS_KEY_LT_PACE_CURVE, _settings_json(defaults)
+                )
+                st.success("LT pace curve reset." if changed else "LT pace curve unchanged.")
                 st.rerun()
     with st.expander("Injury Overlays", expanded=False):
         st.caption("Edit injury windows used for chart shading.")
@@ -1586,11 +1513,10 @@ metrics_df = get_metrics_df_fast(
     db_path=cfg.db_path,
     activities_cache_key=activities_cache_key,
     activity_splits_cache_key=activity_splits_cache_key,
-    resting_hr=float(resting_hr),
-    max_hr=float(max_hr),
-    sex=sex,
     lthr_bpm=float(derived_lthr_bpm),
+    lthr_curve_points=lthr_curve_points,
     threshold_pace_default_sec=float(derived_threshold_pace_sec),
+    threshold_pace_curve_points=lt_pace_curve_points,
     use_split_method=bool(use_split_method),
 )
 daily_summary_df = get_daily_summary_df(cfg.db_path)
@@ -1706,8 +1632,6 @@ if view == "Dashboard":
             "Last Fatigue (week-end)": ("fatigue", "last"),
             "Pounding (EWMA 7, rTSS)": ("pounding", "mean"),
             "Garmin Training Load": ("training_load_garmin", "sum"),
-            "TRIMP": ("trimp_total", "sum"),
-            "Edwards TRIMP": ("edwards_trimp_total", "sum"),
             "Calories Active": ("calories_active", "sum"),
             "Calories Total": ("calories_total", "sum"),
             "Vigorous Minutes": ("intensity_minutes_vigorous", "sum"),
@@ -2449,11 +2373,9 @@ if view == "Dashboard":
                     "distance_km": st.column_config.NumberColumn(format="%.2f km"),
                     "duration_min": st.column_config.NumberColumn(format="%.1f min"),
                     "avg_pace_display": st.column_config.TextColumn("Pace"),
-                    "trimp": st.column_config.NumberColumn(format="%.1f"),
                     "rtss": st.column_config.NumberColumn("rTSS", format="%.1f"),
                     "tss": st.column_config.NumberColumn("TSS", format="%.1f"),
                     "if_proxy": st.column_config.NumberColumn("IF", format="%.3f"),
-                    "edwards_trimp": st.column_config.NumberColumn(format="%.1f"),
                     "training_load_garmin": st.column_config.NumberColumn(format="%.1f"),
                     "specificity_factor": st.column_config.NumberColumn(format="%.2f"),
                     "fitness": st.column_config.NumberColumn("Fitness", format="%.1f"),
@@ -2938,8 +2860,20 @@ if view == "Calendar":
                     _build_split_metrics_for_activity(
                         activity_row=selected_activity_row,
                         split_row=split_row,
-                        lthr=float(derived_lthr_bpm),
-                        threshold_pace_default_sec=float(derived_threshold_pace_sec),
+                        lthr=float(
+                            _curve_value_at(
+                                lthr_curve_points,
+                                float(derived_lthr_bpm),
+                                pd.to_datetime(selected_activity_row.get("start_time_utc"), utc=True, errors="coerce"),
+                            )
+                        ),
+                        threshold_pace_default_sec=float(
+                            _curve_value_at(
+                                lt_pace_curve_points,
+                                float(derived_threshold_pace_sec),
+                                pd.to_datetime(selected_activity_row.get("start_time_utc"), utc=True, errors="coerce"),
+                            )
+                        ),
                     )
                     if selected_activity_row is not None and split_row is not None
                     else pd.DataFrame()
@@ -3164,12 +3098,10 @@ if view == "Benchmark":
                         "avg_pace_s_per_km": "avg_pace_s_per_km",
                     }
                 ),
-                resting_hr=float(resting_hr),
-                max_hr=float(max_hr),
-                sex=sex,
                 lthr_bpm=float(derived_lthr_bpm),
+                lthr_curve_points=lthr_curve_points,
                 threshold_pace_sec_per_km=float(derived_threshold_pace_sec),
-                threshold_pace_curve_points=None,
+                threshold_pace_curve_points=lt_pace_curve_points,
             )
             bench_metrics["athlete_name"] = bench_view["athlete_name"].values
         else:
@@ -3303,9 +3235,9 @@ if view == "Activity Detail":
         row = options_df.loc[options_df["activity_id"] == activity_id].iloc[0]
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("TRIMP", f"{row['trimp']:.1f}")
+        m1.metric("TSS", f"{(row.get('tss') or 0):.1f}")
         m2.metric("Garmin Training Load", f"{(row.get('training_load_garmin') or 0):.1f}")
-        m3.metric("Edwards TRIMP", f"{(row.get('edwards_trimp') or 0):.1f}")
+        m3.metric("rTSS", f"{(row.get('rtss') or 0):.1f}")
         sport_type = str(row.get("sport_type") or "").lower()
         show_pace = ("run" in sport_type) or ("treadmill" in sport_type)
         m4.metric("Avg Pace", format_pace_min_per_km(row.get("avg_pace_s_per_km")) if show_pace else "-")
@@ -3339,8 +3271,6 @@ if view == "Activity Detail":
                 "calories_total": row.get("calories_total"),
                 "intensity_minutes_vigorous": row.get("intensity_minutes_vigorous"),
                 "intensity_minutes_moderate": row.get("intensity_minutes_moderate"),
-                "trimp": row.get("trimp"),
-                "edwards_trimp": row.get("edwards_trimp"),
                 "mechanical_load": row.get("mechanical_load"),
                 "performance_condition": row.get("performance_condition"),
                 "device_name": row.get("device_name"),

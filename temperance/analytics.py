@@ -7,9 +7,10 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
-from models import aerobic_load, edwards_trimp_from_zones, mechanical_load
+from models import mechanical_load
 from tss import (
     ActivityDistanceProxyInput,
+    PiecewiseLTHRProvider,
     PiecewiseThresholdPaceProvider,
     compute_distance_proxy,
 )
@@ -17,12 +18,13 @@ from tss import (
 
 def compute_metrics(
     runs_df: pd.DataFrame,
-    resting_hr: float | None,
-    max_hr: float | None,
+    resting_hr: float | None = None,
+    max_hr: float | None = None,
     sex: str = "male",
     threshold_pace_sec_per_km: float = 300.0,
     lthr_bpm: float = 178.0,
     threshold_pace_curve_points: list[tuple[datetime, float]] | None = None,
+    lthr_curve_points: list[tuple[datetime, float]] | None = None,
 ) -> pd.DataFrame:
     if runs_df.empty:
         return runs_df
@@ -40,35 +42,22 @@ def compute_metrics(
         df.loc[missing_pace, "duration_s"] / (df.loc[missing_pace, "distance_m"] / 1000.0)
     )
 
-    df["aerobic_load"] = df.apply(
-        lambda r: aerobic_load(
-            duration_s=float(r.get("duration_s") or 0),
-            avg_hr=float(r.get("avg_hr")) if pd.notna(r.get("avg_hr")) else None,
-            resting_hr=resting_hr,
-            max_hr=max_hr,
-            sex=sex,
-        ),
-        axis=1,
-    )
-    # Persisted per-activity TRIMP proxy is this aerobic load output.
-    df["trimp"] = df["aerobic_load"]
-
-    df["edwards_trimp"] = df.apply(
-        lambda r: edwards_trimp_from_zones(
-            hr_zone_1_s=float(r.get("hr_time_in_zone_1")) if pd.notna(r.get("hr_time_in_zone_1")) else 0.0,
-            hr_zone_2_s=float(r.get("hr_time_in_zone_2")) if pd.notna(r.get("hr_time_in_zone_2")) else 0.0,
-            hr_zone_3_s=float(r.get("hr_time_in_zone_3")) if pd.notna(r.get("hr_time_in_zone_3")) else 0.0,
-            hr_zone_4_s=float(r.get("hr_time_in_zone_4")) if pd.notna(r.get("hr_time_in_zone_4")) else 0.0,
-            hr_zone_5_s=float(r.get("hr_time_in_zone_5")) if pd.notna(r.get("hr_time_in_zone_5")) else 0.0,
-        ),
-        axis=1,
-    )
+    # TRIMP-based models are disabled in curve-first v1.
+    df["aerobic_load"] = 0.0
+    df["trimp"] = 0.0
+    df["edwards_trimp"] = 0.0
 
     pace_provider = None
     if threshold_pace_curve_points:
         pace_provider = PiecewiseThresholdPaceProvider(
             default_threshold_pace_sec_per_km=threshold_pace_sec_per_km,
             points=tuple(threshold_pace_curve_points),
+        )
+    lthr_provider = None
+    if lthr_curve_points:
+        lthr_provider = PiecewiseLTHRProvider(
+            default_lthr_bpm=lthr_bpm,
+            points=tuple(lthr_curve_points),
         )
     df["rtss"] = pd.NA
     df["tss"] = pd.NA
@@ -82,12 +71,23 @@ def compute_metrics(
         else pd.Series(float("nan"), index=df.index)
     )
 
-    # Vectorized hrTSS.
-    if lthr_bpm > 0:
-        tss_mask = (duration_s > 0) & (avg_hr > 0) & (avg_hr <= 260)
+    # hrTSS from LTHR curve.
+    tss_mask = (duration_s > 0) & (avg_hr > 0) & (avg_hr <= 260)
+    if lthr_bpm > 0 and lthr_provider is None:
         df.loc[tss_mask, "tss"] = (
             duration_s[tss_mask] * ((avg_hr[tss_mask] / float(lthr_bpm)) ** 2) / 3600.0 * 100.0
         )
+    elif lthr_provider is not None:
+        for idx in df.index[tss_mask]:
+            start_dt = df.at[idx, "start_time_utc"]
+            if pd.isna(start_dt):
+                continue
+            lthr_at = float(lthr_provider.get_lthr_bpm(start_dt.to_pydatetime()))
+            if lthr_at <= 0:
+                continue
+            hr_v = float(avg_hr.loc[idx])
+            dur_v = float(duration_s.loc[idx])
+            df.at[idx, "tss"] = (dur_v * ((hr_v / lthr_at) ** 2) / 3600.0) * 100.0
 
     # rTSS for running/treadmill only.
     rtss_mask = running_idx & (duration_s > 0) & (avg_pace > 0)
@@ -515,8 +515,6 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "rtss",
         "tss",
         "avg_pace_display",
-        "trimp",
-        "edwards_trimp",
         "mechanical_load",
     ]
     cols = [c for c in cols if c in table.columns]
