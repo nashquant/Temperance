@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 from typing import Protocol
 
@@ -18,6 +18,13 @@ class LTHRProvider(Protocol):
 
     def get_lthr_bpm(self, at: datetime) -> float:
         ...
+
+
+def _normalize_datetime_for_compare(value: datetime) -> datetime:
+    """Normalize datetime for robust comparisons across naive/aware values."""
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
 
 
 @dataclass(frozen=True)
@@ -56,9 +63,11 @@ class PiecewiseLTHRProvider:
                 raise ValueError("all LTHR curve values must be > 0")
 
     def get_lthr_bpm(self, at: datetime) -> float:
+        at_cmp = _normalize_datetime_for_compare(at)
         chosen = float(self.default_lthr_bpm)
         for effective_at, lthr in sorted(self.points, key=lambda x: x[0]):
-            if effective_at <= at:
+            eff_cmp = _normalize_datetime_for_compare(effective_at)
+            if eff_cmp <= at_cmp:
                 chosen = float(lthr)
             else:
                 break
@@ -85,9 +94,11 @@ class PiecewiseThresholdPaceProvider:
                 raise ValueError("all threshold pace curve values must be > 0")
 
     def get_threshold_pace_sec_per_km(self, at: datetime) -> float:
+        at_cmp = _normalize_datetime_for_compare(at)
         chosen = float(self.default_threshold_pace_sec_per_km)
         for effective_at, pace in sorted(self.points, key=lambda x: x[0]):
-            if effective_at <= at:
+            eff_cmp = _normalize_datetime_for_compare(effective_at)
+            if eff_cmp <= at_cmp:
                 chosen = float(pace)
             else:
                 break
