@@ -62,7 +62,8 @@ st.set_page_config(page_title="Temperance", layout="wide")
 _assets_dir = Path(__file__).resolve().parent / "assets"
 _logo_png = _assets_dir / "temperance_logo.png"
 _logo_svg = _assets_dir / "temperance_logo.svg"
-_logo_file = _logo_png if _logo_png.exists() else _logo_svg
+# Prefer SVG to avoid accidental baked backgrounds in raster exports.
+_logo_file = _logo_svg if _logo_svg.exists() else _logo_png
 
 st.markdown(
     """
@@ -1138,7 +1139,7 @@ with st.sidebar:
             st.rerun()
 
     if "garmin_email_input" not in st.session_state:
-        st.session_state["garmin_email_input"] = cfg.garmin_email or ""
+        st.session_state["garmin_email_input"] = ""
     if "garmin_password_input" not in st.session_state:
         st.session_state["garmin_password_input"] = ""
 
@@ -1157,6 +1158,13 @@ with st.sidebar:
 
     role = str(st.session_state.get("auth_role") or "admin")
     auth_user = str(st.session_state.get("auth_user") or "default")
+    if (
+        "data_owner" not in st.session_state
+        or st.session_state.get("_data_owner_auth_user") != auth_user
+    ):
+        st.session_state["data_owner"] = auth_user
+        st.session_state["_data_owner_auth_user"] = auth_user
+
     if auth_on and role == "admin":
         owner_options = sorted(users.keys()) if users else [auth_user]
         default_owner = st.session_state.get("data_owner") or auth_user
@@ -1175,18 +1183,36 @@ with st.sidebar:
     st.session_state["data_owner"] = data_owner
 
     allowed_tabs = AUTH_ALL_TABS if (not auth_on or role == "admin") else AUTH_VIEWER_TABS
-    default_idx = allowed_tabs.index("Calendar") if "Calendar" in allowed_tabs else 0
-    view = st.radio(
+    preferred_order = ["Calendar", "Dashboard"]
+    ordered_tabs = [v for v in preferred_order if v in allowed_tabs] + [
+        v for v in allowed_tabs if v not in preferred_order
+    ]
+    page_labels = {
+        "Calendar": "Activity Summary",
+        "Dashboard": "Plot Charts",
+        "Activity Detail": "Activity Detail",
+        "Recovery Data": "Recovery Data",
+        "Data Extract": "Data Extract",
+        "User Inputs": "User Inputs",
+    }
+    label_to_view = {page_labels.get(v, v): v for v in ordered_tabs}
+    default_view = "Calendar" if "Calendar" in ordered_tabs else ordered_tabs[0]
+    default_idx = ordered_tabs.index(default_view)
+    selected_label = st.radio(
         "Page",
-        allowed_tabs,
+        list(label_to_view.keys()),
         index=default_idx,
     )
+    view = label_to_view[selected_label]
     use_split_method = st.checkbox("Use splits for metrics", value=False)
     st.caption(f"Active data owner: `{data_owner}`")
 
 if view not in allowed_tabs:
     st.error("You do not have access to this page.")
     st.stop()
+
+previous_view = st.session_state.get("_previous_view")
+st.session_state["_previous_view"] = view
 
 cfg = _scoped_config_for_owner(st.session_state.get("data_owner") or "default")
 init_db(cfg.db_path)
@@ -2187,6 +2213,9 @@ if view == "Calendar":
     if metrics_df.empty:
         st.info("No activities available.")
     else:
+        if previous_view != "Calendar":
+            st.session_state.pop("calendar_split_activity_id", None)
+            st.session_state["calendar_split_open"] = False
         cal_base = metrics_df.copy()
         cal_base["start_local"] = pd.to_datetime(cal_base["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
         cal_base = cal_base.dropna(subset=["start_local"]).copy()
@@ -2625,6 +2654,7 @@ if view == "Calendar":
                                 type="tertiary",
                             ):
                                 st.session_state["calendar_split_activity_id"] = activity_id
+                                st.session_state["calendar_split_open"] = True
                             rendered_cards += 1
                         today_utc = datetime.now(timezone.utc).date()
                         if rendered_cards == 0 and day_ts.date() < today_utc:
@@ -2638,7 +2668,11 @@ if view == "Calendar":
                                 unsafe_allow_html=True,
                             )
 
-            selected_split_activity_id = st.session_state.get("calendar_split_activity_id")
+            selected_split_activity_id = (
+                st.session_state.get("calendar_split_activity_id")
+                if bool(st.session_state.get("calendar_split_open"))
+                else None
+            )
             if selected_split_activity_id:
                 selected_activity_df = cal_metrics[
                     cal_metrics["activity_id"].astype(str) == str(selected_split_activity_id)
@@ -2780,6 +2814,7 @@ if view == "Calendar":
                         )
                     if st.button("Close", key="calendar_split_modal_close"):
                         st.session_state.pop("calendar_split_activity_id", None)
+                        st.session_state["calendar_split_open"] = False
                         st.rerun()
                 _show_split_details_dialog()
 
@@ -2950,7 +2985,7 @@ if view == "Recovery Data":
                 recovery_quick_range = st.selectbox(
                     "Quick range",
                     ["YTD", "1Y", "2Y", "ALL", "Custom"],
-                    index=1,
+                    index=0,
                     key="recovery_quick_range",
                 )
                 if recovery_quick_range == "YTD":
@@ -2980,7 +3015,7 @@ if view == "Recovery Data":
                     r_range = (rq_start, rq_end)
                     st.caption(f"Range: {rq_start.isoformat()} -> {rq_end.isoformat()}")
             with rc2:
-                recovery_weekly = st.checkbox("Weekly aggregation", value=True, key="recovery_weekly")
+                recovery_weekly = st.checkbox("Weekly aggregation", value=False, key="recovery_weekly")
             with rc3:
                 selected_recovery_metrics = st.multiselect(
                     "Recovery metrics",
