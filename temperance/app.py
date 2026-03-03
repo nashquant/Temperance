@@ -2576,19 +2576,42 @@ if view == "Calendar":
                 cal_min_day = cal_base["start_local"].min().date()
                 cal_max_day = cal_base["start_local"].max().date()
                 if compact_mode_early:
+                    latest_week_start = pd.Timestamp(cal_max_day) - pd.Timedelta(
+                        days=int(pd.Timestamp(cal_max_day).weekday())
+                    )
+                    selected_preview = pd.to_datetime(
+                        st.session_state.get("calendar_compact_week_start"), errors="coerce"
+                    )
+                    if pd.isna(selected_preview):
+                        selected_preview = latest_week_start
+                    selected_preview = selected_preview - pd.Timedelta(days=int(selected_preview.weekday()))
+                    is_future_week_preview = selected_preview > latest_week_start
+
+                    current_compare_choice = str(
+                        st.session_state.get("calendar_compact_compare_choice", "Planned")
+                    )
+                    if is_future_week_preview and current_compare_choice == "Planned":
+                        st.session_state["calendar_compact_compare_choice"] = "Previous week"
+                        current_compare_choice = "Previous week"
+
+                    compare_options = ["Previous week", "2 weeks ago", "3 weeks ago", "4 weeks ago"]
+                    if not is_future_week_preview:
+                        compare_options.append("Planned")
+                        if "calendar_compact_compare_choice" not in st.session_state:
+                            st.session_state["calendar_compact_compare_choice"] = "Planned"
+                    elif current_compare_choice not in compare_options:
+                        st.session_state["calendar_compact_compare_choice"] = "Previous week"
+
                     compare_choice = st.selectbox(
                         "Compare against",
-                        ["Previous week", "2 weeks ago", "3 weeks ago", "4 weeks ago", "Planned"],
-                        index=0,
+                        compare_options,
+                        index=(
+                            compare_options.index(st.session_state.get("calendar_compact_compare_choice", "Previous week"))
+                            if st.session_state.get("calendar_compact_compare_choice", "Previous week") in compare_options
+                            else 0
+                        ),
                         key="calendar_compact_compare_choice",
                     )
-                    compare_offset_weeks = {
-                        "Previous week": 1,
-                        "2 weeks ago": 2,
-                        "3 weeks ago": 3,
-                        "4 weeks ago": 4,
-                        "Planned": 1,
-                    }[compare_choice]
                     range_start_day = cal_min_day
                     range_end_day = cal_max_day
                 else:
@@ -2887,7 +2910,10 @@ if view == "Calendar":
                 selected_week_start = selected_week_start - pd.Timedelta(days=int(selected_week_start.weekday()))
                 st.session_state["calendar_compact_week_start"] = selected_week_start
                 selected_week_end = selected_week_start + pd.Timedelta(days=6)
-                compare_choice = str(st.session_state.get("calendar_compact_compare_choice", "Previous week"))
+                compare_choice = str(st.session_state.get("calendar_compact_compare_choice", "Planned"))
+                if selected_week_start > latest_week_start and compare_choice == "Planned":
+                    compare_choice = "Previous week"
+                    st.session_state["calendar_compact_compare_choice"] = compare_choice
                 compare_weeks = {
                     "Previous week": 1,
                     "2 weeks ago": 2,
@@ -2948,6 +2974,10 @@ if view == "Calendar":
                         start_day_utc=selected_week_start.date().isoformat(),
                         end_day_utc=selected_week_end.date().isoformat(),
                     )
+                    planner_specificity_profile = _normalize_specificity_profile(
+                        st.session_state.get("user_specificity_profile", {}),
+                        fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+                    )
                     planned_day_stats: list[dict[str, float | pd.Timestamp]] = []
                     for day_ts in pd.date_range(selected_week_start, selected_week_end, freq="D"):
                         day_key = day_ts.date().isoformat()
@@ -2989,22 +3019,20 @@ if view == "Calendar":
                                     except Exception:
                                         segments = []
                                 for seg in segments:
+                                    seg_spec = _specificity_factor_for_plan_kind(
+                                        str(seg.get("kind")),
+                                        planner_specificity_profile,
+                                    )
                                     m = _planned_segment_metrics(
                                         seg,
                                         lthr_bpm=lthr_for_day,
                                         threshold_pace_sec_per_km=lt_pace_for_day,
-                                        non_running_factor=_specificity_factor_for_plan_kind(
-                                            str(seg.get("kind")),
-                                            _normalize_specificity_profile(
-                                                st.session_state.get("user_specificity_profile", {}),
-                                                fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
-                                            ),
-                                        ),
+                                        non_running_factor=seg_spec,
                                     )
                                     seg_duration = float(m.get("duration_s") or 0.0)
                                     seg_if = float(m.get("if_proxy") or 0.0)
-                                    total_tss += float(m.get("tss") or 0.0)
-                                    total_rtss += float(m.get("rtss") or 0.0)
+                                    total_tss += float(m.get("tss") or 0.0) * float(seg_spec)
+                                    total_rtss += float(m.get("rtss") or 0.0) * float(seg_spec)
                                     total_dist_eqv += float(m.get("distance_eqv_km") or 0.0)
                                     if seg_duration > 0:
                                         if_weighted_sum += seg_if * seg_duration
