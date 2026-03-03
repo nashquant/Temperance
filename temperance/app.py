@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import html
-import io
 import os
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -12,10 +10,6 @@ from pathlib import Path
 import altair as alt
 import pandas as pd
 import streamlit as st
-try:
-    from fitparse import FitFile
-except Exception:  # pragma: no cover
-    FitFile = None
 
 from analytics import (
     build_daily_summary,
@@ -30,7 +24,6 @@ from analytics import (
 from auth import build_users, password_matches, resolve_garmin_credentials, resolve_user
 from config import load_config
 from db import (
-    delete_benchmark_activities,
     get_setting,
     get_activity_splits_cache_key,
     get_activity_splits_df,
@@ -46,7 +39,6 @@ from db import (
     get_sleep_df,
     get_table_counts,
     get_wellness_df,
-    get_benchmark_df,
     init_db,
     log_sync,
     save_setting,
@@ -56,7 +48,6 @@ from db import (
     upsert_activity_splits,
     upsert_sleep_daily,
     upsert_wellness_daily,
-    upsert_benchmark_activities,
 )
 from garmin_client import (
     dump_extract_to_json,
@@ -68,7 +59,10 @@ from garmin_client import (
 
 st.set_page_config(page_title="Temperance", layout="wide")
 
-_logo_file = Path(__file__).resolve().parent / "assets" / "temperance_logo.svg"
+_assets_dir = Path(__file__).resolve().parent / "assets"
+_logo_png = _assets_dir / "temperance_logo.png"
+_logo_svg = _assets_dir / "temperance_logo.svg"
+_logo_file = _logo_png if _logo_png.exists() else _logo_svg
 
 st.markdown(
     """
@@ -87,6 +81,13 @@ st.markdown(
       .temp-hero-sub {
         margin: 0.35rem 0 0;
         color: #475569;
+      }
+      .temp-hero-logo {
+        width: 112px;
+        max-width: 100%;
+        height: auto;
+        object-fit: contain;
+        display: block;
       }
     </style>
     """,
@@ -120,8 +121,8 @@ SETTINGS_KEY_LTHR_CURVE = "lthr_curve_v1"
 SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_GARMIN_OWNER_SCOPE = "garmin_owner_scope_v1"
 
-AUTH_ALL_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs", "Benchmark"]
-AUTH_VIEWER_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "Benchmark"]
+AUTH_ALL_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs"]
+AUTH_VIEWER_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract"]
 
 
 def _auth_enabled() -> bool:
@@ -580,217 +581,6 @@ def _to_seconds(value: object) -> float | None:
         return v if v > 0 else None
     except Exception:
         return None
-
-
-def _normalize_benchmark_upload(
-    raw_df: pd.DataFrame,
-    athlete_name: str,
-    source_name: str,
-) -> tuple[list[dict[str, object]], list[str]]:
-    df = raw_df.copy()
-    original_cols = list(df.columns)
-    norm_map = {str(c).strip().lower(): c for c in original_cols}
-
-    def _pick(*names: str) -> str | None:
-        for n in names:
-            if n in norm_map:
-                return norm_map[n]
-        return None
-
-    c_start = _pick("start_time_utc", "start time", "start date", "activity date", "start_date", "date")
-    c_type = _pick("sport_type", "activity type", "activity_type", "type", "sport")
-    c_name = _pick("activity_name", "activity name", "name", "title")
-    c_distance = _pick("distance_m", "distance (m)", "distance", "distance_km", "distance (km)")
-    c_duration = _pick("duration_s", "duration", "moving time", "moving_time", "elapsed time", "elapsed_time")
-    c_avg_hr = _pick("avg_hr", "average heart rate", "avg hr", "averageheartrate")
-    c_avg_cadence = _pick("avg_cadence", "average cadence", "avg cadence")
-    c_avg_power = _pick("avg_power", "average power", "avg power", "power")
-    c_avg_pace = _pick("avg_pace_s_per_km", "average pace", "pace", "avg pace")
-    c_speed = _pick("average speed", "avg speed", "average_speed", "average speed (m/s)", "average speed (km/h)")
-    c_id = _pick("activity_id", "id", "activity id")
-
-    rows: list[dict[str, object]] = []
-    errors: list[str] = []
-
-    for idx, row in df.iterrows():
-        try:
-            start_raw = row.get(c_start) if c_start else None
-            start_ts = pd.to_datetime(start_raw, utc=True, errors="coerce")
-            if pd.isna(start_ts):
-                errors.append(f"row {idx + 1}: missing/invalid start time")
-                continue
-
-            sport_type = str(row.get(c_type) if c_type else "unknown").strip() or "unknown"
-            activity_name = str(row.get(c_name) if c_name else "").strip() or None
-
-            distance_m = None
-            if c_distance:
-                d = pd.to_numeric(row.get(c_distance), errors="coerce")
-                if pd.notna(d) and float(d) > 0:
-                    # Heuristic: values <=1000 are likely km; larger values likely meters.
-                    distance_m = float(d) * 1000.0 if float(d) <= 1000 else float(d)
-
-            duration_s = _to_seconds(row.get(c_duration) if c_duration else None)
-            avg_hr = pd.to_numeric(row.get(c_avg_hr), errors="coerce") if c_avg_hr else None
-            avg_hr = float(avg_hr) if avg_hr is not None and pd.notna(avg_hr) and float(avg_hr) > 0 else None
-            avg_cadence = pd.to_numeric(row.get(c_avg_cadence), errors="coerce") if c_avg_cadence else None
-            avg_cadence = (
-                float(avg_cadence)
-                if avg_cadence is not None and pd.notna(avg_cadence) and float(avg_cadence) > 0
-                else None
-            )
-            avg_power = pd.to_numeric(row.get(c_avg_power), errors="coerce") if c_avg_power else None
-            avg_power = (
-                float(avg_power)
-                if avg_power is not None and pd.notna(avg_power) and float(avg_power) > 0
-                else None
-            )
-
-            avg_pace_s_per_km = None
-            if c_avg_pace:
-                avg_pace_s_per_km = _to_seconds(row.get(c_avg_pace))
-            if avg_pace_s_per_km is None and c_speed:
-                spd = pd.to_numeric(row.get(c_speed), errors="coerce")
-                if pd.notna(spd) and float(spd) > 0:
-                    col_l = str(c_speed).lower()
-                    if "km/h" in col_l:
-                        mps = float(spd) / 3.6
-                    elif "m/s" in col_l:
-                        mps = float(spd)
-                    else:
-                        # Default to m/s for generic speed columns.
-                        mps = float(spd)
-                    avg_pace_s_per_km = 1000.0 / mps if mps > 0 else None
-            if avg_pace_s_per_km is None and distance_m and duration_s and distance_m > 0:
-                avg_pace_s_per_km = float(duration_s) / (float(distance_m) / 1000.0)
-
-            src_id = str(row.get(c_id)).strip() if c_id and pd.notna(row.get(c_id)) else ""
-            if not src_id:
-                key = f"{athlete_name}|{start_ts.isoformat()}|{sport_type}|{activity_name or ''}|{duration_s or ''}"
-                src_id = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
-
-            rows.append(
-                {
-                    "benchmark_activity_id": f"{athlete_name}:{src_id}",
-                    "athlete_name": athlete_name,
-                    "source": source_name,
-                    "start_time_utc": start_ts.isoformat(),
-                    "sport_type": sport_type,
-                    "activity_name": activity_name,
-                    "distance_m": distance_m,
-                    "duration_s": duration_s,
-                    "avg_hr": avg_hr,
-                    "avg_cadence": avg_cadence,
-                    "avg_power": avg_power,
-                    "avg_pace_s_per_km": avg_pace_s_per_km,
-                    "raw": row.to_dict(),
-                }
-            )
-        except Exception as exc:
-            errors.append(f"row {idx + 1}: {exc}")
-    return rows, errors
-
-
-def _parse_fit_upload(
-    file_name: str,
-    payload: bytes,
-    athlete_name: str,
-    source_name: str,
-) -> tuple[list[dict[str, object]], list[str]]:
-    if FitFile is None:
-        return [], ["fitparse not available (install fitparse)"]
-
-    errors: list[str] = []
-    try:
-        fit_file = FitFile(io.BytesIO(payload))
-    except Exception as exc:
-        return [], [f"invalid FIT ({exc})"]
-
-    session_data: dict[str, object] = {}
-    for msg in fit_file.get_messages("session"):
-        session_data = {field.name: field.value for field in msg}
-        break
-    if not session_data:
-        return [], ["no FIT session found"]
-
-    start_raw = session_data.get("start_time") or session_data.get("timestamp")
-    start_ts = pd.to_datetime(start_raw, utc=True, errors="coerce")
-    if pd.isna(start_ts):
-        return [], ["invalid FIT start time"]
-
-    distance_m = pd.to_numeric(session_data.get("total_distance"), errors="coerce")
-    duration_s = pd.to_numeric(
-        session_data.get("total_elapsed_time") or session_data.get("total_timer_time"),
-        errors="coerce",
-    )
-    if pd.isna(distance_m) or float(distance_m) <= 0:
-        return [], ["missing FIT distance"]
-    if pd.isna(duration_s) or float(duration_s) <= 0:
-        return [], ["missing FIT duration"]
-
-    distance_m = float(distance_m)
-    duration_s = float(duration_s)
-    avg_pace_s_per_km = duration_s / (distance_m / 1000.0) if distance_m > 0 else None
-
-    sport = str(session_data.get("sport") or "").lower()
-    sub_sport = str(session_data.get("sub_sport") or "").lower()
-    if "cycl" in sport or "bike" in sport:
-        sport_type = "cycling"
-    elif "treadmill" in sub_sport:
-        sport_type = "treadmill_running"
-    elif "ellipt" in sport or "ellipt" in sub_sport:
-        sport_type = "elliptical"
-    elif "run" in sport or "run" in sub_sport:
-        sport_type = "running"
-    else:
-        sport_type = sport or "unknown"
-
-    avg_hr = pd.to_numeric(session_data.get("avg_heart_rate"), errors="coerce")
-    avg_hr = float(avg_hr) if pd.notna(avg_hr) and float(avg_hr) > 0 else None
-    avg_cadence = pd.to_numeric(
-        session_data.get("avg_cadence") or session_data.get("enhanced_avg_running_cadence"),
-        errors="coerce",
-    )
-    avg_cadence = float(avg_cadence) if pd.notna(avg_cadence) and float(avg_cadence) > 0 else None
-    avg_power = pd.to_numeric(
-        session_data.get("avg_power") or session_data.get("enhanced_avg_power"),
-        errors="coerce",
-    )
-    avg_power = float(avg_power) if pd.notna(avg_power) and float(avg_power) > 0 else None
-
-    activity_name = Path(file_name).stem
-    digest = hashlib.sha1(payload).hexdigest()[:16]
-
-    row = {
-        "benchmark_activity_id": f"{athlete_name}:fit:{digest}",
-        "athlete_name": athlete_name,
-        "source": source_name,
-        "start_time_utc": start_ts.isoformat(),
-        "sport_type": sport_type,
-        "activity_name": activity_name,
-        "distance_m": distance_m,
-        "duration_s": duration_s,
-        "avg_hr": avg_hr,
-        "avg_cadence": avg_cadence,
-        "avg_power": avg_power,
-        "avg_pace_s_per_km": avg_pace_s_per_km,
-        "raw": {
-            "file_name": file_name,
-            "format": "fit",
-            "summary": {
-                "start_time_utc": start_ts.isoformat(),
-                "duration_s": duration_s,
-                "distance_m": distance_m,
-                "avg_pace_s_per_km": avg_pace_s_per_km,
-                "sport_type": sport_type,
-                "avg_hr": avg_hr,
-                "avg_cadence": avg_cadence,
-                "avg_power": avg_power,
-            },
-            "session_fields": {k: str(v) for k, v in session_data.items()},
-        },
-    }
-    return [row], errors
 
 
 def _sync_splits_from_raw_activity_cache(raw_root: Path) -> tuple[list[dict[str, object]], list[str]]:
@@ -2993,230 +2783,6 @@ if view == "Calendar":
                         st.rerun()
                 _show_split_details_dialog()
 
-if view == "Benchmark":
-    st.divider()
-    st.header("Benchmark")
-    st.caption("Import public benchmark CSV/FIT files (for athletes who share/export their data).")
-
-    b1, b2 = st.columns([1, 1])
-    with b1:
-        benchmark_athlete = st.text_input("Athlete label", value="Benchmark Athlete")
-    with b2:
-        benchmark_source = st.text_input("Source label", value="strava_public_export")
-    files = st.file_uploader(
-        "Upload benchmark file(s) (.csv or .fit)",
-        type=["csv", "fit"],
-        accept_multiple_files=True,
-        key="benchmark_csv_upload",
-    )
-    do_import = st.button("Import benchmark files", key="import_benchmark_btn")
-
-    if do_import:
-        if not files:
-            st.warning("Select at least one CSV or FIT file.")
-        else:
-            all_rows: list[dict[str, object]] = []
-            all_errors: list[str] = []
-            for f in files:
-                try:
-                    athlete = benchmark_athlete.strip() or "Benchmark Athlete"
-                    source = benchmark_source.strip() or "benchmark_import"
-                    lower_name = str(f.name).lower()
-                    if lower_name.endswith(".fit"):
-                        payload = f.getvalue()
-                        rows, errs = _parse_fit_upload(
-                            file_name=f.name,
-                            payload=payload,
-                            athlete_name=athlete,
-                            source_name=source,
-                        )
-                        all_errors.extend([f"{f.name}: {e}" for e in errs])
-                    else:
-                        try:
-                            raw_df = pd.read_csv(f)
-                        except UnicodeDecodeError:
-                            f.seek(0)
-                            raw_df = pd.read_csv(f, encoding="latin-1")
-                        rows, errs = _normalize_benchmark_upload(
-                            raw_df=raw_df,
-                            athlete_name=athlete,
-                            source_name=source,
-                        )
-                        all_errors.extend([f"{f.name}: {e}" for e in errs])
-                    all_rows.extend(rows)
-                except Exception as exc:
-                    all_errors.append(f"{f.name}: failed to parse ({exc})")
-
-            written = upsert_benchmark_activities(cfg.db_path, all_rows)
-            log_sync(
-                cfg.db_path,
-                source="benchmark_import",
-                success=written > 0 or (written == 0 and len(all_rows) == 0),
-                message=f"files={len(files)} rows={len(all_rows)} written={written} errors={len(all_errors)}",
-            )
-            st.success(f"Imported {len(all_rows)} rows ({written} upserts).")
-            if all_errors:
-                st.caption(f"Warnings ({len(all_errors)}):")
-                st.code("\n".join(all_errors[:40]))
-
-    benchmark_df = get_benchmark_df(cfg.db_path)
-    if benchmark_df.empty:
-        st.info("No benchmark activities imported yet.")
-    else:
-        summary_cols = st.columns(3)
-        summary_cols[0].metric("Benchmark Activities", f"{len(benchmark_df)}")
-        summary_cols[1].metric("Athletes", f"{benchmark_df['athlete_name'].nunique()}")
-        summary_cols[2].metric("Sources", f"{benchmark_df['source'].nunique()}")
-
-        benchmark_df = benchmark_df.copy()
-        benchmark_df["start_time_utc"] = pd.to_datetime(benchmark_df["start_time_utc"], utc=True, errors="coerce")
-        benchmark_df = benchmark_df.dropna(subset=["start_time_utc"])
-        benchmark_df["start_time_utc"] = benchmark_df["start_time_utc"].dt.tz_localize(None)
-
-        athlete_options = sorted(benchmark_df["athlete_name"].dropna().unique().tolist())
-        selected_athletes = st.multiselect(
-            "Athletes to compare",
-            athlete_options,
-            default=athlete_options[: min(3, len(athlete_options))],
-        )
-        compare_metric = st.selectbox(
-            "Compare metric",
-            ["Distance (km)", "Duration (h)", "TSS", "rTSS"],
-            index=0,
-        )
-        compare_weeks = st.selectbox("Range", ["3M", "6M", "1Y", "ALL"], index=2)
-
-        bench_view = benchmark_df[
-            benchmark_df["athlete_name"].isin(selected_athletes)
-        ].copy()
-        if not bench_view.empty:
-            bench_metrics = compute_metrics(
-                bench_view.rename(
-                    columns={
-                        "start_time_utc": "start_time_utc",
-                        "sport_type": "sport_type",
-                        "distance_m": "distance_m",
-                        "duration_s": "duration_s",
-                        "avg_hr": "avg_hr",
-                        "avg_pace_s_per_km": "avg_pace_s_per_km",
-                    }
-                ),
-                lthr_bpm=float(derived_lthr_bpm),
-                lthr_curve_points=lthr_curve_points,
-                threshold_pace_sec_per_km=float(derived_threshold_pace_sec),
-                threshold_pace_curve_points=lt_pace_curve_points,
-            )
-            bench_metrics["athlete_name"] = bench_view["athlete_name"].values
-        else:
-            bench_metrics = pd.DataFrame()
-
-        my_metrics = metrics_df.copy()
-        my_metrics = my_metrics.rename(columns={"start_time_utc": "start_time_utc"})
-        my_metrics["athlete_name"] = "You"
-
-        compare_base = pd.concat(
-            [my_metrics[["athlete_name", "start_time_utc", "distance_m", "duration_s", "tss", "rtss"]], bench_metrics[["athlete_name", "start_time_utc", "distance_m", "duration_s", "tss", "rtss"]] if not bench_metrics.empty else pd.DataFrame()],
-            ignore_index=True,
-        )
-        compare_base["start_time_utc"] = pd.to_datetime(compare_base["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
-        compare_base = compare_base.dropna(subset=["start_time_utc"]).copy()
-        if compare_weeks != "ALL" and not compare_base.empty:
-            max_day = compare_base["start_time_utc"].max().date()
-            lookback = {"3M": 90, "6M": 180, "1Y": 365}[compare_weeks]
-            min_day = max_day - timedelta(days=lookback)
-            compare_base = compare_base[compare_base["start_time_utc"].dt.date >= min_day].copy()
-
-        if not compare_base.empty:
-            compare_base["week_start"] = compare_base["start_time_utc"].dt.to_period("W-SUN").dt.start_time
-            compare_base["distance_km"] = pd.to_numeric(compare_base["distance_m"], errors="coerce").fillna(0.0) / 1000.0
-            compare_base["duration_h"] = pd.to_numeric(compare_base["duration_s"], errors="coerce").fillna(0.0) / 3600.0
-            compare_base["tss"] = pd.to_numeric(compare_base["tss"], errors="coerce").fillna(0.0)
-            compare_base["rtss"] = pd.to_numeric(compare_base["rtss"], errors="coerce").fillna(0.0)
-
-            metric_col = {
-                "Distance (km)": "distance_km",
-                "Duration (h)": "duration_h",
-                "TSS": "tss",
-                "rTSS": "rtss",
-            }[compare_metric]
-            weekly_cmp = (
-                compare_base.groupby(["week_start", "athlete_name"], as_index=False)[metric_col]
-                .sum()
-                .rename(columns={metric_col: "value"})
-                .sort_values("week_start")
-            )
-            cmp_chart = (
-                alt.Chart(weekly_cmp)
-                .mark_line(point=True)
-                .encode(
-                    x=alt.X("week_start:T", axis=alt.Axis(title="")),
-                    y=alt.Y("value:Q", axis=alt.Axis(title=compare_metric, format=".1f")),
-                    color=alt.Color("athlete_name:N", legend=alt.Legend(title="", orient="bottom")),
-                    tooltip=["week_start:T", "athlete_name:N", alt.Tooltip("value:Q", format=".1f")],
-                )
-                .properties(height=320)
-            )
-            st.altair_chart(cmp_chart, use_container_width=True)
-        else:
-            st.caption("No comparable rows available for the selected filters.")
-
-        st.subheader("Imported Benchmark Activities")
-        delete_options = (
-            benchmark_df[["benchmark_activity_id", "athlete_name", "start_time_utc", "sport_type", "activity_name"]]
-            .copy()
-            .sort_values("start_time_utc", ascending=False)
-        )
-        delete_options["label"] = (
-            delete_options["athlete_name"].astype(str)
-            + " | "
-            + delete_options["start_time_utc"].astype(str)
-            + " | "
-            + delete_options["sport_type"].astype(str)
-            + " | "
-            + delete_options["activity_name"].fillna("-").astype(str)
-        )
-        selected_delete_labels = st.multiselect(
-            "Select benchmark activities to delete",
-            delete_options["label"].tolist(),
-            default=[],
-            key="benchmark_delete_selection",
-        )
-        if st.button("Delete selected benchmark activities", key="delete_benchmark_btn"):
-            selected_ids = (
-                delete_options.loc[
-                    delete_options["label"].isin(selected_delete_labels),
-                    "benchmark_activity_id",
-                ]
-                .astype(str)
-                .tolist()
-            )
-            if not selected_ids:
-                st.warning("Select at least one activity to delete.")
-            else:
-                deleted = delete_benchmark_activities(cfg.db_path, selected_ids)
-                log_sync(
-                    cfg.db_path,
-                    source="benchmark_delete",
-                    success=True,
-                    message=f"requested={len(selected_ids)} deleted={deleted}",
-                )
-                st.session_state["benchmark_delete_selection"] = []
-                benchmark_df = get_benchmark_df(cfg.db_path)
-                st.success(f"Deleted {deleted} benchmark activities.")
-        st.dataframe(
-            benchmark_df.sort_values("start_time_utc", ascending=False).head(300),
-            use_container_width=True,
-            column_config={
-                "start_time_utc": st.column_config.DatetimeColumn("Start UTC"),
-                "distance_m": st.column_config.NumberColumn("Distance (m)", format="%.0f"),
-                "duration_s": st.column_config.NumberColumn("Duration (s)", format="%.0f"),
-                "avg_hr": st.column_config.NumberColumn("Avg HR", format="%.0f"),
-                "avg_cadence": st.column_config.NumberColumn("Avg Cadence", format="%.1f"),
-                "avg_power": st.column_config.NumberColumn("Avg Power", format="%.1f"),
-                "avg_pace_s_per_km": st.column_config.NumberColumn("Avg Pace s/km", format="%.1f"),
-            },
-        )
-
 if view == "Activity Detail":
     st.divider()
     st.header("Activity Detail")
@@ -3238,9 +2804,12 @@ if view == "Activity Detail":
         row = options_df.loc[options_df["activity_id"] == activity_id].iloc[0]
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("TSS", f"{(row.get('tss') or 0):.1f}")
-        m2.metric("Garmin Training Load", f"{(row.get('training_load_garmin') or 0):.1f}")
-        m3.metric("rTSS", f"{(row.get('rtss') or 0):.1f}")
+        tss_v = pd.to_numeric(row.get("tss"), errors="coerce")
+        tl_v = pd.to_numeric(row.get("training_load_garmin"), errors="coerce")
+        rtss_v = pd.to_numeric(row.get("rtss"), errors="coerce")
+        m1.metric("TSS", f"{(float(tss_v) if pd.notna(tss_v) else 0.0):.1f}")
+        m2.metric("Garmin Training Load", f"{(float(tl_v) if pd.notna(tl_v) else 0.0):.1f}")
+        m3.metric("rTSS", f"{(float(rtss_v) if pd.notna(rtss_v) else 0.0):.1f}")
         sport_type = str(row.get("sport_type") or "").lower()
         show_pace = ("run" in sport_type) or ("treadmill" in sport_type)
         m4.metric("Avg Pace", format_pace_min_per_km(row.get("avg_pace_s_per_km")) if show_pace else "-")
