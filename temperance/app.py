@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import html
-import hashlib
 import io
 import os
 from datetime import date, datetime, timedelta, timezone
@@ -26,6 +25,7 @@ from analytics import (
     prepare_metric_series,
     weekly_summary,
 )
+from auth import build_users, password_matches, resolve_garmin_credentials, resolve_user
 from config import load_config
 from db import (
     delete_benchmark_activities,
@@ -47,7 +47,7 @@ from db import (
     get_benchmark_df,
     init_db,
     log_sync,
-    save_setting,
+    save_setting_if_changed,
     upsert_activities,
     upsert_activity_details,
     upsert_activity_records,
@@ -62,12 +62,44 @@ from garmin_client import (
     fetch_garmin_runs,
     import_runs_from_folder,
 )
-from synthetic_data import generate_synthetic_runs
 
 
 st.set_page_config(page_title="Temperance", layout="wide")
-st.title("Temperance")
-st.caption("Local-first running load tracker (aerobic + mechanical)")
+
+_logo_file = Path(__file__).resolve().parent / "assets" / "temperance_logo.svg"
+
+st.markdown(
+    """
+    <style>
+      .temp-hero-wrap {
+        border: 1px solid rgba(148,163,184,0.3);
+        background: linear-gradient(120deg, rgba(2,132,199,0.12), rgba(37,99,235,0.08));
+        border-radius: 14px;
+        padding: 14px 18px;
+        margin-bottom: 0.4rem;
+      }
+      .temp-hero-title {
+        margin: 0;
+        font-size: 1.75rem;
+      }
+      .temp-hero-sub {
+        margin: 0.35rem 0 0;
+        color: #475569;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown('<div class="temp-hero-wrap">', unsafe_allow_html=True)
+logo_col, text_col = st.columns([1, 8], vertical_alignment="center")
+with logo_col:
+    if _logo_file.exists():
+        st.image(str(_logo_file), width=112)
+with text_col:
+    st.markdown('<h1 class="temp-hero-title">Temperance</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="temp-hero-sub">Local-first running load tracker (aerobic + mechanical)</p>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 DEFAULT_RESTING_HR = 45.0
 DEFAULT_MAX_HR = 200.0
@@ -86,6 +118,7 @@ cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
 
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 SETTINGS_KEY_CUSTOM_ZONES = "custom_zones_v1"
+SETTINGS_KEY_GARMIN_OWNER_SCOPE = "garmin_owner_scope_v1"
 
 ZONE_ORDER = ["Z1", "Z2", "Z3", "Z4", "Z5"]
 ZONE_ANCHORS_DEFAULT = {
@@ -97,36 +130,81 @@ ZONE_ANCHORS_DEFAULT = {
 }
 
 AUTH_ALL_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs", "Benchmark"]
-AUTH_VIEWER_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Benchmark"]
+AUTH_VIEWER_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "Benchmark"]
 
 
 def _auth_enabled() -> bool:
     return str(os.getenv("TEMPERANCE_AUTH_ENABLED", "1")).strip().lower() not in {"0", "false", "no", "off"}
 
 
-def _auth_hash(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
 def _auth_users() -> dict[str, dict[str, str]]:
-    users: dict[str, dict[str, str]] = {}
-    admin_user = str(os.getenv("TEMPERANCE_ADMIN_USER", "admin")).strip()
-    admin_pass = os.getenv("TEMPERANCE_ADMIN_PASSWORD", "")
-    admin_pass_hash = os.getenv("TEMPERANCE_ADMIN_PASSWORD_SHA256", "")
-    if admin_user and (admin_pass or admin_pass_hash):
-        users[admin_user] = {
-            "password_hash": admin_pass_hash.strip() or _auth_hash(admin_pass),
-            "role": "admin",
-        }
-    viewer_user = str(os.getenv("TEMPERANCE_VIEWER_USER", "")).strip()
-    viewer_pass = os.getenv("TEMPERANCE_VIEWER_PASSWORD", "")
-    viewer_pass_hash = os.getenv("TEMPERANCE_VIEWER_PASSWORD_SHA256", "")
-    if viewer_user and (viewer_pass or viewer_pass_hash):
-        users[viewer_user] = {
-            "password_hash": viewer_pass_hash.strip() or _auth_hash(viewer_pass),
-            "role": "viewer",
-        }
-    return users
+    return build_users(
+        admin_user=os.getenv("TEMPERANCE_ADMIN_USER", "admin"),
+        admin_pass=os.getenv("TEMPERANCE_ADMIN_PASSWORD", ""),
+        admin_pass_hash=os.getenv("TEMPERANCE_ADMIN_PASSWORD_SHA256", ""),
+        viewer_user=os.getenv("TEMPERANCE_VIEWER_USER", ""),
+        viewer_pass=os.getenv("TEMPERANCE_VIEWER_PASSWORD", ""),
+        viewer_pass_hash=os.getenv("TEMPERANCE_VIEWER_PASSWORD_SHA256", ""),
+    )
+
+
+def _get_garmin_credentials() -> tuple[str | None, str | None]:
+    role = str(st.session_state.get("auth_role") or "")
+    email, password, _ = resolve_garmin_credentials(
+        auth_enabled=_auth_enabled(),
+        auth_role=role,
+        session_email=str(st.session_state.get("garmin_email_input") or ""),
+        session_password=str(st.session_state.get("garmin_password_input") or ""),
+        env_email=cfg.garmin_email,
+        env_password=cfg.garmin_password,
+    )
+    return email, password
+
+
+def _get_garmin_credential_source() -> str:
+    role = str(st.session_state.get("auth_role") or "")
+    _, _, source = resolve_garmin_credentials(
+        auth_enabled=_auth_enabled(),
+        auth_role=role,
+        session_email=str(st.session_state.get("garmin_email_input") or ""),
+        session_password=str(st.session_state.get("garmin_password_input") or ""),
+        env_email=cfg.garmin_email,
+        env_password=cfg.garmin_password,
+    )
+    return source
+
+
+def _settings_json(value: object) -> str:
+    return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def _activity_owner_key(activity: dict[str, object]) -> str | None:
+    owner_id = str(activity.get("owner_id") or "").strip()
+    if owner_id:
+        return f"owner_id:{owner_id}"
+    owner_name = str(activity.get("owner_full_name") or "").strip()
+    if owner_name:
+        return f"owner_name:{owner_name.lower()}"
+    return None
+
+
+def _enforce_garmin_owner_scope(activities: list[dict[str, object]]) -> tuple[bool, str]:
+    owner_keys = {k for k in (_activity_owner_key(a) for a in activities) if k}
+    if not owner_keys:
+        return True, ""
+    if len(owner_keys) > 1:
+        return False, "Garmin sync returned multiple owner identities in one batch; sync blocked to avoid data mix."
+
+    incoming = next(iter(owner_keys))
+    existing = get_setting(cfg.db_path, SETTINGS_KEY_GARMIN_OWNER_SCOPE)
+    if existing and existing != incoming:
+        return (
+            False,
+            f"Garmin owner mismatch: existing scope `{existing}` vs incoming `{incoming}`. "
+            "Use a separate Temperance DB/workspace for different Garmin accounts.",
+        )
+    save_setting_if_changed(cfg.db_path, SETTINGS_KEY_GARMIN_OWNER_SCOPE, incoming)
+    return True, ""
 
 
 def _pace_sec_to_mmss(pace_sec_per_km: float) -> str:
@@ -1290,10 +1368,10 @@ with st.sidebar:
         login_user = st.text_input("User", key="login_user")
         login_pass = st.text_input("Password", type="password", key="login_pass")
         if st.button("Sign in", key="login_submit"):
-            u = users.get(login_user.strip())
-            if u and _auth_hash(login_pass) == u["password_hash"]:
-                st.session_state["auth_user"] = login_user.strip()
-                st.session_state["auth_role"] = u["role"]
+            resolved_user, user_data = resolve_user(users, login_user)
+            if user_data and password_matches(login_pass, user_data["password_hash"]):
+                st.session_state["auth_user"] = resolved_user
+                st.session_state["auth_role"] = user_data["role"]
                 st.rerun()
             st.error("Invalid credentials.")
         st.stop()
@@ -1303,6 +1381,23 @@ with st.sidebar:
         if st.button("Logout", key="logout_btn"):
             st.session_state["auth_user"] = None
             st.session_state["auth_role"] = None
+            st.rerun()
+
+    if "garmin_email_input" not in st.session_state:
+        st.session_state["garmin_email_input"] = cfg.garmin_email or ""
+    if "garmin_password_input" not in st.session_state:
+        st.session_state["garmin_password_input"] = ""
+
+    with st.expander("Garmin API Credentials", expanded=False):
+        if _auth_enabled() and str(st.session_state.get("auth_role") or "") != "admin":
+            st.caption("External users must provide Garmin credentials here (env Garmin credentials are admin-only).")
+        else:
+            st.caption("Used for Garmin sync/extract. Stored in current session only.")
+        st.text_input("Garmin Email", key="garmin_email_input")
+        st.text_input("Garmin Password", type="password", key="garmin_password_input")
+        if st.button("Clear Garmin session credentials", key="clear_garmin_creds"):
+            st.session_state["garmin_email_input"] = ""
+            st.session_state["garmin_password_input"] = ""
             st.rerun()
 
     role = str(st.session_state.get("auth_role") or "admin")
@@ -1384,16 +1479,18 @@ if view == "User Inputs":
                     constrained = _enforce_custom_zone_constraints(
                         parsed_rows
                     )
-                    save_setting(cfg.db_path, SETTINGS_KEY_CUSTOM_ZONES, json.dumps(constrained))
-                    st.success("Custom zones saved.")
+                    payload = _settings_json(constrained)
+                    changed = save_setting_if_changed(cfg.db_path, SETTINGS_KEY_CUSTOM_ZONES, payload)
+                    st.success("Custom zones saved." if changed else "Custom zones unchanged.")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Could not save custom zones: {exc}")
         with zc2:
             if st.button("Reset Zones to Defaults", key="reset_custom_zones_btn"):
                 defaults = _default_custom_zones()
-                save_setting(cfg.db_path, SETTINGS_KEY_CUSTOM_ZONES, json.dumps(defaults))
-                st.success("Custom zones reset to defaults.")
+                payload = _settings_json(defaults)
+                changed = save_setting_if_changed(cfg.db_path, SETTINGS_KEY_CUSTOM_ZONES, payload)
+                st.success("Custom zones reset to defaults." if changed else "Custom zones already at defaults.")
                 st.rerun()
     with st.expander("Injury Overlays", expanded=False):
         st.caption("Edit injury windows used for chart shading.")
@@ -1418,8 +1515,9 @@ if view == "User Inputs":
             try:
                 rows = edited.fillna("").to_dict(orient="records")
                 normalized = _normalize_injury_windows(rows)
-                save_setting(cfg.db_path, SETTINGS_KEY_INJURY_WINDOWS, json.dumps(normalized))
-                st.success("Injury overlays saved.")
+                payload = _settings_json(normalized)
+                changed = save_setting_if_changed(cfg.db_path, SETTINGS_KEY_INJURY_WINDOWS, payload)
+                st.success("Injury overlays saved." if changed else "Injury overlays unchanged.")
                 st.rerun()
             except Exception as exc:
                 st.error(f"Could not save injury overlays: {exc}")
@@ -3417,19 +3515,31 @@ if view == "Data Extract":
     )
     st.caption(f"Private DB: {cfg.db_path}")
     st.caption(f"Private exports: {cfg.private_export_dir}")
+    garmin_email, garmin_password = _get_garmin_credentials()
+    garmin_credential_source = _get_garmin_credential_source()
+    if garmin_email and garmin_password:
+        st.caption(f"Garmin API credential source: {garmin_credential_source}")
+    else:
+        if _auth_enabled() and str(st.session_state.get("auth_role") or "") != "admin":
+            st.caption("Garmin API credentials missing: external users must set sidebar Garmin Email/Password.")
+        else:
+            st.caption("Garmin API credentials missing: set them in sidebar or via GARMIN_EMAIL / GARMIN_PASSWORD.")
 
-    st.subheader("Quick Sync")
-    quick_cols = st.columns([1, 1, 1, 1, 1])
+    st.subheader("Unified Sync")
+    quick_cols = st.columns([1, 1, 1])
     with quick_cols[0]:
-        days_back = st.number_input("Days to sync", min_value=7, max_value=365, value=90)
+        days_back = st.number_input("Days to sync", min_value=7, max_value=3650, value=180)
     with quick_cols[1]:
         source = st.selectbox("Source", ["Garmin API", "File Import", "Both"], index=2)
     with quick_cols[2]:
-        run_sync = st.button("Sync activities")
-    with quick_cols[3]:
-        generate_demo = st.button("Generate demo data")
-    with quick_cols[4]:
-        run_split_sync = st.button("Sync splits")
+        run_sync = st.button("Sync all data", use_container_width=True)
+
+    sync_profile = st.selectbox(
+        "Garmin sync profile",
+        ["Quick (activities only)", "Deep (activities + details + wellness)"],
+        index=0,
+        help="Quick is fast summaries-only. Deep also syncs activity details, splits, sleep, and wellness.",
+    )
 
     st.caption(f"Import folder: {cfg.import_dir}")
 
@@ -3441,7 +3551,7 @@ if view == "Data Extract":
         sync_logs: list[str] = []
         sync_started_at = datetime.now(timezone.utc)
         sync_log_box = st.empty()
-        sync_progress = st.progress(0, text="Starting quick sync...")
+        sync_progress = st.progress(0, text="Starting unified sync...")
         max_sync_log_lines = 120
 
         def _render_sync_logs() -> None:
@@ -3459,45 +3569,104 @@ if view == "Data Extract":
             f"[start] {sync_started_at.isoformat()} | source={source} | days_back={int(days_back)} | "
             f"latest_activity_in_db={(latest.isoformat() if latest else 'None')}"
         )
-        sync_progress.progress(10, text="Preparing quick sync...")
+        sync_progress.progress(10, text="Preparing sync...")
 
         if source in {"Garmin API", "Both"}:
-            if cfg.garmin_email and cfg.garmin_password:
+            if garmin_email and garmin_password:
                 try:
-                    _sync_log("[fetch] Garmin quick sync: activity summaries only (no wellness/details)")
+                    if sync_profile == "Quick (activities only)":
+                        _sync_log("[fetch] Garmin quick sync: activity summaries only (no wellness/details)")
 
-                    def _on_quick_progress(payload: dict) -> None:
-                        phase = str(payload.get("phase") or "")
-                        if phase == "activities":
-                            frac = float(payload.get("fraction") or 0.0)
-                            pct = int(10 + frac * 55)
-                            pct = max(10, min(65, pct))
-                            oldest = payload.get("oldest_in_batch")
-                            sync_progress.progress(
-                                pct,
-                                text=(
-                                    f"Quick sync: fetching activities... {pct}%"
-                                    + (f" | oldest seen: {oldest}" if oldest else "")
-                                ),
-                            )
-                        elif phase == "complete":
-                            sync_progress.progress(65, text="Quick sync: Garmin fetch complete.")
+                        def _on_quick_progress(payload: dict) -> None:
+                            phase = str(payload.get("phase") or "")
+                            if phase == "activities":
+                                frac = float(payload.get("fraction") or 0.0)
+                                pct = int(10 + frac * 55)
+                                pct = max(10, min(65, pct))
+                                oldest = payload.get("oldest_in_batch")
+                                sync_progress.progress(
+                                    pct,
+                                    text=(
+                                        f"Quick sync: fetching activities... {pct}%"
+                                        + (f" | oldest seen: {oldest}" if oldest else "")
+                                    ),
+                                )
+                            elif phase == "complete":
+                                sync_progress.progress(65, text="Quick sync: Garmin fetch complete.")
 
-                    rows = fetch_garmin_runs(
-                        email=cfg.garmin_email,
-                        password=cfg.garmin_password,
-                        days_back=int(days_back),
-                        since_utc=latest,
-                        progress_cb=_on_quick_progress,
-                    )
-                    sync_progress.progress(72, text="Quick sync: upserting Garmin activities...")
-                    changed = upsert_activities(cfg.db_path, rows)
-                    total_rows += len(rows)
-                    messages.append(f"Garmin: fetched {len(rows)} runs ({changed} DB row changes).")
-                    _sync_log(f"[fetch:done] garmin_rows={len(rows)} | db_changes={changed}")
+                        rows = fetch_garmin_runs(
+                            email=garmin_email,
+                            password=garmin_password,
+                            days_back=int(days_back),
+                            since_utc=latest,
+                            progress_cb=_on_quick_progress,
+                        )
+                        owner_ok, owner_msg = _enforce_garmin_owner_scope(rows)
+                        if not owner_ok:
+                            raise RuntimeError(owner_msg)
+                        sync_progress.progress(72, text="Quick sync: upserting Garmin activities...")
+                        changed = upsert_activities(cfg.db_path, rows)
+                        total_rows += len(rows)
+                        messages.append(f"Garmin quick: fetched {len(rows)} activities ({changed} DB row changes).")
+                        _sync_log(f"[fetch:done] garmin_rows={len(rows)} | db_changes={changed}")
+                    else:
+                        deep_start_day = (datetime.now(timezone.utc) - timedelta(days=int(days_back))).date()
+                        _sync_log(
+                            f"[fetch] Garmin deep sync: start_day={deep_start_day.isoformat()} | include_details=True | include_wellness=True"
+                        )
+
+                        def _on_deep_progress(payload: dict) -> None:
+                            phase = str(payload.get("phase") or "")
+                            if phase == "activities":
+                                frac = float(payload.get("fraction") or 0.0)
+                                pct = int(10 + frac * 60)
+                                pct = max(10, min(75, pct))
+                                sync_progress.progress(pct, text=f"Deep sync: fetching activities... {pct}%")
+                            elif phase == "wellness":
+                                frac = float(payload.get("fraction") or 0.0)
+                                pct = int(75 + frac * 15)
+                                pct = max(75, min(90, pct))
+                                sync_progress.progress(pct, text=f"Deep sync: fetching wellness... {pct}%")
+                            elif phase == "complete":
+                                sync_progress.progress(92, text="Deep sync: upserting database...")
+
+                        extract = fetch_garmin_comprehensive(
+                            email=garmin_email,
+                            password=garmin_password,
+                            start_day=deep_start_day,
+                            end_day=datetime.now(timezone.utc).date(),
+                            include_activity_details=True,
+                            include_splits=True,
+                            include_wellness=True,
+                            raw_export_dir=cfg.private_export_dir / "raw",
+                            progress_cb=_on_deep_progress,
+                        )
+                        owner_ok, owner_msg = _enforce_garmin_owner_scope(extract.activities)
+                        if not owner_ok:
+                            raise RuntimeError(owner_msg)
+                        n_a = upsert_activities(cfg.db_path, extract.activities)
+                        n_d = upsert_activity_details(cfg.db_path, extract.activity_details)
+                        n_r = upsert_activity_records(cfg.db_path, extract.activity_records)
+                        n_sp = upsert_activity_splits(cfg.db_path, extract.activity_splits)
+                        n_s = upsert_sleep_daily(cfg.db_path, extract.sleep_daily)
+                        n_w = upsert_wellness_daily(cfg.db_path, extract.wellness_daily)
+                        total_rows += len(extract.activities)
+                        _sync_log(
+                            f"[fetch:done] deep activities={len(extract.activities)} details={len(extract.activity_details)} records={len(extract.activity_records)} splits={len(extract.activity_splits)} sleep={len(extract.sleep_daily)} wellness={len(extract.wellness_daily)} errors={len(extract.errors)}"
+                        )
+                        messages.append(
+                            "Garmin deep: "
+                            + f"activities={len(extract.activities)}({n_a}), details={len(extract.activity_details)}({n_d}), "
+                            + f"records={len(extract.activity_records)}({n_r}), splits={len(extract.activity_splits)}({n_sp}), "
+                            + f"sleep={len(extract.sleep_daily)}({n_s}), wellness={len(extract.wellness_daily)}({n_w}), errors={len(extract.errors)}"
+                        )
+                        if extract.errors:
+                            st.warning("Deep sync completed with some endpoint errors. See logs below.")
+                            for err in extract.errors[:20]:
+                                _sync_log(f"[error] {err}")
                 except Exception as exc:
                     msg = (
-                        "Garmin login/fetch failed. Verify GARMIN_EMAIL / GARMIN_PASSWORD in .env or env vars. "
+                        "Garmin login/fetch failed. Verify sidebar Garmin credentials or GARMIN_EMAIL / GARMIN_PASSWORD. "
                         f"Error: {exc}"
                     )
                     messages.append(msg)
@@ -3517,49 +3686,33 @@ if view == "Data Extract":
             messages.append(f"File import: found {len(rows)} runs ({changed} DB row changes).")
             _sync_log(f"[fetch:done] file_rows={len(rows)} | db_changes={changed}")
 
+        sync_progress.progress(94, text="Sync: updating splits from raw cache...")
+        _sync_log("[splits] syncing splits from raw activity cache")
+        split_rows, split_errors = _sync_splits_from_raw_activity_cache(cfg.private_export_dir / "raw")
+        split_changes = upsert_activity_splits(cfg.db_path, split_rows)
+        messages.append(f"Splits: synced {len(split_rows)} rows ({split_changes} DB row changes).")
+        _sync_log(f"[splits:done] rows={len(split_rows)} | db_changes={split_changes} | errors={len(split_errors)}")
+        if split_errors:
+            st.warning("Some split files failed to parse during sync. First 20 shown in logs.")
+            for err in split_errors[:20]:
+                _sync_log(f"[splits:error] {err}")
+
         success = total_rows > 0 or any("Skipped" in m for m in messages)
         log_sync(cfg.db_path, source=source.lower().replace(" ", "_"), success=success, message=" | ".join(messages))
         sync_finished_at = datetime.now(timezone.utc)
         sync_duration_s = (sync_finished_at - sync_started_at).total_seconds()
         _sync_log(f"[done] {sync_finished_at.isoformat()} | duration_s={sync_duration_s:.1f}")
-        sync_progress.progress(100, text="Quick sync completed.")
+        sync_progress.progress(100, text="Unified sync completed.")
 
         if total_rows > 0:
-            st.success("Quick sync complete. " + " ".join(messages))
+            st.success("Unified sync complete. " + " ".join(messages))
         else:
             st.info(
                 "No activities found. If Garmin sync fails, place .FIT/.TCX files in "
                 f"{cfg.import_dir} and run sync again."
             )
-        with st.expander("Quick Sync Logs", expanded=True):
+        with st.expander("Unified Sync Logs", expanded=True):
             _render_sync_logs()
-        sync_triggered = True
-
-    if generate_demo:
-        demo_rows = generate_synthetic_runs(days_back=int(days_back))
-        changes = upsert_activities(cfg.db_path, demo_rows)
-        log_sync(
-            cfg.db_path,
-            source="synthetic",
-            success=True,
-            message=f"Generated {len(demo_rows)} synthetic runs ({changes} DB row changes).",
-        )
-        st.success(f"Added {len(demo_rows)} synthetic runs for demo.")
-        sync_triggered = True
-
-    if run_split_sync:
-        split_rows, split_errors = _sync_splits_from_raw_activity_cache(cfg.private_export_dir / "raw")
-        split_changes = upsert_activity_splits(cfg.db_path, split_rows)
-        log_sync(
-            cfg.db_path,
-            source="splits_from_raw",
-            success=True,
-            message=f"rows={len(split_rows)} changes={split_changes} errors={len(split_errors)}",
-        )
-        st.success(f"Split sync complete. rows={len(split_rows)} changes={split_changes}")
-        if split_errors:
-            st.warning("Some split files failed to parse. First 20:")
-            st.code("\n".join(split_errors[:20]))
         sync_triggered = True
 
     st.subheader("Comprehensive Garmin Extract")
@@ -3584,8 +3737,8 @@ if view == "Data Extract":
         st.write("")
 
     if run_extract:
-        if not (cfg.garmin_email and cfg.garmin_password):
-            st.error("GARMIN_EMAIL / GARMIN_PASSWORD missing. Add them in environment or .env.")
+        if not (garmin_email and garmin_password):
+            st.error("Garmin credentials missing. Add them in sidebar or GARMIN_EMAIL / GARMIN_PASSWORD.")
         else:
             extract_logs: list[str] = []
             extract_started_at = datetime.now(timezone.utc)
@@ -3692,8 +3845,8 @@ if view == "Data Extract":
 
                 with st.spinner("Extracting Garmin data. This can take a few minutes..."):
                     extract = fetch_garmin_comprehensive(
-                        email=cfg.garmin_email,
-                        password=cfg.garmin_password,
+                        email=garmin_email,
+                        password=garmin_password,
                         start_day=start_day,
                         end_day=datetime.now(timezone.utc).date(),
                         include_activity_details=include_details,
@@ -3702,6 +3855,9 @@ if view == "Data Extract":
                         raw_export_dir=cfg.private_export_dir / "raw",
                         progress_cb=_on_fetch_progress,
                     )
+                owner_ok, owner_msg = _enforce_garmin_owner_scope(extract.activities)
+                if not owner_ok:
+                    raise RuntimeError(owner_msg)
                 progress.progress(55, text="Fetch complete. Upserting DB...")
                 _log(
                     f"[fetch:done] activities={len(extract.activities)} details={len(extract.activity_details)} "

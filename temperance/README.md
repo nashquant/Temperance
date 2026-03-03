@@ -80,6 +80,13 @@ GARMIN_EMAIL=you@example.com
 GARMIN_PASSWORD=your_password
 ```
 
+If app auth is enabled, you can also sign in to Temperance first and then enter Garmin API credentials from the sidebar (**Garmin API Credentials**). Those sidebar values are session-only and override env vars for that browser session.
+
+Auth behavior for Garmin credentials:
+- Admin users can use env Garmin credentials or session sidebar credentials.
+- Non-admin authenticated users must provide Garmin credentials in the sidebar (env Garmin credentials are not used for them).
+- Garmin sync now enforces a single Garmin owner scope per local DB to avoid mixing multiple accounts in the same dataset.
+
 ## Run
 From `temperance/`:
 
@@ -144,10 +151,10 @@ Use this exactly:
 - Can pull sleep + daily wellness (if enabled).
 
 2. **Sync activities (Quick Sync)**: for daily maintenance.
-- Fast incremental update of activity summaries.
-- Good for day-to-day upkeep.
-- Does **not** do full deep backfill behavior of comprehensive extract.
-- Does **not** perform the comprehensive wellness/detail extraction flow.
+- Supports larger ranges (up to 3650 days) when needed.
+- **Quick (activities only)** profile: fast incremental activity summaries.
+- **Deep (activities + details + wellness)** profile: pulls activity details, splits, FIT records (when available), sleep, and wellness directly from the sync action.
+- For day-to-day upkeep use Quick; for “important data” backfill use Deep.
 
 Recommended pattern:
 - Run **Comprehensive** initially (or occasionally) for full archive + FIT/wellness backfill.
