@@ -38,9 +38,12 @@ from db import (
     get_runs_df,
     get_sleep_df,
     get_table_counts,
+    get_planned_activities_df,
     get_wellness_df,
     init_db,
     log_sync,
+    delete_planned_activities,
+    replace_planned_activities_for_range,
     save_setting,
     upsert_activities,
     upsert_activity_details,
@@ -122,8 +125,8 @@ SETTINGS_KEY_LTHR_CURVE = "lthr_curve_v1"
 SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_GARMIN_OWNER_SCOPE = "garmin_owner_scope_v1"
 
-AUTH_ALL_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs"]
-AUTH_VIEWER_TABS = ["Dashboard", "Calendar", "Activity Detail", "Recovery Data", "Data Extract"]
+AUTH_ALL_TABS = ["Dashboard", "Calendar", "Week Planner", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs"]
+AUTH_VIEWER_TABS = ["Dashboard", "Calendar", "Week Planner", "Activity Detail", "Recovery Data", "Data Extract"]
 
 
 def _auth_enabled() -> bool:
@@ -554,6 +557,202 @@ def _pace_compact(pace_s_per_km: float | int | None) -> str:
     minutes = total_seconds // 60
     seconds = total_seconds % 60
     return f"{minutes}:{seconds:02d}/km"
+
+
+def _plan_activity_kind(text: str) -> str:
+    t = text.lower()
+    if "treadmill" in t:
+        return "treadmill"
+    if "run" in t:
+        return "run"
+    if "ellipt" in t:
+        return "elliptical"
+    if "cycl" in t or "bike" in t:
+        return "cycling"
+    return "other"
+
+
+def _parse_minutes_token(text: str) -> float | None:
+    t = text.lower().strip()
+    hm = re.search(r"(\d+(?:\.\d+)?)\s*h(?:\s*(\d+(?:\.\d+)?)\s*m(?:in)?)?", t)
+    if hm:
+        h = float(hm.group(1))
+        m = float(hm.group(2)) if hm.group(2) else 0.0
+        total = h * 60.0 + m
+        return total if total > 0 else None
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b", t)
+    if m:
+        total = float(m.group(1))
+        return total if total > 0 else None
+    return None
+
+
+def _parse_bpm_token(text: str) -> float | None:
+    m = re.search(r"@\s*(\d+(?:\.\d+)?)\s*bpm", text.lower())
+    if not m:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*bpm", text.lower())
+    if m:
+        v = float(m.group(1))
+        return v if v > 0 else None
+    return None
+
+
+def _parse_pace_token(text: str) -> float | None:
+    m = re.search(r"@\s*(\d{1,2}:\d{2})(?:\s*/?\s*km)?", text.lower())
+    if not m:
+        m = re.search(r"(\d{1,2}:\d{2})\s*/\s*km", text.lower())
+    if m:
+        try:
+            return _pace_mmss_to_sec(m.group(1))
+        except Exception:
+            return None
+    return None
+
+
+def _normalize_plan_text(text: str) -> str:
+    t = " ".join(str(text or "").strip().split())
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b", r"\1min", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*h\b", r"\1h", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*bpm\b", r"\1bpm", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s*/\s*km\b", "/km", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s*\+\s*", " + ", t)
+    return t
+
+
+def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | None]], list[str]]:
+    segments: list[dict[str, float | str | None]] = []
+    warnings: list[str] = []
+    raw = _normalize_plan_text(line)
+    if not raw:
+        return segments, warnings
+
+    chunks = [c.strip() for c in re.split(r"\s*\+\s*", raw) if c.strip()]
+    last_kind: str | None = None
+    for chunk in chunks:
+        kind = _plan_activity_kind(chunk)
+        bpm = _parse_bpm_token(chunk)
+        pace = _parse_pace_token(chunk)
+        if kind == "other" and pace is not None:
+            # pace implies run-like segment
+            kind = "run"
+        if kind == "other" and last_kind is not None:
+            # allow shorthand continuation like "5x6min @3:40/km" after a running chunk
+            kind = last_kind
+
+        if kind == "other":
+            warnings.append(f"Missing/unknown activity in: `{chunk}` (include run/treadmill/elliptical/cycling)")
+            continue
+        if bpm is None and pace is None:
+            warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm` or `@4:50/km`)")
+            continue
+
+        rep_match = re.search(r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b", chunk.lower())
+        if rep_match:
+            reps = int(rep_match.group(1))
+            rep_minutes = float(rep_match.group(2))
+            if reps <= 0 or rep_minutes <= 0:
+                warnings.append(f"Invalid interval block in: `{chunk}`")
+                continue
+            for _ in range(max(reps, 0)):
+                segments.append(
+                    {
+                        "kind": kind,
+                        "duration_min": rep_minutes,
+                        "avg_hr_bpm": bpm,
+                        "pace_s_per_km": pace,
+                        "source": chunk,
+                    }
+                )
+            last_kind = kind
+            continue
+
+        minutes = _parse_minutes_token(chunk)
+        if minutes is None:
+            warnings.append(f"Could not parse duration from: `{chunk}`")
+            continue
+        if minutes <= 0:
+            warnings.append(f"Duration must be > 0 in: `{chunk}`")
+            continue
+        segments.append(
+            {
+                "kind": kind,
+                "duration_min": minutes,
+                "avg_hr_bpm": bpm,
+                "pace_s_per_km": pace,
+                "source": chunk,
+            }
+        )
+        last_kind = kind
+    return segments, warnings
+
+
+def _planned_segment_metrics(
+    seg: dict[str, float | str | None],
+    lthr_bpm: float,
+    threshold_pace_sec_per_km: float,
+    non_running_factor: float,
+) -> dict[str, float]:
+    duration_min = float(seg.get("duration_min") or 0.0)
+    duration_s = max(duration_min * 60.0, 0.0)
+    duration_h = duration_s / 3600.0 if duration_s > 0 else 0.0
+    kind = str(seg.get("kind") or "other").lower()
+    hr = float(seg.get("avg_hr_bpm")) if seg.get("avg_hr_bpm") else None
+    pace = float(seg.get("pace_s_per_km")) if seg.get("pace_s_per_km") else None
+
+    is_running_like = kind in {"run", "treadmill"}
+    rtss = 0.0
+    tss = 0.0
+    distance_eqv_km = 0.0
+    if_proxy = 0.0
+
+    if duration_h <= 0:
+        return {
+            "duration_s": 0.0,
+            "rtss": 0.0,
+            "tss": 0.0,
+            "distance_eqv_km": 0.0,
+            "if_proxy": 0.0,
+        }
+
+    if is_running_like and pace and pace > 0:
+        if_proxy = max(threshold_pace_sec_per_km / pace, 0.0)
+        rtss = duration_h * (if_proxy ** 2) * 100.0
+        distance_eqv_km = duration_s / pace
+        if hr and lthr_bpm > 0:
+            if_hr = max(hr / lthr_bpm, 0.0)
+            tss = duration_h * (if_hr ** 2) * 100.0
+        else:
+            tss = rtss
+    else:
+        if hr and lthr_bpm > 0:
+            if_hr = max(hr / lthr_bpm, 0.0)
+            tss = duration_h * (if_hr ** 2) * 100.0
+            if_proxy = if_hr
+            effective_rtss = max(tss * max(non_running_factor, 0.0), 0.0)
+            if effective_rtss > 0:
+                eq_if = (effective_rtss / (duration_h * 100.0)) ** 0.5
+                if eq_if > 0:
+                    eq_pace = threshold_pace_sec_per_km / eq_if
+                    if eq_pace > 0:
+                        distance_eqv_km = duration_s / eq_pace
+        elif pace and pace > 0:
+            if_proxy = max(threshold_pace_sec_per_km / pace, 0.0)
+            tss = duration_h * (if_proxy ** 2) * 100.0
+            effective_rtss = max(tss * max(non_running_factor, 0.0), 0.0)
+            if effective_rtss > 0:
+                eq_if = (effective_rtss / (duration_h * 100.0)) ** 0.5
+                if eq_if > 0:
+                    eq_pace = threshold_pace_sec_per_km / eq_if
+                    if eq_pace > 0:
+                        distance_eqv_km = duration_s / eq_pace
+
+    return {
+        "duration_s": duration_s,
+        "rtss": float(rtss),
+        "tss": float(tss),
+        "distance_eqv_km": float(distance_eqv_km),
+        "if_proxy": float(if_proxy),
+    }
 
 
 def _to_seconds(value: object) -> float | None:
@@ -1183,12 +1382,13 @@ with st.sidebar:
     st.session_state["data_owner"] = data_owner
 
     allowed_tabs = AUTH_ALL_TABS if (not auth_on or role == "admin") else AUTH_VIEWER_TABS
-    preferred_order = ["Calendar", "Dashboard"]
+    preferred_order = ["Calendar", "Week Planner", "Dashboard"]
     ordered_tabs = [v for v in preferred_order if v in allowed_tabs] + [
         v for v in allowed_tabs if v not in preferred_order
     ]
     page_labels = {
         "Calendar": "Activity Summary",
+        "Week Planner": "Week Planner",
         "Dashboard": "Plot Charts",
         "Activity Detail": "Activity Detail",
         "Recovery Data": "Recovery Data",
@@ -3148,6 +3348,399 @@ if view == "Calendar":
                         st.session_state["calendar_split_open"] = False
                         st.rerun()
                 _show_split_details_dialog()
+
+if view == "Week Planner":
+    st.divider()
+    st.header("Week Planner")
+    st.caption("Plan next week using text workouts and compare against current week.")
+
+    if metrics_df.empty:
+        st.info("No activities available yet.")
+    else:
+        base_df = metrics_df.copy()
+        base_df["start_local"] = pd.to_datetime(base_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
+        base_df = base_df.dropna(subset=["start_local"]).copy()
+        if base_df.empty:
+            st.info("No valid activity timestamps available.")
+        else:
+            c1, c2, c3 = st.columns([1.1, 1.1, 1.0])
+            with c1:
+                planner_filter = st.selectbox(
+                    "Activity filter",
+                    ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
+                    index=0,
+                    key="planner_activity_filter",
+                )
+            with c2:
+                planner_metric = st.selectbox(
+                    "Metric",
+                    ["rTSS", "TSS", "Distance Eqv", "IF"],
+                    index=0,
+                    key="planner_metric",
+                )
+            with c3:
+                planner_specificity = st.number_input(
+                    "Non-running factor",
+                    min_value=0.0,
+                    max_value=1.5,
+                    value=0.8,
+                    step=0.05,
+                    format="%.2f",
+                    key="planner_specificity_factor",
+                )
+
+            planner_metrics, _ = cached_filtered_views(
+                metrics_df,
+                activity_filter=planner_filter,
+                specificity_factor=float(planner_specificity),
+            )
+            planner_metrics = planner_metrics.copy()
+            planner_metrics["start_local"] = pd.to_datetime(
+                planner_metrics["start_time_utc"], utc=True, errors="coerce"
+            ).dt.tz_localize(None)
+            planner_metrics = planner_metrics.dropna(subset=["start_local"]).copy()
+            planner_metrics["day"] = planner_metrics["start_local"].dt.floor("D")
+            planner_metrics["duration_s"] = pd.to_numeric(planner_metrics.get("duration_s"), errors="coerce").fillna(0.0)
+            planner_metrics["rtss"] = pd.to_numeric(planner_metrics.get("rtss"), errors="coerce").fillna(0.0)
+            planner_metrics["tss"] = pd.to_numeric(planner_metrics.get("tss"), errors="coerce").fillna(0.0)
+            planner_metrics["distance_eqv_km"] = pd.to_numeric(
+                planner_metrics.get("distance_proxy_km"), errors="coerce"
+            ).fillna(0.0)
+            planner_metrics["if_proxy"] = pd.to_numeric(planner_metrics.get("if_proxy"), errors="coerce").fillna(0.0)
+
+            latest_day = pd.to_datetime(planner_metrics["day"], errors="coerce").max()
+            if pd.isna(latest_day):
+                st.info("No activities available for planning comparison.")
+            else:
+                current_week_start = latest_day - pd.Timedelta(days=int(latest_day.weekday()))
+                planned_week_start_default = current_week_start + pd.Timedelta(days=7)
+                today_local = pd.Timestamp(date.today())
+                previous_sunday = today_local - pd.Timedelta(days=int(today_local.weekday()) + 1)
+                planned_week_start = pd.Timestamp(
+                    st.date_input(
+                        "Planned week starts on",
+                        value=planned_week_start_default.date(),
+                        min_value=previous_sunday.date(),
+                        key="planner_week_start",
+                    )
+                )
+                if planned_week_start < previous_sunday:
+                    st.error(
+                        f"Planned activities cannot be dated before {previous_sunday:%Y-%m-%d} (previous Sunday)."
+                    )
+                    st.stop()
+                planned_week_end = planned_week_start + pd.Timedelta(days=6)
+
+                planned_saved_df = get_planned_activities_df(
+                    cfg.db_path,
+                    start_day_utc=planned_week_start.date().isoformat(),
+                    end_day_utc=planned_week_end.date().isoformat(),
+                )
+                saved_by_day: dict[str, str] = {}
+                if not planned_saved_df.empty:
+                    planned_saved_df = planned_saved_df.sort_values(["day_utc", "line_no"])
+                    for day_utc, g in planned_saved_df.groupby("day_utc"):
+                        saved_by_day[str(day_utc)] = "\n".join(
+                            [str(x).strip() for x in g["workout_text"].tolist() if str(x).strip()]
+                        )
+                planner_week_key = f"{planned_week_start.date().isoformat()}::{planned_week_end.date().isoformat()}"
+                if st.session_state.get("planner_loaded_week_key") != planner_week_key:
+                    for i in range(7):
+                        day_ts = planned_week_start + pd.Timedelta(days=i)
+                        day_key = f"planner_day_input_{day_ts.date().isoformat()}"
+                        st.session_state[day_key] = saved_by_day.get(day_ts.date().isoformat(), "")
+                    st.session_state["planner_loaded_week_key"] = planner_week_key
+
+                st.markdown(f"### Current vs Planned: {planned_week_start:%b %-d} - {planned_week_end:%-d}")
+                st.caption(
+                    f"Current week reference: {current_week_start:%b %-d} - {(current_week_start + pd.Timedelta(days=6)):%-d}"
+                )
+
+                day_cols = st.columns(7)
+                day_inputs: dict[pd.Timestamp, str] = {}
+                for i in range(7):
+                    day_ts = planned_week_start + pd.Timedelta(days=i)
+                    key = f"planner_day_input_{day_ts.date().isoformat()}"
+                    with day_cols[i]:
+                        st.markdown(f"**{day_ts:%a %d %b}**")
+                        day_inputs[day_ts] = st.text_area(
+                            "Plan",
+                            height=120,
+                            key=key,
+                            label_visibility="collapsed",
+                            placeholder="e.g. 80min elliptical @ 140bpm\n10 min run @ 4:50 + 5x6min @ 3:40/km",
+                        )
+
+                save_rows_by_day: dict[str, list[dict[str, object]]] = {}
+                day_validation_errors: dict[str, list[str]] = {}
+                planned_rows: list[dict[str, object]] = []
+                planner_warnings: list[str] = []
+                for day_ts, raw_text in day_inputs.items():
+                    lines = [ln.strip() for ln in str(raw_text or "").splitlines() if ln.strip()]
+                    day_key = day_ts.date().isoformat()
+                    day_rows: list[dict[str, object]] = []
+                    day_errors: list[str] = []
+                    valid_line_no = 1
+                    for ln in lines:
+                        normalized_line = _normalize_plan_text(ln)
+                        segs, warns = _expand_planned_segments(normalized_line)
+                        if warns:
+                            day_errors.extend(warns)
+                            continue
+                        if not segs:
+                            day_errors.append(f"Could not parse line: `{normalized_line}`")
+                            continue
+                        day_rows.append(
+                            {
+                                "day_utc": day_key,
+                                "line_no": valid_line_no,
+                                "workout_text": normalized_line,
+                                "parsed_json": segs,
+                            }
+                        )
+                        valid_line_no += 1
+                        for seg in segs:
+                            start_dt = pd.Timestamp(day_ts)
+                            lthr_at = _curve_value_at(lthr_curve_points, float(derived_lthr_bpm), start_dt)
+                            pace_at = _curve_value_at(lt_pace_curve_points, float(derived_threshold_pace_sec), start_dt)
+                            metrics = _planned_segment_metrics(
+                                seg,
+                                lthr_bpm=float(lthr_at),
+                                threshold_pace_sec_per_km=float(pace_at),
+                                non_running_factor=float(planner_specificity),
+                            )
+                            planned_rows.append(
+                                {
+                                    "day": day_ts,
+                                    "kind": seg.get("kind"),
+                                    "source": seg.get("source"),
+                                    **metrics,
+                                }
+                            )
+                    save_rows_by_day[day_key] = day_rows
+                    day_validation_errors[day_key] = day_errors
+                    if day_errors:
+                        planner_warnings.extend([f"{day_ts:%a %d %b}: {e}" for e in day_errors])
+
+                save_day_cols = st.columns(7)
+                for i in range(7):
+                    day_ts = planned_week_start + pd.Timedelta(days=i)
+                    day_key = day_ts.date().isoformat()
+                    with save_day_cols[i]:
+                        if st.button("Save day", key=f"planner_save_day_{day_key}", use_container_width=True):
+                            errs = day_validation_errors.get(day_key, [])
+                            if errs:
+                                st.error(
+                                    "Cannot save this day. Fix these issues first:\n- "
+                                    + "\n- ".join(errs[:6])
+                                )
+                            else:
+                                replace_planned_activities_for_range(
+                                    cfg.db_path,
+                                    start_day_utc=day_key,
+                                    end_day_utc=day_key,
+                                    rows=save_rows_by_day.get(day_key, []),
+                                )
+                                st.success(f"Saved {day_ts:%a %d %b}.")
+                                st.rerun()
+
+                if planner_warnings:
+                    st.warning(
+                        "Validation issues found (line ignored):\n- "
+                        + "\n- ".join(planner_warnings[:10])
+                    )
+
+                planned_df = pd.DataFrame(planned_rows)
+                if planned_df.empty:
+                    planned_daily = pd.DataFrame({"day": pd.date_range(planned_week_start, planned_week_end, freq="D")})
+                    planned_daily["rtss"] = 0.0
+                    planned_daily["tss"] = 0.0
+                    planned_daily["distance_eqv_km"] = 0.0
+                    planned_daily["if_proxy"] = 0.0
+                else:
+                    planned_df["if_weighted_num"] = (
+                        pd.to_numeric(planned_df.get("if_proxy"), errors="coerce").fillna(0.0)
+                        * pd.to_numeric(planned_df.get("duration_s"), errors="coerce").fillna(0.0)
+                    )
+                    grouped = (
+                        planned_df.groupby("day", as_index=False)
+                        .agg(
+                            rtss=("rtss", "sum"),
+                            tss=("tss", "sum"),
+                            distance_eqv_km=("distance_eqv_km", "sum"),
+                            duration_s=("duration_s", "sum"),
+                            if_weighted_num=("if_weighted_num", "sum"),
+                        )
+                    )
+                    planned_daily = pd.DataFrame({"day": pd.date_range(planned_week_start, planned_week_end, freq="D")}).merge(
+                        grouped, on="day", how="left"
+                    )
+                    planned_daily["rtss"] = pd.to_numeric(planned_daily["rtss"], errors="coerce").fillna(0.0)
+                    planned_daily["tss"] = pd.to_numeric(planned_daily["tss"], errors="coerce").fillna(0.0)
+                    planned_daily["distance_eqv_km"] = pd.to_numeric(planned_daily["distance_eqv_km"], errors="coerce").fillna(0.0)
+                    planned_daily["duration_s"] = pd.to_numeric(planned_daily["duration_s"], errors="coerce").fillna(0.0)
+                    if_planned = []
+                    for _, r in planned_daily.iterrows():
+                        d = float(r.get("duration_s") or 0.0)
+                        w = float(r.get("if_weighted_num") or 0.0)
+                        if_planned.append((w / d) if d > 0 else 0.0)
+                    planned_daily["if_proxy"] = if_planned
+
+                current_week_end = current_week_start + pd.Timedelta(days=6)
+                current_daily = (
+                    planner_metrics[
+                        (planner_metrics["day"] >= current_week_start)
+                        & (planner_metrics["day"] <= current_week_end)
+                    ]
+                    .assign(
+                        if_weighted_num=lambda d: (
+                            pd.to_numeric(d["if_proxy"], errors="coerce").fillna(0.0)
+                            * pd.to_numeric(d["duration_s"], errors="coerce").fillna(0.0)
+                        )
+                    )
+                    .groupby("day", as_index=False)
+                    .agg(
+                        rtss=("rtss", "sum"),
+                        tss=("tss", "sum"),
+                        distance_eqv_km=("distance_eqv_km", "sum"),
+                        duration_s=("duration_s", "sum"),
+                        if_weighted_num=("if_weighted_num", "sum"),
+                    )
+                )
+                current_daily = pd.DataFrame({"day": pd.date_range(current_week_start, current_week_end, freq="D")}).merge(
+                    current_daily, on="day", how="left"
+                )
+                for col in ["rtss", "tss", "distance_eqv_km", "duration_s", "if_weighted_num"]:
+                    current_daily[col] = pd.to_numeric(current_daily[col], errors="coerce").fillna(0.0)
+                current_daily["if_proxy"] = current_daily.apply(
+                    lambda r: (float(r["if_weighted_num"]) / float(r["duration_s"])) if float(r["duration_s"]) > 0 else 0.0,
+                    axis=1,
+                )
+
+                metric_key = {
+                    "rTSS": "rtss",
+                    "TSS": "tss",
+                    "Distance Eqv": "distance_eqv_km",
+                    "IF": "if_proxy",
+                }[planner_metric]
+                if planner_metric in {"rTSS", "TSS"}:
+                    def _bar_color(v: float) -> str:
+                        if v < 50:
+                            return "#34d399"
+                        if v <= 100:
+                            return "#facc15"
+                        return "#60a5fa"
+                elif planner_metric == "IF":
+                    def _bar_color(v: float) -> str:
+                        if v < 0.5:
+                            return "#34d399"
+                        if v <= 0.7:
+                            return "#facc15"
+                        return "#60a5fa"
+                else:
+                    def _bar_color(v: float) -> str:
+                        if v < 15:
+                            return "#34d399"
+                        if v <= 22:
+                            return "#facc15"
+                        return "#60a5fa"
+
+                plot_current = current_daily.copy()
+                plot_current["metric_value"] = pd.to_numeric(plot_current[metric_key], errors="coerce").fillna(0.0)
+                plot_current["day_display"] = (
+                    plot_current["day"].dt.strftime("%d %b")
+                    + "\n("
+                    + plot_current["day"].dt.strftime("%a")
+                    + ")"
+                )
+                plot_current["series"] = "Current"
+                plot_current["opacity"] = 0.95
+                plot_current["bar_color"] = plot_current["metric_value"].map(lambda v: _bar_color(float(v)))
+                plot_current["label"] = plot_current["metric_value"].map(
+                    lambda v: (f"{float(v):.2f}" if float(v) > 0 else "")
+                    if planner_metric != "Distance Eqv"
+                    else (f"{float(v):.2f} km" if float(v) > 0 else "")
+                )
+
+                plot_plan = planned_daily.copy()
+                plot_plan["metric_value"] = pd.to_numeric(plot_plan[metric_key], errors="coerce").fillna(0.0)
+                plot_plan["day_display"] = plot_current["day_display"].values
+                plot_plan["series"] = "Planned"
+                plot_plan["opacity"] = 0.38
+                plot_plan["bar_color"] = "#94a3b8"
+
+                bar_df = pd.concat([plot_plan, plot_current], ignore_index=True)
+                bars = (
+                    alt.Chart(bar_df)
+                    .mark_bar(cornerRadiusTopLeft=10, cornerRadiusTopRight=10, size=24)
+                    .encode(
+                        x=alt.X("day_display:N", sort=plot_current["day_display"].tolist(), title=None, axis=alt.Axis(labelAngle=0, labelLineHeight=14)),
+                        xOffset=alt.XOffset("series:N", sort=["Planned", "Current"]),
+                        y=alt.Y("metric_value:Q", title=None, scale=alt.Scale(zero=True)),
+                        color=alt.Color("bar_color:N", scale=None, legend=None),
+                        opacity=alt.Opacity("opacity:Q", legend=None),
+                        tooltip=[
+                            alt.Tooltip("series:N", title="Series"),
+                            alt.Tooltip("day:T", title="Day"),
+                            alt.Tooltip("metric_value:Q", title=planner_metric, format=".2f"),
+                        ],
+                    )
+                )
+                labels = (
+                    alt.Chart(plot_current.assign(series="Current"))
+                    .mark_text(dy=-10, color="#e2e8f0", fontSize=12, fontWeight=700)
+                    .encode(
+                        x=alt.X("day_display:N", sort=plot_current["day_display"].tolist()),
+                        xOffset=alt.XOffset("series:N", sort=["Planned", "Current"]),
+                        y=alt.Y("metric_value:Q"),
+                        text=alt.Text("label:N"),
+                    )
+                )
+                planner_chart = alt.layer(bars, labels).properties(height=280)
+                st.altair_chart(planner_chart, use_container_width=True)
+
+                st.markdown("#### Planned Activities (Raw)")
+                planned_raw = get_planned_activities_df(cfg.db_path)
+                if planned_raw.empty:
+                    st.caption("No planned activities saved yet.")
+                else:
+                    planned_raw = planned_raw.sort_values(["day_utc", "line_no"], ascending=[False, True]).copy()
+                    planned_raw["delete"] = False
+                    edited_plan = st.data_editor(
+                        planned_raw[
+                            [
+                                "delete",
+                                "day_utc",
+                                "line_no",
+                                "workout_text",
+                                "parsed_json",
+                                "updated_at",
+                            ]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "delete": st.column_config.CheckboxColumn("Delete"),
+                            "day_utc": st.column_config.TextColumn("Planned Date"),
+                            "line_no": st.column_config.NumberColumn("Line", format="%d"),
+                            "workout_text": st.column_config.TextColumn("Workout Text"),
+                            "parsed_json": st.column_config.TextColumn("Parsed JSON"),
+                            "updated_at": st.column_config.TextColumn("Updated At"),
+                        },
+                        key="planner_raw_editor",
+                    )
+                    to_delete = edited_plan[edited_plan["delete"] == True]
+                    if st.button("Delete selected planned activities", key="planner_delete_selected_btn"):
+                        if to_delete.empty:
+                            st.info("Select at least one planned activity to delete.")
+                        else:
+                            delete_keys = [
+                                (str(r["day_utc"]), int(r["line_no"]))
+                                for _, r in to_delete.iterrows()
+                            ]
+                            delete_planned_activities(cfg.db_path, delete_keys)
+                            st.success(f"Deleted {len(delete_keys)} planned activities.")
+                            st.rerun()
 
 if view == "Activity Detail":
     st.divider()
