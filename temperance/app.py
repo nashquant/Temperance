@@ -2465,10 +2465,242 @@ if view == "Calendar":
                     height: 100%;
                     border-radius: 999px;
                 }
+                .compact-week-shell {
+                    border: 1px solid rgba(52, 211, 153, 0.20);
+                    border-radius: 16px;
+                    padding: 12px 14px 8px;
+                    background: radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.10), rgba(2, 6, 23, 0.0) 60%);
+                    margin-bottom: 10px;
+                }
+                .compact-metric-card {
+                    border: 1px solid rgba(148, 163, 184, 0.24);
+                    border-radius: 12px;
+                    padding: 8px 10px;
+                    min-height: 76px;
+                    background: rgba(15, 23, 42, 0.72);
+                }
+                .compact-metric-card.selected {
+                    border-color: rgba(52, 211, 153, 0.72);
+                    box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.18);
+                    background: rgba(16, 185, 129, 0.10);
+                }
+                .compact-metric-title {
+                    font-size: 0.74rem;
+                    color: rgba(148, 163, 184, 0.95);
+                    line-height: 1.2;
+                }
+                .compact-metric-value {
+                    margin-top: 5px;
+                    font-size: 1.15rem;
+                    font-weight: 700;
+                    color: rgba(241, 245, 249, 0.96);
+                    line-height: 1.1;
+                }
                 </style>
                 """,
                 unsafe_allow_html=True,
             )
+
+            compact_mode = st.toggle(
+                "Compact week view",
+                value=True,
+                key="calendar_compact_week_mode",
+                help="Show one-week compact summary with metric-switch bars.",
+            )
+
+            if compact_mode:
+                latest_day = pd.to_datetime(cal_metrics["day"], errors="coerce").max()
+                if pd.isna(latest_day):
+                    st.info("No activities available for compact view.")
+                    st.stop()
+                latest_week_start = latest_day - pd.Timedelta(days=int(latest_day.weekday()))
+                if "calendar_compact_week_start" not in st.session_state:
+                    st.session_state["calendar_compact_week_start"] = latest_week_start
+                selected_week_start = pd.to_datetime(
+                    st.session_state.get("calendar_compact_week_start"), errors="coerce"
+                )
+                if pd.isna(selected_week_start):
+                    selected_week_start = latest_week_start
+                selected_week_start = selected_week_start - pd.Timedelta(days=int(selected_week_start.weekday()))
+                if selected_week_start > latest_week_start:
+                    selected_week_start = latest_week_start
+                st.session_state["calendar_compact_week_start"] = selected_week_start
+                selected_week_end = selected_week_start + pd.Timedelta(days=6)
+
+                nav1, nav2, nav3 = st.columns([1, 3, 1])
+                with nav1:
+                    if st.button("◀ Prev week", key="compact_prev_week"):
+                        st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
+                        st.rerun()
+                with nav2:
+                    st.markdown(
+                        f"### {selected_week_start:%B %-d} - {selected_week_end:%-d}",
+                    )
+                with nav3:
+                    next_disabled = selected_week_start >= latest_week_start
+                    if st.button("Next week ▶", key="compact_next_week", disabled=next_disabled):
+                        st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
+                        st.rerun()
+
+                compact_days = pd.DataFrame({"day": pd.date_range(selected_week_start, selected_week_end, freq="D")})
+                compact_agg = (
+                    cal_metrics[
+                        (cal_metrics["day"] >= selected_week_start)
+                        & (cal_metrics["day"] <= selected_week_end)
+                    ]
+                    .groupby("day", as_index=False)
+                    .agg(
+                        rtss=("rtss", "sum"),
+                        tss=("tss", "sum"),
+                        distance_eqv_km=("distance_proxy_km", "sum"),
+                        duration_s=("duration_s", "sum"),
+                        if_duration_weighted=("if_proxy", lambda s: float((pd.to_numeric(s, errors="coerce").fillna(0.0)).sum())),
+                    )
+                )
+                compact_week = compact_days.merge(compact_agg, on="day", how="left")
+                for col in ["rtss", "tss", "distance_eqv_km", "duration_s", "if_duration_weighted"]:
+                    compact_week[col] = pd.to_numeric(compact_week[col], errors="coerce").fillna(0.0)
+
+                if_by_day = []
+                for day_ts in compact_week["day"]:
+                    day_df = cal_metrics[cal_metrics["day"] == day_ts]
+                    dur = pd.to_numeric(day_df.get("duration_s"), errors="coerce").fillna(0.0)
+                    ifv = pd.to_numeric(day_df.get("if_proxy"), errors="coerce").fillna(0.0)
+                    if_total = float((dur * ifv).sum())
+                    dur_total = float(dur.sum())
+                    if_by_day.append(if_total / dur_total if dur_total > 0 else 0.0)
+                compact_week["if_proxy"] = if_by_day
+                week_scope_df = cal_metrics[
+                    (cal_metrics["day"] >= selected_week_start)
+                    & (cal_metrics["day"] <= selected_week_end)
+                ].copy()
+                week_scope_df["duration_s"] = pd.to_numeric(
+                    week_scope_df.get("duration_s"), errors="coerce"
+                )
+                week_scope_df["if_proxy"] = pd.to_numeric(
+                    week_scope_df.get("if_proxy"), errors="coerce"
+                )
+                valid_if_mask = (
+                    week_scope_df["duration_s"].notna()
+                    & week_scope_df["if_proxy"].notna()
+                    & (week_scope_df["duration_s"] > 0)
+                )
+                if valid_if_mask.any():
+                    week_if_weighted = float(
+                        (
+                            week_scope_df.loc[valid_if_mask, "if_proxy"]
+                            * week_scope_df.loc[valid_if_mask, "duration_s"]
+                        ).sum()
+                        / week_scope_df.loc[valid_if_mask, "duration_s"].sum()
+                    )
+                else:
+                    week_if_weighted = 0.0
+
+                compact_week["day_label"] = compact_week["day"].dt.strftime("%a").str.upper()
+                compact_week["day_num"] = compact_week["day"].dt.day
+
+                metric_defs = [
+                    ("rtss", "rTSS", ".1f", "", "sum"),
+                    ("tss", "TSS", ".1f", "", "sum"),
+                    ("distance_eqv_km", "Distance Eqv", ".2f", " km", "sum"),
+                    ("if_proxy", "IF", ".3f", "", "mean"),
+                ]
+                if "calendar_compact_metric" not in st.session_state:
+                    st.session_state["calendar_compact_metric"] = "distance_eqv_km"
+                selected_metric = str(st.session_state.get("calendar_compact_metric") or "distance_eqv_km")
+                if selected_metric not in {k for k, _, _, _, _ in metric_defs}:
+                    selected_metric = "distance_eqv_km"
+                    st.session_state["calendar_compact_metric"] = selected_metric
+
+                chart_df = compact_week.copy()
+                chart_df["metric_value"] = pd.to_numeric(chart_df[selected_metric], errors="coerce").fillna(0.0)
+                chart_df["day_display"] = (
+                    chart_df["day"].dt.strftime("%d %b")
+                    + "\n("
+                    + chart_df["day"].dt.strftime("%a")
+                    + ")"
+                )
+                y_title = next(label for key, label, _, _, _ in metric_defs if key == selected_metric)
+                chart_df["metric_label"] = chart_df["metric_value"].map(lambda v: f"{v:.2f}")
+
+                def _compact_bar_color(metric_key: str, value: float) -> str:
+                    if metric_key in {"tss", "rtss"}:
+                        if value < 50:
+                            return "#34d399"
+                        if value <= 100:
+                            return "#facc15"
+                        return "#60a5fa"
+                    if metric_key == "if_proxy":
+                        if value < 0.5:
+                            return "#34d399"
+                        if value <= 0.7:
+                            return "#facc15"
+                        return "#60a5fa"
+                    if metric_key == "distance_eqv_km":
+                        if value < 15:
+                            return "#34d399"
+                        if value <= 22:
+                            return "#facc15"
+                        return "#60a5fa"
+                    return "#34d399"
+
+                chart_df["bar_color"] = chart_df["metric_value"].map(
+                    lambda v: _compact_bar_color(selected_metric, float(v))
+                )
+                bars = (
+                    alt.Chart(chart_df)
+                    .mark_bar(cornerRadiusTopLeft=14, cornerRadiusTopRight=14, size=52, opacity=0.95)
+                    .encode(
+                        x=alt.X(
+                            "day_display:N",
+                            sort=chart_df["day_display"].tolist(),
+                            title="Date",
+                            axis=alt.Axis(labelAngle=0, labelLineHeight=14),
+                        ),
+                        y=alt.Y("metric_value:Q", title=y_title, scale=alt.Scale(zero=True)),
+                        color=alt.Color("bar_color:N", scale=None, legend=None),
+                        tooltip=[
+                            alt.Tooltip("day:T", title="Day"),
+                            alt.Tooltip("metric_value:Q", title=y_title, format=".2f"),
+                        ],
+                    )
+                )
+                labels = (
+                    alt.Chart(chart_df)
+                    .mark_text(dy=-10, color="#e2e8f0", fontSize=12, fontWeight=700)
+                    .encode(
+                        x=alt.X("day_display:N", sort=chart_df["day_display"].tolist()),
+                        y=alt.Y("metric_value:Q"),
+                        text=alt.Text("metric_label:N"),
+                    )
+                )
+                compact_chart = alt.layer(bars, labels).properties(height=290)
+                st.markdown("<div class='compact-week-shell'>", unsafe_allow_html=True)
+                st.altair_chart(compact_chart, use_container_width=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                metric_cols = st.columns(4)
+                for idx, (metric_key, metric_label, metric_fmt, metric_unit, agg_mode) in enumerate(metric_defs):
+                    metric_series = pd.to_numeric(compact_week[metric_key], errors="coerce").fillna(0.0)
+                    if metric_key == "if_proxy":
+                        value = week_if_weighted
+                    else:
+                        value = float(metric_series.mean() if agg_mode == "mean" else metric_series.sum())
+                    with metric_cols[idx]:
+                        button_label = (
+                            f"{metric_label}\n{value:{metric_fmt}}{metric_unit}"
+                        )
+                        button_type = "primary" if metric_key == selected_metric else "secondary"
+                        if st.button(
+                            button_label,
+                            key=f"compact_metric_select_{metric_key}",
+                            use_container_width=True,
+                            type=button_type,
+                        ):
+                            if metric_key != selected_metric:
+                                st.session_state["calendar_compact_metric"] = metric_key
+                                st.rerun()
+                st.stop()
 
             header_cols = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1])
             with header_cols[0]:
