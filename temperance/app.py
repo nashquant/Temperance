@@ -2496,6 +2496,12 @@ if view == "Calendar":
                     color: rgba(241, 245, 249, 0.96);
                     line-height: 1.1;
                 }
+                @media (max-width: 768px) {
+                    .compact-week-shell {
+                        padding: 8px 10px 6px;
+                        border-radius: 12px;
+                    }
+                }
                 </style>
                 """,
                 unsafe_allow_html=True,
@@ -2527,18 +2533,15 @@ if view == "Calendar":
                 st.session_state["calendar_compact_week_start"] = selected_week_start
                 selected_week_end = selected_week_start + pd.Timedelta(days=6)
 
-                nav1, nav2, nav3 = st.columns([1, 3, 1])
+                st.markdown(f"### {selected_week_start:%B %-d} - {selected_week_end:%-d}")
+                nav1, nav2 = st.columns(2)
                 with nav1:
-                    if st.button("◀ Prev week", key="compact_prev_week"):
+                    if st.button("◀ Prev week", key="compact_prev_week", use_container_width=True):
                         st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
                         st.rerun()
                 with nav2:
-                    st.markdown(
-                        f"### {selected_week_start:%B %-d} - {selected_week_end:%-d}",
-                    )
-                with nav3:
                     next_disabled = selected_week_start >= latest_week_start
-                    if st.button("Next week ▶", key="compact_next_week", disabled=next_disabled):
+                    if st.button("Next week ▶", key="compact_next_week", disabled=next_disabled, use_container_width=True):
                         st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
                         st.rerun()
 
@@ -2616,12 +2619,15 @@ if view == "Calendar":
                 chart_df["metric_value"] = pd.to_numeric(chart_df[selected_metric], errors="coerce").fillna(0.0)
                 chart_df["day_display"] = (
                     chart_df["day"].dt.strftime("%d %b")
-                    + "\n("
+                    + "|("
                     + chart_df["day"].dt.strftime("%a")
                     + ")"
                 )
                 y_title = next(label for key, label, _, _, _ in metric_defs if key == selected_metric)
-                chart_df["metric_label"] = chart_df["metric_value"].map(lambda v: f"{v:.2f}")
+                if selected_metric == "distance_eqv_km":
+                    chart_df["metric_label"] = chart_df["metric_value"].map(lambda v: f"{v:.2f} km")
+                else:
+                    chart_df["metric_label"] = chart_df["metric_value"].map(lambda v: f"{v:.2f}")
 
                 def _compact_bar_color(metric_key: str, value: float) -> str:
                     if metric_key in {"tss", "rtss"}:
@@ -2649,13 +2655,17 @@ if view == "Calendar":
                 )
                 bars = (
                     alt.Chart(chart_df)
-                    .mark_bar(cornerRadiusTopLeft=14, cornerRadiusTopRight=14, size=52, opacity=0.95)
+                    .mark_bar(cornerRadiusTopLeft=12, cornerRadiusTopRight=12, size=28, opacity=0.95)
                     .encode(
                         x=alt.X(
                             "day_display:N",
                             sort=chart_df["day_display"].tolist(),
                             title="Date",
-                            axis=alt.Axis(labelAngle=0, labelLineHeight=14),
+                            axis=alt.Axis(
+                                labelAngle=0,
+                                labelLineHeight=14,
+                                labelExpr="replace(datum.label, '|', '\\n')",
+                            ),
                         ),
                         y=alt.Y("metric_value:Q", title=y_title, scale=alt.Scale(zero=True)),
                         color=alt.Color("bar_color:N", scale=None, legend=None),
@@ -2674,22 +2684,27 @@ if view == "Calendar":
                         text=alt.Text("metric_label:N"),
                     )
                 )
-                compact_chart = alt.layer(bars, labels).properties(height=290)
+                compact_chart = alt.layer(bars, labels).properties(height=250)
                 st.markdown("<div class='compact-week-shell'>", unsafe_allow_html=True)
                 st.altair_chart(compact_chart, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-                metric_cols = st.columns(4)
-                for idx, (metric_key, metric_label, metric_fmt, metric_unit, agg_mode) in enumerate(metric_defs):
+                metric_values = []
+                for metric_key, metric_label, metric_fmt, metric_unit, agg_mode in metric_defs:
                     metric_series = pd.to_numeric(compact_week[metric_key], errors="coerce").fillna(0.0)
                     if metric_key == "if_proxy":
                         value = week_if_weighted
                     else:
                         value = float(metric_series.mean() if agg_mode == "mean" else metric_series.sum())
-                    with metric_cols[idx]:
-                        button_label = (
-                            f"{metric_label}\n{value:{metric_fmt}}{metric_unit}"
-                        )
+                    metric_values.append((metric_key, metric_label, metric_fmt, metric_unit, value))
+
+                row1 = st.columns(2)
+                row2 = st.columns(2)
+                button_rows = [row1, row2]
+                for i, (metric_key, metric_label, metric_fmt, metric_unit, value) in enumerate(metric_values):
+                    row = button_rows[i // 2]
+                    with row[i % 2]:
+                        button_label = f"{metric_label} {value:{metric_fmt}}{metric_unit}"
                         button_type = "primary" if metric_key == selected_metric else "secondary"
                         if st.button(
                             button_label,
