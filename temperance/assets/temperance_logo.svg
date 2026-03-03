@@ -1,0 +1,40 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="80" x2="432" y2="432" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+  </defs>
+
+  <!-- visible backdrop to avoid "blank" appearance on light UIs -->
+  <circle cx="256" cy="256" r="220" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="172" stroke="#F8FAFC" stroke-width="14"/>
+
+  <!-- top arc + red marker -->
+  <path d="M140 220C176 180 220 160 256 158" stroke="#9CA3AF" stroke-width="10" stroke-linecap="round"/>
+  <path d="M372 220C336 180 292 160 256 158" stroke="#4B5563" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="256" cy="158" r="10" fill="#DC2626"/>
+
+  <!-- split head silhouette -->
+  <path d="M246 186C198 186 160 224 160 272C160 290 165 306 174 320L156 352C153 359 158 366 165 366H191L222 396H246V186Z"
+        fill="#F8FAFC" stroke="#F8FAFC" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M246 186C304 186 346 230 346 286C346 347 304 396 246 396V186Z" fill="#0B1220"/>
+
+  <!-- neck -->
+  <rect x="212" y="396" width="34" height="62" fill="#F8FAFC"/>
+  <rect x="246" y="396" width="54" height="62" fill="#0B1220"/>
+
+  <!-- circuit lines -->
+  <g stroke="#F8FAFC" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M258 206H286V176"/>
+    <path d="M258 230H302L320 212V186"/>
+    <path d="M258 252H312L332 232V206"/>
+    <path d="M258 274H316"/>
+    <path d="M258 300H296"/>
+    <path d="M258 326H284L302 344V386"/>
+    <path d="M258 348H280V392"/>
+    <path d="M312 276H336"/>
+    <path d="M312 322H336"/>
+  </g>
+  <circle cx="294" cy="298" r="11" fill="#DC2626"/>
+</svg>

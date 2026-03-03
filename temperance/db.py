@@ -441,6 +441,7 @@ def upsert_activity_details(db_path: Path, details: list[dict[str, Any]]) -> int
             ON CONFLICT(activity_id) DO UPDATE SET
                 details_json=excluded.details_json,
                 updated_at=excluded.updated_at
+            WHERE activity_details.details_json IS NOT excluded.details_json
             """,
             [
                 {
@@ -979,6 +980,14 @@ def save_setting(db_path: Path, key: str, value: str) -> None:
             (key, value, now),
         )
         conn.commit()
+
+
+def save_setting_if_changed(db_path: Path, key: str, value: str) -> bool:
+    existing = get_setting(db_path, key)
+    if existing == value:
+        return False
+    save_setting(db_path, key, value)
+    return True
 
 
 def get_setting(db_path: Path, key: str) -> str | None:

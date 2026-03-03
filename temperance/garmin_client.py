@@ -644,6 +644,8 @@ def fetch_garmin_comprehensive(
     activity_splits: list[dict[str, Any]] = []
 
     offset = 0
+    effective_page_size = 25 if (include_activity_details or include_splits) else page_size
+    processed_activities = 0
     total_days = max((end_day - start_day).days + 1, 1)
     _progress(
         {
@@ -654,7 +656,7 @@ def fetch_garmin_comprehensive(
         }
     )
     while True:
-        batch, err = _safe_call(client.get_activities, offset, page_size)
+        batch, err = _safe_call(client.get_activities, offset, effective_page_size)
         if err:
             raise RuntimeError(f"Garmin activities fetch failed at offset {offset}: {err}") from None
 
@@ -679,6 +681,18 @@ def fetch_garmin_comprehensive(
                 continue
             if day > end_day:
                 continue
+            processed_activities += 1
+            fraction_live = min(max(((end_day - max(day, start_day)).days + 1) / float(total_days), 0.0), 1.0)
+            _progress(
+                {
+                    "phase": "activities",
+                    "message": "Processing activity details/FIT",
+                    "fraction": fraction_live,
+                    "oldest_in_batch": day.isoformat(),
+                    "offset": offset,
+                    "processed": processed_activities,
+                }
+            )
 
             activity_id = normalized["activity_id"]
             _archive_activity_payload(raw_export_dir, activity_id, "summary", row)
@@ -746,7 +760,7 @@ def fetch_garmin_comprehensive(
 
             activities.append(normalized)
 
-        offset += page_size
+        offset += effective_page_size
         if oldest_in_batch:
             clamped_oldest = max(oldest_in_batch, start_day)
             covered_days = max((end_day - clamped_oldest).days + 1, 0)

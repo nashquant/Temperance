@@ -36,15 +36,6 @@ is_running() {
 
 print_urls() {
   echo "Local:      http://127.0.0.1:${PORT}"
-  if command -v tailscale >/dev/null 2>&1; then
-    local ts_ip
-    ts_ip="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
-    if [[ -n "${ts_ip}" ]] && [[ "${ts_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      echo "Tailscale:  http://${ts_ip}:${PORT}"
-    else
-      echo "Tailscale:  unavailable (run 'tailscale status' and login if needed)"
-    fi
-  fi
 }
 
 start() {
