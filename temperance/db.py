@@ -1003,3 +1003,38 @@ def delete_planned_activities(
         )
         conn.commit()
     return len(keys)
+
+
+def upsert_planned_activities_rows(
+    db_path: Path,
+    rows: list[dict[str, Any]],
+) -> int:
+    if not rows:
+        return 0
+    now = UTC_NOW()
+    with closing(get_conn(db_path)) as conn:
+        conn.executemany(
+            """
+            INSERT INTO planned_activities (
+                day_utc, line_no, workout_text, parsed_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(day_utc, line_no) DO UPDATE SET
+                workout_text = excluded.workout_text,
+                parsed_json = excluded.parsed_json,
+                updated_at = excluded.updated_at
+            """,
+            [
+                (
+                    str(r.get("day_utc") or ""),
+                    int(r.get("line_no") or 0),
+                    str(r.get("workout_text") or "").strip(),
+                    json.dumps(r.get("parsed_json")) if r.get("parsed_json") is not None else None,
+                    now,
+                    now,
+                )
+                for r in rows
+                if str(r.get("day_utc") or "").strip() and str(r.get("workout_text") or "").strip()
+            ],
+        )
+        conn.commit()
+    return len(rows)

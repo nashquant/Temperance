@@ -44,6 +44,7 @@ from db import (
     log_sync,
     delete_planned_activities,
     replace_planned_activities_for_range,
+    upsert_planned_activities_rows,
     save_setting,
     upsert_activities,
     upsert_activity_details,
@@ -2431,7 +2432,7 @@ if view == "Calendar":
                 if compact_mode_early:
                     compare_choice = st.selectbox(
                         "Compare against",
-                        ["Previous week", "2 weeks ago", "3 weeks ago", "4 weeks ago"],
+                        ["Previous week", "2 weeks ago", "3 weeks ago", "4 weeks ago", "Planned"],
                         index=0,
                         key="calendar_compact_compare_choice",
                     )
@@ -2440,6 +2441,7 @@ if view == "Calendar":
                         "2 weeks ago": 2,
                         "3 weeks ago": 3,
                         "4 weeks ago": 4,
+                        "Planned": 1,
                     }[compare_choice]
                     range_start_day = cal_min_day
                     range_end_day = cal_max_day
@@ -2745,8 +2747,6 @@ if view == "Calendar":
                 if pd.isna(selected_week_start):
                     selected_week_start = latest_week_start
                 selected_week_start = selected_week_start - pd.Timedelta(days=int(selected_week_start.weekday()))
-                if selected_week_start > latest_week_start:
-                    selected_week_start = latest_week_start
                 st.session_state["calendar_compact_week_start"] = selected_week_start
                 selected_week_end = selected_week_start + pd.Timedelta(days=6)
                 compare_choice = str(st.session_state.get("calendar_compact_compare_choice", "Previous week"))
@@ -2755,20 +2755,23 @@ if view == "Calendar":
                     "2 weeks ago": 2,
                     "3 weeks ago": 3,
                     "4 weeks ago": 4,
+                    "Planned": 1,
                 }.get(compare_choice, 1)
                 compare_week_start = selected_week_start - pd.Timedelta(days=7 * compare_weeks)
                 compare_week_end = compare_week_start + pd.Timedelta(days=6)
 
                 st.markdown(f"### {selected_week_start:%B %-d} - {selected_week_end:%-d}")
-                st.caption(f"Comparing: {compare_week_start:%b %-d} - {compare_week_end:%-d}")
+                if compare_choice == "Planned":
+                    st.caption(f"Comparing: Planned {selected_week_start:%b %-d} - {selected_week_end:%-d}")
+                else:
+                    st.caption(f"Comparing: {compare_week_start:%b %-d} - {compare_week_end:%-d}")
                 nav1, nav2 = st.columns(2)
                 with nav1:
                     if st.button("◀ Prev week", key="compact_prev_week", use_container_width=True):
                         st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
                         st.rerun()
                 with nav2:
-                    next_disabled = selected_week_start >= latest_week_start
-                    if st.button("Next week ▶", key="compact_next_week", disabled=next_disabled, use_container_width=True):
+                    if st.button("Next week ▶", key="compact_next_week", use_container_width=True):
                         st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
                         st.rerun()
 
@@ -2801,30 +2804,102 @@ if view == "Calendar":
                     if_by_day.append(if_total / dur_total if dur_total > 0 else 0.0)
                 compact_week["if_proxy"] = if_by_day
                 compare_days = pd.DataFrame({"day": pd.date_range(compare_week_start, compare_week_end, freq="D")})
-                compare_agg = (
-                    cal_metrics[
-                        (cal_metrics["day"] >= compare_week_start)
-                        & (cal_metrics["day"] <= compare_week_end)
-                    ]
-                    .groupby("day", as_index=False)
-                    .agg(
-                        rtss=("rtss", "sum"),
-                        tss=("tss", "sum"),
-                        distance_eqv_km=("distance_proxy_km", "sum"),
+                if compare_choice == "Planned":
+                    planned_rows = get_planned_activities_df(
+                        cfg.db_path,
+                        start_day_utc=selected_week_start.date().isoformat(),
+                        end_day_utc=selected_week_end.date().isoformat(),
                     )
-                )
-                compare_week = compare_days.merge(compare_agg, on="day", how="left")
-                for col in ["rtss", "tss", "distance_eqv_km"]:
-                    compare_week[col] = pd.to_numeric(compare_week[col], errors="coerce").fillna(0.0)
-                compare_if_by_day = []
-                for day_ts in compare_week["day"]:
-                    day_df = cal_metrics[cal_metrics["day"] == day_ts]
-                    dur = pd.to_numeric(day_df.get("duration_s"), errors="coerce").fillna(0.0)
-                    ifv = pd.to_numeric(day_df.get("if_proxy"), errors="coerce").fillna(0.0)
-                    if_total = float((dur * ifv).sum())
-                    dur_total = float(dur.sum())
-                    compare_if_by_day.append(if_total / dur_total if dur_total > 0 else 0.0)
-                compare_week["if_proxy"] = compare_if_by_day
+                    planned_day_stats: list[dict[str, float | pd.Timestamp]] = []
+                    for day_ts in pd.date_range(selected_week_start, selected_week_end, freq="D"):
+                        day_key = day_ts.date().isoformat()
+                        day_rows = (
+                            planned_rows[planned_rows["day_utc"] == day_key]
+                            if not planned_rows.empty and "day_utc" in planned_rows.columns
+                            else pd.DataFrame()
+                        )
+                        lthr_for_day = float(
+                            _curve_value_at(
+                                lthr_curve_points,
+                                float(derived_lthr_bpm),
+                                day_ts,
+                            )
+                        )
+                        lt_pace_for_day = float(
+                            _curve_value_at(
+                                lt_pace_curve_points,
+                                float(derived_threshold_pace_sec),
+                                day_ts,
+                            )
+                        )
+                        total_tss = 0.0
+                        total_rtss = 0.0
+                        total_dist_eqv = 0.0
+                        if_weighted_sum = 0.0
+                        if_weight_seconds = 0.0
+                        if not day_rows.empty:
+                            for _, prow in day_rows.iterrows():
+                                raw_segments = prow.get("parsed_json")
+                                segments: list[dict[str, float | str | None]] = []
+                                if isinstance(raw_segments, list):
+                                    segments = [s for s in raw_segments if isinstance(s, dict)]
+                                elif isinstance(raw_segments, str) and raw_segments.strip():
+                                    try:
+                                        parsed = json.loads(raw_segments)
+                                        if isinstance(parsed, list):
+                                            segments = [s for s in parsed if isinstance(s, dict)]
+                                    except Exception:
+                                        segments = []
+                                for seg in segments:
+                                    m = _planned_segment_metrics(
+                                        seg,
+                                        lthr_bpm=lthr_for_day,
+                                        threshold_pace_sec_per_km=lt_pace_for_day,
+                                        non_running_factor=float(cal_specificity),
+                                    )
+                                    seg_duration = float(m.get("duration_s") or 0.0)
+                                    seg_if = float(m.get("if_proxy") or 0.0)
+                                    total_tss += float(m.get("tss") or 0.0)
+                                    total_rtss += float(m.get("rtss") or 0.0)
+                                    total_dist_eqv += float(m.get("distance_eqv_km") or 0.0)
+                                    if seg_duration > 0:
+                                        if_weighted_sum += seg_if * seg_duration
+                                        if_weight_seconds += seg_duration
+                        planned_day_stats.append(
+                            {
+                                "day": day_ts,
+                                "rtss": total_rtss,
+                                "tss": total_tss,
+                                "distance_eqv_km": total_dist_eqv,
+                                "if_proxy": (if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0),
+                            }
+                        )
+                    compare_week = pd.DataFrame(planned_day_stats)
+                else:
+                    compare_agg = (
+                        cal_metrics[
+                            (cal_metrics["day"] >= compare_week_start)
+                            & (cal_metrics["day"] <= compare_week_end)
+                        ]
+                        .groupby("day", as_index=False)
+                        .agg(
+                            rtss=("rtss", "sum"),
+                            tss=("tss", "sum"),
+                            distance_eqv_km=("distance_proxy_km", "sum"),
+                        )
+                    )
+                    compare_week = compare_days.merge(compare_agg, on="day", how="left")
+                    for col in ["rtss", "tss", "distance_eqv_km"]:
+                        compare_week[col] = pd.to_numeric(compare_week[col], errors="coerce").fillna(0.0)
+                    compare_if_by_day = []
+                    for day_ts in compare_week["day"]:
+                        day_df = cal_metrics[cal_metrics["day"] == day_ts]
+                        dur = pd.to_numeric(day_df.get("duration_s"), errors="coerce").fillna(0.0)
+                        ifv = pd.to_numeric(day_df.get("if_proxy"), errors="coerce").fillna(0.0)
+                        if_total = float((dur * ifv).sum())
+                        dur_total = float(dur.sum())
+                        compare_if_by_day.append(if_total / dur_total if dur_total > 0 else 0.0)
+                    compare_week["if_proxy"] = compare_if_by_day
                 week_scope_df = cal_metrics[
                     (cal_metrics["day"] >= selected_week_start)
                     & (cal_metrics["day"] <= selected_week_end)
@@ -3352,395 +3427,237 @@ if view == "Calendar":
 if view == "Week Planner":
     st.divider()
     st.header("Week Planner")
-    st.caption("Plan next week using text workouts and compare against current week.")
+    st.caption("Plan one dated activity at a time. Activity string must include activity type and intensity (`@...bpm` or `@.../km`).")
 
-    if metrics_df.empty:
-        st.info("No activities available yet.")
-    else:
-        base_df = metrics_df.copy()
-        base_df["start_local"] = pd.to_datetime(base_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
-        base_df = base_df.dropna(subset=["start_local"]).copy()
-        if base_df.empty:
-            st.info("No valid activity timestamps available.")
+    today_local = pd.Timestamp(date.today())
+    previous_sunday = today_local - pd.Timedelta(days=int(today_local.weekday()) + 1)
+
+    p1, p2, p3 = st.columns([1.0, 2.6, 0.6])
+    with p1:
+        plan_day = st.date_input(
+            "Date",
+            value=today_local.date(),
+            min_value=previous_sunday.date(),
+            key="planner_single_day",
+        )
+    with p2:
+        plan_activity = st.text_input(
+            "Plan an activity",
+            value=st.session_state.get("planner_single_activity", ""),
+            key="planner_single_activity",
+            placeholder="e.g. 80min elliptical @140bpm or 10min run @4:50 + 5x6min @3:40/km",
+        )
+    with p3:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        save_clicked = st.button("Save", key="planner_single_save_btn", use_container_width=True)
+
+    if save_clicked:
+        day_ts = pd.Timestamp(plan_day)
+        if day_ts < previous_sunday:
+            st.error(f"Planned activities cannot be dated before {previous_sunday:%Y-%m-%d}.")
         else:
-            c1, c2, c3 = st.columns([1.1, 1.1, 1.0])
-            with c1:
-                planner_filter = st.selectbox(
-                    "Activity filter",
-                    ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
-                    index=0,
-                    key="planner_activity_filter",
-                )
-            with c2:
-                planner_metric = st.selectbox(
-                    "Metric",
-                    ["rTSS", "TSS", "Distance Eqv", "IF"],
-                    index=0,
-                    key="planner_metric",
-                )
-            with c3:
-                planner_specificity = st.number_input(
-                    "Non-running factor",
-                    min_value=0.0,
-                    max_value=1.5,
-                    value=0.8,
-                    step=0.05,
-                    format="%.2f",
-                    key="planner_specificity_factor",
-                )
-
-            planner_metrics, _ = cached_filtered_views(
-                metrics_df,
-                activity_filter=planner_filter,
-                specificity_factor=float(planner_specificity),
-            )
-            planner_metrics = planner_metrics.copy()
-            planner_metrics["start_local"] = pd.to_datetime(
-                planner_metrics["start_time_utc"], utc=True, errors="coerce"
-            ).dt.tz_localize(None)
-            planner_metrics = planner_metrics.dropna(subset=["start_local"]).copy()
-            planner_metrics["day"] = planner_metrics["start_local"].dt.floor("D")
-            planner_metrics["duration_s"] = pd.to_numeric(planner_metrics.get("duration_s"), errors="coerce").fillna(0.0)
-            planner_metrics["rtss"] = pd.to_numeric(planner_metrics.get("rtss"), errors="coerce").fillna(0.0)
-            planner_metrics["tss"] = pd.to_numeric(planner_metrics.get("tss"), errors="coerce").fillna(0.0)
-            planner_metrics["distance_eqv_km"] = pd.to_numeric(
-                planner_metrics.get("distance_proxy_km"), errors="coerce"
-            ).fillna(0.0)
-            planner_metrics["if_proxy"] = pd.to_numeric(planner_metrics.get("if_proxy"), errors="coerce").fillna(0.0)
-
-            latest_day = pd.to_datetime(planner_metrics["day"], errors="coerce").max()
-            if pd.isna(latest_day):
-                st.info("No activities available for planning comparison.")
+            normalized = _normalize_plan_text(plan_activity)
+            segs, warns = _expand_planned_segments(normalized)
+            if not normalized:
+                st.error("Activity string is empty.")
+            elif warns or not segs:
+                details = "\n- ".join(warns[:6]) if warns else "Could not parse this activity."
+                st.error("Invalid activity string:\n- " + details)
             else:
-                current_week_start = latest_day - pd.Timedelta(days=int(latest_day.weekday()))
-                planned_week_start_default = current_week_start + pd.Timedelta(days=7)
-                today_local = pd.Timestamp(date.today())
-                previous_sunday = today_local - pd.Timedelta(days=int(today_local.weekday()) + 1)
-                planned_week_start = pd.Timestamp(
-                    st.date_input(
-                        "Planned week starts on",
-                        value=planned_week_start_default.date(),
-                        min_value=previous_sunday.date(),
-                        key="planner_week_start",
-                    )
-                )
-                if planned_week_start < previous_sunday:
-                    st.error(
-                        f"Planned activities cannot be dated before {previous_sunday:%Y-%m-%d} (previous Sunday)."
-                    )
-                    st.stop()
-                planned_week_end = planned_week_start + pd.Timedelta(days=6)
-
-                planned_saved_df = get_planned_activities_df(
+                same_day = get_planned_activities_df(
                     cfg.db_path,
-                    start_day_utc=planned_week_start.date().isoformat(),
-                    end_day_utc=planned_week_end.date().isoformat(),
+                    start_day_utc=day_ts.date().isoformat(),
+                    end_day_utc=day_ts.date().isoformat(),
                 )
-                saved_by_day: dict[str, str] = {}
-                if not planned_saved_df.empty:
-                    planned_saved_df = planned_saved_df.sort_values(["day_utc", "line_no"])
-                    for day_utc, g in planned_saved_df.groupby("day_utc"):
-                        saved_by_day[str(day_utc)] = "\n".join(
-                            [str(x).strip() for x in g["workout_text"].tolist() if str(x).strip()]
-                        )
-                planner_week_key = f"{planned_week_start.date().isoformat()}::{planned_week_end.date().isoformat()}"
-                if st.session_state.get("planner_loaded_week_key") != planner_week_key:
-                    for i in range(7):
-                        day_ts = planned_week_start + pd.Timedelta(days=i)
-                        day_key = f"planner_day_input_{day_ts.date().isoformat()}"
-                        st.session_state[day_key] = saved_by_day.get(day_ts.date().isoformat(), "")
-                    st.session_state["planner_loaded_week_key"] = planner_week_key
-
-                st.markdown(f"### Current vs Planned: {planned_week_start:%b %-d} - {planned_week_end:%-d}")
-                st.caption(
-                    f"Current week reference: {current_week_start:%b %-d} - {(current_week_start + pd.Timedelta(days=6)):%-d}"
+                next_line_no = int(pd.to_numeric(same_day.get("line_no"), errors="coerce").max()) + 1 if not same_day.empty else 1
+                upsert_planned_activities_rows(
+                    cfg.db_path,
+                    [
+                        {
+                            "day_utc": day_ts.date().isoformat(),
+                            "line_no": next_line_no,
+                            "workout_text": normalized,
+                            "parsed_json": segs,
+                        }
+                    ],
                 )
+                st.success(f"Saved: {day_ts:%Y-%m-%d} · {normalized}")
+                st.rerun()
 
-                day_cols = st.columns(7)
-                day_inputs: dict[pd.Timestamp, str] = {}
-                for i in range(7):
-                    day_ts = planned_week_start + pd.Timedelta(days=i)
-                    key = f"planner_day_input_{day_ts.date().isoformat()}"
-                    with day_cols[i]:
-                        st.markdown(f"**{day_ts:%a %d %b}**")
-                        day_inputs[day_ts] = st.text_area(
-                            "Plan",
-                            height=120,
-                            key=key,
-                            label_visibility="collapsed",
-                            placeholder="e.g. 80min elliptical @ 140bpm\n10 min run @ 4:50 + 5x6min @ 3:40/km",
-                        )
+    st.markdown("#### View planned activities")
+    planned_raw = get_planned_activities_df(cfg.db_path)
+    if planned_raw.empty:
+        st.caption("No planned activities saved yet.")
+    else:
+        planned_raw = planned_raw.sort_values(["day_utc", "line_no"], ascending=[False, True]).copy()
+        planned_raw["row_id"] = planned_raw["day_utc"].astype(str) + "::" + planned_raw["line_no"].astype(int).astype(str)
+        planned_raw["select"] = False
+        planner_non_running_factor = float(st.session_state.get("calendar_specificity_factor", 0.8))
+        plan_tss_vals: list[float] = []
+        plan_rtss_vals: list[float] = []
+        plan_dist_eqv_vals: list[float] = []
+        plan_if_vals: list[float] = []
+        for _, plan_row in planned_raw.iterrows():
+            raw_segments = plan_row.get("parsed_json")
+            segments: list[dict[str, float | str | None]] = []
+            if isinstance(raw_segments, list):
+                segments = [s for s in raw_segments if isinstance(s, dict)]
+            elif isinstance(raw_segments, str) and raw_segments.strip():
+                try:
+                    parsed = json.loads(raw_segments)
+                    if isinstance(parsed, list):
+                        segments = [s for s in parsed if isinstance(s, dict)]
+                except Exception:
+                    segments = []
 
-                save_rows_by_day: dict[str, list[dict[str, object]]] = {}
-                day_validation_errors: dict[str, list[str]] = {}
-                planned_rows: list[dict[str, object]] = []
-                planner_warnings: list[str] = []
-                for day_ts, raw_text in day_inputs.items():
-                    lines = [ln.strip() for ln in str(raw_text or "").splitlines() if ln.strip()]
-                    day_key = day_ts.date().isoformat()
-                    day_rows: list[dict[str, object]] = []
-                    day_errors: list[str] = []
-                    valid_line_no = 1
-                    for ln in lines:
-                        normalized_line = _normalize_plan_text(ln)
-                        segs, warns = _expand_planned_segments(normalized_line)
-                        if warns:
-                            day_errors.extend(warns)
+            day_for_curve = pd.to_datetime(plan_row.get("day_utc"), utc=True, errors="coerce")
+            lthr_for_day = float(
+                _curve_value_at(
+                    lthr_curve_points,
+                    float(derived_lthr_bpm),
+                    day_for_curve,
+                )
+            )
+            lt_pace_for_day = float(
+                _curve_value_at(
+                    lt_pace_curve_points,
+                    float(derived_threshold_pace_sec),
+                    day_for_curve,
+                )
+            )
+
+            total_tss = 0.0
+            total_rtss = 0.0
+            total_dist_eqv = 0.0
+            if_weighted_sum = 0.0
+            if_weight_seconds = 0.0
+            for seg in segments:
+                m = _planned_segment_metrics(
+                    seg,
+                    lthr_bpm=lthr_for_day,
+                    threshold_pace_sec_per_km=lt_pace_for_day,
+                    non_running_factor=planner_non_running_factor,
+                )
+                seg_duration = float(m.get("duration_s") or 0.0)
+                seg_if = float(m.get("if_proxy") or 0.0)
+                total_tss += float(m.get("tss") or 0.0)
+                total_rtss += float(m.get("rtss") or 0.0)
+                total_dist_eqv += float(m.get("distance_eqv_km") or 0.0)
+                if seg_duration > 0:
+                    if_weighted_sum += seg_if * seg_duration
+                    if_weight_seconds += seg_duration
+            plan_tss_vals.append(total_tss)
+            plan_rtss_vals.append(total_rtss)
+            plan_dist_eqv_vals.append(total_dist_eqv)
+            plan_if_vals.append(if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0)
+
+        planned_raw["tss"] = plan_tss_vals
+        planned_raw["rtss"] = plan_rtss_vals
+        planned_raw["distance_eqv_km"] = plan_dist_eqv_vals
+        planned_raw["if_proxy"] = plan_if_vals
+        editor_df = planned_raw[
+            [
+                "select",
+                "row_id",
+                "day_utc",
+                "line_no",
+                "workout_text",
+                "tss",
+                "rtss",
+                "distance_eqv_km",
+                "if_proxy",
+                "parsed_json",
+                "updated_at",
+            ]
+        ].copy()
+        edited_plan = st.data_editor(
+            editor_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "select": st.column_config.CheckboxColumn("Select"),
+                "row_id": st.column_config.TextColumn("Row ID", disabled=True),
+                "day_utc": st.column_config.TextColumn("Planned Date"),
+                "line_no": st.column_config.NumberColumn("Line", format="%d", disabled=True),
+                "workout_text": st.column_config.TextColumn("Activity String"),
+                "tss": st.column_config.NumberColumn("TSS", format="%.1f", disabled=True),
+                "rtss": st.column_config.NumberColumn("rTSS", format="%.1f", disabled=True),
+                "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.2f", disabled=True),
+                "if_proxy": st.column_config.NumberColumn("IF", format="%.3f", disabled=True),
+                "parsed_json": st.column_config.TextColumn("Parsed JSON", disabled=True),
+                "updated_at": st.column_config.TextColumn("Updated At", disabled=True),
+            },
+            key="planner_raw_editor",
+        )
+
+        selected_rows = edited_plan[edited_plan["select"] == True].copy()
+        cdel, cedit = st.columns(2)
+        with cdel:
+            if st.button("Delete selected", key="planner_delete_selected_btn", use_container_width=True):
+                if selected_rows.empty:
+                    st.info("Select at least one planned activity.")
+                else:
+                    delete_keys = []
+                    for _, r in selected_rows.iterrows():
+                        rid = str(r.get("row_id") or "")
+                        day_part, line_part = rid.split("::", 1)
+                        delete_keys.append((day_part, int(line_part)))
+                    delete_planned_activities(cfg.db_path, delete_keys)
+                    st.success(f"Deleted {len(delete_keys)} planned activities.")
+                    st.rerun()
+        with cedit:
+            if st.button("Save edits (selected rows)", key="planner_save_selected_edits_btn", use_container_width=True):
+                if selected_rows.empty:
+                    st.info("Select at least one row to edit.")
+                else:
+                    old_keys: list[tuple[str, int]] = []
+                    edit_rows: list[dict[str, object]] = []
+                    remaining = planned_raw.copy()
+                    for _, r in selected_rows.iterrows():
+                        rid = str(r.get("row_id") or "")
+                        day_part, line_part = rid.split("::", 1)
+                        old_keys.append((day_part, int(line_part)))
+                    old_key_set = {f"{d}::{ln}" for d, ln in old_keys}
+                    remaining = remaining[~remaining["row_id"].isin(old_key_set)].copy()
+                    max_line_by_day = (
+                        remaining.groupby("day_utc")["line_no"].max().to_dict() if not remaining.empty else {}
+                    )
+                    errors: list[str] = []
+                    for _, r in selected_rows.iterrows():
+                        day_text = str(r.get("day_utc") or "").strip()
+                        workout_text = _normalize_plan_text(str(r.get("workout_text") or ""))
+                        try:
+                            day_ts = pd.Timestamp(day_text)
+                        except Exception:
+                            errors.append(f"Invalid date `{day_text}`")
                             continue
-                        if not segs:
-                            day_errors.append(f"Could not parse line: `{normalized_line}`")
+                        if day_ts < previous_sunday:
+                            errors.append(f"Date `{day_text}` is before allowed floor `{previous_sunday:%Y-%m-%d}`")
                             continue
-                        day_rows.append(
+                        segs, warns = _expand_planned_segments(workout_text)
+                        if warns or not segs:
+                            errors.append(
+                                f"`{workout_text}` invalid: " + ("; ".join(warns[:2]) if warns else "unparseable")
+                            )
+                            continue
+                        day_key = day_ts.date().isoformat()
+                        next_line = int(max_line_by_day.get(day_key, 0)) + 1
+                        max_line_by_day[day_key] = next_line
+                        edit_rows.append(
                             {
                                 "day_utc": day_key,
-                                "line_no": valid_line_no,
-                                "workout_text": normalized_line,
+                                "line_no": next_line,
+                                "workout_text": workout_text,
                                 "parsed_json": segs,
                             }
                         )
-                        valid_line_no += 1
-                        for seg in segs:
-                            start_dt = pd.Timestamp(day_ts)
-                            lthr_at = _curve_value_at(lthr_curve_points, float(derived_lthr_bpm), start_dt)
-                            pace_at = _curve_value_at(lt_pace_curve_points, float(derived_threshold_pace_sec), start_dt)
-                            metrics = _planned_segment_metrics(
-                                seg,
-                                lthr_bpm=float(lthr_at),
-                                threshold_pace_sec_per_km=float(pace_at),
-                                non_running_factor=float(planner_specificity),
-                            )
-                            planned_rows.append(
-                                {
-                                    "day": day_ts,
-                                    "kind": seg.get("kind"),
-                                    "source": seg.get("source"),
-                                    **metrics,
-                                }
-                            )
-                    save_rows_by_day[day_key] = day_rows
-                    day_validation_errors[day_key] = day_errors
-                    if day_errors:
-                        planner_warnings.extend([f"{day_ts:%a %d %b}: {e}" for e in day_errors])
-
-                save_day_cols = st.columns(7)
-                for i in range(7):
-                    day_ts = planned_week_start + pd.Timedelta(days=i)
-                    day_key = day_ts.date().isoformat()
-                    with save_day_cols[i]:
-                        if st.button("Save day", key=f"planner_save_day_{day_key}", use_container_width=True):
-                            errs = day_validation_errors.get(day_key, [])
-                            if errs:
-                                st.error(
-                                    "Cannot save this day. Fix these issues first:\n- "
-                                    + "\n- ".join(errs[:6])
-                                )
-                            else:
-                                replace_planned_activities_for_range(
-                                    cfg.db_path,
-                                    start_day_utc=day_key,
-                                    end_day_utc=day_key,
-                                    rows=save_rows_by_day.get(day_key, []),
-                                )
-                                st.success(f"Saved {day_ts:%a %d %b}.")
-                                st.rerun()
-
-                if planner_warnings:
-                    st.warning(
-                        "Validation issues found (line ignored):\n- "
-                        + "\n- ".join(planner_warnings[:10])
-                    )
-
-                planned_df = pd.DataFrame(planned_rows)
-                if planned_df.empty:
-                    planned_daily = pd.DataFrame({"day": pd.date_range(planned_week_start, planned_week_end, freq="D")})
-                    planned_daily["rtss"] = 0.0
-                    planned_daily["tss"] = 0.0
-                    planned_daily["distance_eqv_km"] = 0.0
-                    planned_daily["if_proxy"] = 0.0
-                else:
-                    planned_df["if_weighted_num"] = (
-                        pd.to_numeric(planned_df.get("if_proxy"), errors="coerce").fillna(0.0)
-                        * pd.to_numeric(planned_df.get("duration_s"), errors="coerce").fillna(0.0)
-                    )
-                    grouped = (
-                        planned_df.groupby("day", as_index=False)
-                        .agg(
-                            rtss=("rtss", "sum"),
-                            tss=("tss", "sum"),
-                            distance_eqv_km=("distance_eqv_km", "sum"),
-                            duration_s=("duration_s", "sum"),
-                            if_weighted_num=("if_weighted_num", "sum"),
-                        )
-                    )
-                    planned_daily = pd.DataFrame({"day": pd.date_range(planned_week_start, planned_week_end, freq="D")}).merge(
-                        grouped, on="day", how="left"
-                    )
-                    planned_daily["rtss"] = pd.to_numeric(planned_daily["rtss"], errors="coerce").fillna(0.0)
-                    planned_daily["tss"] = pd.to_numeric(planned_daily["tss"], errors="coerce").fillna(0.0)
-                    planned_daily["distance_eqv_km"] = pd.to_numeric(planned_daily["distance_eqv_km"], errors="coerce").fillna(0.0)
-                    planned_daily["duration_s"] = pd.to_numeric(planned_daily["duration_s"], errors="coerce").fillna(0.0)
-                    if_planned = []
-                    for _, r in planned_daily.iterrows():
-                        d = float(r.get("duration_s") or 0.0)
-                        w = float(r.get("if_weighted_num") or 0.0)
-                        if_planned.append((w / d) if d > 0 else 0.0)
-                    planned_daily["if_proxy"] = if_planned
-
-                current_week_end = current_week_start + pd.Timedelta(days=6)
-                current_daily = (
-                    planner_metrics[
-                        (planner_metrics["day"] >= current_week_start)
-                        & (planner_metrics["day"] <= current_week_end)
-                    ]
-                    .assign(
-                        if_weighted_num=lambda d: (
-                            pd.to_numeric(d["if_proxy"], errors="coerce").fillna(0.0)
-                            * pd.to_numeric(d["duration_s"], errors="coerce").fillna(0.0)
-                        )
-                    )
-                    .groupby("day", as_index=False)
-                    .agg(
-                        rtss=("rtss", "sum"),
-                        tss=("tss", "sum"),
-                        distance_eqv_km=("distance_eqv_km", "sum"),
-                        duration_s=("duration_s", "sum"),
-                        if_weighted_num=("if_weighted_num", "sum"),
-                    )
-                )
-                current_daily = pd.DataFrame({"day": pd.date_range(current_week_start, current_week_end, freq="D")}).merge(
-                    current_daily, on="day", how="left"
-                )
-                for col in ["rtss", "tss", "distance_eqv_km", "duration_s", "if_weighted_num"]:
-                    current_daily[col] = pd.to_numeric(current_daily[col], errors="coerce").fillna(0.0)
-                current_daily["if_proxy"] = current_daily.apply(
-                    lambda r: (float(r["if_weighted_num"]) / float(r["duration_s"])) if float(r["duration_s"]) > 0 else 0.0,
-                    axis=1,
-                )
-
-                metric_key = {
-                    "rTSS": "rtss",
-                    "TSS": "tss",
-                    "Distance Eqv": "distance_eqv_km",
-                    "IF": "if_proxy",
-                }[planner_metric]
-                if planner_metric in {"rTSS", "TSS"}:
-                    def _bar_color(v: float) -> str:
-                        if v < 50:
-                            return "#34d399"
-                        if v <= 100:
-                            return "#facc15"
-                        return "#60a5fa"
-                elif planner_metric == "IF":
-                    def _bar_color(v: float) -> str:
-                        if v < 0.5:
-                            return "#34d399"
-                        if v <= 0.7:
-                            return "#facc15"
-                        return "#60a5fa"
-                else:
-                    def _bar_color(v: float) -> str:
-                        if v < 15:
-                            return "#34d399"
-                        if v <= 22:
-                            return "#facc15"
-                        return "#60a5fa"
-
-                plot_current = current_daily.copy()
-                plot_current["metric_value"] = pd.to_numeric(plot_current[metric_key], errors="coerce").fillna(0.0)
-                plot_current["day_display"] = (
-                    plot_current["day"].dt.strftime("%d %b")
-                    + "\n("
-                    + plot_current["day"].dt.strftime("%a")
-                    + ")"
-                )
-                plot_current["series"] = "Current"
-                plot_current["opacity"] = 0.95
-                plot_current["bar_color"] = plot_current["metric_value"].map(lambda v: _bar_color(float(v)))
-                plot_current["label"] = plot_current["metric_value"].map(
-                    lambda v: (f"{float(v):.2f}" if float(v) > 0 else "")
-                    if planner_metric != "Distance Eqv"
-                    else (f"{float(v):.2f} km" if float(v) > 0 else "")
-                )
-
-                plot_plan = planned_daily.copy()
-                plot_plan["metric_value"] = pd.to_numeric(plot_plan[metric_key], errors="coerce").fillna(0.0)
-                plot_plan["day_display"] = plot_current["day_display"].values
-                plot_plan["series"] = "Planned"
-                plot_plan["opacity"] = 0.38
-                plot_plan["bar_color"] = "#94a3b8"
-
-                bar_df = pd.concat([plot_plan, plot_current], ignore_index=True)
-                bars = (
-                    alt.Chart(bar_df)
-                    .mark_bar(cornerRadiusTopLeft=10, cornerRadiusTopRight=10, size=24)
-                    .encode(
-                        x=alt.X("day_display:N", sort=plot_current["day_display"].tolist(), title=None, axis=alt.Axis(labelAngle=0, labelLineHeight=14)),
-                        xOffset=alt.XOffset("series:N", sort=["Planned", "Current"]),
-                        y=alt.Y("metric_value:Q", title=None, scale=alt.Scale(zero=True)),
-                        color=alt.Color("bar_color:N", scale=None, legend=None),
-                        opacity=alt.Opacity("opacity:Q", legend=None),
-                        tooltip=[
-                            alt.Tooltip("series:N", title="Series"),
-                            alt.Tooltip("day:T", title="Day"),
-                            alt.Tooltip("metric_value:Q", title=planner_metric, format=".2f"),
-                        ],
-                    )
-                )
-                labels = (
-                    alt.Chart(plot_current.assign(series="Current"))
-                    .mark_text(dy=-10, color="#e2e8f0", fontSize=12, fontWeight=700)
-                    .encode(
-                        x=alt.X("day_display:N", sort=plot_current["day_display"].tolist()),
-                        xOffset=alt.XOffset("series:N", sort=["Planned", "Current"]),
-                        y=alt.Y("metric_value:Q"),
-                        text=alt.Text("label:N"),
-                    )
-                )
-                planner_chart = alt.layer(bars, labels).properties(height=280)
-                st.altair_chart(planner_chart, use_container_width=True)
-
-                st.markdown("#### Planned Activities (Raw)")
-                planned_raw = get_planned_activities_df(cfg.db_path)
-                if planned_raw.empty:
-                    st.caption("No planned activities saved yet.")
-                else:
-                    planned_raw = planned_raw.sort_values(["day_utc", "line_no"], ascending=[False, True]).copy()
-                    planned_raw["delete"] = False
-                    edited_plan = st.data_editor(
-                        planned_raw[
-                            [
-                                "delete",
-                                "day_utc",
-                                "line_no",
-                                "workout_text",
-                                "parsed_json",
-                                "updated_at",
-                            ]
-                        ],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "delete": st.column_config.CheckboxColumn("Delete"),
-                            "day_utc": st.column_config.TextColumn("Planned Date"),
-                            "line_no": st.column_config.NumberColumn("Line", format="%d"),
-                            "workout_text": st.column_config.TextColumn("Workout Text"),
-                            "parsed_json": st.column_config.TextColumn("Parsed JSON"),
-                            "updated_at": st.column_config.TextColumn("Updated At"),
-                        },
-                        key="planner_raw_editor",
-                    )
-                    to_delete = edited_plan[edited_plan["delete"] == True]
-                    if st.button("Delete selected planned activities", key="planner_delete_selected_btn"):
-                        if to_delete.empty:
-                            st.info("Select at least one planned activity to delete.")
-                        else:
-                            delete_keys = [
-                                (str(r["day_utc"]), int(r["line_no"]))
-                                for _, r in to_delete.iterrows()
-                            ]
-                            delete_planned_activities(cfg.db_path, delete_keys)
-                            st.success(f"Deleted {len(delete_keys)} planned activities.")
-                            st.rerun()
+                    if errors:
+                        st.error("Cannot save edits:\n- " + "\n- ".join(errors[:8]))
+                    else:
+                        delete_planned_activities(cfg.db_path, old_keys)
+                        upsert_planned_activities_rows(cfg.db_path, edit_rows)
+                        st.success(f"Updated {len(edit_rows)} planned activities.")
+                        st.rerun()
 
 if view == "Activity Detail":
     st.divider()
