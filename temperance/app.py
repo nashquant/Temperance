@@ -125,6 +125,8 @@ SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 SETTINGS_KEY_LTHR_CURVE = "lthr_curve_v1"
 SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_GARMIN_OWNER_SCOPE = "garmin_owner_scope_v1"
+SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
+SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
 
 AUTH_ALL_TABS = ["Dashboard", "Calendar", "Week Planner", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs"]
 AUTH_VIEWER_TABS = ["Dashboard", "Calendar", "Week Planner", "Activity Detail", "Recovery Data", "Data Extract"]
@@ -397,6 +399,82 @@ def _load_lt_pace_curve(db_path: Path) -> list[dict[str, object]]:
         return _default_lt_pace_curve()
     rows = [r for r in payload if isinstance(r, dict)]
     return _normalize_lt_pace_curve(rows)
+
+
+def _load_non_running_factor(db_path: Path, default_value: float = 0.8) -> float:
+    raw = get_setting(db_path, SETTINGS_KEY_NON_RUNNING_FACTOR)
+    if raw is None:
+        return float(default_value)
+    try:
+        val = float(raw)
+    except Exception:
+        return float(default_value)
+    return float(min(max(val, 0.0), 1.5))
+
+
+def _default_specificity_profile(default_non_running: float = 0.8) -> dict[str, float]:
+    d = float(min(max(default_non_running, 0.0), 1.5))
+    return {
+        "non_running": d,
+        "treadmill": 1.0,
+        "elliptical": d,
+        "cycling": d,
+    }
+
+
+def _normalize_specificity_profile(payload: dict[str, object] | None, fallback_default: float = 0.8) -> dict[str, float]:
+    base = _default_specificity_profile(fallback_default)
+    if not isinstance(payload, dict):
+        return base
+    out = dict(base)
+    legacy_default = payload.get("default_non_running")
+    if legacy_default is not None and "non_running" not in payload:
+        payload = dict(payload)
+        payload["non_running"] = legacy_default
+    for k in out.keys():
+        try:
+            if k in payload and payload.get(k) is not None:
+                out[k] = float(min(max(float(payload.get(k)), 0.0), 1.5))
+        except Exception:
+            continue
+    return out
+
+
+def _load_specificity_profile(db_path: Path, fallback_default: float = 0.8) -> dict[str, float]:
+    raw = get_setting(db_path, SETTINGS_KEY_ACTIVITY_SPECIFICITY)
+    if not raw:
+        return _default_specificity_profile(fallback_default)
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return _default_specificity_profile(fallback_default)
+    return _normalize_specificity_profile(payload, fallback_default=fallback_default)
+
+
+def _specificity_factor_for_sport(sport_type: str | None, profile: dict[str, float]) -> float:
+    lower = str(sport_type or "").strip().lower()
+    if "treadmill" in lower:
+        return float(profile.get("treadmill", 1.0))
+    if "ellipt" in lower:
+        return float(profile.get("elliptical", profile.get("non_running", 0.8)))
+    if ("cycl" in lower) or ("bike" in lower):
+        return float(profile.get("cycling", profile.get("non_running", 0.8)))
+    if "run" in lower:
+        return 1.0
+    return float(profile.get("non_running", 0.8))
+
+
+def _specificity_factor_for_plan_kind(kind: str | None, profile: dict[str, float]) -> float:
+    k = str(kind or "").strip().lower()
+    if k == "run":
+        return 1.0
+    if k == "treadmill":
+        return float(profile.get("treadmill", 1.0))
+    if k == "elliptical":
+        return float(profile.get("elliptical", profile.get("non_running", 0.8)))
+    if k == "cycling":
+        return float(profile.get("cycling", profile.get("non_running", 0.8)))
+    return float(profile.get("non_running", 0.8))
 
 
 def _curve_points_from_rows(rows: list[dict[str, object]], value_key: str) -> list[tuple[datetime, float]]:
@@ -874,40 +952,43 @@ def filter_by_activity_type(df: pd.DataFrame, mode: str) -> pd.DataFrame:
     return df.loc[mask].copy()
 
 
-def apply_specificity_factor(df: pd.DataFrame, non_running_factor: float) -> pd.DataFrame:
+def apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, float]) -> pd.DataFrame:
     if df.empty:
         return df
 
     out = df.copy()
     sport = out["sport_type"].fillna("").astype(str).str.lower()
+    out["specificity_factor"] = out["sport_type"].apply(
+        lambda s: _specificity_factor_for_sport(s, specificity_profile)
+    )
     is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
-    out["specificity_factor"] = 1.0
-    out.loc[~is_running_like, "specificity_factor"] = float(non_running_factor)
 
     # Distance equivalent is computed at ingest time with base non-running specificity 0.8.
     # Re-scale it at view time so UI specificity changes are reflected without full recompute.
     if "distance_proxy_km" in out.columns:
         base_proxy_factor = 0.8
-        ratio = max(float(non_running_factor), 0.0) / base_proxy_factor if base_proxy_factor > 0 else 1.0
-        proxy_scale = ratio ** 0.5
-        pace_scale = (1.0 / proxy_scale) if proxy_scale > 0 else float("nan")
         proxy_mask = ~is_running_like
         if "distance_proxy_method" in out.columns:
             proxy_mask = proxy_mask & out["distance_proxy_method"].fillna("").astype(str).eq("tss_parity_root_solve")
-        out.loc[proxy_mask, "distance_proxy_km"] = (
-            pd.to_numeric(out.loc[proxy_mask, "distance_proxy_km"], errors="coerce").fillna(0.0) * proxy_scale
-        )
-        if "pace_proxy_sec_per_km" in out.columns:
-            if proxy_scale > 0:
-                out.loc[proxy_mask, "pace_proxy_sec_per_km"] = (
-                    pd.to_numeric(out.loc[proxy_mask, "pace_proxy_sec_per_km"], errors="coerce").fillna(0.0) * pace_scale
-                )
-            else:
-                out.loc[proxy_mask, "pace_proxy_sec_per_km"] = pd.NA
-        if "if_proxy" in out.columns:
-            out.loc[proxy_mask, "if_proxy"] = (
-                pd.to_numeric(out.loc[proxy_mask, "if_proxy"], errors="coerce").fillna(0.0) * proxy_scale
+        if proxy_mask.any():
+            proxy_factor = pd.to_numeric(out.loc[proxy_mask, "specificity_factor"], errors="coerce").fillna(0.0)
+            ratio = proxy_factor / float(base_proxy_factor) if base_proxy_factor > 0 else 1.0
+            proxy_scale = ratio.pow(0.5)
+            out.loc[proxy_mask, "distance_proxy_km"] = (
+                pd.to_numeric(out.loc[proxy_mask, "distance_proxy_km"], errors="coerce").fillna(0.0).values
+                * proxy_scale.values
             )
+            if "pace_proxy_sec_per_km" in out.columns:
+                pace_scale = 1.0 / proxy_scale.replace(0.0, pd.NA)
+                out.loc[proxy_mask, "pace_proxy_sec_per_km"] = (
+                    pd.to_numeric(out.loc[proxy_mask, "pace_proxy_sec_per_km"], errors="coerce").fillna(0.0).values
+                    * pd.to_numeric(pace_scale, errors="coerce").fillna(0.0).values
+                )
+            if "if_proxy" in out.columns:
+                out.loc[proxy_mask, "if_proxy"] = (
+                    pd.to_numeric(out.loc[proxy_mask, "if_proxy"], errors="coerce").fillna(0.0).values
+                    * proxy_scale.values
+                )
 
     factor_cols = [
         "distance_m",
@@ -1187,10 +1268,10 @@ def _build_split_metrics_for_activity(
 def cached_filtered_views(
     metrics_df: pd.DataFrame,
     activity_filter: str,
-    specificity_factor: float,
+    specificity_profile: dict[str, float],
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     filtered_metrics = filter_by_activity_type(metrics_df, activity_filter)
-    filtered_metrics = apply_specificity_factor(filtered_metrics, specificity_factor)
+    filtered_metrics = apply_specificity_factor(filtered_metrics, specificity_profile)
     filtered_daily = build_daily_summary(filtered_metrics)
     if not filtered_daily.empty:
         filtered_daily = filtered_daily.sort_values("day_utc").copy()
@@ -1423,6 +1504,14 @@ cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
 saved_injury_windows = _load_injury_windows(cfg.db_path)
 saved_lthr_curve = _load_lthr_curve(cfg.db_path)
 saved_lt_pace_curve = _load_lt_pace_curve(cfg.db_path)
+saved_non_running_factor = _load_non_running_factor(cfg.db_path, default_value=0.8)
+saved_specificity_profile = _load_specificity_profile(cfg.db_path, fallback_default=saved_non_running_factor)
+if "user_specificity_profile" not in st.session_state:
+    st.session_state["user_specificity_profile"] = dict(saved_specificity_profile)
+if "user_non_running_factor" not in st.session_state:
+    st.session_state["user_non_running_factor"] = float(
+        st.session_state["user_specificity_profile"].get("non_running", saved_non_running_factor)
+    )
 derived_lthr_bpm = _curve_latest_value(saved_lthr_curve, "lthr_bpm", DEFAULT_LTHR)
 derived_threshold_pace_sec = _curve_latest_value(
     saved_lt_pace_curve, "lt_pace_sec_per_km", DEFAULT_THRESHOLD_PACE_SEC_PER_KM
@@ -1433,6 +1522,75 @@ lt_pace_curve_points = _curve_points_from_rows(saved_lt_pace_curve, "lt_pace_sec
 if view == "User Inputs":
     st.divider()
     st.header("User Inputs")
+    with st.expander("Specificity Factors", expanded=True):
+        st.caption("Set base non-running factor plus activity-specific overrides.")
+        profile_current = _normalize_specificity_profile(
+            st.session_state.get("user_specificity_profile", {}),
+            fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+        )
+        f1, f2 = st.columns(2)
+        with f1:
+            f_non_running = st.number_input(
+                "Non-running (base)",
+                min_value=0.0,
+                max_value=1.5,
+                value=float(profile_current.get("non_running", 0.8)),
+                step=0.01,
+                format="%.2f",
+                key="ui_spec_non_running",
+            )
+            f_treadmill = st.number_input(
+                "Treadmill",
+                min_value=0.0,
+                max_value=1.5,
+                value=float(profile_current.get("treadmill", 1.0)),
+                step=0.01,
+                format="%.2f",
+                key="ui_spec_treadmill",
+            )
+        with f2:
+            f_elliptical = st.number_input(
+                "Elliptical",
+                min_value=0.0,
+                max_value=1.5,
+                value=float(profile_current.get("elliptical", profile_current.get("non_running", 0.8))),
+                step=0.01,
+                format="%.2f",
+                key="ui_spec_elliptical",
+            )
+            f_cycling = st.number_input(
+                "Cycling",
+                min_value=0.0,
+                max_value=1.5,
+                value=float(profile_current.get("cycling", profile_current.get("non_running", 0.8))),
+                step=0.01,
+                format="%.2f",
+                key="ui_spec_cycling",
+            )
+        if st.button("Save Specificity Factors", key="save_specificity_factors_btn"):
+            new_profile = _normalize_specificity_profile(
+                {
+                    "non_running": f_non_running,
+                    "treadmill": f_treadmill,
+                    "elliptical": f_elliptical,
+                    "cycling": f_cycling,
+                },
+                fallback_default=f_non_running,
+            )
+            changed_profile = save_setting_if_changed(
+                cfg.db_path, SETTINGS_KEY_ACTIVITY_SPECIFICITY, _settings_json(new_profile)
+            )
+            changed_default = save_setting_if_changed(
+                cfg.db_path, SETTINGS_KEY_NON_RUNNING_FACTOR, f"{float(new_profile['non_running']):.4f}"
+            )
+            st.session_state["user_specificity_profile"] = dict(new_profile)
+            st.session_state["user_non_running_factor"] = float(new_profile["non_running"])
+            st.success(
+                "Specificity factors saved."
+                if (changed_profile or changed_default)
+                else "Specificity factors unchanged."
+            )
+            st.rerun()
     with st.expander("LTHR Curve (date -> bpm)", expanded=True):
         lthr_df = pd.DataFrame(saved_lthr_curve)[["date", "lthr_bpm"]]
         edited_lthr = st.data_editor(
@@ -1552,7 +1710,7 @@ if view == "Dashboard":
         )
     else:
         st.caption("Missing-day fill mode is fixed to zero for chart calculations (EMA and aggregations).")
-        controls = st.columns([1, 1, 1, 1, 1])
+        controls = st.columns([1, 1, 1, 1.2])
         with controls[0]:
             metrics_min_day = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).min().date()
             metrics_max_day = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).max().date()
@@ -1606,19 +1764,8 @@ if view == "Dashboard":
             weekly_toggle = st.checkbox("Weekly aggregation", value=True)
         with controls[3]:
             compare_mode = st.checkbox("Compare mode (up to 3 metrics)", value=False)
-        with controls[4]:
-            normalize_compare = st.checkbox("Normalize compare (index=100)", value=False, disabled=not compare_mode)
             enable_zoom = st.checkbox("Zoom/pan", value=False)
             top_injury_overlay = st.checkbox("Top injury overlay", value=False)
-            specificity_factor_value = st.number_input(
-                "Non-running factor",
-                min_value=0.0,
-                max_value=1.5,
-                value=0.8,
-                step=0.05,
-                format="%.2f",
-                help="Set to 1.00 to disable non-running adjustment.",
-            )
 
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
@@ -1631,7 +1778,10 @@ if view == "Dashboard":
         filtered_metrics, filtered_daily = cached_filtered_views(
             metrics_df,
             activity_filter=activity_filter,
-            specificity_factor=float(specificity_factor_value),
+            specificity_profile=_normalize_specificity_profile(
+                st.session_state.get("user_specificity_profile", {}),
+                fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+            ),
         )
         range_filtered_metrics = filtered_metrics[
             (pd.to_datetime(filtered_metrics["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None) >= start_ts)
@@ -1726,10 +1876,6 @@ if view == "Dashboard":
                 frame = frame.rename(columns={metric: "value"})
                 frame["series"] = label
                 frame["axis_side"] = axis_side
-                if compare_mode and normalize_compare:
-                    first_value = float(frame["value"].iloc[0]) if not frame.empty else 0.0
-                    denom = first_value if first_value != 0 else 1.0
-                    frame["value"] = (frame["value"] / denom) * 100.0
                 plot_frames.append(frame)
 
                 if not compare_mode:
@@ -2425,7 +2571,7 @@ if view == "Calendar":
             st.info("No valid activity timestamps available.")
         else:
             compact_mode_early = bool(st.session_state.get("calendar_compact_week_mode", True))
-            controls = st.columns([1.2, 1.0, 1.0])
+            controls = st.columns([1.2, 1.0])
             with controls[0]:
                 cal_min_day = cal_base["start_local"].min().date()
                 cal_max_day = cal_base["start_local"].max().date()
@@ -2472,17 +2618,6 @@ if view == "Calendar":
                     index=0,
                     key="calendar_activity_filter",
                 )
-            with controls[2]:
-                cal_specificity = st.number_input(
-                    "Non-running factor",
-                    min_value=0.0,
-                    max_value=1.5,
-                    value=0.8,
-                    step=0.05,
-                    format="%.2f",
-                    key="calendar_specificity_factor",
-                )
-
             range_start_ts = pd.Timestamp(range_start_day)
             range_end_ts = pd.Timestamp(range_end_day)
             grid_start = range_start_ts - pd.Timedelta(days=int(range_start_ts.weekday()))
@@ -2491,7 +2626,10 @@ if view == "Calendar":
             cal_metrics, cal_daily = cached_filtered_views(
                 metrics_df,
                 activity_filter=cal_activity_filter,
-                specificity_factor=float(cal_specificity),
+                specificity_profile=_normalize_specificity_profile(
+                    st.session_state.get("user_specificity_profile", {}),
+                    fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+                ),
             )
             cal_metrics = cal_metrics.copy()
             cal_metrics["start_local"] = pd.to_datetime(
@@ -2855,7 +2993,13 @@ if view == "Calendar":
                                         seg,
                                         lthr_bpm=lthr_for_day,
                                         threshold_pace_sec_per_km=lt_pace_for_day,
-                                        non_running_factor=float(cal_specificity),
+                                        non_running_factor=_specificity_factor_for_plan_kind(
+                                            str(seg.get("kind")),
+                                            _normalize_specificity_profile(
+                                                st.session_state.get("user_specificity_profile", {}),
+                                                fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+                                            ),
+                                        ),
                                     )
                                     seg_duration = float(m.get("duration_s") or 0.0)
                                     seg_if = float(m.get("if_proxy") or 0.0)
@@ -3431,6 +3575,10 @@ if view == "Week Planner":
 
     today_local = pd.Timestamp(date.today())
     previous_sunday = today_local - pd.Timedelta(days=int(today_local.weekday()) + 1)
+    planner_profile_current = _normalize_specificity_profile(
+        st.session_state.get("user_specificity_profile", {}),
+        fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+    )
 
     p1, p2, p3 = st.columns([1.0, 2.6, 0.6])
     with p1:
@@ -3492,11 +3640,15 @@ if view == "Week Planner":
         planned_raw = planned_raw.sort_values(["day_utc", "line_no"], ascending=[False, True]).copy()
         planned_raw["row_id"] = planned_raw["day_utc"].astype(str) + "::" + planned_raw["line_no"].astype(int).astype(str)
         planned_raw["select"] = False
-        planner_non_running_factor = float(st.session_state.get("calendar_specificity_factor", 0.8))
+        planner_specificity_profile = _normalize_specificity_profile(
+            st.session_state.get("user_specificity_profile", {}),
+            fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+        )
         plan_tss_vals: list[float] = []
         plan_rtss_vals: list[float] = []
         plan_dist_eqv_vals: list[float] = []
         plan_if_vals: list[float] = []
+        plan_activity_vals: list[str] = []
         for _, plan_row in planned_raw.iterrows():
             raw_segments = plan_row.get("parsed_json")
             segments: list[dict[str, float | str | None]] = []
@@ -3531,26 +3683,33 @@ if view == "Week Planner":
             total_dist_eqv = 0.0
             if_weighted_sum = 0.0
             if_weight_seconds = 0.0
+            kinds_seen: list[str] = []
             for seg in segments:
+                seg_kind = str(seg.get("kind") or "").strip().lower()
+                seg_spec = _specificity_factor_for_plan_kind(seg_kind, planner_specificity_profile)
                 m = _planned_segment_metrics(
                     seg,
                     lthr_bpm=lthr_for_day,
                     threshold_pace_sec_per_km=lt_pace_for_day,
-                    non_running_factor=planner_non_running_factor,
+                    non_running_factor=seg_spec,
                 )
                 seg_duration = float(m.get("duration_s") or 0.0)
                 seg_if = float(m.get("if_proxy") or 0.0)
-                total_tss += float(m.get("tss") or 0.0)
-                total_rtss += float(m.get("rtss") or 0.0)
+                total_tss += float(m.get("tss") or 0.0) * float(seg_spec)
+                total_rtss += float(m.get("rtss") or 0.0) * float(seg_spec)
                 total_dist_eqv += float(m.get("distance_eqv_km") or 0.0)
                 if seg_duration > 0:
                     if_weighted_sum += seg_if * seg_duration
                     if_weight_seconds += seg_duration
+                if seg_kind and seg_kind not in kinds_seen:
+                    kinds_seen.append(seg_kind)
             plan_tss_vals.append(total_tss)
             plan_rtss_vals.append(total_rtss)
             plan_dist_eqv_vals.append(total_dist_eqv)
             plan_if_vals.append(if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0)
+            plan_activity_vals.append(", ".join([k.replace("_", " ").title() for k in kinds_seen]) if kinds_seen else "-")
 
+        planned_raw["activity"] = plan_activity_vals
         planned_raw["tss"] = plan_tss_vals
         planned_raw["rtss"] = plan_rtss_vals
         planned_raw["distance_eqv_km"] = plan_dist_eqv_vals
@@ -3561,6 +3720,7 @@ if view == "Week Planner":
                 "row_id",
                 "day_utc",
                 "line_no",
+                "activity",
                 "workout_text",
                 "tss",
                 "rtss",
@@ -3579,6 +3739,7 @@ if view == "Week Planner":
                 "row_id": st.column_config.TextColumn("Row ID", disabled=True),
                 "day_utc": st.column_config.TextColumn("Planned Date"),
                 "line_no": st.column_config.NumberColumn("Line", format="%d", disabled=True),
+                "activity": st.column_config.TextColumn("Activity", disabled=True),
                 "workout_text": st.column_config.TextColumn("Activity String"),
                 "tss": st.column_config.NumberColumn("TSS", format="%.1f", disabled=True),
                 "rtss": st.column_config.NumberColumn("rTSS", format="%.1f", disabled=True),
