@@ -410,9 +410,12 @@ def _curve_value_at(points: list[tuple[datetime, float]], default_value: float, 
     if at_dt is None or pd.isna(at_dt):
         return float(default_value)
     ts = at_dt.to_pydatetime() if isinstance(at_dt, pd.Timestamp) else at_dt
+    if ts.tzinfo is not None:
+        ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
     chosen = float(default_value)
     for d, v in points:
-        if d <= ts:
+        d_cmp = d.astimezone(timezone.utc).replace(tzinfo=None) if d.tzinfo is not None else d
+        if d_cmp <= ts:
             chosen = float(v)
         else:
             break
@@ -2834,7 +2837,7 @@ if view == "Calendar":
                                 st.session_state["calendar_split_activity_id"] = activity_id
                             rendered_cards += 1
                         today_utc = datetime.now(timezone.utc).date()
-                        if rendered_cards == 0 and day_ts.date() <= today_utc:
+                        if rendered_cards == 0 and day_ts.date() < today_utc:
                             st.markdown(
                                 (
                                     "<div class='cal-rest-card'>"
