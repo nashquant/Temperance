@@ -2911,7 +2911,8 @@ if view == "Calendar":
                             ):
                                 st.session_state["calendar_split_activity_id"] = activity_id
                             rendered_cards += 1
-                        if rendered_cards == 0:
+                        today_utc = datetime.now(timezone.utc).date()
+                        if rendered_cards == 0 and day_ts.date() <= today_utc:
                             st.markdown(
                                 (
                                     "<div class='cal-rest-card'>"
