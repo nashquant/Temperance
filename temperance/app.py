@@ -2223,29 +2223,46 @@ if view == "Calendar":
         if cal_base.empty:
             st.info("No valid activity timestamps available.")
         else:
+            compact_mode_early = bool(st.session_state.get("calendar_compact_week_mode", True))
             controls = st.columns([1.2, 1.0, 1.0])
             with controls[0]:
                 cal_min_day = cal_base["start_local"].min().date()
                 cal_max_day = cal_base["start_local"].max().date()
-                cal_range = st.selectbox(
-                    "Quick range",
-                    ["3M", "6M", "9M", "1Y", "2Y", "ALL"],
-                    index=3,
-                    key="calendar_quick_range",
-                )
-                if cal_range == "3M":
-                    range_start_day = max(cal_min_day, cal_max_day - timedelta(days=90))
-                elif cal_range == "6M":
-                    range_start_day = max(cal_min_day, cal_max_day - timedelta(days=180))
-                elif cal_range == "9M":
-                    range_start_day = max(cal_min_day, cal_max_day - timedelta(days=270))
-                elif cal_range == "1Y":
-                    range_start_day = max(cal_min_day, cal_max_day - timedelta(days=365))
-                elif cal_range == "2Y":
-                    range_start_day = max(cal_min_day, cal_max_day - timedelta(days=730))
-                else:
+                if compact_mode_early:
+                    compare_choice = st.selectbox(
+                        "Compare against",
+                        ["Previous week", "2 weeks ago", "3 weeks ago", "4 weeks ago"],
+                        index=0,
+                        key="calendar_compact_compare_choice",
+                    )
+                    compare_offset_weeks = {
+                        "Previous week": 1,
+                        "2 weeks ago": 2,
+                        "3 weeks ago": 3,
+                        "4 weeks ago": 4,
+                    }[compare_choice]
                     range_start_day = cal_min_day
-                range_end_day = cal_max_day
+                    range_end_day = cal_max_day
+                else:
+                    cal_range = st.selectbox(
+                        "Quick range",
+                        ["3M", "6M", "9M", "1Y", "2Y", "ALL"],
+                        index=3,
+                        key="calendar_quick_range",
+                    )
+                    if cal_range == "3M":
+                        range_start_day = max(cal_min_day, cal_max_day - timedelta(days=90))
+                    elif cal_range == "6M":
+                        range_start_day = max(cal_min_day, cal_max_day - timedelta(days=180))
+                    elif cal_range == "9M":
+                        range_start_day = max(cal_min_day, cal_max_day - timedelta(days=270))
+                    elif cal_range == "1Y":
+                        range_start_day = max(cal_min_day, cal_max_day - timedelta(days=365))
+                    elif cal_range == "2Y":
+                        range_start_day = max(cal_min_day, cal_max_day - timedelta(days=730))
+                    else:
+                        range_start_day = cal_min_day
+                    range_end_day = cal_max_day
             with controls[1]:
                 cal_activity_filter = st.selectbox(
                     "Activity filter",
@@ -2532,8 +2549,18 @@ if view == "Calendar":
                     selected_week_start = latest_week_start
                 st.session_state["calendar_compact_week_start"] = selected_week_start
                 selected_week_end = selected_week_start + pd.Timedelta(days=6)
+                compare_choice = str(st.session_state.get("calendar_compact_compare_choice", "Previous week"))
+                compare_weeks = {
+                    "Previous week": 1,
+                    "2 weeks ago": 2,
+                    "3 weeks ago": 3,
+                    "4 weeks ago": 4,
+                }.get(compare_choice, 1)
+                compare_week_start = selected_week_start - pd.Timedelta(days=7 * compare_weeks)
+                compare_week_end = compare_week_start + pd.Timedelta(days=6)
 
                 st.markdown(f"### {selected_week_start:%B %-d} - {selected_week_end:%-d}")
+                st.caption(f"Comparing: {compare_week_start:%b %-d} - {compare_week_end:%-d}")
                 nav1, nav2 = st.columns(2)
                 with nav1:
                     if st.button("◀ Prev week", key="compact_prev_week", use_container_width=True):
@@ -2573,6 +2600,31 @@ if view == "Calendar":
                     dur_total = float(dur.sum())
                     if_by_day.append(if_total / dur_total if dur_total > 0 else 0.0)
                 compact_week["if_proxy"] = if_by_day
+                compare_days = pd.DataFrame({"day": pd.date_range(compare_week_start, compare_week_end, freq="D")})
+                compare_agg = (
+                    cal_metrics[
+                        (cal_metrics["day"] >= compare_week_start)
+                        & (cal_metrics["day"] <= compare_week_end)
+                    ]
+                    .groupby("day", as_index=False)
+                    .agg(
+                        rtss=("rtss", "sum"),
+                        tss=("tss", "sum"),
+                        distance_eqv_km=("distance_proxy_km", "sum"),
+                    )
+                )
+                compare_week = compare_days.merge(compare_agg, on="day", how="left")
+                for col in ["rtss", "tss", "distance_eqv_km"]:
+                    compare_week[col] = pd.to_numeric(compare_week[col], errors="coerce").fillna(0.0)
+                compare_if_by_day = []
+                for day_ts in compare_week["day"]:
+                    day_df = cal_metrics[cal_metrics["day"] == day_ts]
+                    dur = pd.to_numeric(day_df.get("duration_s"), errors="coerce").fillna(0.0)
+                    ifv = pd.to_numeric(day_df.get("if_proxy"), errors="coerce").fillna(0.0)
+                    if_total = float((dur * ifv).sum())
+                    dur_total = float(dur.sum())
+                    compare_if_by_day.append(if_total / dur_total if dur_total > 0 else 0.0)
+                compare_week["if_proxy"] = compare_if_by_day
                 week_scope_df = cal_metrics[
                     (cal_metrics["day"] >= selected_week_start)
                     & (cal_metrics["day"] <= selected_week_end)
@@ -2619,15 +2671,33 @@ if view == "Calendar":
                 chart_df["metric_value"] = pd.to_numeric(chart_df[selected_metric], errors="coerce").fillna(0.0)
                 chart_df["day_display"] = (
                     chart_df["day"].dt.strftime("%d %b")
-                    + "|("
+                    + "\n("
                     + chart_df["day"].dt.strftime("%a")
                     + ")"
                 )
+                chart_df["series"] = "Current"
+                chart_df["opacity"] = 0.95
+                compare_chart_df = compare_week.copy()
+                compare_chart_df["metric_value"] = pd.to_numeric(
+                    compare_chart_df[selected_metric], errors="coerce"
+                ).fillna(0.0)
+                compare_chart_df["day_display"] = (
+                    compact_week["day"].dt.strftime("%d %b")
+                    + "\n("
+                    + compact_week["day"].dt.strftime("%a")
+                    + ")"
+                )
+                compare_chart_df["series"] = "Compare"
+                compare_chart_df["opacity"] = 0.35
                 y_title = next(label for key, label, _, _, _ in metric_defs if key == selected_metric)
                 if selected_metric == "distance_eqv_km":
-                    chart_df["metric_label"] = chart_df["metric_value"].map(lambda v: f"{v:.2f} km")
+                    chart_df["metric_label"] = chart_df["metric_value"].map(
+                        lambda v: f"{v:.2f} km" if float(v) > 0 else ""
+                    )
                 else:
-                    chart_df["metric_label"] = chart_df["metric_value"].map(lambda v: f"{v:.2f}")
+                    chart_df["metric_label"] = chart_df["metric_value"].map(
+                        lambda v: f"{v:.2f}" if float(v) > 0 else ""
+                    )
 
                 def _compact_bar_color(metric_key: str, value: float) -> str:
                     if metric_key in {"tss", "rtss"}:
@@ -2653,38 +2723,52 @@ if view == "Calendar":
                 chart_df["bar_color"] = chart_df["metric_value"].map(
                     lambda v: _compact_bar_color(selected_metric, float(v))
                 )
+                compare_chart_df["bar_color"] = "#94a3b8"
+                bar_df = pd.concat([compare_chart_df, chart_df], ignore_index=True)
                 bars = (
-                    alt.Chart(chart_df)
-                    .mark_bar(cornerRadiusTopLeft=12, cornerRadiusTopRight=12, size=28, opacity=0.95)
+                    alt.Chart(bar_df)
+                    .mark_bar(cornerRadiusTopLeft=10, cornerRadiusTopRight=10, size=24, opacity=0.95)
                     .encode(
                         x=alt.X(
                             "day_display:N",
                             sort=chart_df["day_display"].tolist(),
-                            title="Date",
+                            title=None,
                             axis=alt.Axis(
                                 labelAngle=0,
                                 labelLineHeight=14,
-                                labelExpr="replace(datum.label, '|', '\\n')",
                             ),
                         ),
-                        y=alt.Y("metric_value:Q", title=y_title, scale=alt.Scale(zero=True)),
+                        xOffset=alt.XOffset(
+                            "series:N",
+                            sort=["Compare", "Current"],
+                        ),
+                        y=alt.Y("metric_value:Q", title=None, scale=alt.Scale(zero=True)),
                         color=alt.Color("bar_color:N", scale=None, legend=None),
+                        opacity=alt.Opacity("opacity:Q", legend=None),
                         tooltip=[
                             alt.Tooltip("day:T", title="Day"),
+                            alt.Tooltip("series:N", title="Series"),
                             alt.Tooltip("metric_value:Q", title=y_title, format=".2f"),
                         ],
                     )
                 )
                 labels = (
-                    alt.Chart(chart_df)
+                    alt.Chart(chart_df.assign(series="Current"))
                     .mark_text(dy=-10, color="#e2e8f0", fontSize=12, fontWeight=700)
                     .encode(
                         x=alt.X("day_display:N", sort=chart_df["day_display"].tolist()),
+                        xOffset=alt.XOffset(
+                            "series:N",
+                            sort=["Compare", "Current"],
+                        ),
                         y=alt.Y("metric_value:Q"),
                         text=alt.Text("metric_label:N"),
                     )
                 )
-                compact_chart = alt.layer(bars, labels).properties(height=250)
+                compact_chart = alt.layer(bars, labels).properties(
+                    height=250,
+                    padding={"left": 52, "right": 10, "top": 8, "bottom": 42},
+                )
                 st.markdown("<div class='compact-week-shell'>", unsafe_allow_html=True)
                 st.altair_chart(compact_chart, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
