@@ -5,7 +5,9 @@ import html
 import hashlib
 import io
 import os
+import re
 from datetime import date, datetime, timedelta, timezone
+from dataclasses import replace
 from pathlib import Path
 
 import altair as alt
@@ -79,10 +81,7 @@ INJURY_WINDOWS = [
     {"label": "Injury 2", "start": "2025-12-28", "end": "2026-01-20", "severity": "injury"},
 ]
 
-cfg = load_config()
-init_db(cfg.db_path)
-cfg.import_dir.mkdir(parents=True, exist_ok=True)
-cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
+base_cfg = load_config()
 
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 SETTINGS_KEY_CUSTOM_ZONES = "custom_zones_v1"
@@ -127,6 +126,25 @@ def _auth_users() -> dict[str, dict[str, str]]:
             "role": "viewer",
         }
     return users
+
+
+def _user_slug(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(value or "").strip()).strip("._-")
+    return cleaned or "default"
+
+
+def _scoped_config_for_owner(owner: str):
+    owner_slug = _user_slug(owner)
+    users_root = base_cfg.db_path.parent / "users"
+    scoped_db = users_root / f"{owner_slug}.db"
+    scoped_import_dir = base_cfg.import_dir / "users" / owner_slug
+    scoped_export_dir = base_cfg.private_export_dir / "users" / owner_slug
+    return replace(
+        base_cfg,
+        db_path=scoped_db,
+        import_dir=scoped_import_dir,
+        private_export_dir=scoped_export_dir,
+    )
 
 
 def _pace_sec_to_mmss(pace_sec_per_km: float) -> str:
@@ -1306,6 +1324,24 @@ with st.sidebar:
             st.rerun()
 
     role = str(st.session_state.get("auth_role") or "admin")
+    auth_user = str(st.session_state.get("auth_user") or "default")
+    if auth_on and role == "admin":
+        owner_options = sorted(users.keys()) if users else [auth_user]
+        default_owner = st.session_state.get("data_owner") or auth_user
+        if default_owner not in owner_options:
+            default_owner = owner_options[0]
+        data_owner = st.selectbox(
+            "Data owner",
+            options=owner_options,
+            index=owner_options.index(default_owner),
+            help="Select which user's local dataset you want to load.",
+        )
+    elif auth_on:
+        data_owner = auth_user
+    else:
+        data_owner = "default"
+    st.session_state["data_owner"] = data_owner
+
     allowed_tabs = AUTH_ALL_TABS if (not auth_on or role == "admin") else AUTH_VIEWER_TABS
     default_idx = allowed_tabs.index("Calendar") if "Calendar" in allowed_tabs else 0
     view = st.radio(
@@ -1314,10 +1350,17 @@ with st.sidebar:
         index=default_idx,
     )
     use_split_method = st.checkbox("Use splits for metrics", value=False)
+    st.caption(f"Active data owner: `{data_owner}`")
 
 if view not in allowed_tabs:
     st.error("You do not have access to this page.")
     st.stop()
+
+cfg = _scoped_config_for_owner(st.session_state.get("data_owner") or "default")
+init_db(cfg.db_path)
+cfg.import_dir.mkdir(parents=True, exist_ok=True)
+cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
+
 resting_hr = DEFAULT_RESTING_HR
 sex = "male"
 saved_injury_windows = _load_injury_windows(cfg.db_path)
