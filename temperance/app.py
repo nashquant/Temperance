@@ -4517,7 +4517,7 @@ if view == "Custom Activities":
         custom_raw["if_proxy"] = custom_if_vals
         custom_raw["duration_s"] = custom_duration_vals
 
-        st.markdown("##### Custom weekly outlook (latest 4 weeks)")
+        st.markdown("##### Custom weekly outlook")
         custom_weekly_outlook = custom_raw.copy()
         selected_custom_week_start: pd.Timestamp | None = None
         custom_weekly_outlook["day"] = pd.to_datetime(custom_weekly_outlook["day_utc"], errors="coerce")
@@ -4539,9 +4539,9 @@ if view == "Custom Activities":
                     custom_activities=("row_id", "count"),
                 )
                 .sort_values("week_start")
-                .tail(4)
             )
             if not custom_weekly_grouped.empty:
+                custom_weekly_grouped = custom_weekly_grouped.sort_values("week_start", ascending=False).reset_index(drop=True)
                 custom_weekly_grouped["if_proxy"] = 0.0
                 valid_dur = custom_weekly_grouped["duration_s"] > 0
                 custom_weekly_grouped.loc[valid_dur, "if_proxy"] = (
