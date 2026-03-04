@@ -686,6 +686,17 @@ def _parse_minutes_token(text: str) -> float | None:
     return None
 
 
+def _parse_distance_km_token(text: str) -> float | None:
+    m = re.search(r"(\d+(?:\.\d+)?)\s*km\b", text.lower())
+    if not m:
+        return None
+    try:
+        km = float(m.group(1))
+    except Exception:
+        return None
+    return km if km > 0 else None
+
+
 def _parse_bpm_token(text: str) -> float | None:
     m = re.search(r"@\s*(\d+(?:\.\d+)?)\s*bpm", text.lower())
     if not m:
@@ -712,10 +723,44 @@ def _normalize_plan_text(text: str) -> str:
     t = " ".join(str(text or "").strip().split())
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b", r"\1min", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*h\b", r"\1h", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*km\b", r"\1km", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*bpm\b", r"\1bpm", t, flags=re.IGNORECASE)
     t = re.sub(r"\s*/\s*km\b", "/km", t, flags=re.IGNORECASE)
     t = re.sub(r"\s*\+\s*", " + ", t)
     return t
+
+
+def _parse_dated_activity_entry(text: str) -> tuple[pd.Timestamp | None, str, str | None]:
+    raw = str(text or "").strip()
+    if not raw:
+        return None, "", "Input is empty. Use `[date]:[activity]`."
+    if ":" not in raw:
+        return None, "", "Missing `:` separator. Use `[date]:[activity]`."
+    date_text, activity_text = raw.split(":", 1)
+    date_text = date_text.strip()
+    activity_text = _normalize_plan_text(activity_text)
+    if not date_text:
+        return None, "", "Missing date before `:`."
+    if not activity_text:
+        return None, "", "Missing activity after `:`."
+
+    date_value: pd.Timestamp | None = None
+    for fmt in ("%d%b%y", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            date_value = pd.Timestamp(datetime.strptime(date_text, fmt))
+            break
+        except Exception:
+            continue
+    if date_value is None:
+        return None, activity_text, "Invalid date format. Use one of: `3Mar26`, `2026-03-26`, `26/03/2026`."
+    return date_value, activity_text, None
+
+
+def _split_dated_activity_entries(text: str) -> list[str]:
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+    return [p.strip() for p in re.split(r"[\n;,]+", raw) if p.strip()]
 
 
 def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | None]], list[str]]:
@@ -765,7 +810,39 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
             last_kind = kind
             continue
 
+        rep_km_match = re.search(r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*km\b", chunk.lower())
+        if rep_km_match:
+            reps = int(rep_km_match.group(1))
+            rep_km = float(rep_km_match.group(2))
+            if reps <= 0 or rep_km <= 0:
+                warnings.append(f"Invalid interval block in: `{chunk}`")
+                continue
+            if pace is None or pace <= 0:
+                warnings.append(f"Distance intervals require pace in: `{chunk}` (add `@4:50/km`)")
+                continue
+            rep_minutes = (rep_km * pace) / 60.0
+            for _ in range(max(reps, 0)):
+                segments.append(
+                    {
+                        "kind": kind,
+                        "duration_min": rep_minutes,
+                        "distance_km": rep_km,
+                        "avg_hr_bpm": bpm,
+                        "pace_s_per_km": pace,
+                        "source": chunk,
+                    }
+                )
+            last_kind = kind
+            continue
+
         minutes = _parse_minutes_token(chunk)
+        if minutes is None:
+            distance_km = _parse_distance_km_token(chunk)
+            if distance_km is not None:
+                if pace is None or pace <= 0:
+                    warnings.append(f"Distance-based segment requires pace in: `{chunk}` (add `@4:50/km`)")
+                    continue
+                minutes = (distance_km * pace) / 60.0
         if minutes is None:
             warnings.append(f"Could not parse duration from: `{chunk}`")
             continue
@@ -3630,7 +3707,18 @@ if view == "Calendar":
 if view == "Week Planner":
     st.divider()
     st.header("Week Planner")
-    st.caption("Plan one dated activity at a time. Activity string must include activity type and intensity (`@...bpm` or `@.../km`).")
+    st.caption("Plan one dated activity at a time with `[date]:[activity]`.")
+    st.markdown(
+        "Date supports `3Mar26`, `2026-03-26`, or `26/03/2026`.\n\n"
+        "You can ingest multiple activities in one save using separators: new line, `;`, or `,`.\n\n"
+        "Examples:\n"
+        "- `3Mar26: 15km run @4:40/km`\n"
+        "- `2026-03-26: 80min elliptical @140bpm`\n"
+        "- `26/03/2026: 60min cycling @135bpm`\n"
+        "- `4Mar26: 10min run @4:50 + 5x6min @3:40/km`\n"
+        "- `2026-03-27: 10min elliptical @120bpm + 4x10min @155bpm`\n"
+        "- `28/03/2026: 5x1km run @3:35/km`"
+    )
 
     today_local = pd.Timestamp(date.today())
     previous_sunday = today_local - pd.Timedelta(days=int(today_local.weekday()) + 1)
@@ -3639,56 +3727,62 @@ if view == "Week Planner":
         fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
     )
 
-    p1, p2, p3 = st.columns([1.0, 2.6, 0.6])
+    p1, p2 = st.columns([3.6, 0.6])
     with p1:
-        plan_day = st.date_input(
-            "Date",
-            value=today_local.date(),
-            min_value=previous_sunday.date(),
-            key="planner_single_day",
+        plan_entry = st.text_input(
+            "Plan entry",
+            value=st.session_state.get("planner_single_entry", ""),
+            key="planner_single_entry",
+            placeholder="e.g. 3Mar26: 80min elliptical @140bpm or 2026-03-26: 10min run @4:50 + 5x6min @3:40/km",
         )
     with p2:
-        plan_activity = st.text_input(
-            "Plan an activity",
-            value=st.session_state.get("planner_single_activity", ""),
-            key="planner_single_activity",
-            placeholder="e.g. 80min elliptical @140bpm or 10min run @4:50 + 5x6min @3:40/km",
-        )
-    with p3:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         save_clicked = st.button("Save", key="planner_single_save_btn", use_container_width=True)
 
     if save_clicked:
-        day_ts = pd.Timestamp(plan_day)
-        if day_ts < previous_sunday:
-            st.error(f"Planned activities cannot be dated before {previous_sunday:%Y-%m-%d}.")
+        entries = _split_dated_activity_entries(plan_entry)
+        if not entries:
+            st.error("Input is empty. Use `[date]:[activity]`.")
         else:
-            normalized = _normalize_plan_text(plan_activity)
-            segs, warns = _expand_planned_segments(normalized)
-            if not normalized:
-                st.error("Activity string is empty.")
-            elif warns or not segs:
-                details = "\n- ".join(warns[:6]) if warns else "Could not parse this activity."
-                st.error("Invalid activity string:\n- " + details)
-            else:
-                same_day = get_planned_activities_df(
-                    cfg.db_path,
-                    start_day_utc=day_ts.date().isoformat(),
-                    end_day_utc=day_ts.date().isoformat(),
+            existing = get_planned_activities_df(cfg.db_path)
+            max_line_by_day = (
+                existing.groupby("day_utc")["line_no"].max().to_dict() if not existing.empty else {}
+            )
+            rows_to_upsert: list[dict[str, object]] = []
+            errors: list[str] = []
+            for idx, raw_entry in enumerate(entries, start=1):
+                day_ts, normalized, parse_err = _parse_dated_activity_entry(raw_entry)
+                if parse_err:
+                    errors.append(f"entry {idx}: {parse_err}")
+                    continue
+                if day_ts is None:
+                    errors.append(f"entry {idx}: could not parse date")
+                    continue
+                if day_ts < previous_sunday:
+                    errors.append(f"entry {idx}: date `{day_ts:%Y-%m-%d}` is before `{previous_sunday:%Y-%m-%d}`")
+                    continue
+                segs, warns = _expand_planned_segments(normalized)
+                if warns or not segs:
+                    details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
+                    errors.append(f"entry {idx}: {details}")
+                    continue
+                day_key = day_ts.date().isoformat()
+                next_line_no = int(max_line_by_day.get(day_key, 0)) + 1
+                max_line_by_day[day_key] = next_line_no
+                rows_to_upsert.append(
+                    {
+                        "day_utc": day_key,
+                        "line_no": next_line_no,
+                        "workout_text": normalized,
+                        "parsed_json": segs,
+                    }
                 )
-                next_line_no = int(pd.to_numeric(same_day.get("line_no"), errors="coerce").max()) + 1 if not same_day.empty else 1
-                upsert_planned_activities_rows(
-                    cfg.db_path,
-                    [
-                        {
-                            "day_utc": day_ts.date().isoformat(),
-                            "line_no": next_line_no,
-                            "workout_text": normalized,
-                            "parsed_json": segs,
-                        }
-                    ],
-                )
-                st.success(f"Saved: {day_ts:%Y-%m-%d} · {normalized}")
+            if rows_to_upsert:
+                upsert_planned_activities_rows(cfg.db_path, rows_to_upsert)
+            if errors:
+                st.warning("Some entries were skipped:\n- " + "\n- ".join(errors[:10]))
+            if rows_to_upsert:
+                st.success(f"Saved {len(rows_to_upsert)} planned activit{'y' if len(rows_to_upsert)==1 else 'ies'}.")
                 st.rerun()
 
     st.markdown("#### View planned activities")
@@ -3707,6 +3801,7 @@ if view == "Week Planner":
         plan_rtss_vals: list[float] = []
         plan_dist_eqv_vals: list[float] = []
         plan_if_vals: list[float] = []
+        plan_duration_s_vals: list[float] = []
         plan_activity_vals: list[str] = []
         for _, plan_row in planned_raw.iterrows():
             raw_segments = plan_row.get("parsed_json")
@@ -3766,6 +3861,7 @@ if view == "Week Planner":
             plan_rtss_vals.append(total_rtss)
             plan_dist_eqv_vals.append(total_dist_eqv)
             plan_if_vals.append(if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0)
+            plan_duration_s_vals.append(if_weight_seconds)
             plan_activity_vals.append(", ".join([k.replace("_", " ").title() for k in kinds_seen]) if kinds_seen else "-")
 
         planned_raw["activity"] = plan_activity_vals
@@ -3773,6 +3869,63 @@ if view == "Week Planner":
         planned_raw["rtss"] = plan_rtss_vals
         planned_raw["distance_eqv_km"] = plan_dist_eqv_vals
         planned_raw["if_proxy"] = plan_if_vals
+        planned_raw["duration_s"] = plan_duration_s_vals
+
+        st.markdown("##### Planned weekly outlook (next 4 weeks)")
+        weekly_outlook = planned_raw.copy()
+        weekly_outlook["day"] = pd.to_datetime(weekly_outlook["day_utc"], errors="coerce")
+        weekly_outlook = weekly_outlook.dropna(subset=["day"])
+        if not weekly_outlook.empty:
+            week_start = weekly_outlook["day"] - pd.to_timedelta(weekly_outlook["day"].dt.weekday, unit="D")
+            weekly_outlook["week_start"] = week_start.dt.normalize()
+            weekly_outlook["if_weighted"] = pd.to_numeric(weekly_outlook["if_proxy"], errors="coerce").fillna(0.0) * pd.to_numeric(
+                weekly_outlook["duration_s"], errors="coerce"
+            ).fillna(0.0)
+            this_week_start = (pd.Timestamp(date.today()) - pd.Timedelta(days=int(pd.Timestamp(date.today()).weekday()))).normalize()
+            weekly_outlook = weekly_outlook[weekly_outlook["week_start"] >= this_week_start]
+            weekly_grouped = (
+                weekly_outlook.groupby("week_start", as_index=False)
+                .agg(
+                    tss=("tss", "sum"),
+                    rtss=("rtss", "sum"),
+                    distance_eqv_km=("distance_eqv_km", "sum"),
+                    duration_s=("duration_s", "sum"),
+                    if_weighted=("if_weighted", "sum"),
+                    planned_activities=("row_id", "count"),
+                )
+                .sort_values("week_start")
+                .head(4)
+            )
+            if not weekly_grouped.empty:
+                weekly_grouped["if_proxy"] = np.where(
+                    weekly_grouped["duration_s"] > 0,
+                    weekly_grouped["if_weighted"] / weekly_grouped["duration_s"],
+                    0.0,
+                )
+                weekly_grouped["week_label"] = (
+                    weekly_grouped["week_start"].dt.strftime("%d %b")
+                    + " - "
+                    + (weekly_grouped["week_start"] + pd.Timedelta(days=6)).dt.strftime("%d %b")
+                )
+                st.dataframe(
+                    weekly_grouped[
+                        ["week_label", "planned_activities", "tss", "rtss", "distance_eqv_km", "if_proxy"]
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "week_label": st.column_config.TextColumn("Week"),
+                        "planned_activities": st.column_config.NumberColumn("Activities", format="%d"),
+                        "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
+                        "rtss": st.column_config.NumberColumn("rTSS", format="%.0f"),
+                        "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f"),
+                        "if_proxy": st.column_config.NumberColumn("IF", format="%.2f"),
+                    },
+                )
+            else:
+                st.caption("No planned activities in the next 4 weeks.")
+        else:
+            st.caption("No valid planned dates to build a weekly outlook.")
         planned_plot_metric = st.selectbox(
             "Planned metric view",
             ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
@@ -3942,61 +4095,72 @@ if view == "Week Planner":
 if view == "Custom Activities":
     st.divider()
     st.header("Custom Activities")
-    st.caption("Save custom activities to a separate table. Supports manual input and bulk upload (`date`, `string`).")
+    st.caption(
+        "Save custom activities to a separate table. Manual input uses `[date]:[activity]` "
+        "with date as `3Mar26`, `2026-03-26`, or `26/03/2026`."
+    )
+    st.caption("Multi-activity ingest supported via new line, `;`, or `,` separators.")
 
     today_local = pd.Timestamp(date.today())
 
-    c1, c2, c3 = st.columns([1.0, 2.6, 0.6])
+    c1, c2 = st.columns([3.6, 0.6])
     with c1:
-        custom_day = st.date_input(
-            "Custom date",
-            value=today_local.date(),
-            key="custom_activity_day",
+        custom_entry = st.text_input(
+            "Custom entry",
+            value=st.session_state.get("custom_activity_entry", ""),
+            key="custom_activity_entry",
+            placeholder="e.g. 3Mar26: 80min elliptical @140bpm or 2026-03-26: 10min run @4:50 + 5x6min @3:40/km",
         )
     with c2:
-        custom_text = st.text_input(
-            "Custom activity string",
-            value=st.session_state.get("custom_activity_text", ""),
-            key="custom_activity_text",
-            placeholder="e.g. 80min elliptical @140bpm or 10min run @4:50 + 5x6min @3:40/km",
-        )
-    with c3:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         custom_save_clicked = st.button("Save custom", key="custom_single_save_btn", use_container_width=True)
 
     if custom_save_clicked:
-        custom_day_ts = pd.Timestamp(custom_day)
-        normalized = _normalize_plan_text(custom_text)
-        segs, warns = _expand_planned_segments(normalized)
-        if not normalized:
-            st.error("Custom activity string is empty.")
-        elif warns or not segs:
-            details = "\n- ".join(warns[:6]) if warns else "Could not parse this activity."
-            st.error("Invalid custom activity string:\n- " + details)
+        entries = _split_dated_activity_entries(custom_entry)
+        if not entries:
+            st.error("Input is empty. Use `[date]:[activity]`.")
         else:
-            same_day = get_custom_activities_df(
-                cfg.db_path,
-                start_day_utc=custom_day_ts.date().isoformat(),
-                end_day_utc=custom_day_ts.date().isoformat(),
+            existing = get_custom_activities_df(cfg.db_path)
+            max_line_by_day = (
+                existing.groupby("day_utc")["line_no"].max().to_dict() if not existing.empty else {}
             )
-            next_line_no = int(pd.to_numeric(same_day.get("line_no"), errors="coerce").max()) + 1 if not same_day.empty else 1
-            upsert_custom_activities_rows(
-                cfg.db_path,
-                [
+            rows_to_upsert: list[dict[str, object]] = []
+            errors: list[str] = []
+            for idx, raw_entry in enumerate(entries, start=1):
+                custom_day_ts, normalized, parse_err = _parse_dated_activity_entry(raw_entry)
+                if parse_err:
+                    errors.append(f"entry {idx}: {parse_err}")
+                    continue
+                if custom_day_ts is None:
+                    errors.append(f"entry {idx}: could not parse date")
+                    continue
+                segs, warns = _expand_planned_segments(normalized)
+                if warns or not segs:
+                    details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
+                    errors.append(f"entry {idx}: {details}")
+                    continue
+                day_key = custom_day_ts.date().isoformat()
+                next_line_no = int(max_line_by_day.get(day_key, 0)) + 1
+                max_line_by_day[day_key] = next_line_no
+                rows_to_upsert.append(
                     {
-                        "day_utc": custom_day_ts.date().isoformat(),
+                        "day_utc": day_key,
                         "line_no": next_line_no,
                         "activity_text": normalized,
                         "parsed_json": segs,
                         "source": "manual",
                     }
-                ],
-            )
-            st.success(f"Saved custom: {custom_day_ts:%Y-%m-%d} · {normalized}")
-            st.rerun()
+                )
+            if rows_to_upsert:
+                upsert_custom_activities_rows(cfg.db_path, rows_to_upsert)
+            if errors:
+                st.warning("Some entries were skipped:\n- " + "\n- ".join(errors[:10]))
+            if rows_to_upsert:
+                st.success(f"Saved {len(rows_to_upsert)} custom activit{'y' if len(rows_to_upsert)==1 else 'ies'}.")
+                st.rerun()
 
     upload = st.file_uploader(
-        "Bulk upload custom activities (.csv/.xls/.xlsx)",
+        "Bulk upload custom activities (.csv/.xls/.xlsx, one entry per row as `[date]:[activity]`)",
         type=["csv", "xls", "xlsx"],
         key="custom_bulk_upload_file",
     )
@@ -4014,11 +4178,20 @@ if view == "Custom Activities":
                 up_df = pd.DataFrame()
             if not up_df.empty:
                 cols = {str(c).strip().lower(): c for c in up_df.columns}
-                if "date" not in cols or "string" not in cols:
-                    st.error("Invalid file format. Expected columns: `date`, `string`.")
-                else:
-                    date_col = cols["date"]
-                    str_col = cols["string"]
+                entry_col = None
+                for candidate in ("entry", "activity", "activity_string", "string"):
+                    if candidate in cols:
+                        entry_col = cols[candidate]
+                        break
+                if entry_col is None:
+                    if len(up_df.columns) == 1:
+                        entry_col = up_df.columns[0]
+                    else:
+                        st.error(
+                            "Invalid file format. Expected one entry column (`entry`/`activity`/`activity_string`/`string`) "
+                            "with values like `3Mar26: 80min elliptical @140bpm`."
+                        )
+                if entry_col is not None:
                     existing_custom = get_custom_activities_df(cfg.db_path)
                     max_line_by_day = (
                         existing_custom.groupby("day_utc")["line_no"].max().to_dict()
@@ -4028,17 +4201,15 @@ if view == "Custom Activities":
                     rows_to_upsert: list[dict[str, object]] = []
                     errors: list[str] = []
                     for idx, r in up_df.iterrows():
-                        day_raw = r.get(date_col)
-                        txt_raw = r.get(str_col)
-                        day_ts = pd.to_datetime(day_raw, errors="coerce")
-                        if pd.isna(day_ts):
-                            errors.append(f"row {idx+1}: invalid date `{day_raw}`")
+                        raw_entry = str(r.get(entry_col) or "").strip()
+                        day_ts, normalized, parse_err = _parse_dated_activity_entry(raw_entry)
+                        if parse_err:
+                            errors.append(f"row {idx+1}: {parse_err}")
                             continue
-                        normalized = _normalize_plan_text(str(txt_raw or ""))
+                        if day_ts is None:
+                            errors.append(f"row {idx+1}: invalid date in `{raw_entry}`")
+                            continue
                         segs, warns = _expand_planned_segments(normalized)
-                        if not normalized:
-                            errors.append(f"row {idx+1}: empty string")
-                            continue
                         if warns or not segs:
                             errors.append(
                                 f"row {idx+1}: invalid `{normalized}`: "
@@ -4072,9 +4243,160 @@ if view == "Custom Activities":
         custom_raw = custom_raw.sort_values(["day_utc", "line_no"], ascending=[False, True]).copy()
         custom_raw["row_id"] = custom_raw["day_utc"].astype(str) + "::" + custom_raw["line_no"].astype(int).astype(str)
         custom_raw["select"] = False
+        custom_specificity_profile = _normalize_specificity_profile(
+            st.session_state.get("user_specificity_profile", {}),
+            fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+        )
+        custom_tss_vals: list[float] = []
+        custom_rtss_vals: list[float] = []
+        custom_dist_eqv_vals: list[float] = []
+        custom_if_vals: list[float] = []
+        custom_activity_vals: list[str] = []
+        for _, custom_row in custom_raw.iterrows():
+            raw_segments = custom_row.get("parsed_json")
+            segments: list[dict[str, float | str | None]] = []
+            if isinstance(raw_segments, list):
+                segments = [s for s in raw_segments if isinstance(s, dict)]
+            elif isinstance(raw_segments, str) and raw_segments.strip():
+                try:
+                    parsed = json.loads(raw_segments)
+                    if isinstance(parsed, list):
+                        segments = [s for s in parsed if isinstance(s, dict)]
+                except Exception:
+                    segments = []
+
+            day_for_curve = pd.to_datetime(custom_row.get("day_utc"), utc=True, errors="coerce")
+            lthr_for_day = float(
+                _curve_value_at(
+                    lthr_curve_points,
+                    float(derived_lthr_bpm),
+                    day_for_curve,
+                )
+            )
+            lt_pace_for_day = float(
+                _curve_value_at(
+                    lt_pace_curve_points,
+                    float(derived_threshold_pace_sec),
+                    day_for_curve,
+                )
+            )
+
+            total_tss = 0.0
+            total_rtss = 0.0
+            total_dist_eqv = 0.0
+            if_weighted_sum = 0.0
+            if_weight_seconds = 0.0
+            kinds_seen: list[str] = []
+            for seg in segments:
+                seg_kind = str(seg.get("kind") or "").strip().lower()
+                seg_spec = _specificity_factor_for_plan_kind(seg_kind, custom_specificity_profile)
+                m = _planned_segment_metrics(
+                    seg,
+                    lthr_bpm=lthr_for_day,
+                    threshold_pace_sec_per_km=lt_pace_for_day,
+                    non_running_factor=seg_spec,
+                )
+                seg_duration = float(m.get("duration_s") or 0.0)
+                seg_if = float(m.get("if_proxy") or 0.0)
+                total_tss += float(m.get("tss") or 0.0) * float(seg_spec)
+                total_rtss += float(m.get("rtss") or 0.0) * float(seg_spec)
+                total_dist_eqv += float(m.get("distance_eqv_km") or 0.0)
+                if seg_duration > 0:
+                    if_weighted_sum += seg_if * seg_duration
+                    if_weight_seconds += seg_duration
+                if seg_kind and seg_kind not in kinds_seen:
+                    kinds_seen.append(seg_kind)
+
+            custom_tss_vals.append(total_tss)
+            custom_rtss_vals.append(total_rtss)
+            custom_dist_eqv_vals.append(total_dist_eqv)
+            custom_if_vals.append(if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0)
+            custom_activity_vals.append(", ".join([k.replace("_", " ").title() for k in kinds_seen]) if kinds_seen else "-")
+
+        custom_raw["activity"] = custom_activity_vals
+        custom_raw["tss"] = custom_tss_vals
+        custom_raw["rtss"] = custom_rtss_vals
+        custom_raw["distance_eqv_km"] = custom_dist_eqv_vals
+        custom_raw["if_proxy"] = custom_if_vals
+
+        custom_plot_metric = st.selectbox(
+            "Custom metric view",
+            ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
+            index=0,
+            key="custom_metric_view_select",
+        )
+        custom_plot_metric_col = {
+            "TSS": "tss",
+            "rTSS": "rtss",
+            "Dist Eqv (km)": "distance_eqv_km",
+            "IF": "if_proxy",
+        }[custom_plot_metric]
+        custom_plot_df = custom_raw.copy()
+        custom_plot_df["day"] = pd.to_datetime(custom_plot_df["day_utc"], errors="coerce")
+        custom_plot_df = custom_plot_df.dropna(subset=["day"])
+        if not custom_plot_df.empty:
+            if custom_plot_metric_col == "if_proxy":
+                custom_agg = (
+                    custom_plot_df.groupby("day", as_index=False)["if_proxy"]
+                    .mean()
+                    .rename(columns={"if_proxy": "value"})
+                )
+            else:
+                custom_agg = (
+                    custom_plot_df.groupby("day", as_index=False)[custom_plot_metric_col]
+                    .sum()
+                    .rename(columns={custom_plot_metric_col: "value"})
+                )
+            custom_agg["value"] = pd.to_numeric(custom_agg["value"], errors="coerce").fillna(0.0)
+            if custom_plot_metric_col == "if_proxy":
+                custom_agg["label"] = custom_agg["value"].map(lambda v: f"{v:.2f}" if float(v) > 0 else "")
+            elif custom_plot_metric_col == "distance_eqv_km":
+                custom_agg["label"] = custom_agg["value"].map(lambda v: f"{v:.0f} km" if float(v) > 0 else "")
+            else:
+                custom_agg["label"] = custom_agg["value"].map(lambda v: f"{v:.0f}" if float(v) > 0 else "")
+            custom_agg["day_label"] = custom_agg["day"].dt.strftime("%d %b")
+            custom_agg = custom_agg.sort_values("day")
+            custom_day_order = custom_agg["day_label"].tolist()
+            custom_chart = (
+                alt.Chart(custom_agg)
+                .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6, color="#34d399", size=44)
+                .encode(
+                    x=alt.X("day_label:N", sort=custom_day_order, title="", axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y("value:Q", title=custom_plot_metric),
+                    tooltip=[
+                        alt.Tooltip("day:T", title="Day"),
+                        alt.Tooltip(
+                            "value:Q",
+                            title=custom_plot_metric,
+                            format=".2f" if custom_plot_metric_col == "if_proxy" else ".0f",
+                        ),
+                    ],
+                )
+            )
+            custom_labels = (
+                alt.Chart(custom_agg)
+                .mark_text(dy=-8, color="#e2e8f0", fontSize=11, fontWeight=700)
+                .encode(x=alt.X("day_label:N", sort=custom_day_order), y="value:Q", text="label:N")
+            )
+            st.altair_chart((custom_chart + custom_labels).properties(height=150), use_container_width=True)
+
         custom_editor = st.data_editor(
             custom_raw[
-                ["select", "row_id", "day_utc", "line_no", "activity_text", "source", "parsed_json", "updated_at"]
+                [
+                    "select",
+                    "row_id",
+                    "day_utc",
+                    "line_no",
+                    "activity",
+                    "activity_text",
+                    "tss",
+                    "rtss",
+                    "distance_eqv_km",
+                    "if_proxy",
+                    "source",
+                    "parsed_json",
+                    "updated_at",
+                ]
             ],
             use_container_width=True,
             hide_index=True,
@@ -4083,7 +4405,12 @@ if view == "Custom Activities":
                 "row_id": st.column_config.TextColumn("Row ID", disabled=True),
                 "day_utc": st.column_config.TextColumn("Date"),
                 "line_no": st.column_config.NumberColumn("Line", format="%d", disabled=True),
+                "activity": st.column_config.TextColumn("Activity", disabled=True),
                 "activity_text": st.column_config.TextColumn("Activity String"),
+                "tss": st.column_config.NumberColumn("TSS", format="%.0f", disabled=True),
+                "rtss": st.column_config.NumberColumn("rTSS", format="%.0f", disabled=True),
+                "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f", disabled=True),
+                "if_proxy": st.column_config.NumberColumn("IF", format="%.2f", disabled=True),
                 "source": st.column_config.TextColumn("Source", disabled=True),
                 "parsed_json": st.column_config.TextColumn("Parsed JSON", disabled=True),
                 "updated_at": st.column_config.TextColumn("Updated At", disabled=True),
