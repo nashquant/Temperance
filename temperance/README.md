@@ -85,6 +85,13 @@ Auth behavior for Garmin credentials:
 - Non-admin authenticated users must provide Garmin credentials in the sidebar (env Garmin credentials are not used for them).
 - Garmin sync now enforces a single Garmin owner scope per local DB to avoid mixing multiple accounts in the same dataset.
 
+Temperance auth users (optional, when `TEMPERANCE_AUTH_ENABLED=1`):
+- Single admin: `TEMPERANCE_ADMIN_USER`, `TEMPERANCE_ADMIN_PASSWORD` (or `TEMPERANCE_ADMIN_PASSWORD_SHA256`)
+- Single viewer (legacy): `TEMPERANCE_VIEWER_USER`, `TEMPERANCE_VIEWER_PASSWORD` (or `TEMPERANCE_VIEWER_PASSWORD_SHA256`)
+- Multiple viewers:
+  - Plain: `TEMPERANCE_VIEWER_USERS=sirpoc:pw1,guest:pw2`
+  - Hash: `TEMPERANCE_VIEWER_USERS_SHA256=sirpoc:sha256:<hash>,guest:sha256:<hash>`
+
 ## Run
 From `temperance/`:
 

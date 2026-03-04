@@ -15,6 +15,30 @@ def normalize_password_hash(value: str) -> str:
     return candidate.lower()
 
 
+def _parse_user_map(raw: str) -> dict[str, str]:
+    """
+    Parse comma/semicolon/newline-separated user credential pairs:
+    - user:password
+    - user=password
+    """
+    parsed: dict[str, str] = {}
+    for chunk in str(raw or "").replace("\n", ",").replace(";", ",").split(","):
+        token = chunk.strip()
+        if not token:
+            continue
+        if ":" in token:
+            username, secret = token.split(":", 1)
+        elif "=" in token:
+            username, secret = token.split("=", 1)
+        else:
+            continue
+        user = username.strip()
+        val = secret.strip()
+        if user and val:
+            parsed[user] = val
+    return parsed
+
+
 def build_users(
     *,
     admin_user: str,
@@ -23,6 +47,8 @@ def build_users(
     viewer_user: str,
     viewer_pass: str,
     viewer_pass_hash: str,
+    viewer_users: str = "",
+    viewer_users_hash: str = "",
 ) -> dict[str, dict[str, str]]:
     users: dict[str, dict[str, str]] = {}
 
@@ -39,6 +65,20 @@ def build_users(
             "password_hash": normalize_password_hash(viewer_pass_hash) or auth_hash(viewer_pass),
             "role": "viewer",
         }
+
+    for username, password in _parse_user_map(viewer_users).items():
+        users[username] = {
+            "password_hash": auth_hash(password),
+            "role": "viewer",
+        }
+
+    for username, password_hash in _parse_user_map(viewer_users_hash).items():
+        normalized = normalize_password_hash(password_hash)
+        if normalized:
+            users[username] = {
+                "password_hash": normalized,
+                "role": "viewer",
+            }
 
     return users
 

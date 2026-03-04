@@ -157,14 +157,22 @@ def _auth_enabled() -> bool:
 
 
 def _auth_users() -> dict[str, dict[str, str]]:
-    return build_users(
-        admin_user=os.getenv("TEMPERANCE_ADMIN_USER", "admin"),
-        admin_pass=os.getenv("TEMPERANCE_ADMIN_PASSWORD", ""),
-        admin_pass_hash=os.getenv("TEMPERANCE_ADMIN_PASSWORD_SHA256", ""),
-        viewer_user=os.getenv("TEMPERANCE_VIEWER_USER", ""),
-        viewer_pass=os.getenv("TEMPERANCE_VIEWER_PASSWORD", ""),
-        viewer_pass_hash=os.getenv("TEMPERANCE_VIEWER_PASSWORD_SHA256", ""),
-    )
+    kwargs = {
+        "admin_user": os.getenv("TEMPERANCE_ADMIN_USER", "admin"),
+        "admin_pass": os.getenv("TEMPERANCE_ADMIN_PASSWORD", ""),
+        "admin_pass_hash": os.getenv("TEMPERANCE_ADMIN_PASSWORD_SHA256", ""),
+        "viewer_user": os.getenv("TEMPERANCE_VIEWER_USER", ""),
+        "viewer_pass": os.getenv("TEMPERANCE_VIEWER_PASSWORD", ""),
+        "viewer_pass_hash": os.getenv("TEMPERANCE_VIEWER_PASSWORD_SHA256", ""),
+        "viewer_users": os.getenv("TEMPERANCE_VIEWER_USERS", ""),
+        "viewer_users_hash": os.getenv("TEMPERANCE_VIEWER_USERS_SHA256", ""),
+    }
+    try:
+        return build_users(**kwargs)
+    except TypeError:
+        # Backward-compat fallback in case an older auth.py is loaded in a stale process.
+        legacy_kwargs = {k: v for k, v in kwargs.items() if k not in {"viewer_users", "viewer_users_hash"}}
+        return build_users(**legacy_kwargs)
 
 
 def _get_garmin_credentials() -> tuple[str | None, str | None]:
@@ -3720,19 +3728,25 @@ if view == "Week Planner":
     ex2 = today_local + pd.Timedelta(days=1)
     ex3 = today_local + pd.Timedelta(days=2)
     ex4 = today_local + pd.Timedelta(days=3)
+    tp1 = float(_curve_value_at(lt_pace_curve_points, float(derived_threshold_pace_sec), ex1))
+    tp4 = float(_curve_value_at(lt_pace_curve_points, float(derived_threshold_pace_sec), ex4))
+    lthr2 = float(_curve_value_at(lthr_curve_points, float(derived_lthr_bpm), ex2))
+    lthr3 = float(_curve_value_at(lthr_curve_points, float(derived_lthr_bpm), ex3))
+    easy_run_pace = _pace_compact(tp1 / 0.70 if tp1 > 0 else None)
+    treadmill_easy_pace = _pace_compact(tp4 / 0.75 if tp4 > 0 else None)
+    treadmill_hard_pace = _pace_compact(tp4 / 0.95 if tp4 > 0 else None)
+    easy_xtrain_hr = int(round(max(lthr2 * 0.70, 1.0)))
+    xtrain_block1_hr = int(round(max(lthr3 * 0.75, 1.0)))
+    xtrain_block2_hr = int(round(max(lthr3 * 0.80, 1.0)))
     st.caption("Plan one dated activity at a time with `[date]:[activity]`.")
     st.markdown(
         "Date supports `3Mar26`, `2026-03-26`, or `26/03/2026`.\n\n"
         "You can ingest multiple activities in one save using separators: new line, `;`, or `,`.\n\n"
         "Examples:\n"
-        f"- `{ex1:%-d%b%y}: 15km run @4:40/km`\n"
-        f"- `{ex2:%Y-%m-%d}: 80min elliptical @140bpm`\n"
-        f"- `{ex3:%Y-%m-%d}: 10min cycling @120bpm + 4x10min @155bpm`\n"
-        f"- `{ex4:%d/%m/%Y}: 10min treadmill @4:50 + 5x6min @3:40/km`"
-    )
-    st.caption(
-        "IF anchors (from your current LT pace/LTHR curves): easy run ≈70%, easy xtrain ≈70%, "
-        "structured xtrain ≈60% + 80%, structured treadmill ≈65% + 95%."
+        f"- `{ex1:%-d%b%y}: 15km run @{easy_run_pace}`\n"
+        f"- `{ex2:%Y-%m-%d}: 80min elliptical @{easy_xtrain_hr}bpm`\n"
+        f"- `{ex3:%Y-%m-%d}: 10min cycling @{xtrain_block1_hr}bpm + 4x10min @{xtrain_block2_hr}bpm`\n"
+        f"- `{ex4:%d/%m/%Y}: 10min treadmill @{treadmill_easy_pace} + 5x6min @{treadmill_hard_pace}`"
     )
 
     previous_sunday = today_local - pd.Timedelta(days=int(today_local.weekday()) + 1)
@@ -3887,6 +3901,7 @@ if view == "Week Planner":
 
         st.markdown("##### Planned weekly outlook (next 4 weeks)")
         weekly_outlook = planned_raw.copy()
+        selected_planned_week_start: pd.Timestamp | None = None
         weekly_outlook["day"] = pd.to_datetime(weekly_outlook["day_utc"], errors="coerce")
         weekly_outlook = weekly_outlook.dropna(subset=["day"])
         if not weekly_outlook.empty:
@@ -3924,13 +3939,24 @@ if view == "Week Planner":
                     + " - "
                     + (weekly_grouped["week_start"] + pd.Timedelta(days=6)).dt.strftime("%d %b")
                 )
-                st.dataframe(
-                    weekly_grouped[
-                        ["week_label", "planned_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"]
-                    ],
+                week_keys = weekly_grouped["week_start"].dt.strftime("%Y-%m-%d").tolist()
+                selected_week_key = str(st.session_state.get("planner_outlook_week_key") or "")
+                if selected_week_key not in week_keys:
+                    selected_week_key = week_keys[0]
+                    st.session_state["planner_outlook_week_key"] = selected_week_key
+                weekly_display = weekly_grouped[
+                    ["week_start", "week_label", "planned_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"]
+                ].copy()
+                weekly_display["display"] = weekly_display["week_start"].dt.strftime("%Y-%m-%d") == selected_week_key
+                weekly_display = weekly_display[
+                    ["display", "week_label", "planned_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"]
+                ]
+                edited_weekly_display = st.data_editor(
+                    weekly_display,
                     use_container_width=True,
                     hide_index=True,
                     column_config={
+                        "display": st.column_config.CheckboxColumn("Display"),
                         "week_label": st.column_config.TextColumn("Week"),
                         "planned_activities": st.column_config.NumberColumn("Activities", format="%d"),
                         "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
@@ -3938,71 +3964,87 @@ if view == "Week Planner":
                         "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f"),
                         "if_proxy_pct": st.column_config.NumberColumn("IF", format="%.0f%%"),
                     },
+                    disabled=["week_label", "planned_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"],
+                    key="planner_weekly_outlook_editor",
                 )
+                checked_idx = edited_weekly_display[edited_weekly_display["display"] == True].index.tolist()
+                if checked_idx:
+                    selected_week_key = str(weekly_grouped.loc[checked_idx[0], "week_start"].strftime("%Y-%m-%d"))
+                    st.session_state["planner_outlook_week_key"] = selected_week_key
+                    selected_planned_week_start = pd.to_datetime(selected_week_key, errors="coerce")
+                else:
+                    selected_planned_week_start = None
             else:
                 st.caption("No planned activities in the next 4 weeks.")
         else:
             st.caption("No valid planned dates to build a weekly outlook.")
-        planned_plot_metric = st.selectbox(
-            "Planned metric view",
-            ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
-            index=0,
-            key="planned_metric_view_select",
-        )
-        plot_metric_col = {
-            "TSS": "tss",
-            "rTSS": "rtss",
-            "Dist Eqv (km)": "distance_eqv_km",
-            "IF": "if_proxy",
-        }[planned_plot_metric]
-        plot_df = planned_raw.copy()
-        plot_df["day"] = pd.to_datetime(plot_df["day_utc"], errors="coerce")
-        plot_df = plot_df.dropna(subset=["day"])
-        if not plot_df.empty:
-            if plot_metric_col == "if_proxy":
-                planned_agg = (
-                    plot_df.groupby("day", as_index=False)["if_proxy"]
-                    .mean()
-                    .rename(columns={"if_proxy": "value"})
-                )
-            else:
-                planned_agg = (
-                    plot_df.groupby("day", as_index=False)[plot_metric_col]
-                    .sum()
-                    .rename(columns={plot_metric_col: "value"})
-                )
-            planned_agg["value"] = pd.to_numeric(planned_agg["value"], errors="coerce").fillna(0.0)
-            if plot_metric_col == "if_proxy":
-                planned_agg["label"] = planned_agg["value"].map(lambda v: f"{(float(v) * 100.0):.0f}%" if float(v) > 0 else "")
-            elif plot_metric_col == "distance_eqv_km":
-                planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.0f} km" if float(v) > 0 else "")
-            else:
-                planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.0f}" if float(v) > 0 else "")
-            planned_agg["day_label"] = planned_agg["day"].dt.strftime("%d %b")
-            planned_agg = planned_agg.sort_values("day")
-            day_order = planned_agg["day_label"].tolist()
-            planned_chart = (
-                alt.Chart(planned_agg)
-                .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6, color="#34d399", size=44)
-                .encode(
-                    x=alt.X("day_label:N", sort=day_order, title="", axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y("value:Q", title=planned_plot_metric),
-                    tooltip=[
-                        alt.Tooltip("day:T", title="Day"),
-                        alt.Tooltip(
-                            "value:Q",
-                            title=planned_plot_metric,
-                            format=".0%" if plot_metric_col == "if_proxy" else ".0f",
-                        ),
-                    ],
-                )
+        if selected_planned_week_start is not None and pd.notna(selected_planned_week_start):
+            selected_planned_week_end = selected_planned_week_start + pd.Timedelta(days=6)
+            planned_plot_metric = st.selectbox(
+                "Planned metric view",
+                ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
+                index=0,
+                key="planned_metric_view_select",
             )
-            planned_labels = (
-                alt.Chart(planned_agg)
-                .mark_text(dy=-8, color="#e2e8f0", fontSize=11, fontWeight=700)
-                .encode(x=alt.X("day_label:N", sort=day_order), y="value:Q", text="label:N")
-            )
-            st.altair_chart((planned_chart + planned_labels).properties(height=150), use_container_width=True)
+            plot_metric_col = {
+                "TSS": "tss",
+                "rTSS": "rtss",
+                "Dist Eqv (km)": "distance_eqv_km",
+                "IF": "if_proxy",
+            }[planned_plot_metric]
+            plot_df = planned_raw.copy()
+            plot_df["day"] = pd.to_datetime(plot_df["day_utc"], errors="coerce")
+            plot_df = plot_df.dropna(subset=["day"])
+            plot_df = plot_df[
+                (plot_df["day"] >= selected_planned_week_start) & (plot_df["day"] <= selected_planned_week_end)
+            ]
+            if not plot_df.empty:
+                if plot_metric_col == "if_proxy":
+                    planned_agg = (
+                        plot_df.groupby("day", as_index=False)["if_proxy"]
+                        .mean()
+                        .rename(columns={"if_proxy": "value"})
+                    )
+                else:
+                    planned_agg = (
+                        plot_df.groupby("day", as_index=False)[plot_metric_col]
+                        .sum()
+                        .rename(columns={plot_metric_col: "value"})
+                    )
+                planned_agg["value"] = pd.to_numeric(planned_agg["value"], errors="coerce").fillna(0.0)
+                if plot_metric_col == "if_proxy":
+                    planned_agg["label"] = planned_agg["value"].map(lambda v: f"{(float(v) * 100.0):.0f}%" if float(v) > 0 else "")
+                elif plot_metric_col == "distance_eqv_km":
+                    planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.0f} km" if float(v) > 0 else "")
+                else:
+                    planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.0f}" if float(v) > 0 else "")
+                planned_agg["day_label"] = planned_agg["day"].dt.strftime("%d %b")
+                planned_agg = planned_agg.sort_values("day")
+                day_order = planned_agg["day_label"].tolist()
+                planned_chart = (
+                    alt.Chart(planned_agg)
+                    .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6, color="#34d399", size=44)
+                    .encode(
+                        x=alt.X("day_label:N", sort=day_order, title="", axis=alt.Axis(labelAngle=0)),
+                        y=alt.Y("value:Q", title=planned_plot_metric),
+                        tooltip=[
+                            alt.Tooltip("day:T", title="Day"),
+                            alt.Tooltip(
+                                "value:Q",
+                                title=planned_plot_metric,
+                                format=".0%" if plot_metric_col == "if_proxy" else ".0f",
+                            ),
+                        ],
+                    )
+                )
+                planned_labels = (
+                    alt.Chart(planned_agg)
+                    .mark_text(dy=-8, color="#e2e8f0", fontSize=11, fontWeight=700)
+                    .encode(x=alt.X("day_label:N", sort=day_order), y="value:Q", text="label:N")
+                )
+                st.altair_chart((planned_chart + planned_labels).properties(height=150), use_container_width=True)
+        else:
+            st.caption("Select a week in `Display` above to show the planned metric chart.")
         editor_df = planned_raw[
             [
                 "select",
@@ -4121,6 +4163,27 @@ if view == "Custom Activities":
     st.caption("Multi-activity ingest supported via new line, `;`, or `,` separators.")
 
     today_local = pd.Timestamp(date.today())
+    ex1 = today_local
+    ex2 = today_local + pd.Timedelta(days=1)
+    ex3 = today_local + pd.Timedelta(days=2)
+    ex4 = today_local + pd.Timedelta(days=3)
+    tp1 = float(_curve_value_at(lt_pace_curve_points, float(derived_threshold_pace_sec), ex1))
+    tp4 = float(_curve_value_at(lt_pace_curve_points, float(derived_threshold_pace_sec), ex4))
+    lthr2 = float(_curve_value_at(lthr_curve_points, float(derived_lthr_bpm), ex2))
+    lthr3 = float(_curve_value_at(lthr_curve_points, float(derived_lthr_bpm), ex3))
+    easy_run_pace = _pace_compact(tp1 / 0.70 if tp1 > 0 else None)
+    treadmill_easy_pace = _pace_compact(tp4 / 0.75 if tp4 > 0 else None)
+    treadmill_hard_pace = _pace_compact(tp4 / 0.95 if tp4 > 0 else None)
+    easy_xtrain_hr = int(round(max(lthr2 * 0.70, 1.0)))
+    xtrain_block1_hr = int(round(max(lthr3 * 0.75, 1.0)))
+    xtrain_block2_hr = int(round(max(lthr3 * 0.80, 1.0)))
+    st.markdown(
+        "Examples:\n"
+        f"- `{ex1:%-d%b%y}: 15km run @{easy_run_pace}`\n"
+        f"- `{ex2:%Y-%m-%d}: 80min elliptical @{easy_xtrain_hr}bpm`\n"
+        f"- `{ex3:%Y-%m-%d}: 10min cycling @{xtrain_block1_hr}bpm + 4x10min @{xtrain_block2_hr}bpm`\n"
+        f"- `{ex4:%d/%m/%Y}: 10min treadmill @{treadmill_easy_pace} + 5x6min @{treadmill_hard_pace}`"
+    )
 
     c1, c2 = st.columns([3.6, 0.6])
     with c1:
@@ -4270,6 +4333,7 @@ if view == "Custom Activities":
         custom_rtss_vals: list[float] = []
         custom_dist_eqv_vals: list[float] = []
         custom_if_vals: list[float] = []
+        custom_duration_vals: list[float] = []
         custom_activity_vals: list[str] = []
         for _, custom_row in custom_raw.iterrows():
             raw_segments = custom_row.get("parsed_json")
@@ -4330,6 +4394,7 @@ if view == "Custom Activities":
             custom_rtss_vals.append(total_rtss)
             custom_dist_eqv_vals.append(total_dist_eqv)
             custom_if_vals.append(if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0)
+            custom_duration_vals.append(if_weight_seconds)
             custom_activity_vals.append(", ".join([k.replace("_", " ").title() for k in kinds_seen]) if kinds_seen else "-")
 
         custom_raw["activity"] = custom_activity_vals
@@ -4337,6 +4402,87 @@ if view == "Custom Activities":
         custom_raw["rtss"] = custom_rtss_vals
         custom_raw["distance_eqv_km"] = custom_dist_eqv_vals
         custom_raw["if_proxy"] = custom_if_vals
+        custom_raw["duration_s"] = custom_duration_vals
+
+        st.markdown("##### Custom weekly outlook (next 4 weeks)")
+        custom_weekly_outlook = custom_raw.copy()
+        selected_custom_week_start: pd.Timestamp | None = None
+        custom_weekly_outlook["day"] = pd.to_datetime(custom_weekly_outlook["day_utc"], errors="coerce")
+        custom_weekly_outlook = custom_weekly_outlook.dropna(subset=["day"])
+        if not custom_weekly_outlook.empty:
+            week_start = custom_weekly_outlook["day"] - pd.to_timedelta(custom_weekly_outlook["day"].dt.weekday, unit="D")
+            custom_weekly_outlook["week_start"] = week_start.dt.normalize()
+            custom_weekly_outlook["if_weighted"] = pd.to_numeric(
+                custom_weekly_outlook["if_proxy"], errors="coerce"
+            ).fillna(0.0) * pd.to_numeric(custom_weekly_outlook["duration_s"], errors="coerce").fillna(0.0)
+            this_week_start = (pd.Timestamp(date.today()) - pd.Timedelta(days=int(pd.Timestamp(date.today()).weekday()))).normalize()
+            custom_weekly_outlook = custom_weekly_outlook[custom_weekly_outlook["week_start"] >= this_week_start]
+            custom_weekly_grouped = (
+                custom_weekly_outlook.groupby("week_start", as_index=False)
+                .agg(
+                    tss=("tss", "sum"),
+                    rtss=("rtss", "sum"),
+                    distance_eqv_km=("distance_eqv_km", "sum"),
+                    duration_s=("duration_s", "sum"),
+                    if_weighted=("if_weighted", "sum"),
+                    custom_activities=("row_id", "count"),
+                )
+                .sort_values("week_start")
+                .head(4)
+            )
+            if not custom_weekly_grouped.empty:
+                custom_weekly_grouped["if_proxy"] = 0.0
+                valid_dur = custom_weekly_grouped["duration_s"] > 0
+                custom_weekly_grouped.loc[valid_dur, "if_proxy"] = (
+                    custom_weekly_grouped.loc[valid_dur, "if_weighted"] / custom_weekly_grouped.loc[valid_dur, "duration_s"]
+                )
+                custom_weekly_grouped["if_proxy_pct"] = pd.to_numeric(
+                    custom_weekly_grouped.get("if_proxy"), errors="coerce"
+                ).fillna(0.0) * 100.0
+                custom_weekly_grouped["week_label"] = (
+                    custom_weekly_grouped["week_start"].dt.strftime("%d %b")
+                    + " - "
+                    + (custom_weekly_grouped["week_start"] + pd.Timedelta(days=6)).dt.strftime("%d %b")
+                )
+                week_keys = custom_weekly_grouped["week_start"].dt.strftime("%Y-%m-%d").tolist()
+                selected_week_key = str(st.session_state.get("custom_outlook_week_key") or "")
+                if selected_week_key not in week_keys:
+                    selected_week_key = week_keys[0]
+                    st.session_state["custom_outlook_week_key"] = selected_week_key
+                custom_weekly_display = custom_weekly_grouped[
+                    ["week_start", "week_label", "custom_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"]
+                ].copy()
+                custom_weekly_display["display"] = custom_weekly_display["week_start"].dt.strftime("%Y-%m-%d") == selected_week_key
+                custom_weekly_display = custom_weekly_display[
+                    ["display", "week_label", "custom_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"]
+                ]
+                edited_custom_weekly = st.data_editor(
+                    custom_weekly_display,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "display": st.column_config.CheckboxColumn("Display"),
+                        "week_label": st.column_config.TextColumn("Week"),
+                        "custom_activities": st.column_config.NumberColumn("Activities", format="%d"),
+                        "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
+                        "rtss": st.column_config.NumberColumn("rTSS", format="%.0f"),
+                        "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f"),
+                        "if_proxy_pct": st.column_config.NumberColumn("IF", format="%.0f%%"),
+                    },
+                    disabled=["week_label", "custom_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"],
+                    key="custom_weekly_outlook_editor",
+                )
+                checked_idx = edited_custom_weekly[edited_custom_weekly["display"] == True].index.tolist()
+                if checked_idx:
+                    selected_week_key = str(custom_weekly_grouped.loc[checked_idx[0], "week_start"].strftime("%Y-%m-%d"))
+                    st.session_state["custom_outlook_week_key"] = selected_week_key
+                    selected_custom_week_start = pd.to_datetime(selected_week_key, errors="coerce")
+                else:
+                    selected_custom_week_start = None
+            else:
+                st.caption("No custom activities in the next 4 weeks.")
+        else:
+            st.caption("No valid custom dates to build a weekly outlook.")
 
         custom_plot_metric = st.selectbox(
             "Custom metric view",
@@ -4353,6 +4499,14 @@ if view == "Custom Activities":
         custom_plot_df = custom_raw.copy()
         custom_plot_df["day"] = pd.to_datetime(custom_plot_df["day_utc"], errors="coerce")
         custom_plot_df = custom_plot_df.dropna(subset=["day"])
+        if selected_custom_week_start is not None and pd.notna(selected_custom_week_start):
+            selected_custom_week_end = selected_custom_week_start + pd.Timedelta(days=6)
+            custom_plot_df = custom_plot_df[
+                (custom_plot_df["day"] >= selected_custom_week_start) & (custom_plot_df["day"] <= selected_custom_week_end)
+            ]
+        else:
+            custom_plot_df = pd.DataFrame()
+
         if not custom_plot_df.empty:
             if custom_plot_metric_col == "if_proxy":
                 custom_agg = (
@@ -4398,6 +4552,8 @@ if view == "Custom Activities":
                 .encode(x=alt.X("day_label:N", sort=custom_day_order), y="value:Q", text="label:N")
             )
             st.altair_chart((custom_chart + custom_labels).properties(height=150), use_container_width=True)
+        else:
+            st.caption("Select a week in `Display` above to show the custom metric chart.")
 
         custom_editor_df = custom_raw[
             [

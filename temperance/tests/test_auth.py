@@ -14,8 +14,31 @@ def test_build_users_prefers_hash_and_normalizes_it() -> None:
         viewer_user="",
         viewer_pass="",
         viewer_pass_hash="",
+        viewer_users="",
+        viewer_users_hash="",
     )
     assert users["admin"]["password_hash"].islower()
+
+
+def test_build_users_supports_multiple_viewers_plain_and_hash() -> None:
+    users = build_users(
+        admin_user="admin",
+        admin_pass="secret",
+        admin_pass_hash="",
+        viewer_user="guest",
+        viewer_pass="guest_pw",
+        viewer_pass_hash="",
+        viewer_users="sirpoc:sirpoc_pw,runner=runner_pw",
+        viewer_users_hash="hashed:SHA256:2BB80D537B1DA3E38BD30361AA855686BDE0EACB6E8A6A0F3D8D7A9F12AB8E3A",
+    )
+    assert users["guest"]["role"] == "viewer"
+    assert password_matches("guest_pw", users["guest"]["password_hash"])
+    assert users["sirpoc"]["role"] == "viewer"
+    assert password_matches("sirpoc_pw", users["sirpoc"]["password_hash"])
+    assert users["runner"]["role"] == "viewer"
+    assert password_matches("runner_pw", users["runner"]["password_hash"])
+    assert users["hashed"]["role"] == "viewer"
+    assert users["hashed"]["password_hash"].islower()
 
 
 def test_password_matches_sha256_hash_and_plaintext_fallback() -> None:
