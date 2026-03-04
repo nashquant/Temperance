@@ -4274,6 +4274,7 @@ if view == "Week Planner":
                 "line_no",
                 "activity",
                 "workout_text",
+                "duration_s",
                 "tss",
                 "rtss",
                 "distance_eqv_km",
@@ -4283,7 +4284,12 @@ if view == "Week Planner":
             ]
         ].copy()
         editor_df["if_proxy_pct"] = pd.to_numeric(editor_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
-        editor_df["duration_h"] = pd.to_numeric(editor_df.get("duration_s"), errors="coerce").fillna(0.0) / 3600.0
+        if "duration_s" in editor_df.columns:
+            planner_duration_s = pd.to_numeric(editor_df["duration_s"], errors="coerce")
+        else:
+            planner_duration_s = pd.Series(0.0, index=editor_df.index)
+        editor_df["duration_h"] = planner_duration_s.fillna(0.0) / 3600.0
+        editor_df = editor_df.drop(columns=["duration_s"], errors="ignore")
         editor_df = editor_df.drop(columns=["if_proxy"], errors="ignore")
         edited_plan = st.data_editor(
             editor_df,
@@ -4750,6 +4756,7 @@ if view == "Custom Activities":
                 "line_no",
                 "activity",
                 "activity_text",
+                "duration_s",
                 "tss",
                 "rtss",
                 "distance_eqv_km",
@@ -4760,7 +4767,12 @@ if view == "Custom Activities":
             ]
         ].copy()
         custom_editor_df["if_proxy_pct"] = pd.to_numeric(custom_editor_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
-        custom_editor_df["duration_h"] = pd.to_numeric(custom_editor_df.get("duration_s"), errors="coerce").fillna(0.0) / 3600.0
+        if "duration_s" in custom_editor_df.columns:
+            custom_duration_s = pd.to_numeric(custom_editor_df["duration_s"], errors="coerce")
+        else:
+            custom_duration_s = pd.Series(0.0, index=custom_editor_df.index)
+        custom_editor_df["duration_h"] = custom_duration_s.fillna(0.0) / 3600.0
+        custom_editor_df = custom_editor_df.drop(columns=["duration_s"], errors="ignore")
         custom_editor_df = custom_editor_df.drop(columns=["if_proxy"], errors="ignore")
         custom_editor = st.data_editor(
             custom_editor_df,
