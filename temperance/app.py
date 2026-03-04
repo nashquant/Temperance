@@ -2539,17 +2539,17 @@ if view == "Dashboard":
                 use_container_width=True,
                 column_config={
                     "sport_type": st.column_config.TextColumn("Activity Type"),
-                    "distance_km": st.column_config.NumberColumn(format="%.2f km"),
+                    "distance_km": st.column_config.NumberColumn(format="%.0f km"),
                     "duration_min": st.column_config.NumberColumn(format="%.1f min"),
                     "avg_pace_display": st.column_config.TextColumn("Pace"),
-                    "rtss": st.column_config.NumberColumn("rTSS", format="%.1f"),
-                    "tss": st.column_config.NumberColumn("TSS", format="%.1f"),
-                    "if_proxy": st.column_config.NumberColumn("IF", format="%.3f"),
-                    "training_load_garmin": st.column_config.NumberColumn(format="%.1f"),
+                    "rtss": st.column_config.NumberColumn("rTSS", format="%.0f"),
+                    "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
+                    "if_proxy": st.column_config.NumberColumn("IF", format="%.2f"),
+                    "training_load_garmin": st.column_config.NumberColumn(format="%.0f"),
                     "specificity_factor": st.column_config.NumberColumn(format="%.2f"),
-                    "fitness": st.column_config.NumberColumn("Fitness", format="%.1f"),
-                    "fatigue": st.column_config.NumberColumn("Fatigue", format="%.1f"),
-                    "distance_proxy_km": st.column_config.NumberColumn("Distance Proxy", format="%.2f km"),
+                    "fitness": st.column_config.NumberColumn("Fitness", format="%.0f"),
+                    "fatigue": st.column_config.NumberColumn("Fatigue", format="%.0f"),
+                    "distance_proxy_km": st.column_config.NumberColumn("Distance Proxy", format="%.0f km"),
                     "pace_proxy_display": st.column_config.TextColumn("Pace Proxy"),
                     "distance_proxy_method": st.column_config.TextColumn("Distance Proxy Method"),
                 },
@@ -3105,10 +3105,10 @@ if view == "Calendar":
                 compact_week["day_num"] = compact_week["day"].dt.day
 
                 metric_defs = [
-                    ("rtss", "rTSS", ".1f", "", "sum"),
-                    ("tss", "TSS", ".1f", "", "sum"),
-                    ("distance_eqv_km", "Distance Eqv", ".2f", " km", "sum"),
-                    ("if_proxy", "IF", ".3f", "", "mean"),
+                    ("rtss", "rTSS", ".0f", "", "sum"),
+                    ("tss", "TSS", ".0f", "", "sum"),
+                    ("distance_eqv_km", "Distance Eqv", ".0f", " km", "sum"),
+                    ("if_proxy", "IF", ".2f", "", "mean"),
                 ]
                 if "calendar_compact_metric" not in st.session_state:
                     st.session_state["calendar_compact_metric"] = "distance_eqv_km"
@@ -3142,11 +3142,15 @@ if view == "Calendar":
                 y_title = next(label for key, label, _, _, _ in metric_defs if key == selected_metric)
                 if selected_metric == "distance_eqv_km":
                     chart_df["metric_label"] = chart_df["metric_value"].map(
-                        lambda v: f"{v:.2f} km" if float(v) > 0 else ""
+                        lambda v: f"{v:.0f} km" if float(v) > 0 else ""
+                    )
+                elif selected_metric == "if_proxy":
+                    chart_df["metric_label"] = chart_df["metric_value"].map(
+                        lambda v: f"{v:.2f}" if float(v) > 0 else ""
                     )
                 else:
                     chart_df["metric_label"] = chart_df["metric_value"].map(
-                        lambda v: f"{v:.2f}" if float(v) > 0 else ""
+                        lambda v: f"{v:.0f}" if float(v) > 0 else ""
                     )
 
                 def _compact_bar_color(metric_key: str, value: float) -> str:
@@ -3326,8 +3330,8 @@ if view == "Calendar":
                             f"<div><b>Week {int(ws.isocalendar().week)}</b></div>"
                             f"<div>{ws:%d %b} - {we:%d %b}</div>"
                             f"<div style='margin-top:6px;'>Time: <b>{total_duration_h:.1f}h</b></div>"
-                            f"<div>Dist: <b>{total_distance:.1f} km</b></div>"
-                            f"<div>Eqv.: <b>{total_distance_eqv:.1f} km</b></div>"
+                            f"<div>Dist: <b>{total_distance:.0f} km</b></div>"
+                            f"<div>Eqv.: <b>{total_distance_eqv:.0f} km</b></div>"
                             f"<div>kcal: <b>{total_calories:.0f}</b></div>"
                             f"<div>TSS: <b>{total_tss:.0f}</b> | rTSS: <b>{total_rtss:.0f}</b></div>"
                             f"<div>Fit: <b>{fitness_txt}</b> | Fatg: <b>{fatigue_txt}</b></div>"
@@ -3362,7 +3366,7 @@ if view == "Calendar":
                             if not day_well_rows.empty:
                                 day_resting_hr = float(day_well_rows.iloc[0]["resting_hr"]) if pd.notna(day_well_rows.iloc[0]["resting_hr"]) else float("nan")
                                 day_stress_avg = float(day_well_rows.iloc[0]["stress_avg"]) if pd.notna(day_well_rows.iloc[0]["stress_avg"]) else float("nan")
-                        day_meta_parts = [f"{day_distance_eqv:.1f} km eqv.", f"{day_cal:.0f} kcal"]
+                        day_meta_parts = [f"{day_distance_eqv:.0f} km eqv.", f"{day_cal:.0f} kcal"]
                         fitfat_row = daily_fitfat_lookup.get(day_ts)
                         if fitfat_row:
                             day_fit = fitfat_row.get("fitness")
@@ -3392,13 +3396,13 @@ if view == "Calendar":
                             distance_eqv_v = pd.to_numeric(act.get("distance_proxy_km"), errors="coerce")
                             if is_running_activity:
                                 dist_text = (
-                                    f"{float(distance_v):.1f} km"
+                                    f"{float(distance_v):.0f} km"
                                     if pd.notna(distance_v) and float(distance_v) > 0
                                     else ""
                                 )
                             else:
                                 dist_text = (
-                                    f"{float(distance_eqv_v):.1f} km eqv."
+                                    f"{float(distance_eqv_v):.0f} km eqv."
                                     if pd.notna(distance_eqv_v) and float(distance_eqv_v) > 0
                                     else ""
                                 )
@@ -3549,15 +3553,15 @@ if view == "Calendar":
                                     alt.Tooltip("split_label:N", title="Split"),
                                     alt.Tooltip("intensity_type:N", title="Type"),
                                     alt.Tooltip("duration_s:Q", title="Duration (s)", format=".0f"),
-                                    alt.Tooltip("distance_km:Q", title="Distance (km)", format=".2f"),
+                                    alt.Tooltip("distance_km:Q", title="Distance (km)", format=".0f"),
                                     alt.Tooltip("distance_eqv_km:Q", title="Dist Eqv (km)", format=".2f"),
                                     alt.Tooltip("speed_eqv_kmh:Q", title="Speed Eqv (km/h)", format=".2f"),
                                     alt.Tooltip("avg_hr:Q", title="Avg HR", format=".0f"),
                                     alt.Tooltip("intensity_factor:Q", title="IF", format=".2f"),
                                     alt.Tooltip("pace_s_per_km:Q", title="Pace s/km", format=".1f"),
                                     alt.Tooltip("pace_eqv_s_per_km:Q", title="Pace Eqv s/km", format=".1f"),
-                                    alt.Tooltip("tss:Q", title="TSS", format=".1f"),
-                                    alt.Tooltip("rtss:Q", title="rTSS", format=".1f"),
+                                    alt.Tooltip("tss:Q", title="TSS", format=".0f"),
+                                    alt.Tooltip("rtss:Q", title="rTSS", format=".0f"),
                                 ],
                             )
                             .properties(height=280)
@@ -3585,12 +3589,12 @@ if view == "Calendar":
                             use_container_width=True,
                             column_config={
                                 "split_idx": st.column_config.NumberColumn("Split", format="%d"),
-                                "distance_km": st.column_config.NumberColumn("Distance (km)", format="%.2f"),
-                                "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.2f"),
+                                "distance_km": st.column_config.NumberColumn("Distance (km)", format="%.0f"),
+                                "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f"),
                                 "avg_hr": st.column_config.NumberColumn("Avg HR", format="%.0f"),
                                 "intensity_factor": st.column_config.NumberColumn("IF", format="%.2f"),
-                                "tss": st.column_config.NumberColumn("TSS", format="%.1f"),
-                                "rtss": st.column_config.NumberColumn("rTSS", format="%.1f"),
+                                "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
+                                "rtss": st.column_config.NumberColumn("rTSS", format="%.0f"),
                             },
                         )
                     if st.button("Close", key="calendar_split_modal_close"):
@@ -3774,22 +3778,37 @@ if view == "Week Planner":
                     .rename(columns={plot_metric_col: "value"})
                 )
             planned_agg["value"] = pd.to_numeric(planned_agg["value"], errors="coerce").fillna(0.0)
-            planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.2f}" if float(v) > 0 else "")
+            if plot_metric_col == "if_proxy":
+                planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.2f}" if float(v) > 0 else "")
+            elif plot_metric_col == "distance_eqv_km":
+                planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.0f} km" if float(v) > 0 else "")
+            else:
+                planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.0f}" if float(v) > 0 else "")
+            planned_agg["day_label"] = planned_agg["day"].dt.strftime("%d %b")
+            planned_agg = planned_agg.sort_values("day")
+            day_order = planned_agg["day_label"].tolist()
             planned_chart = (
-                alt.Chart(planned_agg.sort_values("day"))
-                .mark_bar(cornerRadiusTopLeft=8, cornerRadiusTopRight=8, color="#34d399")
+                alt.Chart(planned_agg)
+                .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6, color="#34d399", size=44)
                 .encode(
-                    x=alt.X("day:T", title="", axis=alt.Axis(format="%d %b")),
+                    x=alt.X("day_label:N", sort=day_order, title="", axis=alt.Axis(labelAngle=0)),
                     y=alt.Y("value:Q", title=planned_plot_metric),
-                    tooltip=[alt.Tooltip("day:T", title="Day"), alt.Tooltip("value:Q", title=planned_plot_metric, format=".2f")],
+                    tooltip=[
+                        alt.Tooltip("day:T", title="Day"),
+                        alt.Tooltip(
+                            "value:Q",
+                            title=planned_plot_metric,
+                            format=".2f" if plot_metric_col == "if_proxy" else ".0f",
+                        ),
+                    ],
                 )
             )
             planned_labels = (
-                alt.Chart(planned_agg.sort_values("day"))
+                alt.Chart(planned_agg)
                 .mark_text(dy=-8, color="#e2e8f0", fontSize=11, fontWeight=700)
-                .encode(x="day:T", y="value:Q", text="label:N")
+                .encode(x=alt.X("day_label:N", sort=day_order), y="value:Q", text="label:N")
             )
-            st.altair_chart((planned_chart + planned_labels).properties(height=220), use_container_width=True)
+            st.altair_chart((planned_chart + planned_labels).properties(height=150), use_container_width=True)
         editor_df = planned_raw[
             [
                 "select",
@@ -3817,10 +3836,10 @@ if view == "Week Planner":
                 "line_no": st.column_config.NumberColumn("Line", format="%d", disabled=True),
                 "activity": st.column_config.TextColumn("Activity", disabled=True),
                 "workout_text": st.column_config.TextColumn("Activity String"),
-                "tss": st.column_config.NumberColumn("TSS", format="%.1f", disabled=True),
-                "rtss": st.column_config.NumberColumn("rTSS", format="%.1f", disabled=True),
-                "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.2f", disabled=True),
-                "if_proxy": st.column_config.NumberColumn("IF", format="%.3f", disabled=True),
+                "tss": st.column_config.NumberColumn("TSS", format="%.0f", disabled=True),
+                "rtss": st.column_config.NumberColumn("rTSS", format="%.0f", disabled=True),
+                "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f", disabled=True),
+                "if_proxy": st.column_config.NumberColumn("IF", format="%.2f", disabled=True),
                 "parsed_json": st.column_config.TextColumn("Parsed JSON", disabled=True),
                 "updated_at": st.column_config.TextColumn("Updated At", disabled=True),
             },
@@ -4134,9 +4153,9 @@ if view == "Activity Detail":
         tss_v = pd.to_numeric(row.get("tss"), errors="coerce")
         tl_v = pd.to_numeric(row.get("training_load_garmin"), errors="coerce")
         rtss_v = pd.to_numeric(row.get("rtss"), errors="coerce")
-        m1.metric("TSS", f"{(float(tss_v) if pd.notna(tss_v) else 0.0):.1f}")
-        m2.metric("Garmin Training Load", f"{(float(tl_v) if pd.notna(tl_v) else 0.0):.1f}")
-        m3.metric("rTSS", f"{(float(rtss_v) if pd.notna(rtss_v) else 0.0):.1f}")
+        m1.metric("TSS", f"{(float(tss_v) if pd.notna(tss_v) else 0.0):.0f}")
+        m2.metric("Garmin Training Load", f"{(float(tl_v) if pd.notna(tl_v) else 0.0):.0f}")
+        m3.metric("rTSS", f"{(float(rtss_v) if pd.notna(rtss_v) else 0.0):.0f}")
         sport_type = str(row.get("sport_type") or "").lower()
         show_pace = ("run" in sport_type) or ("treadmill" in sport_type)
         m4.metric("Avg Pace", format_pace_min_per_km(row.get("avg_pace_s_per_km")) if show_pace else "-")
