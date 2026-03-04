@@ -2323,12 +2323,6 @@ if view == "Dashboard":
             compare_mode = st.checkbox("Compare mode (up to 3 metrics)", value=False)
             enable_zoom = st.checkbox("Zoom/pan", value=False)
             top_injury_overlay = st.checkbox("Top injury overlay", value=False)
-            planned_plot_mode = st.selectbox(
-                "Planned data",
-                ["Off", "Overlay", "Planned only"],
-                index=0,
-                key="plot_charts_planned_mode",
-            )
 
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
@@ -2336,17 +2330,6 @@ if view == "Dashboard":
             start_date = end_date = max_day
         start_ts = pd.Timestamp(start_date)
         end_ts = pd.Timestamp(end_date)
-        if planned_plot_mode != "Off":
-            planned_range_rows = get_planned_activities_df(
-                cfg.db_path,
-                start_day_utc=start_ts.date().isoformat(),
-            )
-            if not planned_range_rows.empty:
-                planned_days = pd.to_datetime(planned_range_rows.get("day_utc"), errors="coerce").dropna()
-                if not planned_days.empty:
-                    planned_max_day = pd.Timestamp(planned_days.max()).normalize()
-                    if planned_max_day > end_ts:
-                        end_ts = planned_max_day
         end_exclusive_ts = end_ts + pd.Timedelta(days=1)
 
         filtered_metrics, filtered_daily = cached_filtered_views(
@@ -2365,94 +2348,6 @@ if view == "Dashboard":
             (pd.to_datetime(filtered_daily["day_utc"], errors="coerce") >= start_ts)
             & (pd.to_datetime(filtered_daily["day_utc"], errors="coerce") < end_exclusive_ts)
         ].copy()
-        if planned_plot_mode != "Off" and end_ts.date() > pd.Timestamp(end_date).date():
-            st.caption(f"Planned mode extended chart range through {end_ts:%Y-%m-%d}.")
-
-        if planned_plot_mode != "Off":
-            planned_rows_for_plot = get_planned_activities_df(
-                cfg.db_path,
-                start_day_utc=start_ts.date().isoformat(),
-                end_day_utc=end_ts.date().isoformat(),
-            )
-            planned_rows_for_plot = _apply_planned_actual_matching(planned_rows_for_plot, metrics_df)
-            specificity_for_plots = _normalize_specificity_profile(
-                st.session_state.get("user_specificity_profile", {}),
-                fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
-            )
-            planned_rows_for_plot = _compute_planned_rows_metrics_df(
-                planned_rows=planned_rows_for_plot,
-                lthr_curve_points=lthr_curve_points,
-                lthr_default_bpm=float(derived_lthr_bpm),
-                lt_pace_curve_points=lt_pace_curve_points,
-                lt_pace_default_sec=float(derived_threshold_pace_sec),
-                specificity_profile=specificity_for_plots,
-            )
-            planned_rows_for_plot = filter_by_activity_type(planned_rows_for_plot, activity_filter)
-            planned_daily_for_plot = _build_planned_daily_summary_df(planned_rows_for_plot)
-
-            if planned_plot_mode == "Planned only":
-                filtered_daily_range = planned_daily_for_plot.copy()
-            elif planned_plot_mode == "Overlay":
-                base_daily = filtered_daily_range.copy()
-                if base_daily.empty:
-                    filtered_daily_range = planned_daily_for_plot.copy()
-                elif not planned_daily_for_plot.empty:
-                    merge_base = base_daily.copy()
-                    merge_base["day_utc"] = merge_base["day_utc"].astype(str)
-                    merge_plan = planned_daily_for_plot.copy()
-                    merge_plan["day_utc"] = merge_plan["day_utc"].astype(str)
-                    merged = merge_base.merge(
-                        merge_plan,
-                        on="day_utc",
-                        how="outer",
-                        suffixes=("_base", "_plan"),
-                    )
-                    def _num_col(df: pd.DataFrame, col: str) -> pd.Series:
-                        if col in df.columns:
-                            return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
-                        return pd.Series(0.0, index=df.index, dtype="float64")
-                    add_cols = ["tss_total", "rtss_total", "distance_proxy_km", "distance_km", "duration_s"]
-                    for c in add_cols:
-                        merged[c] = _num_col(merged, f"{c}_base") + _num_col(merged, f"{c}_plan")
-                    if_weighted_base = (
-                        _num_col(merged, "if_proxy_base")
-                        * _num_col(merged, "duration_s_base")
-                    )
-                    if_weighted_plan = _num_col(merged, "if_weighted")
-                    if_weighted_total = if_weighted_base + if_weighted_plan
-                    dur_total = _num_col(merged, "duration_s")
-                    merged["if_proxy"] = 0.0
-                    dur_mask = dur_total > 0
-                    merged.loc[dur_mask, "if_proxy"] = if_weighted_total[dur_mask] / dur_total[dur_mask]
-                    passthrough_cols = [
-                        c
-                        for c in merge_base.columns
-                        if c not in {"day_utc", "tss_total", "rtss_total", "distance_proxy_km", "distance_km", "duration_s", "if_proxy"}
-                    ]
-                    for c in passthrough_cols:
-                        if f"{c}_base" in merged.columns:
-                            merged[c] = merged[f"{c}_base"]
-                    keep_cols = ["day_utc", "tss_total", "rtss_total", "distance_proxy_km", "distance_km", "duration_s", "if_proxy"] + passthrough_cols
-                    filtered_daily_range = merged[keep_cols].copy()
-
-            if not filtered_daily_range.empty:
-                filtered_daily_range = filtered_daily_range.sort_values("day_utc").copy()
-                daily_index = pd.date_range(start=start_ts, end=end_ts, freq="D")
-                complete_daily = pd.DataFrame({"day_utc": daily_index.strftime("%Y-%m-%d")})
-                filtered_daily_range = complete_daily.merge(filtered_daily_range, on="day_utc", how="left")
-                for c in ["tss_total", "rtss_total", "distance_proxy_km", "distance_km", "duration_s", "if_proxy"]:
-                    if c in filtered_daily_range.columns:
-                        filtered_daily_range[c] = pd.to_numeric(filtered_daily_range[c], errors="coerce").fillna(0.0)
-                if "tss_total" in filtered_daily_range.columns:
-                    ts = pd.to_numeric(filtered_daily_range["tss_total"], errors="coerce").fillna(0.0)
-                    filtered_daily_range["fitness"] = ema(ts, 42)
-                    filtered_daily_range["fatigue"] = ema(ts, 7)
-                    filtered_daily_range["overreach"] = (ema(ts, 10) - 70.0).clip(lower=0.0)
-                if "rtss_total" in filtered_daily_range.columns:
-                    rts = pd.to_numeric(filtered_daily_range["rtss_total"], errors="coerce").fillna(0.0)
-                    filtered_daily_range["leg_elasticity"] = ema(rts, 100)
-                    filtered_daily_range["pounding"] = ema(rts, 7)
-                    filtered_daily_range["injury_risk"] = (ema(rts, 10) - 70.0).clip(lower=0.0)
 
         metric_map = {
             "rTSS": ("rtss_total", "sum"),
@@ -3362,6 +3257,9 @@ if view == "Calendar":
                 .sort_values("day")
             )
             planned_cards_by_day: dict[pd.Timestamp, list[dict[str, object]]] = {}
+            planned_day_lookup = pd.DataFrame(
+                columns=["day", "planned_distance_eqv_km", "planned_tss", "planned_rtss", "planned_duration_s", "planned_if"]
+            )
             planned_rows_for_calendar = get_planned_activities_df(
                 cfg.db_path,
                 start_day_utc=grid_start.date().isoformat(),
@@ -3394,6 +3292,25 @@ if view == "Calendar":
                     planned_rows_for_calendar = planned_rows_for_calendar.dropna(subset=["day"]).sort_values(
                         ["day", "line_no"], ascending=[True, True]
                     )
+                    planned_grouped = (
+                        planned_rows_for_calendar.groupby("day", as_index=False)
+                        .agg(
+                            planned_distance_eqv_km=("distance_proxy_km", "sum"),
+                            planned_tss=("tss", "sum"),
+                            planned_rtss=("rtss", "sum"),
+                            planned_duration_s=("duration_s", "sum"),
+                            planned_if_weighted=("if_weighted", "sum"),
+                        )
+                        .sort_values("day")
+                    )
+                    planned_grouped["planned_if"] = 0.0
+                    _planned_dur = pd.to_numeric(planned_grouped["planned_duration_s"], errors="coerce").fillna(0.0)
+                    _planned_w = pd.to_numeric(planned_grouped["planned_if_weighted"], errors="coerce").fillna(0.0)
+                    _planned_mask = _planned_dur > 0
+                    planned_grouped.loc[_planned_mask, "planned_if"] = _planned_w[_planned_mask] / _planned_dur[_planned_mask]
+                    planned_day_lookup = planned_grouped[
+                        ["day", "planned_distance_eqv_km", "planned_tss", "planned_rtss", "planned_duration_s", "planned_if"]
+                    ].copy()
                     for day_key, grp in planned_rows_for_calendar.groupby("day"):
                         planned_cards_by_day[pd.Timestamp(day_key)] = grp.to_dict(orient="records")
 
@@ -3414,6 +3331,48 @@ if view == "Calendar":
                     .set_index("day")[["fitness", "fatigue"]]
                     .to_dict("index")
                 )
+            # Project future Fit/Fatigue from planned daily TSS using same EMA recurrence
+            # as dashboard metrics (Fitness=EMA42, Fatigue=EMA7).
+            daily_fitfat_with_projection = dict(daily_fitfat_lookup)
+            if (not cal_daily_lookup.empty) and (not planned_day_lookup.empty):
+                hist = (
+                    cal_daily_lookup.dropna(subset=["day"])
+                    .drop_duplicates(subset=["day"], keep="last")
+                    .sort_values("day")
+                )
+                if not hist.empty:
+                    last_hist = hist.iloc[-1]
+                    last_day = pd.to_datetime(last_hist.get("day"), errors="coerce")
+                    prev_fit = pd.to_numeric(pd.Series([last_hist.get("fitness")]), errors="coerce").fillna(0.0).iloc[0]
+                    prev_fat = pd.to_numeric(pd.Series([last_hist.get("fatigue")]), errors="coerce").fillna(0.0).iloc[0]
+                    if pd.notna(last_day):
+                        planned_by_day = planned_day_lookup.copy()
+                        planned_by_day["day"] = pd.to_datetime(planned_by_day.get("day"), errors="coerce")
+                        planned_by_day["planned_tss"] = pd.to_numeric(
+                            planned_by_day.get("planned_tss"), errors="coerce"
+                        ).fillna(0.0)
+                        planned_by_day = planned_by_day.dropna(subset=["day"])
+                        if not planned_by_day.empty:
+                            planned_tss_map = (
+                                planned_by_day.groupby("day", as_index=False)["planned_tss"]
+                                .sum()
+                                .set_index("day")["planned_tss"]
+                                .to_dict()
+                            )
+                            alpha_fit = float(ema_alpha_from_days(42))
+                            alpha_fat = float(ema_alpha_from_days(7))
+                            max_planned_day = max(planned_tss_map.keys())
+                            cursor = pd.Timestamp(last_day) + pd.Timedelta(days=1)
+                            horizon = max(pd.Timestamp(max_planned_day), pd.Timestamp(grid_end))
+                            while cursor <= horizon:
+                                tss_v = float(planned_tss_map.get(cursor, 0.0))
+                                prev_fit = alpha_fit * tss_v + (1.0 - alpha_fit) * prev_fit
+                                prev_fat = alpha_fat * tss_v + (1.0 - alpha_fat) * prev_fat
+                                daily_fitfat_with_projection[pd.Timestamp(cursor)] = {
+                                    "fitness": prev_fit,
+                                    "fatigue": prev_fat,
+                                }
+                                cursor = cursor + pd.Timedelta(days=1)
 
             wellness_day_lookup = pd.DataFrame(columns=["day", "resting_hr", "stress_avg"])
             wellness_df = get_wellness_df(cfg.db_path)
@@ -4077,6 +4036,7 @@ if view == "Calendar":
                             f"<div class='cal-day-header'>{day_ts:%d %b}</div>",
                             unsafe_allow_html=True,
                         )
+                        has_actual_day = not day_df.empty
                         day_cal = 0.0
                         day_distance_eqv = 0.0
                         if not day_activity_stats.empty:
@@ -4084,6 +4044,20 @@ if view == "Calendar":
                             if not day_cal_rows.empty:
                                 day_cal = float(day_cal_rows.iloc[0]["day_calories"])
                                 day_distance_eqv = float(day_cal_rows.iloc[0]["day_distance_eqv_km"])
+                        planned_distance_eqv = 0.0
+                        planned_tss = 0.0
+                        planned_rtss = 0.0
+                        planned_duration_s = 0.0
+                        planned_if = 0.0
+                        if not planned_day_lookup.empty:
+                            day_plan_rows = planned_day_lookup[planned_day_lookup["day"] == day_ts]
+                            if not day_plan_rows.empty:
+                                p = day_plan_rows.iloc[0]
+                                planned_distance_eqv = float(pd.to_numeric(pd.Series([p.get("planned_distance_eqv_km")]), errors="coerce").fillna(0.0).iloc[0])
+                                planned_tss = float(pd.to_numeric(pd.Series([p.get("planned_tss")]), errors="coerce").fillna(0.0).iloc[0])
+                                planned_rtss = float(pd.to_numeric(pd.Series([p.get("planned_rtss")]), errors="coerce").fillna(0.0).iloc[0])
+                                planned_duration_s = float(pd.to_numeric(pd.Series([p.get("planned_duration_s")]), errors="coerce").fillna(0.0).iloc[0])
+                                planned_if = float(pd.to_numeric(pd.Series([p.get("planned_if")]), errors="coerce").fillna(0.0).iloc[0])
                         day_resting_hr = float("nan")
                         day_stress_avg = float("nan")
                         if not wellness_day_lookup.empty:
@@ -4091,8 +4065,23 @@ if view == "Calendar":
                             if not day_well_rows.empty:
                                 day_resting_hr = float(day_well_rows.iloc[0]["resting_hr"]) if pd.notna(day_well_rows.iloc[0]["resting_hr"]) else float("nan")
                                 day_stress_avg = float(day_well_rows.iloc[0]["stress_avg"]) if pd.notna(day_well_rows.iloc[0]["stress_avg"]) else float("nan")
-                        day_meta_parts = [f"{day_distance_eqv:.0f} km eqv.", f"{day_cal:.0f} kcal"]
-                        fitfat_row = daily_fitfat_lookup.get(day_ts)
+                        # Planned headline metrics should only appear when the day has no actual activity.
+                        # Also guard against edge cases where grouped daily stats exist for the day.
+                        show_planned_meta = (
+                            (not has_actual_day)
+                            and (day_distance_eqv <= 0)
+                            and (day_cal <= 0)
+                        )
+                        day_meta_parts: list[str] = []
+                        if day_distance_eqv > 0:
+                            day_meta_parts.append(f"{day_distance_eqv:.0f} km eqv.")
+                        elif show_planned_meta and planned_distance_eqv > 0:
+                            day_meta_parts.append(f"Plan {planned_distance_eqv:.0f} km eqv.")
+                        else:
+                            day_meta_parts.append("0 km eqv.")
+                        if day_cal > 0:
+                            day_meta_parts.append(f"{day_cal:.0f} kcal")
+                        fitfat_row = daily_fitfat_with_projection.get(day_ts)
                         if fitfat_row:
                             day_fit = fitfat_row.get("fitness")
                             day_fat = fitfat_row.get("fatigue")
@@ -4104,6 +4093,14 @@ if view == "Calendar":
                             day_meta_parts.append(f"RHR {day_resting_hr:.0f}")
                         if not pd.isna(day_stress_avg):
                             day_meta_parts.append(f"Stress {day_stress_avg:.0f}")
+                        if show_planned_meta and planned_duration_s > 0:
+                            day_meta_parts.append(f"Plan {_duration_short(planned_duration_s)}")
+                        if show_planned_meta and planned_tss > 0:
+                            day_meta_parts.append(f"Plan TSS {planned_tss:.0f}")
+                        if show_planned_meta and planned_rtss > 0:
+                            day_meta_parts.append(f"Plan rTSS {planned_rtss:.0f}")
+                        if show_planned_meta and planned_if > 0:
+                            day_meta_parts.append(f"Plan IF {(planned_if * 100.0):.0f}%")
                         st.markdown(
                             f"<div class='cal-card-meta' style='margin-bottom:6px;'>{' · '.join(day_meta_parts)}</div>",
                             unsafe_allow_html=True,
@@ -4172,7 +4169,7 @@ if view == "Calendar":
                             rendered_cards += 1
                         today_utc = datetime.now(timezone.utc).date()
                         day_planned_cards = planned_cards_by_day.get(day_ts, [])
-                        if day_ts.date() >= today_utc and day_planned_cards:
+                        if day_ts.date() >= today_utc and rendered_cards == 0 and day_planned_cards:
                             for prow in day_planned_cards:
                                 p_activity = str(prow.get("activity") or "Planned")
                                 p_duration = _duration_short(prow.get("duration_s"))
