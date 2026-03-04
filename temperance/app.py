@@ -149,6 +149,7 @@ AUTH_VIEWER_TABS = [
     "Activity Detail",
     "Recovery Data",
     "Data Extract",
+    "User Inputs",
 ]
 
 
@@ -274,7 +275,8 @@ def _pace_sec_to_mmss(pace_sec_per_km: float) -> str:
 
 
 def _pace_mmss_to_sec(text: str) -> float:
-    raw = text.strip()
+    raw = str(text or "").strip().lower()
+    raw = raw.replace("min/km", "").replace("/km", "").strip()
     if ":" in raw:
         mins_str, sec_str = raw.split(":", 1)
         mins = int(mins_str.strip())
@@ -287,6 +289,18 @@ def _pace_mmss_to_sec(text: str) -> float:
     if value <= 0:
         raise ValueError("pace must be > 0")
     return float(value)
+
+
+def _parse_curve_date(raw: object) -> date:
+    value = str(raw or "").strip()
+    if not value:
+        raise ValueError("date required")
+    for fmt in ("%Y-%m-%d", "%d%b%y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError("invalid date")
 
 
 def _normalize_injury_windows(rows: list[dict]) -> list[dict[str, str]]:
@@ -368,7 +382,7 @@ def _normalize_lthr_curve(rows: list[dict]) -> list[dict[str, object]]:
     out: list[dict[str, object]] = []
     for row in rows:
         try:
-            d = date.fromisoformat(str(row.get("date") or "").strip())
+            d = _parse_curve_date(row.get("date"))
             v = float(row.get("lthr_bpm"))
             if v <= 0:
                 continue
@@ -386,7 +400,7 @@ def _normalize_lt_pace_curve(rows: list[dict]) -> list[dict[str, object]]:
     out: list[dict[str, object]] = []
     for row in rows:
         try:
-            d = date.fromisoformat(str(row.get("date") or "").strip())
+            d = _parse_curve_date(row.get("date"))
             pace_raw = row.get("lt_pace")
             pace = _pace_optional_to_sec(pace_raw) if pace_raw is not None else float(row.get("lt_pace_sec_per_km"))
             if pace is None or pace <= 0:
@@ -1531,7 +1545,7 @@ with st.sidebar:
 
     with st.expander("Garmin API Credentials", expanded=False):
         if _auth_enabled() and str(st.session_state.get("auth_role") or "") != "admin":
-            st.caption("External users must provide Garmin credentials here (env Garmin credentials are admin-only).")
+            st.caption("Credentials are in-memory only for this session.")
         else:
             st.caption("Used for Garmin sync/extract. Stored in current session only.")
         st.text_input("Garmin Email", key="garmin_email_input")
@@ -4404,7 +4418,7 @@ if view == "Custom Activities":
         custom_raw["if_proxy"] = custom_if_vals
         custom_raw["duration_s"] = custom_duration_vals
 
-        st.markdown("##### Custom weekly outlook (next 4 weeks)")
+        st.markdown("##### Custom weekly outlook (latest 4 weeks)")
         custom_weekly_outlook = custom_raw.copy()
         selected_custom_week_start: pd.Timestamp | None = None
         custom_weekly_outlook["day"] = pd.to_datetime(custom_weekly_outlook["day_utc"], errors="coerce")
@@ -4415,8 +4429,6 @@ if view == "Custom Activities":
             custom_weekly_outlook["if_weighted"] = pd.to_numeric(
                 custom_weekly_outlook["if_proxy"], errors="coerce"
             ).fillna(0.0) * pd.to_numeric(custom_weekly_outlook["duration_s"], errors="coerce").fillna(0.0)
-            this_week_start = (pd.Timestamp(date.today()) - pd.Timedelta(days=int(pd.Timestamp(date.today()).weekday()))).normalize()
-            custom_weekly_outlook = custom_weekly_outlook[custom_weekly_outlook["week_start"] >= this_week_start]
             custom_weekly_grouped = (
                 custom_weekly_outlook.groupby("week_start", as_index=False)
                 .agg(
@@ -4428,7 +4440,7 @@ if view == "Custom Activities":
                     custom_activities=("row_id", "count"),
                 )
                 .sort_values("week_start")
-                .head(4)
+                .tail(4)
             )
             if not custom_weekly_grouped.empty:
                 custom_weekly_grouped["if_proxy"] = 0.0
@@ -4480,7 +4492,7 @@ if view == "Custom Activities":
                 else:
                     selected_custom_week_start = None
             else:
-                st.caption("No custom activities in the next 4 weeks.")
+                st.caption("No custom activities found.")
         else:
             st.caption("No valid custom dates to build a weekly outlook.")
 
