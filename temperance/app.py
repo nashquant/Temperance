@@ -1272,6 +1272,172 @@ def get_metrics_df_fast(
     return df
 
 
+def _build_custom_metrics_df_for_plots(
+    db_path: Path,
+    lthr_bpm: float,
+    lthr_curve_points: list[tuple[datetime, float]] | None,
+    threshold_pace_default_sec: float,
+    threshold_pace_curve_points: list[tuple[datetime, float]] | None,
+) -> pd.DataFrame:
+    raw = get_custom_activities_df(db_path)
+    if raw.empty:
+        return pd.DataFrame()
+
+    rows: list[dict[str, object]] = []
+    for _, custom_row in raw.iterrows():
+        day_utc = str(custom_row.get("day_utc") or "").strip()
+        line_no_raw = custom_row.get("line_no")
+        try:
+            line_no = int(line_no_raw)
+        except Exception:
+            line_no = 1
+        if not day_utc:
+            continue
+
+        raw_segments = custom_row.get("parsed_json")
+        segments: list[dict[str, float | str | None]] = []
+        if isinstance(raw_segments, list):
+            segments = [s for s in raw_segments if isinstance(s, dict)]
+        elif isinstance(raw_segments, str) and raw_segments.strip():
+            try:
+                parsed = json.loads(raw_segments)
+                if isinstance(parsed, list):
+                    segments = [s for s in parsed if isinstance(s, dict)]
+            except Exception:
+                segments = []
+        if not segments:
+            continue
+
+        day_for_curve = pd.to_datetime(day_utc, utc=True, errors="coerce")
+        if pd.isna(day_for_curve):
+            continue
+        lthr_for_day = float(_curve_value_at(lthr_curve_points or [], float(lthr_bpm), day_for_curve))
+        tp_for_day = float(
+            _curve_value_at(
+                threshold_pace_curve_points or [],
+                float(threshold_pace_default_sec),
+                day_for_curve,
+            )
+        )
+
+        total_duration_s = 0.0
+        total_tss = 0.0
+        total_rtss = 0.0
+        total_dist_eqv_km = 0.0
+        if_weighted_sum = 0.0
+        if_weight_seconds = 0.0
+        hr_weighted_sum = 0.0
+        hr_weight_seconds = 0.0
+        running_distance_m = 0.0
+        kind_duration: dict[str, float] = {}
+
+        for seg in segments:
+            seg_kind = str(seg.get("kind") or "").strip().lower()
+            # Keep custom rows "raw". Specificity is applied once in apply_specificity_factor().
+            # For distance eqv, use the same 0.8 ingest baseline used by Garmin proxy rows.
+            m = _planned_segment_metrics(
+                seg,
+                lthr_bpm=lthr_for_day,
+                threshold_pace_sec_per_km=tp_for_day,
+                non_running_factor=0.8,
+            )
+            seg_duration_s = float(m.get("duration_s") or 0.0)
+            if seg_duration_s <= 0:
+                continue
+
+            total_duration_s += seg_duration_s
+            total_tss += float(m.get("tss") or 0.0)
+            total_rtss += float(m.get("rtss") or 0.0)
+            total_dist_eqv_km += float(m.get("distance_eqv_km") or 0.0)
+            seg_if = float(m.get("if_proxy") or 0.0)
+            if seg_if > 0:
+                if_weighted_sum += seg_if * seg_duration_s
+                if_weight_seconds += seg_duration_s
+
+            seg_hr = pd.to_numeric(seg.get("avg_hr_bpm"), errors="coerce")
+            if pd.notna(seg_hr) and float(seg_hr) > 0:
+                hr_weighted_sum += float(seg_hr) * seg_duration_s
+                hr_weight_seconds += seg_duration_s
+
+            seg_pace = pd.to_numeric(seg.get("pace_s_per_km"), errors="coerce")
+            if seg_kind in {"run", "treadmill"} and pd.notna(seg_pace) and float(seg_pace) > 0:
+                running_distance_m += (seg_duration_s / float(seg_pace)) * 1000.0
+
+            kind_duration[seg_kind or "other"] = kind_duration.get(seg_kind or "other", 0.0) + seg_duration_s
+
+        if total_duration_s <= 0:
+            continue
+
+        dominant_kind = max(kind_duration.items(), key=lambda x: x[1])[0] if kind_duration else "other"
+        if dominant_kind == "run":
+            sport_type = "running"
+        elif dominant_kind == "treadmill":
+            sport_type = "treadmill_running"
+        else:
+            sport_type = dominant_kind
+
+        avg_hr = (hr_weighted_sum / hr_weight_seconds) if hr_weight_seconds > 0 else None
+        avg_pace = (total_duration_s / (running_distance_m / 1000.0)) if running_distance_m > 0 else None
+        if_proxy = (if_weighted_sum / if_weight_seconds) if if_weight_seconds > 0 else 0.0
+        pace_proxy = (total_duration_s / total_dist_eqv_km) if total_dist_eqv_km > 0 else None
+        start_time = day_for_curve + pd.Timedelta(minutes=max(line_no, 1))
+
+        rows.append(
+            {
+                "activity_id": f"custom:{day_utc}:{line_no}",
+                "activity_name": "Custom Activity",
+                "start_time_utc": start_time,
+                "sport_type": sport_type,
+                "distance_m": running_distance_m,
+                "duration_s": total_duration_s,
+                "moving_duration_s": total_duration_s,
+                "elapsed_duration_s": total_duration_s,
+                "avg_hr": avg_hr,
+                "avg_pace_s_per_km": avg_pace,
+                "rtss": total_rtss,
+                "tss": total_tss,
+                "trimp": 0.0,
+                "edwards_trimp": 0.0,
+                "mechanical_load": 0.0,
+                "distance_proxy_km": total_dist_eqv_km,
+                "pace_proxy_sec_per_km": pace_proxy,
+                "distance_proxy_method": "tss_parity_root_solve",
+                "if_proxy": if_proxy,
+                "training_load_garmin": 0.0,
+                "calories_active": 0.0,
+                "calories_total": 0.0,
+                "intensity_minutes_vigorous": 0.0,
+                "intensity_minutes_moderate": 0.0,
+                "hr_time_in_zone_1": 0.0,
+                "hr_time_in_zone_2": 0.0,
+                "hr_time_in_zone_3": 0.0,
+                "hr_time_in_zone_4": 0.0,
+                "hr_time_in_zone_5": 0.0,
+            }
+        )
+
+    if not rows:
+        return pd.DataFrame()
+    custom_df = pd.DataFrame(rows)
+    custom_df["start_time_utc"] = pd.to_datetime(custom_df["start_time_utc"], utc=True, errors="coerce")
+    return custom_df
+
+
+def _merge_metrics_with_custom(base_df: pd.DataFrame, custom_df: pd.DataFrame) -> pd.DataFrame:
+    if custom_df.empty:
+        return base_df
+    if base_df.empty:
+        return custom_df
+    all_cols = sorted(set(base_df.columns).union(set(custom_df.columns)))
+    merged = pd.concat(
+        [base_df.reindex(columns=all_cols), custom_df.reindex(columns=all_cols)],
+        ignore_index=True,
+    )
+    if "start_time_utc" in merged.columns:
+        merged["start_time_utc"] = pd.to_datetime(merged["start_time_utc"], utc=True, errors="coerce")
+    return merged
+
+
 def _build_split_metrics_for_activity(
     activity_row: pd.Series,
     split_row: dict | None,
@@ -1822,8 +1988,18 @@ daily_summary_df = get_daily_summary_df(cfg.db_path)
 if view == "Dashboard":
     st.divider()
     st.header("Dashboard")
+    dashboard_metrics_df = _merge_metrics_with_custom(
+        metrics_df,
+        _build_custom_metrics_df_for_plots(
+            db_path=cfg.db_path,
+            lthr_bpm=float(derived_lthr_bpm),
+            lthr_curve_points=lthr_curve_points,
+            threshold_pace_default_sec=float(derived_threshold_pace_sec),
+            threshold_pace_curve_points=lt_pace_curve_points,
+        ),
+    )
 
-    if metrics_df.empty:
+    if dashboard_metrics_df.empty:
         st.info(
             "No activities yet. Use Sync above. "
             "For your full archive, run Comprehensive Garmin Extract from Jan 1, 2025."
@@ -1832,8 +2008,8 @@ if view == "Dashboard":
         st.caption("Missing-day fill mode is fixed to zero for chart calculations (EMA and aggregations).")
         controls = st.columns([1, 1, 1, 1.2])
         with controls[0]:
-            metrics_min_day = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).min().date()
-            metrics_max_day = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).max().date()
+            metrics_min_day = pd.to_datetime(dashboard_metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).min().date()
+            metrics_max_day = pd.to_datetime(dashboard_metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).max().date()
             if daily_summary_df.empty:
                 min_day = metrics_min_day
                 max_day = metrics_max_day
@@ -1896,7 +2072,7 @@ if view == "Dashboard":
         end_exclusive_ts = end_ts + pd.Timedelta(days=1)
 
         filtered_metrics, filtered_daily = cached_filtered_views(
-            metrics_df,
+            dashboard_metrics_df,
             activity_filter=activity_filter,
             specificity_profile=_normalize_specificity_profile(
                 st.session_state.get("user_specificity_profile", {}),
@@ -4255,83 +4431,6 @@ if view == "Custom Activities":
                 st.success(f"Saved {len(rows_to_upsert)} custom activit{'y' if len(rows_to_upsert)==1 else 'ies'}.")
                 st.rerun()
 
-    upload = st.file_uploader(
-        "Bulk upload custom activities (.csv/.xls/.xlsx, one entry per row as `[date]:[activity]`)",
-        type=["csv", "xls", "xlsx"],
-        key="custom_bulk_upload_file",
-    )
-    if st.button("Import custom file", key="custom_bulk_import_btn", use_container_width=False):
-        if upload is None:
-            st.info("Select a file first.")
-        else:
-            try:
-                if str(upload.name).lower().endswith(".csv"):
-                    up_df = pd.read_csv(upload)
-                else:
-                    up_df = pd.read_excel(upload)
-            except Exception as exc:
-                st.error(f"Could not read file: {exc}")
-                up_df = pd.DataFrame()
-            if not up_df.empty:
-                cols = {str(c).strip().lower(): c for c in up_df.columns}
-                entry_col = None
-                for candidate in ("entry", "activity", "activity_string", "string"):
-                    if candidate in cols:
-                        entry_col = cols[candidate]
-                        break
-                if entry_col is None:
-                    if len(up_df.columns) == 1:
-                        entry_col = up_df.columns[0]
-                    else:
-                        st.error(
-                            "Invalid file format. Expected one entry column (`entry`/`activity`/`activity_string`/`string`) "
-                            "with values like `3Mar26: 80min elliptical @140bpm`."
-                        )
-                if entry_col is not None:
-                    existing_custom = get_custom_activities_df(cfg.db_path)
-                    max_line_by_day = (
-                        existing_custom.groupby("day_utc")["line_no"].max().to_dict()
-                        if not existing_custom.empty
-                        else {}
-                    )
-                    rows_to_upsert: list[dict[str, object]] = []
-                    errors: list[str] = []
-                    for idx, r in up_df.iterrows():
-                        raw_entry = str(r.get(entry_col) or "").strip()
-                        day_ts, normalized, parse_err = _parse_dated_activity_entry(raw_entry)
-                        if parse_err:
-                            errors.append(f"row {idx+1}: {parse_err}")
-                            continue
-                        if day_ts is None:
-                            errors.append(f"row {idx+1}: invalid date in `{raw_entry}`")
-                            continue
-                        segs, warns = _expand_planned_segments(normalized)
-                        if warns or not segs:
-                            errors.append(
-                                f"row {idx+1}: invalid `{normalized}`: "
-                                + ("; ".join(warns[:2]) if warns else "unparseable")
-                            )
-                            continue
-                        day_key = day_ts.date().isoformat()
-                        next_line = int(max_line_by_day.get(day_key, 0)) + 1
-                        max_line_by_day[day_key] = next_line
-                        rows_to_upsert.append(
-                            {
-                                "day_utc": day_key,
-                                "line_no": next_line,
-                                "activity_text": normalized,
-                                "parsed_json": segs,
-                                "source": "bulk_upload",
-                            }
-                        )
-                    if rows_to_upsert:
-                        upsert_custom_activities_rows(cfg.db_path, rows_to_upsert)
-                    if errors:
-                        st.warning("Import completed with warnings:\n- " + "\n- ".join(errors[:10]))
-                    if rows_to_upsert:
-                        st.success(f"Imported {len(rows_to_upsert)} custom activities.")
-                        st.rerun()
-
     custom_raw = get_custom_activities_df(cfg.db_path)
     if custom_raw.empty:
         st.caption("No custom activities saved yet.")
@@ -4486,9 +4585,14 @@ if view == "Custom Activities":
                 )
                 checked_idx = edited_custom_weekly[edited_custom_weekly["display"] == True].index.tolist()
                 if checked_idx:
-                    selected_week_key = str(custom_weekly_grouped.loc[checked_idx[0], "week_start"].strftime("%Y-%m-%d"))
+                    # Enforce single select: keep the last checked row.
+                    selected_idx = checked_idx[-1]
+                    selected_week_key = str(custom_weekly_grouped.loc[selected_idx, "week_start"].strftime("%Y-%m-%d"))
                     st.session_state["custom_outlook_week_key"] = selected_week_key
                     selected_custom_week_start = pd.to_datetime(selected_week_key, errors="coerce")
+                    if len(checked_idx) > 1:
+                        st.info("Only one week can be selected. Kept the latest checked row.")
+                        st.rerun()
                 else:
                     selected_custom_week_start = None
             else:
