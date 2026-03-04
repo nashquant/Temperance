@@ -166,6 +166,17 @@ CREATE TABLE IF NOT EXISTS planned_activities (
     PRIMARY KEY (day_utc, line_no)
 );
 
+CREATE TABLE IF NOT EXISTS custom_activities (
+    day_utc TEXT NOT NULL,
+    line_no INTEGER NOT NULL,
+    activity_text TEXT NOT NULL,
+    parsed_json TEXT,
+    source TEXT NOT NULL DEFAULT 'manual',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (day_utc, line_no)
+);
+
 CREATE TABLE IF NOT EXISTS sync_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sync_time_utc TEXT NOT NULL,
@@ -186,6 +197,7 @@ CREATE INDEX IF NOT EXISTS idx_activity_splits_activity ON activity_splits(activ
 CREATE INDEX IF NOT EXISTS idx_daily_summary_day ON daily_summary(day_utc);
 CREATE INDEX IF NOT EXISTS idx_sync_log_time ON sync_log(sync_time_utc DESC);
 CREATE INDEX IF NOT EXISTS idx_planned_activities_day ON planned_activities(day_utc);
+CREATE INDEX IF NOT EXISTS idx_custom_activities_day ON custom_activities(day_utc);
 """
 
 
@@ -238,6 +250,26 @@ def run_migrations(db_path: Path) -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_planned_activities_day
             ON planned_activities(day_utc)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS custom_activities (
+                day_utc TEXT NOT NULL,
+                line_no INTEGER NOT NULL,
+                activity_text TEXT NOT NULL,
+                parsed_json TEXT,
+                source TEXT NOT NULL DEFAULT 'manual',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (day_utc, line_no)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_custom_activities_day
+            ON custom_activities(day_utc)
             """
         )
         conn.commit()
@@ -831,6 +863,7 @@ def get_table_counts(db_path: Path) -> dict[str, int]:
         "wellness_daily",
         "daily_summary",
         "planned_activities",
+        "custom_activities",
     ]
     with closing(get_conn(db_path)) as conn:
         for table in tables:
@@ -1034,6 +1067,88 @@ def upsert_planned_activities_rows(
                 )
                 for r in rows
                 if str(r.get("day_utc") or "").strip() and str(r.get("workout_text") or "").strip()
+            ],
+        )
+        conn.commit()
+    return len(rows)
+
+
+def get_custom_activities_df(
+    db_path: Path,
+    start_day_utc: str | None = None,
+    end_day_utc: str | None = None,
+) -> pd.DataFrame:
+    where = []
+    params: list[Any] = []
+    if start_day_utc:
+        where.append("day_utc >= ?")
+        params.append(start_day_utc)
+    if end_day_utc:
+        where.append("day_utc <= ?")
+        params.append(end_day_utc)
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    with closing(get_conn(db_path)) as conn:
+        return pd.read_sql_query(
+            f"""
+            SELECT day_utc, line_no, activity_text, parsed_json, source, created_at, updated_at
+            FROM custom_activities
+            {where_sql}
+            ORDER BY day_utc ASC, line_no ASC
+            """,
+            conn,
+            params=params,
+        )
+
+
+def delete_custom_activities(
+    db_path: Path,
+    keys: list[tuple[str, int]],
+) -> int:
+    if not keys:
+        return 0
+    with closing(get_conn(db_path)) as conn:
+        conn.executemany(
+            """
+            DELETE FROM custom_activities
+            WHERE day_utc = ? AND line_no = ?
+            """,
+            [(str(day), int(line_no)) for day, line_no in keys],
+        )
+        conn.commit()
+    return len(keys)
+
+
+def upsert_custom_activities_rows(
+    db_path: Path,
+    rows: list[dict[str, Any]],
+) -> int:
+    if not rows:
+        return 0
+    now = UTC_NOW()
+    with closing(get_conn(db_path)) as conn:
+        conn.executemany(
+            """
+            INSERT INTO custom_activities (
+                day_utc, line_no, activity_text, parsed_json, source, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(day_utc, line_no) DO UPDATE SET
+                activity_text = excluded.activity_text,
+                parsed_json = excluded.parsed_json,
+                source = excluded.source,
+                updated_at = excluded.updated_at
+            """,
+            [
+                (
+                    str(r.get("day_utc") or ""),
+                    int(r.get("line_no") or 0),
+                    str(r.get("activity_text") or "").strip(),
+                    json.dumps(r.get("parsed_json")) if r.get("parsed_json") is not None else None,
+                    str(r.get("source") or "manual"),
+                    now,
+                    now,
+                )
+                for r in rows
+                if str(r.get("day_utc") or "").strip() and str(r.get("activity_text") or "").strip()
             ],
         )
         conn.commit()

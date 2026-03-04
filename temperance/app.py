@@ -39,12 +39,15 @@ from db import (
     get_sleep_df,
     get_table_counts,
     get_planned_activities_df,
+    get_custom_activities_df,
     get_wellness_df,
     init_db,
     log_sync,
     delete_planned_activities,
+    delete_custom_activities,
     replace_planned_activities_for_range,
     upsert_planned_activities_rows,
+    upsert_custom_activities_rows,
     save_setting,
     upsert_activities,
     upsert_activity_details,
@@ -3742,6 +3745,51 @@ if view == "Week Planner":
         planned_raw["rtss"] = plan_rtss_vals
         planned_raw["distance_eqv_km"] = plan_dist_eqv_vals
         planned_raw["if_proxy"] = plan_if_vals
+        planned_plot_metric = st.selectbox(
+            "Planned metric view",
+            ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
+            index=0,
+            key="planned_metric_view_select",
+        )
+        plot_metric_col = {
+            "TSS": "tss",
+            "rTSS": "rtss",
+            "Dist Eqv (km)": "distance_eqv_km",
+            "IF": "if_proxy",
+        }[planned_plot_metric]
+        plot_df = planned_raw.copy()
+        plot_df["day"] = pd.to_datetime(plot_df["day_utc"], errors="coerce")
+        plot_df = plot_df.dropna(subset=["day"])
+        if not plot_df.empty:
+            if plot_metric_col == "if_proxy":
+                planned_agg = (
+                    plot_df.groupby("day", as_index=False)["if_proxy"]
+                    .mean()
+                    .rename(columns={"if_proxy": "value"})
+                )
+            else:
+                planned_agg = (
+                    plot_df.groupby("day", as_index=False)[plot_metric_col]
+                    .sum()
+                    .rename(columns={plot_metric_col: "value"})
+                )
+            planned_agg["value"] = pd.to_numeric(planned_agg["value"], errors="coerce").fillna(0.0)
+            planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.2f}" if float(v) > 0 else "")
+            planned_chart = (
+                alt.Chart(planned_agg.sort_values("day"))
+                .mark_bar(cornerRadiusTopLeft=8, cornerRadiusTopRight=8, color="#34d399")
+                .encode(
+                    x=alt.X("day:T", title="", axis=alt.Axis(format="%d %b")),
+                    y=alt.Y("value:Q", title=planned_plot_metric),
+                    tooltip=[alt.Tooltip("day:T", title="Day"), alt.Tooltip("value:Q", title=planned_plot_metric, format=".2f")],
+                )
+            )
+            planned_labels = (
+                alt.Chart(planned_agg.sort_values("day"))
+                .mark_text(dy=-8, color="#e2e8f0", fontSize=11, fontWeight=700)
+                .encode(x="day:T", y="value:Q", text="label:N")
+            )
+            st.altair_chart((planned_chart + planned_labels).properties(height=220), use_container_width=True)
         editor_df = planned_raw[
             [
                 "select",
@@ -3846,6 +3894,220 @@ if view == "Week Planner":
                         delete_planned_activities(cfg.db_path, old_keys)
                         upsert_planned_activities_rows(cfg.db_path, edit_rows)
                         st.success(f"Updated {len(edit_rows)} planned activities.")
+                        st.rerun()
+
+    st.markdown("#### Custom activities")
+    st.caption("Save custom activities to a separate table. Supports manual input and bulk upload (`date`, `string`).")
+
+    c1, c2, c3 = st.columns([1.0, 2.6, 0.6])
+    with c1:
+        custom_day = st.date_input(
+            "Custom date",
+            value=today_local.date(),
+            key="custom_activity_day",
+        )
+    with c2:
+        custom_text = st.text_input(
+            "Custom activity string",
+            value=st.session_state.get("custom_activity_text", ""),
+            key="custom_activity_text",
+            placeholder="e.g. 80min elliptical @140bpm or 10min run @4:50 + 5x6min @3:40/km",
+        )
+    with c3:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        custom_save_clicked = st.button("Save custom", key="custom_single_save_btn", use_container_width=True)
+
+    if custom_save_clicked:
+        custom_day_ts = pd.Timestamp(custom_day)
+        normalized = _normalize_plan_text(custom_text)
+        segs, warns = _expand_planned_segments(normalized)
+        if not normalized:
+            st.error("Custom activity string is empty.")
+        elif warns or not segs:
+            details = "\n- ".join(warns[:6]) if warns else "Could not parse this activity."
+            st.error("Invalid custom activity string:\n- " + details)
+        else:
+            same_day = get_custom_activities_df(
+                cfg.db_path,
+                start_day_utc=custom_day_ts.date().isoformat(),
+                end_day_utc=custom_day_ts.date().isoformat(),
+            )
+            next_line_no = int(pd.to_numeric(same_day.get("line_no"), errors="coerce").max()) + 1 if not same_day.empty else 1
+            upsert_custom_activities_rows(
+                cfg.db_path,
+                [
+                    {
+                        "day_utc": custom_day_ts.date().isoformat(),
+                        "line_no": next_line_no,
+                        "activity_text": normalized,
+                        "parsed_json": segs,
+                        "source": "manual",
+                    }
+                ],
+            )
+            st.success(f"Saved custom: {custom_day_ts:%Y-%m-%d} · {normalized}")
+            st.rerun()
+
+    upload = st.file_uploader(
+        "Bulk upload custom activities (.csv/.xls/.xlsx)",
+        type=["csv", "xls", "xlsx"],
+        key="custom_bulk_upload_file",
+    )
+    if st.button("Import custom file", key="custom_bulk_import_btn", use_container_width=False):
+        if upload is None:
+            st.info("Select a file first.")
+        else:
+            try:
+                if str(upload.name).lower().endswith(".csv"):
+                    up_df = pd.read_csv(upload)
+                else:
+                    up_df = pd.read_excel(upload)
+            except Exception as exc:
+                st.error(f"Could not read file: {exc}")
+                up_df = pd.DataFrame()
+            if not up_df.empty:
+                cols = {str(c).strip().lower(): c for c in up_df.columns}
+                if "date" not in cols or "string" not in cols:
+                    st.error("Invalid file format. Expected columns: `date`, `string`.")
+                else:
+                    date_col = cols["date"]
+                    str_col = cols["string"]
+                    existing_custom = get_custom_activities_df(cfg.db_path)
+                    max_line_by_day = (
+                        existing_custom.groupby("day_utc")["line_no"].max().to_dict()
+                        if not existing_custom.empty
+                        else {}
+                    )
+                    rows_to_upsert: list[dict[str, object]] = []
+                    errors: list[str] = []
+                    for idx, r in up_df.iterrows():
+                        day_raw = r.get(date_col)
+                        txt_raw = r.get(str_col)
+                        day_ts = pd.to_datetime(day_raw, errors="coerce")
+                        if pd.isna(day_ts):
+                            errors.append(f"row {idx+1}: invalid date `{day_raw}`")
+                            continue
+                        normalized = _normalize_plan_text(str(txt_raw or ""))
+                        segs, warns = _expand_planned_segments(normalized)
+                        if not normalized:
+                            errors.append(f"row {idx+1}: empty string")
+                            continue
+                        if warns or not segs:
+                            errors.append(
+                                f"row {idx+1}: invalid `{normalized}`: "
+                                + ("; ".join(warns[:2]) if warns else "unparseable")
+                            )
+                            continue
+                        day_key = day_ts.date().isoformat()
+                        next_line = int(max_line_by_day.get(day_key, 0)) + 1
+                        max_line_by_day[day_key] = next_line
+                        rows_to_upsert.append(
+                            {
+                                "day_utc": day_key,
+                                "line_no": next_line,
+                                "activity_text": normalized,
+                                "parsed_json": segs,
+                                "source": "bulk_upload",
+                            }
+                        )
+                    if rows_to_upsert:
+                        upsert_custom_activities_rows(cfg.db_path, rows_to_upsert)
+                    if errors:
+                        st.warning("Import completed with warnings:\n- " + "\n- ".join(errors[:10]))
+                    if rows_to_upsert:
+                        st.success(f"Imported {len(rows_to_upsert)} custom activities.")
+                        st.rerun()
+
+    custom_raw = get_custom_activities_df(cfg.db_path)
+    if custom_raw.empty:
+        st.caption("No custom activities saved yet.")
+    else:
+        custom_raw = custom_raw.sort_values(["day_utc", "line_no"], ascending=[False, True]).copy()
+        custom_raw["row_id"] = custom_raw["day_utc"].astype(str) + "::" + custom_raw["line_no"].astype(int).astype(str)
+        custom_raw["select"] = False
+        custom_editor = st.data_editor(
+            custom_raw[
+                ["select", "row_id", "day_utc", "line_no", "activity_text", "source", "parsed_json", "updated_at"]
+            ],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "select": st.column_config.CheckboxColumn("Select"),
+                "row_id": st.column_config.TextColumn("Row ID", disabled=True),
+                "day_utc": st.column_config.TextColumn("Date"),
+                "line_no": st.column_config.NumberColumn("Line", format="%d", disabled=True),
+                "activity_text": st.column_config.TextColumn("Activity String"),
+                "source": st.column_config.TextColumn("Source", disabled=True),
+                "parsed_json": st.column_config.TextColumn("Parsed JSON", disabled=True),
+                "updated_at": st.column_config.TextColumn("Updated At", disabled=True),
+            },
+            key="custom_raw_editor",
+        )
+        selected_custom = custom_editor[custom_editor["select"] == True].copy()
+        cd1, cd2 = st.columns(2)
+        with cd1:
+            if st.button("Delete selected custom", key="custom_delete_selected_btn", use_container_width=True):
+                if selected_custom.empty:
+                    st.info("Select at least one custom activity.")
+                else:
+                    delete_keys = []
+                    for _, r in selected_custom.iterrows():
+                        rid = str(r.get("row_id") or "")
+                        day_part, line_part = rid.split("::", 1)
+                        delete_keys.append((day_part, int(line_part)))
+                    delete_custom_activities(cfg.db_path, delete_keys)
+                    st.success(f"Deleted {len(delete_keys)} custom activities.")
+                    st.rerun()
+        with cd2:
+            if st.button("Save custom edits (selected)", key="custom_save_selected_edits_btn", use_container_width=True):
+                if selected_custom.empty:
+                    st.info("Select at least one row to edit.")
+                else:
+                    old_keys: list[tuple[str, int]] = []
+                    rows_to_upsert: list[dict[str, object]] = []
+                    remaining = custom_raw.copy()
+                    for _, r in selected_custom.iterrows():
+                        rid = str(r.get("row_id") or "")
+                        day_part, line_part = rid.split("::", 1)
+                        old_keys.append((day_part, int(line_part)))
+                    old_key_set = {f"{d}::{ln}" for d, ln in old_keys}
+                    remaining = remaining[~remaining["row_id"].isin(old_key_set)].copy()
+                    max_line_by_day = (
+                        remaining.groupby("day_utc")["line_no"].max().to_dict() if not remaining.empty else {}
+                    )
+                    errors: list[str] = []
+                    for _, r in selected_custom.iterrows():
+                        day_text = str(r.get("day_utc") or "").strip()
+                        activity_text = _normalize_plan_text(str(r.get("activity_text") or ""))
+                        try:
+                            day_ts = pd.Timestamp(day_text)
+                        except Exception:
+                            errors.append(f"Invalid date `{day_text}`")
+                            continue
+                        segs, warns = _expand_planned_segments(activity_text)
+                        if warns or not segs:
+                            errors.append(
+                                f"`{activity_text}` invalid: " + ("; ".join(warns[:2]) if warns else "unparseable")
+                            )
+                            continue
+                        day_key = day_ts.date().isoformat()
+                        next_line = int(max_line_by_day.get(day_key, 0)) + 1
+                        max_line_by_day[day_key] = next_line
+                        rows_to_upsert.append(
+                            {
+                                "day_utc": day_key,
+                                "line_no": next_line,
+                                "activity_text": activity_text,
+                                "parsed_json": segs,
+                                "source": "manual_edit",
+                            }
+                        )
+                    if errors:
+                        st.error("Cannot save custom edits:\n- " + "\n- ".join(errors[:8]))
+                    else:
+                        delete_custom_activities(cfg.db_path, old_keys)
+                        upsert_custom_activities_rows(cfg.db_path, rows_to_upsert)
+                        st.success(f"Updated {len(rows_to_upsert)} custom activities.")
                         st.rerun()
 
 if view == "Activity Detail":
