@@ -4125,6 +4125,9 @@ if view == "Week Planner":
                 weekly_grouped["if_proxy_pct"] = pd.to_numeric(
                     weekly_grouped.get("if_proxy"), errors="coerce"
                 ).fillna(0.0) * 100.0
+                weekly_grouped["duration_h"] = (
+                    pd.to_numeric(weekly_grouped.get("duration_s"), errors="coerce").fillna(0.0) / 3600.0
+                )
                 weekly_grouped["week_label"] = (
                     weekly_grouped["week_start"].dt.strftime("%d %b")
                     + " - "
@@ -4136,11 +4139,29 @@ if view == "Week Planner":
                     selected_week_key = week_keys[0]
                     st.session_state["planner_outlook_week_key"] = selected_week_key
                 weekly_display = weekly_grouped[
-                    ["week_start", "week_label", "planned_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"]
+                    [
+                        "week_start",
+                        "week_label",
+                        "planned_activities",
+                        "duration_h",
+                        "tss",
+                        "rtss",
+                        "distance_eqv_km",
+                        "if_proxy_pct",
+                    ]
                 ].copy()
                 weekly_display["display"] = weekly_display["week_start"].dt.strftime("%Y-%m-%d") == selected_week_key
                 weekly_display = weekly_display[
-                    ["display", "week_label", "planned_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"]
+                    [
+                        "display",
+                        "week_label",
+                        "planned_activities",
+                        "duration_h",
+                        "tss",
+                        "rtss",
+                        "distance_eqv_km",
+                        "if_proxy_pct",
+                    ]
                 ]
                 edited_weekly_display = st.data_editor(
                     weekly_display,
@@ -4150,12 +4171,21 @@ if view == "Week Planner":
                         "display": st.column_config.CheckboxColumn("Display"),
                         "week_label": st.column_config.TextColumn("Week"),
                         "planned_activities": st.column_config.NumberColumn("Activities", format="%d"),
+                        "duration_h": st.column_config.NumberColumn("Duration (h)", format="%.1f"),
                         "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
                         "rtss": st.column_config.NumberColumn("rTSS", format="%.0f"),
                         "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f"),
                         "if_proxy_pct": st.column_config.NumberColumn("IF", format="%.0f%%"),
                     },
-                    disabled=["week_label", "planned_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"],
+                    disabled=[
+                        "week_label",
+                        "planned_activities",
+                        "duration_h",
+                        "tss",
+                        "rtss",
+                        "distance_eqv_km",
+                        "if_proxy_pct",
+                    ],
                     key="planner_weekly_outlook_editor",
                 )
                 checked_idx = edited_weekly_display[edited_weekly_display["display"] == True].index.tolist()
@@ -4253,6 +4283,7 @@ if view == "Week Planner":
             ]
         ].copy()
         editor_df["if_proxy_pct"] = pd.to_numeric(editor_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
+        editor_df["duration_h"] = pd.to_numeric(editor_df.get("duration_s"), errors="coerce").fillna(0.0) / 3600.0
         editor_df = editor_df.drop(columns=["if_proxy"], errors="ignore")
         edited_plan = st.data_editor(
             editor_df,
@@ -4265,6 +4296,7 @@ if view == "Week Planner":
                 "line_no": st.column_config.NumberColumn("Line", format="%d", disabled=True),
                 "activity": st.column_config.TextColumn("Activity", disabled=True),
                 "workout_text": st.column_config.TextColumn("Activity String"),
+                "duration_h": st.column_config.NumberColumn("Duration (h)", format="%.1f", disabled=True),
                 "tss": st.column_config.NumberColumn("TSS", format="%.0f", disabled=True),
                 "rtss": st.column_config.NumberColumn("rTSS", format="%.0f", disabled=True),
                 "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f", disabled=True),
@@ -4559,6 +4591,9 @@ if view == "Custom Activities":
                 custom_weekly_grouped["if_proxy_pct"] = pd.to_numeric(
                     custom_weekly_grouped.get("if_proxy"), errors="coerce"
                 ).fillna(0.0) * 100.0
+                custom_weekly_grouped["duration_h"] = (
+                    pd.to_numeric(custom_weekly_grouped.get("duration_s"), errors="coerce").fillna(0.0) / 3600.0
+                )
                 custom_weekly_grouped["week_label"] = (
                     custom_weekly_grouped["week_start"].dt.strftime("%d %b")
                     + " - "
@@ -4570,11 +4605,29 @@ if view == "Custom Activities":
                     selected_week_key = week_keys[0]
                     st.session_state["custom_outlook_week_key"] = selected_week_key
                 custom_weekly_display = custom_weekly_grouped[
-                    ["week_start", "week_label", "custom_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"]
+                    [
+                        "week_start",
+                        "week_label",
+                        "custom_activities",
+                        "duration_h",
+                        "tss",
+                        "rtss",
+                        "distance_eqv_km",
+                        "if_proxy_pct",
+                    ]
                 ].copy()
                 custom_weekly_display["display"] = custom_weekly_display["week_start"].dt.strftime("%Y-%m-%d") == selected_week_key
                 custom_weekly_display = custom_weekly_display[
-                    ["display", "week_label", "custom_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"]
+                    [
+                        "display",
+                        "week_label",
+                        "custom_activities",
+                        "duration_h",
+                        "tss",
+                        "rtss",
+                        "distance_eqv_km",
+                        "if_proxy_pct",
+                    ]
                 ]
                 edited_custom_weekly = st.data_editor(
                     custom_weekly_display,
@@ -4584,12 +4637,21 @@ if view == "Custom Activities":
                         "display": st.column_config.CheckboxColumn("Display"),
                         "week_label": st.column_config.TextColumn("Week"),
                         "custom_activities": st.column_config.NumberColumn("Activities", format="%d"),
+                        "duration_h": st.column_config.NumberColumn("Duration (h)", format="%.1f"),
                         "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
                         "rtss": st.column_config.NumberColumn("rTSS", format="%.0f"),
                         "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f"),
                         "if_proxy_pct": st.column_config.NumberColumn("IF", format="%.0f%%"),
                     },
-                    disabled=["week_label", "custom_activities", "tss", "rtss", "distance_eqv_km", "if_proxy_pct"],
+                    disabled=[
+                        "week_label",
+                        "custom_activities",
+                        "duration_h",
+                        "tss",
+                        "rtss",
+                        "distance_eqv_km",
+                        "if_proxy_pct",
+                    ],
                     key="custom_weekly_outlook_editor",
                 )
                 checked_idx = edited_custom_weekly[edited_custom_weekly["display"] == True].index.tolist()
@@ -4698,6 +4760,7 @@ if view == "Custom Activities":
             ]
         ].copy()
         custom_editor_df["if_proxy_pct"] = pd.to_numeric(custom_editor_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
+        custom_editor_df["duration_h"] = pd.to_numeric(custom_editor_df.get("duration_s"), errors="coerce").fillna(0.0) / 3600.0
         custom_editor_df = custom_editor_df.drop(columns=["if_proxy"], errors="ignore")
         custom_editor = st.data_editor(
             custom_editor_df,
@@ -4710,6 +4773,7 @@ if view == "Custom Activities":
                 "line_no": st.column_config.NumberColumn("Line", format="%d", disabled=True),
                 "activity": st.column_config.TextColumn("Activity", disabled=True),
                 "activity_text": st.column_config.TextColumn("Activity String"),
+                "duration_h": st.column_config.NumberColumn("Duration (h)", format="%.1f", disabled=True),
                 "tss": st.column_config.NumberColumn("TSS", format="%.0f", disabled=True),
                 "rtss": st.column_config.NumberColumn("rTSS", format="%.0f", disabled=True),
                 "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f", disabled=True),
