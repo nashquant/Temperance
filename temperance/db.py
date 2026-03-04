@@ -1121,11 +1121,51 @@ def delete_custom_activities(
 def upsert_custom_activities_rows(
     db_path: Path,
     rows: list[dict[str, Any]],
+    max_rows: int | None = None,
 ) -> int:
     if not rows:
         return 0
+    valid_rows = [
+        (
+            str(r.get("day_utc") or "").strip(),
+            int(r.get("line_no") or 0),
+            str(r.get("activity_text") or "").strip(),
+            json.dumps(r.get("parsed_json")) if r.get("parsed_json") is not None else None,
+            str(r.get("source") or "manual"),
+        )
+        for r in rows
+        if str(r.get("day_utc") or "").strip() and str(r.get("activity_text") or "").strip()
+    ]
+    if not valid_rows:
+        return 0
+
     now = UTC_NOW()
     with closing(get_conn(db_path)) as conn:
+        if max_rows is not None and int(max_rows) > 0:
+            current_count = int(
+                conn.execute("SELECT COUNT(*) AS n FROM custom_activities").fetchone()["n"] or 0
+            )
+            incoming_keys = {(day_utc, line_no) for day_utc, line_no, *_ in valid_rows}
+            existing_keys = 0
+            for day_utc, line_no in incoming_keys:
+                row = conn.execute(
+                    """
+                    SELECT 1
+                    FROM custom_activities
+                    WHERE day_utc = ? AND line_no = ?
+                    LIMIT 1
+                    """,
+                    (day_utc, line_no),
+                ).fetchone()
+                if row:
+                    existing_keys += 1
+            delta_new_rows = max(len(incoming_keys) - existing_keys, 0)
+            if current_count + delta_new_rows > int(max_rows):
+                raise ValueError(
+                    f"Custom activities limit reached ({max_rows}). "
+                    f"Current={current_count}, incoming_new={delta_new_rows}."
+                )
+
         conn.executemany(
             """
             INSERT INTO custom_activities (
@@ -1139,17 +1179,16 @@ def upsert_custom_activities_rows(
             """,
             [
                 (
-                    str(r.get("day_utc") or ""),
-                    int(r.get("line_no") or 0),
-                    str(r.get("activity_text") or "").strip(),
-                    json.dumps(r.get("parsed_json")) if r.get("parsed_json") is not None else None,
-                    str(r.get("source") or "manual"),
+                    day_utc,
+                    line_no,
+                    activity_text,
+                    parsed_json,
+                    source,
                     now,
                     now,
                 )
-                for r in rows
-                if str(r.get("day_utc") or "").strip() and str(r.get("activity_text") or "").strip()
+                for day_utc, line_no, activity_text, parsed_json, source in valid_rows
             ],
         )
         conn.commit()
-    return len(rows)
+    return len(valid_rows)

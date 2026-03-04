@@ -115,6 +115,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 DEFAULT_RESTING_HR = 45.0
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
+CUSTOM_ACTIVITIES_LIMIT = 5000
 INJURY_WINDOWS = [
     {"label": "Injury 1", "start": "2025-05-15", "end": "2025-06-18", "severity": "injury"},
     {"label": "Light Injury", "start": "2025-11-03", "end": "2025-11-20", "severity": "light_injury"},
@@ -4424,7 +4425,15 @@ if view == "Custom Activities":
                     }
                 )
             if rows_to_upsert:
-                upsert_custom_activities_rows(cfg.db_path, rows_to_upsert)
+                try:
+                    upsert_custom_activities_rows(
+                        cfg.db_path,
+                        rows_to_upsert,
+                        max_rows=CUSTOM_ACTIVITIES_LIMIT,
+                    )
+                except ValueError as exc:
+                    st.error(str(exc))
+                    st.stop()
             if errors:
                 st.warning("Some entries were skipped:\n- " + "\n- ".join(errors[:10]))
             if rows_to_upsert:
@@ -4774,7 +4783,15 @@ if view == "Custom Activities":
                         st.error("Cannot save custom edits:\n- " + "\n- ".join(errors[:8]))
                     else:
                         delete_custom_activities(cfg.db_path, old_keys)
-                        upsert_custom_activities_rows(cfg.db_path, rows_to_upsert)
+                        try:
+                            upsert_custom_activities_rows(
+                                cfg.db_path,
+                                rows_to_upsert,
+                                max_rows=CUSTOM_ACTIVITIES_LIMIT,
+                            )
+                        except ValueError as exc:
+                            st.error(str(exc))
+                            st.stop()
                         st.success(f"Updated {len(rows_to_upsert)} custom activities.")
                         st.rerun()
 
