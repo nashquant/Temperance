@@ -742,6 +742,21 @@ def _parse_pace_token(text: str) -> float | None:
     return None
 
 
+def _parse_if_token(text: str) -> float | None:
+    m = re.search(r"@\s*(\d+(?:\.\d+)?)\s*%", text.lower())
+    if not m:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*%", text.lower())
+    if not m:
+        return None
+    try:
+        v = float(m.group(1)) / 100.0
+    except Exception:
+        return None
+    if v <= 0:
+        return None
+    return v
+
+
 def _normalize_plan_text(text: str) -> str:
     t = " ".join(str(text or "").strip().split())
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b", r"\1min", t, flags=re.IGNORECASE)
@@ -799,6 +814,7 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
         kind = _plan_activity_kind(chunk)
         bpm = _parse_bpm_token(chunk)
         pace = _parse_pace_token(chunk)
+        if_input = _parse_if_token(chunk)
         if kind == "other" and pace is not None:
             # pace implies run-like segment
             kind = "run"
@@ -809,8 +825,15 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
         if kind == "other":
             warnings.append(f"Missing/unknown activity in: `{chunk}` (include run/treadmill/elliptical/cycling)")
             continue
-        if bpm is None and pace is None:
-            warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm` or `@4:50/km`)")
+        is_running_like = kind in {"run", "treadmill"}
+        if (not is_running_like) and (pace is not None):
+            warnings.append(
+                f"Pace is only allowed for running/treadmill in: `{chunk}` "
+                "(use `@140bpm` or `@70%` for non-running)."
+            )
+            continue
+        if bpm is None and pace is None and if_input is None:
+            warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm`, `@70%`, or `@4:50/km`)")
             continue
 
         rep_match = re.search(r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b", chunk.lower())
@@ -827,6 +850,7 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
                         "duration_min": rep_minutes,
                         "avg_hr_bpm": bpm,
                         "pace_s_per_km": pace,
+                        "if_input": if_input,
                         "source": chunk,
                     }
                 )
@@ -840,6 +864,9 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
             if reps <= 0 or rep_km <= 0:
                 warnings.append(f"Invalid interval block in: `{chunk}`")
                 continue
+            if not is_running_like:
+                warnings.append(f"Distance intervals are only supported for running/treadmill in: `{chunk}`")
+                continue
             if pace is None or pace <= 0:
                 warnings.append(f"Distance intervals require pace in: `{chunk}` (add `@4:50/km`)")
                 continue
@@ -852,6 +879,7 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
                         "distance_km": rep_km,
                         "avg_hr_bpm": bpm,
                         "pace_s_per_km": pace,
+                        "if_input": if_input,
                         "source": chunk,
                     }
                 )
@@ -862,6 +890,12 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
         if minutes is None:
             distance_km = _parse_distance_km_token(chunk)
             if distance_km is not None:
+                if not is_running_like:
+                    warnings.append(
+                        f"Distance-only segment requires running/treadmill with pace in: `{chunk}` "
+                        "(non-running should use minutes + bpm/%IF)."
+                    )
+                    continue
                 if pace is None or pace <= 0:
                     warnings.append(f"Distance-based segment requires pace in: `{chunk}` (add `@4:50/km`)")
                     continue
@@ -878,6 +912,7 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
                 "duration_min": minutes,
                 "avg_hr_bpm": bpm,
                 "pace_s_per_km": pace,
+                "if_input": if_input,
                 "source": chunk,
             }
         )
@@ -897,6 +932,7 @@ def _planned_segment_metrics(
     kind = str(seg.get("kind") or "other").lower()
     hr = float(seg.get("avg_hr_bpm")) if seg.get("avg_hr_bpm") else None
     pace = float(seg.get("pace_s_per_km")) if seg.get("pace_s_per_km") else None
+    if_input = float(seg.get("if_input")) if seg.get("if_input") else None
 
     is_running_like = kind in {"run", "treadmill"}
     rtss = 0.0
@@ -922,11 +958,29 @@ def _planned_segment_metrics(
             tss = duration_h * (if_hr ** 2) * 100.0
         else:
             tss = rtss
+    elif is_running_like and if_input and if_input > 0:
+        if_proxy = max(float(if_input), 0.0)
+        rtss = duration_h * (if_proxy ** 2) * 100.0
+        tss = rtss
+        if threshold_pace_sec_per_km > 0 and if_proxy > 0:
+            eq_pace = threshold_pace_sec_per_km / if_proxy
+            if eq_pace > 0:
+                distance_eqv_km = duration_s / eq_pace
     else:
         if hr and lthr_bpm > 0:
             if_hr = max(hr / lthr_bpm, 0.0)
             tss = duration_h * (if_hr ** 2) * 100.0
             if_proxy = if_hr
+            effective_rtss = max(tss * max(non_running_factor, 0.0), 0.0)
+            if effective_rtss > 0:
+                eq_if = (effective_rtss / (duration_h * 100.0)) ** 0.5
+                if eq_if > 0:
+                    eq_pace = threshold_pace_sec_per_km / eq_if
+                    if eq_pace > 0:
+                        distance_eqv_km = duration_s / eq_pace
+        elif if_input and if_input > 0:
+            if_proxy = max(float(if_input), 0.0)
+            tss = duration_h * (if_proxy ** 2) * 100.0
             effective_rtss = max(tss * max(non_running_factor, 0.0), 0.0)
             if effective_rtss > 0:
                 eq_if = (effective_rtss / (duration_h * 100.0)) ** 0.5
@@ -972,6 +1026,192 @@ def _sum_duration_s_from_parsed_segments(raw_segments: object) -> float:
         except Exception:
             continue
     return float(total_s)
+
+
+def _compute_planned_rows_metrics_df(
+    planned_rows: pd.DataFrame,
+    lthr_curve_points: list[tuple[pd.Timestamp, float]],
+    lthr_default_bpm: float,
+    lt_pace_curve_points: list[tuple[pd.Timestamp, float]],
+    lt_pace_default_sec: float,
+    specificity_profile: dict[str, float],
+) -> pd.DataFrame:
+    if planned_rows.empty:
+        return pd.DataFrame(
+            columns=[
+                "day_utc",
+                "line_no",
+                "activity",
+                "sport_type",
+                "workout_text",
+                "tss",
+                "rtss",
+                "distance_proxy_km",
+                "distance_km",
+                "duration_s",
+                "if_proxy",
+                "if_weighted",
+            ]
+        )
+
+    out = planned_rows.copy()
+    tss_vals: list[float] = []
+    rtss_vals: list[float] = []
+    dist_eqv_vals: list[float] = []
+    dist_run_vals: list[float] = []
+    if_vals: list[float] = []
+    dur_vals: list[float] = []
+    if_weighted_vals: list[float] = []
+    activity_vals: list[str] = []
+    sport_vals: list[str] = []
+    for _, row in out.iterrows():
+        raw_segments = row.get("parsed_json")
+        segments: list[dict[str, float | str | None]] = []
+        if isinstance(raw_segments, list):
+            segments = [s for s in raw_segments if isinstance(s, dict)]
+        elif isinstance(raw_segments, str) and raw_segments.strip():
+            try:
+                parsed = json.loads(raw_segments)
+                if isinstance(parsed, list):
+                    segments = [s for s in parsed if isinstance(s, dict)]
+            except Exception:
+                segments = []
+
+        day_for_curve = pd.to_datetime(row.get("day_utc"), utc=True, errors="coerce")
+        lthr_for_day = float(_curve_value_at(lthr_curve_points, float(lthr_default_bpm), day_for_curve))
+        lt_pace_for_day = float(_curve_value_at(lt_pace_curve_points, float(lt_pace_default_sec), day_for_curve))
+
+        total_tss = 0.0
+        total_rtss = 0.0
+        total_dist_eqv = 0.0
+        total_dist_run = 0.0
+        if_weighted_sum = 0.0
+        if_weight_seconds = 0.0
+        kinds_seen: list[str] = []
+        for seg in segments:
+            seg_kind = str(seg.get("kind") or "").strip().lower()
+            seg_spec = _specificity_factor_for_plan_kind(seg_kind, specificity_profile)
+            m = _planned_segment_metrics(
+                seg,
+                lthr_bpm=lthr_for_day,
+                threshold_pace_sec_per_km=lt_pace_for_day,
+                non_running_factor=seg_spec,
+            )
+            seg_duration = float(m.get("duration_s") or 0.0)
+            seg_if = float(m.get("if_proxy") or 0.0)
+            seg_dist_eqv = float(m.get("distance_eqv_km") or 0.0)
+            total_tss += float(m.get("tss") or 0.0) * float(seg_spec)
+            total_rtss += float(m.get("rtss") or 0.0) * float(seg_spec)
+            total_dist_eqv += seg_dist_eqv
+            if seg_kind in {"run", "treadmill"}:
+                total_dist_run += seg_dist_eqv
+            if seg_duration > 0:
+                if_weighted_sum += seg_if * seg_duration
+                if_weight_seconds += seg_duration
+            if seg_kind and seg_kind not in kinds_seen:
+                kinds_seen.append(seg_kind)
+
+        tss_vals.append(total_tss)
+        rtss_vals.append(total_rtss)
+        dist_eqv_vals.append(total_dist_eqv)
+        dist_run_vals.append(total_dist_run)
+        dur_vals.append(if_weight_seconds)
+        if_vals.append(if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0)
+        if_weighted_vals.append(if_weighted_sum)
+        activity_label = ", ".join([k.replace("_", " ").title() for k in kinds_seen]) if kinds_seen else "-"
+        activity_vals.append(activity_label)
+        sport_vals.append(activity_label.lower())
+
+    out["activity"] = activity_vals
+    out["sport_type"] = sport_vals
+    out["tss"] = tss_vals
+    out["rtss"] = rtss_vals
+    out["distance_proxy_km"] = dist_eqv_vals
+    out["distance_km"] = dist_run_vals
+    out["duration_s"] = dur_vals
+    out["if_proxy"] = if_vals
+    out["if_weighted"] = if_weighted_vals
+    return out
+
+
+def _build_planned_daily_summary_df(rows_df: pd.DataFrame) -> pd.DataFrame:
+    if rows_df.empty:
+        return pd.DataFrame(
+            columns=[
+                "day_utc",
+                "tss_total",
+                "rtss_total",
+                "distance_proxy_km",
+                "distance_km",
+                "duration_s",
+                "if_proxy",
+                "if_weighted",
+            ]
+        )
+    out = rows_df.copy()
+    out["day_utc"] = out["day_utc"].astype(str)
+    grouped = (
+        out.groupby("day_utc", as_index=False)
+        .agg(
+            tss_total=("tss", "sum"),
+            rtss_total=("rtss", "sum"),
+            distance_proxy_km=("distance_proxy_km", "sum"),
+            distance_km=("distance_km", "sum"),
+            duration_s=("duration_s", "sum"),
+            if_weighted=("if_weighted", "sum"),
+        )
+        .sort_values("day_utc")
+    )
+    grouped["if_proxy"] = 0.0
+    valid = pd.to_numeric(grouped["duration_s"], errors="coerce").fillna(0.0) > 0
+    grouped.loc[valid, "if_proxy"] = (
+        pd.to_numeric(grouped.loc[valid, "if_weighted"], errors="coerce").fillna(0.0)
+        / pd.to_numeric(grouped.loc[valid, "duration_s"], errors="coerce").fillna(0.0)
+    )
+    return grouped
+
+
+def _apply_planned_actual_matching(
+    planned_rows: pd.DataFrame,
+    actual_metrics: pd.DataFrame,
+) -> pd.DataFrame:
+    if planned_rows.empty:
+        return planned_rows
+    out = planned_rows.copy()
+    out["day_utc"] = out["day_utc"].astype(str)
+    out["line_no"] = pd.to_numeric(out["line_no"], errors="coerce").fillna(0).astype(int)
+    out = out.sort_values(["day_utc", "line_no"], ascending=[True, True]).copy()
+
+    actual_counts: dict[str, int] = {}
+    if not actual_metrics.empty and "start_time_utc" in actual_metrics.columns:
+        actual_ts = pd.to_datetime(actual_metrics["start_time_utc"], utc=True, errors="coerce")
+        actual_ts = actual_ts.dropna()
+        if not actual_ts.empty:
+            local_tz = datetime.now().astimezone().tzinfo
+            local_days = actual_ts.dt.tz_convert(local_tz).dt.strftime("%Y-%m-%d")
+            actual_counts = local_days.value_counts().to_dict()
+
+    now_local = datetime.now().astimezone()
+    today_str = now_local.strftime("%Y-%m-%d")
+    after_5pm_today = now_local.hour >= 17
+
+    kept_parts: list[pd.DataFrame] = []
+    for day_key, group in out.groupby("day_utc", sort=False):
+        g = group.sort_values("line_no").head(2).copy()
+        actual_n = int(actual_counts.get(str(day_key), 0))
+        drop_n = 0
+        if actual_n >= 1:
+            drop_n = 1
+        # Keep second planned workout for split morning sessions unless day is effectively "closed".
+        day_closed = (str(day_key) < today_str) or (str(day_key) == today_str and after_5pm_today)
+        if actual_n > 2 and day_closed:
+            drop_n = 2
+        g = g.iloc[min(drop_n, len(g)) :]
+        if not g.empty:
+            kept_parts.append(g)
+    if not kept_parts:
+        return out.iloc[0:0].copy()
+    return pd.concat(kept_parts, ignore_index=True)
 
 
 def _to_seconds(value: object) -> float | None:
@@ -2083,6 +2323,12 @@ if view == "Dashboard":
             compare_mode = st.checkbox("Compare mode (up to 3 metrics)", value=False)
             enable_zoom = st.checkbox("Zoom/pan", value=False)
             top_injury_overlay = st.checkbox("Top injury overlay", value=False)
+            planned_plot_mode = st.selectbox(
+                "Planned data",
+                ["Off", "Overlay", "Planned only"],
+                index=0,
+                key="plot_charts_planned_mode",
+            )
 
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
@@ -2090,6 +2336,17 @@ if view == "Dashboard":
             start_date = end_date = max_day
         start_ts = pd.Timestamp(start_date)
         end_ts = pd.Timestamp(end_date)
+        if planned_plot_mode != "Off":
+            planned_range_rows = get_planned_activities_df(
+                cfg.db_path,
+                start_day_utc=start_ts.date().isoformat(),
+            )
+            if not planned_range_rows.empty:
+                planned_days = pd.to_datetime(planned_range_rows.get("day_utc"), errors="coerce").dropna()
+                if not planned_days.empty:
+                    planned_max_day = pd.Timestamp(planned_days.max()).normalize()
+                    if planned_max_day > end_ts:
+                        end_ts = planned_max_day
         end_exclusive_ts = end_ts + pd.Timedelta(days=1)
 
         filtered_metrics, filtered_daily = cached_filtered_views(
@@ -2108,6 +2365,94 @@ if view == "Dashboard":
             (pd.to_datetime(filtered_daily["day_utc"], errors="coerce") >= start_ts)
             & (pd.to_datetime(filtered_daily["day_utc"], errors="coerce") < end_exclusive_ts)
         ].copy()
+        if planned_plot_mode != "Off" and end_ts.date() > pd.Timestamp(end_date).date():
+            st.caption(f"Planned mode extended chart range through {end_ts:%Y-%m-%d}.")
+
+        if planned_plot_mode != "Off":
+            planned_rows_for_plot = get_planned_activities_df(
+                cfg.db_path,
+                start_day_utc=start_ts.date().isoformat(),
+                end_day_utc=end_ts.date().isoformat(),
+            )
+            planned_rows_for_plot = _apply_planned_actual_matching(planned_rows_for_plot, metrics_df)
+            specificity_for_plots = _normalize_specificity_profile(
+                st.session_state.get("user_specificity_profile", {}),
+                fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+            )
+            planned_rows_for_plot = _compute_planned_rows_metrics_df(
+                planned_rows=planned_rows_for_plot,
+                lthr_curve_points=lthr_curve_points,
+                lthr_default_bpm=float(derived_lthr_bpm),
+                lt_pace_curve_points=lt_pace_curve_points,
+                lt_pace_default_sec=float(derived_threshold_pace_sec),
+                specificity_profile=specificity_for_plots,
+            )
+            planned_rows_for_plot = filter_by_activity_type(planned_rows_for_plot, activity_filter)
+            planned_daily_for_plot = _build_planned_daily_summary_df(planned_rows_for_plot)
+
+            if planned_plot_mode == "Planned only":
+                filtered_daily_range = planned_daily_for_plot.copy()
+            elif planned_plot_mode == "Overlay":
+                base_daily = filtered_daily_range.copy()
+                if base_daily.empty:
+                    filtered_daily_range = planned_daily_for_plot.copy()
+                elif not planned_daily_for_plot.empty:
+                    merge_base = base_daily.copy()
+                    merge_base["day_utc"] = merge_base["day_utc"].astype(str)
+                    merge_plan = planned_daily_for_plot.copy()
+                    merge_plan["day_utc"] = merge_plan["day_utc"].astype(str)
+                    merged = merge_base.merge(
+                        merge_plan,
+                        on="day_utc",
+                        how="outer",
+                        suffixes=("_base", "_plan"),
+                    )
+                    def _num_col(df: pd.DataFrame, col: str) -> pd.Series:
+                        if col in df.columns:
+                            return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+                        return pd.Series(0.0, index=df.index, dtype="float64")
+                    add_cols = ["tss_total", "rtss_total", "distance_proxy_km", "distance_km", "duration_s"]
+                    for c in add_cols:
+                        merged[c] = _num_col(merged, f"{c}_base") + _num_col(merged, f"{c}_plan")
+                    if_weighted_base = (
+                        _num_col(merged, "if_proxy_base")
+                        * _num_col(merged, "duration_s_base")
+                    )
+                    if_weighted_plan = _num_col(merged, "if_weighted")
+                    if_weighted_total = if_weighted_base + if_weighted_plan
+                    dur_total = _num_col(merged, "duration_s")
+                    merged["if_proxy"] = 0.0
+                    dur_mask = dur_total > 0
+                    merged.loc[dur_mask, "if_proxy"] = if_weighted_total[dur_mask] / dur_total[dur_mask]
+                    passthrough_cols = [
+                        c
+                        for c in merge_base.columns
+                        if c not in {"day_utc", "tss_total", "rtss_total", "distance_proxy_km", "distance_km", "duration_s", "if_proxy"}
+                    ]
+                    for c in passthrough_cols:
+                        if f"{c}_base" in merged.columns:
+                            merged[c] = merged[f"{c}_base"]
+                    keep_cols = ["day_utc", "tss_total", "rtss_total", "distance_proxy_km", "distance_km", "duration_s", "if_proxy"] + passthrough_cols
+                    filtered_daily_range = merged[keep_cols].copy()
+
+            if not filtered_daily_range.empty:
+                filtered_daily_range = filtered_daily_range.sort_values("day_utc").copy()
+                daily_index = pd.date_range(start=start_ts, end=end_ts, freq="D")
+                complete_daily = pd.DataFrame({"day_utc": daily_index.strftime("%Y-%m-%d")})
+                filtered_daily_range = complete_daily.merge(filtered_daily_range, on="day_utc", how="left")
+                for c in ["tss_total", "rtss_total", "distance_proxy_km", "distance_km", "duration_s", "if_proxy"]:
+                    if c in filtered_daily_range.columns:
+                        filtered_daily_range[c] = pd.to_numeric(filtered_daily_range[c], errors="coerce").fillna(0.0)
+                if "tss_total" in filtered_daily_range.columns:
+                    ts = pd.to_numeric(filtered_daily_range["tss_total"], errors="coerce").fillna(0.0)
+                    filtered_daily_range["fitness"] = ema(ts, 42)
+                    filtered_daily_range["fatigue"] = ema(ts, 7)
+                    filtered_daily_range["overreach"] = (ema(ts, 10) - 70.0).clip(lower=0.0)
+                if "rtss_total" in filtered_daily_range.columns:
+                    rts = pd.to_numeric(filtered_daily_range["rtss_total"], errors="coerce").fillna(0.0)
+                    filtered_daily_range["leg_elasticity"] = ema(rts, 100)
+                    filtered_daily_range["pounding"] = ema(rts, 7)
+                    filtered_daily_range["injury_risk"] = (ema(rts, 10) - 70.0).clip(lower=0.0)
 
         metric_map = {
             "rTSS": ("rtss_total", "sum"),
@@ -2124,6 +2469,10 @@ if view == "Dashboard":
             "Vigorous Minutes": ("intensity_minutes_vigorous", "sum"),
             "Moderate Minutes": ("intensity_minutes_moderate", "sum"),
         }
+        all_plot_metric_cols = sorted({m for m, _ in metric_map.values()})
+        for c in all_plot_metric_cols:
+            if c not in filtered_daily_range.columns:
+                filtered_daily_range[c] = 0.0
 
         base_df = filtered_daily_range.copy()
         if base_df.empty:
@@ -3012,6 +3361,41 @@ if view == "Calendar":
                 )
                 .sort_values("day")
             )
+            planned_cards_by_day: dict[pd.Timestamp, list[dict[str, object]]] = {}
+            planned_rows_for_calendar = get_planned_activities_df(
+                cfg.db_path,
+                start_day_utc=grid_start.date().isoformat(),
+                end_day_utc=grid_end.date().isoformat(),
+            )
+            planned_rows_for_calendar = _apply_planned_actual_matching(
+                planned_rows_for_calendar,
+                metrics_df,
+            )
+            if not planned_rows_for_calendar.empty:
+                planned_rows_for_calendar = _compute_planned_rows_metrics_df(
+                    planned_rows=planned_rows_for_calendar,
+                    lthr_curve_points=lthr_curve_points,
+                    lthr_default_bpm=float(derived_lthr_bpm),
+                    lt_pace_curve_points=lt_pace_curve_points,
+                    lt_pace_default_sec=float(derived_threshold_pace_sec),
+                    specificity_profile=_normalize_specificity_profile(
+                        st.session_state.get("user_specificity_profile", {}),
+                        fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+                    ),
+                )
+                planned_rows_for_calendar = filter_by_activity_type(
+                    planned_rows_for_calendar,
+                    cal_activity_filter,
+                )
+                if not planned_rows_for_calendar.empty:
+                    planned_rows_for_calendar["day"] = pd.to_datetime(
+                        planned_rows_for_calendar["day_utc"], errors="coerce"
+                    ).dt.floor("D")
+                    planned_rows_for_calendar = planned_rows_for_calendar.dropna(subset=["day"]).sort_values(
+                        ["day", "line_no"], ascending=[True, True]
+                    )
+                    for day_key, grp in planned_rows_for_calendar.groupby("day"):
+                        planned_cards_by_day[pd.Timestamp(day_key)] = grp.to_dict(orient="records")
 
             cal_daily_lookup = pd.DataFrame()
             if not cal_daily.empty:
@@ -3137,6 +3521,25 @@ if view == "Calendar":
                     font-size: 0.72rem;
                     color: rgba(148,163,184,0.92);
                     line-height: 1.2;
+                }
+                .cal-planned-card {
+                    background: rgba(15, 23, 42, 0.50);
+                    border: 1px dashed rgba(52, 211, 153, 0.42);
+                    border-radius: 10px;
+                    padding: 8px 10px;
+                    margin-bottom: 8px;
+                    min-height: 78px;
+                }
+                .cal-planned-title {
+                    font-size: 0.78rem;
+                    font-weight: 700;
+                    color: rgba(167,243,208,0.95);
+                    margin-bottom: 3px;
+                }
+                .cal-planned-meta {
+                    font-size: 0.74rem;
+                    color: rgba(226,232,240,0.82);
+                    line-height: 1.15;
                 }
                 .cal-zones {
                     margin-top: 8px;
@@ -3291,6 +3694,7 @@ if view == "Calendar":
                         start_day_utc=selected_week_start.date().isoformat(),
                         end_day_utc=selected_week_end.date().isoformat(),
                     )
+                    planned_rows = _apply_planned_actual_matching(planned_rows, metrics_df)
                     planner_specificity_profile = _normalize_specificity_profile(
                         st.session_state.get("user_specificity_profile", {}),
                         fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
@@ -3767,6 +4171,26 @@ if view == "Calendar":
                                 st.session_state["calendar_split_open"] = True
                             rendered_cards += 1
                         today_utc = datetime.now(timezone.utc).date()
+                        day_planned_cards = planned_cards_by_day.get(day_ts, [])
+                        if day_ts.date() >= today_utc and day_planned_cards:
+                            for prow in day_planned_cards:
+                                p_activity = str(prow.get("activity") or "Planned")
+                                p_duration = _duration_short(prow.get("duration_s"))
+                                p_dist = float(pd.to_numeric(pd.Series([prow.get("distance_proxy_km")]), errors="coerce").fillna(0.0).iloc[0])
+                                p_if = float(pd.to_numeric(pd.Series([prow.get("if_proxy")]), errors="coerce").fillna(0.0).iloc[0])
+                                p_tss = float(pd.to_numeric(pd.Series([prow.get("tss")]), errors="coerce").fillna(0.0).iloc[0])
+                                p_rtss = float(pd.to_numeric(pd.Series([prow.get("rtss")]), errors="coerce").fillna(0.0).iloc[0])
+                                st.markdown(
+                                    (
+                                        "<div class='cal-planned-card'>"
+                                        f"<div class='cal-planned-title'>Planned · {p_activity}</div>"
+                                        f"<div class='cal-planned-meta'>{p_duration} · {p_dist:.0f} km eqv.</div>"
+                                        f"<div class='cal-planned-meta'>IF {(p_if * 100.0):.0f}%</div>"
+                                        f"<div class='cal-planned-meta'>TSS {p_tss:.0f} · rTSS {p_rtss:.0f}</div>"
+                                        "</div>"
+                                    ),
+                                    unsafe_allow_html=True,
+                                )
                         if rendered_cards == 0 and day_ts.date() < today_utc:
                             st.markdown(
                                 (
@@ -3950,6 +4374,7 @@ if view == "Week Planner":
     xtrain_block1_hr = int(round(max(lthr3 * 0.75, 1.0)))
     xtrain_block2_hr = int(round(max(lthr3 * 0.80, 1.0)))
     st.caption("Plan one dated activity at a time with `[date]:[activity]`.")
+    st.caption("Planner supports up to 2 planned activities per day.")
     st.markdown(
         "Date supports `3Mar26`, `2026-03-26`, or `26/03/2026`.\n\n"
         "You can ingest multiple activities in one save using separators: new line, `;`, or `,`.\n\n"
@@ -4007,6 +4432,9 @@ if view == "Week Planner":
                     continue
                 day_key = day_ts.date().isoformat()
                 next_line_no = int(max_line_by_day.get(day_key, 0)) + 1
+                if next_line_no > 2:
+                    errors.append(f"entry {idx}: day `{day_key}` already has 2 planned activities (max=2)")
+                    continue
                 max_line_by_day[day_key] = next_line_no
                 rows_to_upsert.append(
                     {
@@ -4026,6 +4454,7 @@ if view == "Week Planner":
 
     st.markdown("#### View planned activities")
     planned_raw = get_planned_activities_df(cfg.db_path)
+    planned_raw = _apply_planned_actual_matching(planned_raw, metrics_df)
     if planned_raw.empty:
         st.caption("No planned activities saved yet.")
     else:
@@ -4259,7 +4688,7 @@ if view == "Week Planner":
                     planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.0f} km" if float(v) > 0 else "")
                 else:
                     planned_agg["label"] = planned_agg["value"].map(lambda v: f"{v:.0f}" if float(v) > 0 else "")
-                planned_agg["day_label"] = planned_agg["day"].dt.strftime("%d %b")
+                planned_agg["day_label"] = planned_agg["day"].dt.strftime("%d %b (%a)")
                 planned_agg = planned_agg.sort_values("day")
                 day_order = planned_agg["day_label"].tolist()
                 planned_chart = (
@@ -4303,6 +4732,7 @@ if view == "Week Planner":
                 "updated_at",
             ]
         ].copy()
+        editor_df["day_of_week"] = pd.to_datetime(editor_df["day_utc"], errors="coerce").dt.strftime("%a")
         editor_df["if_proxy_pct"] = pd.to_numeric(editor_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
         if "duration_s" in editor_df.columns:
             planner_duration_s = pd.to_numeric(editor_df["duration_s"], errors="coerce")
@@ -4325,6 +4755,7 @@ if view == "Week Planner":
                 "select",
                 "row_id",
                 "day_utc",
+                "day_of_week",
                 "line_no",
                 "activity",
                 "workout_text",
@@ -4340,6 +4771,7 @@ if view == "Week Planner":
                 "select": st.column_config.CheckboxColumn("Select"),
                 "row_id": st.column_config.TextColumn("Row ID", disabled=True),
                 "day_utc": st.column_config.TextColumn("Planned Date"),
+                "day_of_week": st.column_config.TextColumn("DOW", disabled=True),
                 "line_no": st.column_config.NumberColumn("Line", format="%d", disabled=True),
                 "activity": st.column_config.TextColumn("Activity", disabled=True),
                 "workout_text": st.column_config.TextColumn("Activity String"),
@@ -4406,6 +4838,9 @@ if view == "Week Planner":
                             continue
                         day_key = day_ts.date().isoformat()
                         next_line = int(max_line_by_day.get(day_key, 0)) + 1
+                        if next_line > 2:
+                            errors.append(f"day `{day_key}` already has 2 planned activities (max=2)")
+                            continue
                         max_line_by_day[day_key] = next_line
                         edit_rows.append(
                             {
@@ -4761,7 +5196,7 @@ if view == "Custom Activities":
                 custom_agg["label"] = custom_agg["value"].map(lambda v: f"{v:.0f} km" if float(v) > 0 else "")
             else:
                 custom_agg["label"] = custom_agg["value"].map(lambda v: f"{v:.0f}" if float(v) > 0 else "")
-            custom_agg["day_label"] = custom_agg["day"].dt.strftime("%d %b")
+            custom_agg["day_label"] = custom_agg["day"].dt.strftime("%d %b (%a)")
             custom_agg = custom_agg.sort_values("day")
             custom_day_order = custom_agg["day_label"].tolist()
             custom_chart = (
@@ -4807,6 +5242,7 @@ if view == "Custom Activities":
                 "updated_at",
             ]
         ].copy()
+        custom_editor_df["day_of_week"] = pd.to_datetime(custom_editor_df["day_utc"], errors="coerce").dt.strftime("%a")
         custom_editor_df["if_proxy_pct"] = pd.to_numeric(custom_editor_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
         if "duration_s" in custom_editor_df.columns:
             custom_duration_s = pd.to_numeric(custom_editor_df["duration_s"], errors="coerce")
@@ -4829,6 +5265,7 @@ if view == "Custom Activities":
                 "select",
                 "row_id",
                 "day_utc",
+                "day_of_week",
                 "line_no",
                 "activity",
                 "activity_text",
@@ -4845,6 +5282,7 @@ if view == "Custom Activities":
                 "select": st.column_config.CheckboxColumn("Select"),
                 "row_id": st.column_config.TextColumn("Row ID", disabled=True),
                 "day_utc": st.column_config.TextColumn("Date"),
+                "day_of_week": st.column_config.TextColumn("DOW", disabled=True),
                 "line_no": st.column_config.NumberColumn("Line", format="%d", disabled=True),
                 "activity": st.column_config.TextColumn("Activity", disabled=True),
                 "activity_text": st.column_config.TextColumn("Activity String"),
