@@ -131,8 +131,25 @@ SETTINGS_KEY_GARMIN_OWNER_SCOPE = "garmin_owner_scope_v1"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
 
-AUTH_ALL_TABS = ["Dashboard", "Calendar", "Week Planner", "Activity Detail", "Recovery Data", "Data Extract", "User Inputs"]
-AUTH_VIEWER_TABS = ["Dashboard", "Calendar", "Week Planner", "Activity Detail", "Recovery Data", "Data Extract"]
+AUTH_ALL_TABS = [
+    "Dashboard",
+    "Calendar",
+    "Week Planner",
+    "Custom Activities",
+    "Activity Detail",
+    "Recovery Data",
+    "Data Extract",
+    "User Inputs",
+]
+AUTH_VIEWER_TABS = [
+    "Dashboard",
+    "Calendar",
+    "Week Planner",
+    "Custom Activities",
+    "Activity Detail",
+    "Recovery Data",
+    "Data Extract",
+]
 
 
 def _auth_enabled() -> bool:
@@ -1474,6 +1491,7 @@ with st.sidebar:
     page_labels = {
         "Calendar": "Activity Summary",
         "Week Planner": "Week Planner",
+        "Custom Activities": "Custom Activities",
         "Dashboard": "Plot Charts",
         "Activity Detail": "Activity Detail",
         "Recovery Data": "Recovery Data",
@@ -1917,10 +1935,12 @@ if view == "Dashboard":
                         .max()
                         or 0.0
                     )
-                    if metric_max_abs < 10:
+                    if metric == "if_proxy":
                         y_format = ".2f"
-                    elif metric_max_abs < 100:
+                    elif metric in {"sleep_duration_h", "deep_sleep_h", "rem_sleep_h"}:
                         y_format = ".1f"
+                    elif metric_max_abs < 1:
+                        y_format = ".2f"
                     else:
                         y_format = ".0f"
                     x_scale = alt.Scale(
@@ -2277,13 +2297,13 @@ if view == "Dashboard":
                     .mark_line(point=True)
                     .encode(
                         x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
-                        y=alt.Y("value:Q", axis=alt.Axis(format=".1f", title="km")),
+                        y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="km")),
                         color=alt.Color(
                             "series:N",
                             legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
                             scale=alt.Scale(domain=["Distance", "Distance Eqv."], range=["#60a5fa", "#22c55e"]),
                         ),
-                        tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".1f")],
+                        tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                     .properties(height=280)
                 )
@@ -3202,7 +3222,11 @@ if view == "Calendar":
                         tooltip=[
                             alt.Tooltip("day:T", title="Day"),
                             alt.Tooltip("series:N", title="Series"),
-                            alt.Tooltip("metric_value:Q", title=y_title, format=".2f"),
+                            alt.Tooltip(
+                                "metric_value:Q",
+                                title=y_title,
+                                format=(".2f" if selected_metric == "if_proxy" else ".0f"),
+                            ),
                         ],
                     )
                 )
@@ -3554,7 +3578,7 @@ if view == "Calendar":
                                     alt.Tooltip("intensity_type:N", title="Type"),
                                     alt.Tooltip("duration_s:Q", title="Duration (s)", format=".0f"),
                                     alt.Tooltip("distance_km:Q", title="Distance (km)", format=".0f"),
-                                    alt.Tooltip("distance_eqv_km:Q", title="Dist Eqv (km)", format=".2f"),
+                                    alt.Tooltip("distance_eqv_km:Q", title="Dist Eqv (km)", format=".0f"),
                                     alt.Tooltip("speed_eqv_kmh:Q", title="Speed Eqv (km/h)", format=".2f"),
                                     alt.Tooltip("avg_hr:Q", title="Avg HR", format=".0f"),
                                     alt.Tooltip("intensity_factor:Q", title="IF", format=".2f"),
@@ -3915,8 +3939,12 @@ if view == "Week Planner":
                         st.success(f"Updated {len(edit_rows)} planned activities.")
                         st.rerun()
 
-    st.markdown("#### Custom activities")
+if view == "Custom Activities":
+    st.divider()
+    st.header("Custom Activities")
     st.caption("Save custom activities to a separate table. Supports manual input and bulk upload (`date`, `string`).")
+
+    today_local = pd.Timestamp(date.today())
 
     c1, c2, c3 = st.columns([1.0, 2.6, 0.6])
     with c1:
