@@ -954,6 +954,26 @@ def _planned_segment_metrics(
     }
 
 
+def _sum_duration_s_from_parsed_segments(raw_segments: object) -> float:
+    segments: list[dict[str, object]] = []
+    if isinstance(raw_segments, list):
+        segments = [s for s in raw_segments if isinstance(s, dict)]
+    elif isinstance(raw_segments, str) and raw_segments.strip():
+        try:
+            parsed = json.loads(raw_segments)
+            if isinstance(parsed, list):
+                segments = [s for s in parsed if isinstance(s, dict)]
+        except Exception:
+            segments = []
+    total_s = 0.0
+    for seg in segments:
+        try:
+            total_s += max(float(seg.get("duration_min") or 0.0), 0.0) * 60.0
+        except Exception:
+            continue
+    return float(total_s)
+
+
 def _to_seconds(value: object) -> float | None:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
@@ -4288,6 +4308,12 @@ if view == "Week Planner":
             planner_duration_s = pd.to_numeric(editor_df["duration_s"], errors="coerce")
         else:
             planner_duration_s = pd.Series(0.0, index=editor_df.index)
+        planner_duration_fallback = editor_df.get("parsed_json", pd.Series(index=editor_df.index)).apply(
+            _sum_duration_s_from_parsed_segments
+        )
+        planner_duration_s = planner_duration_s.where(
+            planner_duration_s.fillna(0.0) > 0, planner_duration_fallback
+        )
         editor_df["duration_h"] = planner_duration_s.fillna(0.0) / 3600.0
         editor_df = editor_df.drop(columns=["duration_s"], errors="ignore")
         editor_df = editor_df.drop(columns=["if_proxy"], errors="ignore")
@@ -4295,6 +4321,21 @@ if view == "Week Planner":
             editor_df,
             use_container_width=True,
             hide_index=True,
+            column_order=[
+                "select",
+                "row_id",
+                "day_utc",
+                "line_no",
+                "activity",
+                "workout_text",
+                "tss",
+                "rtss",
+                "distance_eqv_km",
+                "duration_h",
+                "if_proxy_pct",
+                "parsed_json",
+                "updated_at",
+            ],
             column_config={
                 "select": st.column_config.CheckboxColumn("Select"),
                 "row_id": st.column_config.TextColumn("Row ID", disabled=True),
@@ -4771,6 +4812,12 @@ if view == "Custom Activities":
             custom_duration_s = pd.to_numeric(custom_editor_df["duration_s"], errors="coerce")
         else:
             custom_duration_s = pd.Series(0.0, index=custom_editor_df.index)
+        custom_duration_fallback = custom_editor_df.get(
+            "parsed_json", pd.Series(index=custom_editor_df.index)
+        ).apply(_sum_duration_s_from_parsed_segments)
+        custom_duration_s = custom_duration_s.where(
+            custom_duration_s.fillna(0.0) > 0, custom_duration_fallback
+        )
         custom_editor_df["duration_h"] = custom_duration_s.fillna(0.0) / 3600.0
         custom_editor_df = custom_editor_df.drop(columns=["duration_s"], errors="ignore")
         custom_editor_df = custom_editor_df.drop(columns=["if_proxy"], errors="ignore")
@@ -4778,6 +4825,22 @@ if view == "Custom Activities":
             custom_editor_df,
             use_container_width=True,
             hide_index=True,
+            column_order=[
+                "select",
+                "row_id",
+                "day_utc",
+                "line_no",
+                "activity",
+                "activity_text",
+                "tss",
+                "rtss",
+                "distance_eqv_km",
+                "duration_h",
+                "if_proxy_pct",
+                "source",
+                "parsed_json",
+                "updated_at",
+            ],
             column_config={
                 "select": st.column_config.CheckboxColumn("Select"),
                 "row_id": st.column_config.TextColumn("Row ID", disabled=True),
