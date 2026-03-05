@@ -31,6 +31,7 @@ from db import (
     get_activity_detail_raw,
     get_activity_raw,
     get_daily_summary_df,
+    get_earliest_activity_time,
     get_last_sync,
     get_activities_cache_key,
     get_latest_activity_time,
@@ -6040,7 +6041,14 @@ if view == "Data Extract":
     with extract_row1[0]:
         extract_start = st.date_input("Start date", value=date(2025, 1, 1))
     with extract_row1[1]:
-        incremental_extract = st.checkbox("Incremental only", value=True)
+        incremental_extract = st.checkbox(
+            "Incremental only",
+            value=True,
+            help=(
+                "When enabled, extraction starts near the latest data already in DB. "
+                "If Start date is explicitly older than the incremental anchor, that earlier date is honored."
+            ),
+        )
     with extract_row1[2]:
         run_extract = st.button("Run comprehensive extract", use_container_width=True)
     with extract_row1[3]:
@@ -6078,8 +6086,10 @@ if view == "Data Extract":
 
             try:
                 latest = get_latest_activity_time(cfg.db_path)
+                earliest = get_earliest_activity_time(cfg.db_path)
                 latest_recovery = get_latest_recovery_day(cfg.db_path) if include_wellness else None
                 start_day = extract_start
+                end_day = datetime.now(timezone.utc).date()
                 if incremental_extract:
                     anchors: list[datetime] = []
                     if latest:
@@ -6090,13 +6100,30 @@ if view == "Data Extract":
                         # Incremental safety: use the earliest anchor across datasets so we
                         # don't skip activity updates when wellness is more recent (or vice-versa).
                         anchor = min(anchors)
-                        start_day = max(start_day, (anchor - timedelta(days=2)).date())
-                        _log(
-                            f"[info] incremental_anchor={anchor.isoformat()} -> computed_start_day={start_day.isoformat()}"
-                        )
+                        incremental_anchor_day = (anchor - timedelta(days=2)).date()
+                        if start_day < incremental_anchor_day:
+                            _log(
+                                f"[info] incremental_anchor={anchor.isoformat()} "
+                                f"but honoring explicit earlier start_day={start_day.isoformat()} for backfill."
+                            )
+                        else:
+                            start_day = max(start_day, incremental_anchor_day)
+                            _log(
+                                f"[info] incremental_anchor={anchor.isoformat()} -> computed_start_day={start_day.isoformat()}"
+                            )
+                    if earliest:
+                        earliest_day = earliest.date()
+                        if start_day < earliest_day:
+                            capped_end_day = earliest_day - timedelta(days=1)
+                            if capped_end_day < end_day:
+                                end_day = capped_end_day
+                                _log(
+                                    f"[info] incremental_gap_backfill enabled: earliest_activity_in_db={earliest_day.isoformat()} "
+                                    f"-> capping end_day={end_day.isoformat()} to avoid re-fetching existing newer activities."
+                                )
                 _log(
                     f"[start] {extract_started_at.isoformat()} | start_day={start_day} | "
-                    f"end_day={datetime.now(timezone.utc).date()} | incremental_only={incremental_extract} | "
+                    f"end_day={end_day} | incremental_only={incremental_extract} | "
                     f"include_details={include_details} | "
                     f"include_wellness={include_wellness}"
                 )
@@ -6104,11 +6131,22 @@ if view == "Data Extract":
                     _log(f"[info] latest_activity_in_db={latest.isoformat()}")
                 else:
                     _log("[info] latest_activity_in_db=None")
+                if earliest:
+                    _log(f"[info] earliest_activity_in_db={earliest.isoformat()}")
+                else:
+                    _log("[info] earliest_activity_in_db=None")
                 if include_wellness:
                     if latest_recovery:
                         _log(f"[info] latest_recovery_day_in_db={latest_recovery.date().isoformat()}")
                     else:
                         _log("[info] latest_recovery_day_in_db=None")
+                if end_day < start_day:
+                    _log("[done] No missing date gap to backfill for the selected start date.")
+                    progress.progress(100, text="No missing range detected. Nothing to fetch.")
+                    st.info("No missing range detected for the selected start date with Incremental mode.")
+                    with st.expander("Comprehensive Extract Logs", expanded=True):
+                        _render_logs()
+                    st.stop()
                 _log("[fetch] activity summaries + FIT records")
                 if include_details:
                     _log("[fetch] activity details endpoints: details/weather/hr_timezones + splits")
@@ -6178,7 +6216,7 @@ if view == "Data Extract":
                         email=garmin_email,
                         password=garmin_password,
                         start_day=start_day,
-                        end_day=datetime.now(timezone.utc).date(),
+                        end_day=end_day,
                         include_activity_details=include_details,
                         include_splits=include_details,
                         include_wellness=include_wellness,

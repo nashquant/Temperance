@@ -799,6 +799,16 @@ def get_latest_activity_time(db_path: Path) -> datetime | None:
     return datetime.fromisoformat(row["latest"].replace("Z", "+00:00"))
 
 
+def get_earliest_activity_time(db_path: Path) -> datetime | None:
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            "SELECT MIN(start_time_utc) AS earliest FROM activities"
+        ).fetchone()
+    if not row or not row["earliest"]:
+        return None
+    return datetime.fromisoformat(row["earliest"].replace("Z", "+00:00"))
+
+
 def get_latest_recovery_day(db_path: Path) -> datetime | None:
     """
     Latest available recovery date across sleep_daily and wellness_daily.
