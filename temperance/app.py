@@ -3123,13 +3123,24 @@ if view == "Calendar":
     st.header("Calendar")
     st.caption("Week grid with activity cards and weekly summary.")
 
-    if metrics_df.empty:
+    calendar_metrics_df = _merge_metrics_with_custom(
+        metrics_df,
+        _build_custom_metrics_df_for_plots(
+            db_path=cfg.db_path,
+            lthr_bpm=float(derived_lthr_bpm),
+            lthr_curve_points=lthr_curve_points,
+            threshold_pace_default_sec=float(derived_threshold_pace_sec),
+            threshold_pace_curve_points=lt_pace_curve_points,
+        ),
+    )
+
+    if calendar_metrics_df.empty:
         st.info("No activities available.")
     else:
         if previous_view != "Calendar":
             st.session_state.pop("calendar_split_activity_id", None)
             st.session_state["calendar_split_open"] = False
-        cal_base = metrics_df.copy()
+        cal_base = calendar_metrics_df.copy()
         cal_base["start_local"] = pd.to_datetime(cal_base["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
         cal_base = cal_base.dropna(subset=["start_local"]).copy()
 
@@ -3208,7 +3219,7 @@ if view == "Calendar":
             grid_end = range_end_ts + pd.Timedelta(days=int(6 - range_end_ts.weekday()))
 
             cal_metrics, cal_daily = cached_filtered_views(
-                metrics_df,
+                calendar_metrics_df,
                 activity_filter=cal_activity_filter,
                 specificity_profile=_normalize_specificity_profile(
                     st.session_state.get("user_specificity_profile", {}),
@@ -4108,6 +4119,7 @@ if view == "Calendar":
                         rendered_cards = 0
                         for _, act in day_df.iterrows():
                             activity_id = str(act.get("activity_id"))
+                            is_custom_activity = activity_id.startswith("custom:")
                             sport_label_raw = _sport_label(act.get("sport_type"))
                             dur_text = _duration_short(act.get("duration_s"))
                             hr_v = pd.to_numeric(act.get("avg_hr"), errors="coerce")
@@ -4152,20 +4164,32 @@ if view == "Calendar":
                             )
                             subtitle = f"{dur_text}" + (f" · {dist_text}" if dist_text else "")
                             card_label = (
-                                f"**{sport_label_raw}**\n"
+                                f"**{'Custom · ' if is_custom_activity else ''}{sport_label_raw}**\n"
                                 f"{subtitle}\n"
                                 f"{hr_text}\n"
                                 f"{pace_text} · {if_text}\n"
                                 f"TSS {tss_v:.0f} · rTSS {rtss_v:.0f}"
                             )
-                            if st.button(
-                                card_label,
-                                key=f"calendar_split_title_{activity_id}_{day_ts.date().isoformat()}",
-                                use_container_width=True,
-                                type="tertiary",
-                            ):
-                                st.session_state["calendar_split_activity_id"] = activity_id
-                                st.session_state["calendar_split_open"] = True
+                            if is_custom_activity:
+                                card_html = (
+                                    "<div class='cal-card'>"
+                                    f"<div class='cal-card-title'>Custom · {sport_label_raw}</div>"
+                                    f"<div class='cal-card-meta'>{subtitle}</div>"
+                                    f"<div class='cal-card-meta'>{hr_text}</div>"
+                                    f"<div class='cal-card-meta'>{pace_text} · {if_text}</div>"
+                                    f"<div class='cal-card-load'>TSS {tss_v:.0f} · rTSS {rtss_v:.0f}</div>"
+                                    "</div>"
+                                )
+                                st.markdown(card_html, unsafe_allow_html=True)
+                            else:
+                                if st.button(
+                                    card_label,
+                                    key=f"calendar_split_title_{activity_id}_{day_ts.date().isoformat()}",
+                                    use_container_width=True,
+                                    type="tertiary",
+                                ):
+                                    st.session_state["calendar_split_activity_id"] = activity_id
+                                    st.session_state["calendar_split_open"] = True
                             rendered_cards += 1
                         today_utc = datetime.now(timezone.utc).date()
                         day_planned_cards = planned_cards_by_day.get(day_ts, [])
