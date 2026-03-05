@@ -4085,11 +4085,11 @@ if view == "Calendar":
                         )
                         day_meta_parts: list[str] = []
                         if day_distance_eqv > 0:
-                            day_meta_parts.append(f"{day_distance_eqv:.0f} km eqv.")
+                            day_meta_parts.append(f"{day_distance_eqv:.0f} km")
                         elif show_planned_meta and planned_distance_eqv > 0:
-                            day_meta_parts.append(f"Plan {planned_distance_eqv:.0f} km eqv.")
+                            day_meta_parts.append(f"{planned_distance_eqv:.0f} km")
                         else:
-                            day_meta_parts.append("0 km eqv.")
+                            day_meta_parts.append("0 km")
                         if day_cal > 0:
                             day_meta_parts.append(f"{day_cal:.0f} kcal")
                         fitfat_row = daily_fitfat_with_projection.get(day_ts)
@@ -4105,13 +4105,9 @@ if view == "Calendar":
                         if not pd.isna(day_stress_avg):
                             day_meta_parts.append(f"Stress {day_stress_avg:.0f}")
                         if show_planned_meta and planned_duration_s > 0:
-                            day_meta_parts.append(f"Plan {_duration_short(planned_duration_s)}")
-                        if show_planned_meta and planned_tss > 0:
-                            day_meta_parts.append(f"Plan TSS {planned_tss:.0f}")
-                        if show_planned_meta and planned_rtss > 0:
-                            day_meta_parts.append(f"Plan rTSS {planned_rtss:.0f}")
+                            day_meta_parts.append(_duration_short(planned_duration_s))
                         if show_planned_meta and planned_if > 0:
-                            day_meta_parts.append(f"Plan IF {(planned_if * 100.0):.0f}%")
+                            day_meta_parts.append(f"IF {(planned_if * 100.0):.0f}%")
                         st.markdown(
                             f"<div class='cal-card-meta' style='margin-bottom:6px;'>{' · '.join(day_meta_parts)}</div>",
                             unsafe_allow_html=True,
