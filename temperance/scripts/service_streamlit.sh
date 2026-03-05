@@ -25,4 +25,4 @@ exec "${PYTHON_BIN}" -m streamlit run "${APP_FILE}" \
   --server.address "${ADDRESS}" \
   --server.port "${PORT}" \
   --server.headless true \
-  --server.fileWatcherType none
+  --server.fileWatcherType auto

@@ -5234,7 +5234,16 @@ if view == "Custom Activities":
         else:
             st.caption("Select a week in `Display` above to show the custom metric chart.")
 
-        custom_editor_df = custom_raw[
+        custom_rows_for_editor = custom_raw.copy()
+        if selected_custom_week_start is not None and pd.notna(selected_custom_week_start):
+            selected_custom_week_end = selected_custom_week_start + pd.Timedelta(days=6)
+            _custom_editor_day = pd.to_datetime(custom_rows_for_editor.get("day_utc"), errors="coerce")
+            custom_rows_for_editor = custom_rows_for_editor[
+                (_custom_editor_day >= selected_custom_week_start)
+                & (_custom_editor_day <= selected_custom_week_end)
+            ].copy()
+
+        custom_editor_df = custom_rows_for_editor[
             [
                 "select",
                 "row_id",
