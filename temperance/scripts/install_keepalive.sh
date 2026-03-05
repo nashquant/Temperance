@@ -18,6 +18,9 @@ PORT="${PORT:-8504}"
 ADDRESS="${ADDRESS:-0.0.0.0}"
 TUNNEL_NAME="${CLOUDFLARE_TUNNEL:-temperance}"
 TUNNEL_HOSTNAME="${TUNNEL_HOSTNAME:-app.temperance-rtl.work}"
+if [[ -z "${CLOUDFLARED_BIN:-}" ]]; then
+  CLOUDFLARED_BIN="$(command -v cloudflared || true)"
+fi
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-cloudflared}"
 
 mkdir -p "${LAUNCH_AGENTS_DIR}" "${LOG_DIR}"
@@ -110,9 +113,9 @@ EOF
 }
 
 load_jobs() {
-  launchctl bootstrap "gui/$(id -u)" "${STREAM_PLIST}" 2>/dev/null || launchctl bootout "gui/$(id -u)" "${STREAM_PLIST}" >/dev/null 2>&1 || true
+  launchctl bootout "gui/$(id -u)" "${STREAM_PLIST}" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "${STREAM_PLIST}"
-  launchctl bootstrap "gui/$(id -u)" "${CLOUD_PLIST}" 2>/dev/null || launchctl bootout "gui/$(id -u)" "${CLOUD_PLIST}" >/dev/null 2>&1 || true
+  launchctl bootout "gui/$(id -u)" "${CLOUD_PLIST}" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "${CLOUD_PLIST}"
 }
 
@@ -183,4 +186,3 @@ case "${cmd}" in
     exit 1
     ;;
 esac
-

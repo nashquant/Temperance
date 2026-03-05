@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STREAMLIT_BIN="${ROOT_DIR}/.venv/bin/streamlit"
+PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"
 APP_FILE="${ROOT_DIR}/app.py"
 LOG_DIR="${ROOT_DIR}/data/private/logs"
 
@@ -11,8 +11,8 @@ ADDRESS="${ADDRESS:-0.0.0.0}"
 
 mkdir -p "${LOG_DIR}"
 
-if [[ ! -x "${STREAMLIT_BIN}" ]]; then
-  echo "Missing streamlit binary: ${STREAMLIT_BIN}" >&2
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  echo "Missing python binary: ${PYTHON_BIN}" >&2
   exit 1
 fi
 
@@ -21,9 +21,8 @@ if [[ ! -f "${APP_FILE}" ]]; then
   exit 1
 fi
 
-exec "${STREAMLIT_BIN}" run "${APP_FILE}" \
+exec "${PYTHON_BIN}" -m streamlit run "${APP_FILE}" \
   --server.address "${ADDRESS}" \
   --server.port "${PORT}" \
   --server.headless true \
   --server.fileWatcherType none
-

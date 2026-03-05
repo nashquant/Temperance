@@ -4719,7 +4719,16 @@ if view == "Week Planner":
                 st.altair_chart((planned_chart + planned_labels).properties(height=150), use_container_width=True)
         else:
             st.caption("Select a week in `Display` above to show the planned metric chart.")
-        editor_df = planned_raw[
+        planned_rows_for_editor = planned_raw.copy()
+        if selected_planned_week_start is not None and pd.notna(selected_planned_week_start):
+            selected_planned_week_end = selected_planned_week_start + pd.Timedelta(days=6)
+            _editor_day = pd.to_datetime(planned_rows_for_editor.get("day_utc"), errors="coerce")
+            planned_rows_for_editor = planned_rows_for_editor[
+                (_editor_day >= selected_planned_week_start)
+                & (_editor_day <= selected_planned_week_end)
+            ].copy()
+
+        editor_df = planned_rows_for_editor[
             [
                 "select",
                 "row_id",
