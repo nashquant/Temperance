@@ -691,8 +691,8 @@ def _if_zone_from_if_proxy(if_proxy: float | int | None) -> str | None:
     if not pd.notna(v) or v <= 0:
         return None
     # Running IF model calibrated to LT pace:
-    # Z1 <0.75, Z2 <0.84, Z3 <0.93, Z4 <1.00, Z5 >=1.00
-    if v < 0.75:
+    # Z1 <0.77, Z2 <0.84, Z3 <0.93, Z4 <1.00, Z5 >=1.00
+    if v < 0.77:
         return "Z1"
     if v < 0.84:
         return "Z2"
@@ -752,8 +752,8 @@ def _if_zone_guidance_df(lthr_bpm: float, lt_pace_sec_per_km: float) -> pd.DataF
         return "-"
 
     zone_specs: list[tuple[str, str, float | None, float | None]] = [
-        ("Z1", "< 75%", None, 0.75),
-        ("Z2", "75% - <84%", 0.75, 0.84),
+        ("Z1", "< 77%", None, 0.77),
+        ("Z2", "77% - <84%", 0.77, 0.84),
         ("Z3", "84% - <93%", 0.84, 0.93),
         ("Z4", "93% - <100%", 0.93, 1.00),
         ("Z5", ">= 100%", 1.00, None),
@@ -2173,7 +2173,7 @@ if view == "User Inputs":
     st.caption(
         f"Using latest values as of {datetime.now().date().isoformat()} "
         f"(LTHR {float(derived_lthr_bpm):.0f} bpm, LT pace {_pace_compact(float(derived_threshold_pace_sec))}). "
-        "Thresholds are fixed: Z1 <75%, Z2 <84%, Z3 <93%, Z4 <100%, Z5 >=100%."
+        "Thresholds are fixed: Z1 <77%, Z2 <84%, Z3 <93%, Z4 <100%, Z5 >=100%."
     )
     st.dataframe(
         _if_zone_guidance_df(float(derived_lthr_bpm), float(derived_threshold_pace_sec)),
