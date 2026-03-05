@@ -4633,9 +4633,14 @@ if view == "Week Planner":
                 )
                 checked_idx = edited_weekly_display[edited_weekly_display["display"] == True].index.tolist()
                 if checked_idx:
-                    selected_week_key = str(weekly_grouped.loc[checked_idx[0], "week_start"].strftime("%Y-%m-%d"))
+                    # Enforce single select: keep the last checked row.
+                    selected_idx = checked_idx[-1]
+                    selected_week_key = str(weekly_grouped.loc[selected_idx, "week_start"].strftime("%Y-%m-%d"))
                     st.session_state["planner_outlook_week_key"] = selected_week_key
                     selected_planned_week_start = pd.to_datetime(selected_week_key, errors="coerce")
+                    if len(checked_idx) > 1:
+                        st.info("Only one week can be selected. Kept the latest checked row.")
+                        st.rerun()
                 else:
                     selected_planned_week_start = None
             else:
