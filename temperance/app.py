@@ -681,6 +681,87 @@ def _pace_compact(pace_s_per_km: float | int | None) -> str:
     return f"{minutes}:{seconds:02d}/km"
 
 
+def _if_zone_from_if_proxy(if_proxy: float | int | None) -> str | None:
+    if if_proxy is None:
+        return None
+    try:
+        v = float(if_proxy)
+    except Exception:
+        return None
+    if not pd.notna(v) or v <= 0:
+        return None
+    if v < 0.80:
+        return "Z1"
+    if v < 0.87:
+        return "Z2"
+    if v < 0.94:
+        return "Z3"
+    if v < 1.00:
+        return "Z4"
+    return "Z5"
+
+
+def _zone_seconds_from_activity_row(row: pd.Series) -> dict[str, float]:
+    zone_cols = {
+        "Z1": "hr_time_in_zone_1",
+        "Z2": "hr_time_in_zone_2",
+        "Z3": "hr_time_in_zone_3",
+        "Z4": "hr_time_in_zone_4",
+        "Z5": "hr_time_in_zone_5",
+    }
+    out = {z: 0.0 for z in zone_cols}
+    for zone, col in zone_cols.items():
+        out[zone] = float(pd.to_numeric(pd.Series([row.get(col)]), errors="coerce").fillna(0.0).iloc[0])
+    if sum(out.values()) > 0:
+        return out
+
+    duration_s = float(pd.to_numeric(pd.Series([row.get("duration_s")]), errors="coerce").fillna(0.0).iloc[0])
+    if duration_s <= 0:
+        return out
+    inferred_zone = _if_zone_from_if_proxy(row.get("if_proxy"))
+    if inferred_zone:
+        out[inferred_zone] = duration_s
+    return out
+
+
+def _if_zone_guidance_text(lthr_bpm: float, lt_pace_sec_per_km: float) -> str:
+    def _hr_range(lo: float | None, hi: float | None) -> str:
+        if lthr_bpm <= 0:
+            return "-"
+        if lo is None and hi is not None:
+            return f"< {int(round(hi * lthr_bpm))} bpm"
+        if lo is not None and hi is not None:
+            return f"{int(round(lo * lthr_bpm))}-{int(round(hi * lthr_bpm))} bpm"
+        if lo is not None and hi is None:
+            return f"> {int(round(lo * lthr_bpm))} bpm"
+        return "-"
+
+    def _pace_range(lo: float | None, hi: float | None) -> str:
+        if lt_pace_sec_per_km <= 0:
+            return "-"
+        if lo is None and hi is not None and hi > 0:
+            return f"> {_pace_compact(lt_pace_sec_per_km / hi)}"
+        if lo is not None and hi is not None and lo > 0 and hi > 0:
+            fast = _pace_compact(lt_pace_sec_per_km / hi)
+            slow = _pace_compact(lt_pace_sec_per_km / lo)
+            return f"{fast} - {slow}"
+        if lo is not None and hi is None and lo > 0:
+            return f"< {_pace_compact(lt_pace_sec_per_km / lo)}"
+        return "-"
+
+    zone_specs: list[tuple[str, float | None, float | None]] = [
+        ("Z1", None, 0.80),
+        ("Z2", 0.80, 0.87),
+        ("Z3", 0.87, 0.94),
+        ("Z4", 0.94, 1.00),
+        ("Z5", 1.00, None),
+    ]
+    parts: list[str] = []
+    for zone, lo, hi in zone_specs:
+        parts.append(f"{zone} HR {_hr_range(lo, hi)} · Pace {_pace_range(lo, hi)}")
+    return " | ".join(parts)
+
+
 def _plan_activity_kind(text: str) -> str:
     t = text.lower()
     if "treadmill" in t:
@@ -3956,6 +4037,11 @@ if view == "Calendar":
             for i, day_name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
                 with header_cols[i + 1]:
                     st.markdown(f"**{day_name}**")
+            st.caption(
+                "Zone model guide (fixed IF, non-editable): "
+                "Z1 <80%, Z2 <87%, Z3 <94%, Z4 <100%, Z5 >=100%. "
+                + _if_zone_guidance_text(float(derived_lthr_bpm), float(derived_threshold_pace_sec))
+            )
 
             week_starts = pd.date_range(start=grid_start, end=grid_end, freq="7D")
             week_starts = week_starts.sort_values(ascending=False)
@@ -3970,13 +4056,11 @@ if view == "Calendar":
                 total_calories = float(pd.to_numeric(week_df["calories_total"], errors="coerce").fillna(0.0).sum())
                 total_tss = float(pd.to_numeric(week_df["tss"], errors="coerce").fillna(0.0).sum())
                 total_rtss = float(pd.to_numeric(week_df["rtss"], errors="coerce").fillna(0.0).sum())
-                zone_totals = {
-                    "Z1": float(pd.to_numeric(week_df.get("hr_time_in_zone_1"), errors="coerce").fillna(0.0).sum()),
-                    "Z2": float(pd.to_numeric(week_df.get("hr_time_in_zone_2"), errors="coerce").fillna(0.0).sum()),
-                    "Z3": float(pd.to_numeric(week_df.get("hr_time_in_zone_3"), errors="coerce").fillna(0.0).sum()),
-                    "Z4": float(pd.to_numeric(week_df.get("hr_time_in_zone_4"), errors="coerce").fillna(0.0).sum()),
-                    "Z5": float(pd.to_numeric(week_df.get("hr_time_in_zone_5"), errors="coerce").fillna(0.0).sum()),
-                }
+                zone_totals = {"Z1": 0.0, "Z2": 0.0, "Z3": 0.0, "Z4": 0.0, "Z5": 0.0}
+                for _, act_row in week_df.iterrows():
+                    activity_zone_seconds = _zone_seconds_from_activity_row(act_row)
+                    for zone_key in zone_totals:
+                        zone_totals[zone_key] += float(activity_zone_seconds.get(zone_key, 0.0))
                 zone_total_s = sum(zone_totals.values())
                 zone_colors = {
                     "Z1": "#3b82f6",
