@@ -1668,6 +1668,7 @@ def _build_custom_metrics_df_for_plots(
         total_dist_eqv_km = 0.0
         if_weighted_sum = 0.0
         if_weight_seconds = 0.0
+        zone_seconds = {"Z1": 0.0, "Z2": 0.0, "Z3": 0.0, "Z4": 0.0, "Z5": 0.0}
         hr_weighted_sum = 0.0
         hr_weight_seconds = 0.0
         running_distance_m = 0.0
@@ -1695,6 +1696,9 @@ def _build_custom_metrics_df_for_plots(
             if seg_if > 0:
                 if_weighted_sum += seg_if * seg_duration_s
                 if_weight_seconds += seg_duration_s
+                seg_zone = _if_zone_from_if_proxy(seg_if)
+                if seg_zone is not None:
+                    zone_seconds[seg_zone] = zone_seconds.get(seg_zone, 0.0) + seg_duration_s
 
             seg_hr = pd.to_numeric(seg.get("avg_hr_bpm"), errors="coerce")
             if pd.notna(seg_hr) and float(seg_hr) > 0:
@@ -1721,6 +1725,12 @@ def _build_custom_metrics_df_for_plots(
         avg_hr = (hr_weighted_sum / hr_weight_seconds) if hr_weight_seconds > 0 else None
         avg_pace = (total_duration_s / (running_distance_m / 1000.0)) if running_distance_m > 0 else None
         if_proxy = (if_weighted_sum / if_weight_seconds) if if_weight_seconds > 0 else 0.0
+        zoned_duration = float(sum(zone_seconds.values()))
+        remaining_duration = max(float(total_duration_s) - zoned_duration, 0.0)
+        if remaining_duration > 0 and if_proxy > 0:
+            fallback_zone = _if_zone_from_if_proxy(if_proxy)
+            if fallback_zone is not None:
+                zone_seconds[fallback_zone] = zone_seconds.get(fallback_zone, 0.0) + remaining_duration
         pace_proxy = (total_duration_s / total_dist_eqv_km) if total_dist_eqv_km > 0 else None
         start_time = day_for_curve + pd.Timedelta(minutes=max(line_no, 1))
 
@@ -1750,11 +1760,11 @@ def _build_custom_metrics_df_for_plots(
                 "calories_total": 0.0,
                 "intensity_minutes_vigorous": 0.0,
                 "intensity_minutes_moderate": 0.0,
-                "hr_time_in_zone_1": 0.0,
-                "hr_time_in_zone_2": 0.0,
-                "hr_time_in_zone_3": 0.0,
-                "hr_time_in_zone_4": 0.0,
-                "hr_time_in_zone_5": 0.0,
+                "hr_time_in_zone_1": zone_seconds.get("Z1", 0.0),
+                "hr_time_in_zone_2": zone_seconds.get("Z2", 0.0),
+                "hr_time_in_zone_3": zone_seconds.get("Z3", 0.0),
+                "hr_time_in_zone_4": zone_seconds.get("Z4", 0.0),
+                "hr_time_in_zone_5": zone_seconds.get("Z5", 0.0),
             }
         )
 
