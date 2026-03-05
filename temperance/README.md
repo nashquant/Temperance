@@ -123,6 +123,68 @@ Logs and pid files:
 - `temperance/data/private/logs/streamlit_remote.log`
 - `temperance/data/private/logs/streamlit_remote.pid`
 
+## KeepAlive (macOS launchd)
+For auto-restart and auto-start after reboot/login, use launchd services:
+
+```bash
+cd temperance
+chmod +x scripts/install_keepalive.sh scripts/service_streamlit.sh scripts/service_cloudflared.sh
+./scripts/install_keepalive.sh install
+```
+
+Useful commands:
+
+```bash
+./scripts/install_keepalive.sh status
+./scripts/install_keepalive.sh logs
+./scripts/install_keepalive.sh restart
+./scripts/install_keepalive.sh stop
+./scripts/install_keepalive.sh uninstall
+```
+
+Defaults:
+- Streamlit: `http://127.0.0.1:8504`
+- Public host label: `https://app.temperance-rtl.work`
+- Named Cloudflare tunnel: `temperance`
+
+Optional overrides (before `install`/`restart`):
+
+```bash
+PORT=8504 CLOUDFLARE_TUNNEL=temperance TUNNEL_HOSTNAME=app.temperance-rtl.work ./scripts/install_keepalive.sh restart
+```
+
+## Auto-update from Git main (hourly)
+If you want this machine to pick up fixes pushed from another computer, enable the auto-update job:
+
+```bash
+cd temperance
+chmod +x scripts/install_autoupdate.sh scripts/service_autoupdate.sh
+./scripts/install_autoupdate.sh install
+```
+
+What it does:
+- Runs every 3600s (1h) by default.
+- Tracks `origin/main`.
+- Pulls **only** fast-forward updates.
+- Skips pull if working tree is dirty or branch is not `main`.
+- Restarts keepalive services after a successful update.
+
+Commands:
+
+```bash
+./scripts/install_autoupdate.sh status
+./scripts/install_autoupdate.sh logs
+./scripts/install_autoupdate.sh run-now
+./scripts/install_autoupdate.sh stop
+./scripts/install_autoupdate.sh uninstall
+```
+
+Optional interval override:
+
+```bash
+INTERVAL_SECONDS=1800 ./scripts/install_autoupdate.sh restart
+```
+
 ## Migrations
 Run schema migrations manually (non-destructive, preserves existing rows):
 
