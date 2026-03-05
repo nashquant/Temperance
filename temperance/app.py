@@ -6153,7 +6153,7 @@ if view == "Data Extract":
                 if include_wellness:
                     _log("[fetch] daily wellness endpoints: sleep/stress/hrv/rhr/readiness/respiration/steps")
                 progress.progress(15, text="Fetching Garmin data...")
-                progress_state = {"last_activity_pct": -1, "last_wellness_idx": -1}
+                progress_state = {"last_activity_pct": -1, "last_wellness_idx": -1, "seeking_logged": False}
 
                 def _on_fetch_progress(payload: dict) -> None:
                     phase = str(payload.get("phase") or "")
@@ -6169,17 +6169,45 @@ if view == "Data Extract":
                         fetched = int(payload.get("fetched") or 0)
                         total = int(payload.get("total") or 0)
                         day_s = payload.get("day")
-                        progress.progress(
-                            pct,
-                            text=(
-                                f"Fetching activities... {pct}%"
-                                + (f" | oldest seen: {oldest}" if oldest else "")
-                                + (f" | processed: {processed}" if processed > 0 else "")
-                                + (f" | {fetched}/{total}" if total > 0 else "")
-                            ),
+                        oldest_day: date | None = None
+                        if oldest:
+                            try:
+                                oldest_day = pd.to_datetime(oldest, errors="coerce").date()
+                            except Exception:
+                                oldest_day = None
+                        seeking_window = bool(
+                            oldest_day is not None and oldest_day > end_day and processed <= 0 and fetched <= 0
                         )
+                        if seeking_window:
+                            progress.progress(
+                                15,
+                                text=(
+                                    "Seeking target date window..."
+                                    + (f" | oldest seen: {oldest}" if oldest else "")
+                                    + f" | target end: {end_day.isoformat()}"
+                                ),
+                            )
+                            if not bool(progress_state.get("seeking_logged")):
+                                _log(
+                                    "[info] seeking target date window before fetch starts"
+                                    + (f" | oldest_seen={oldest}" if oldest else "")
+                                    + f" | target_end={end_day.isoformat()}"
+                                )
+                                progress_state["seeking_logged"] = True
+                        else:
+                            progress.progress(
+                                pct,
+                                text=(
+                                    f"Fetching activities... {pct}%"
+                                    + (f" | oldest seen: {oldest}" if oldest else "")
+                                    + (f" | processed: {processed}" if processed > 0 else "")
+                                    + (f" | {fetched}/{total}" if total > 0 else "")
+                                ),
+                            )
                         rounded = (pct // 5) * 5
-                        if rounded > int(progress_state["last_activity_pct"]) or (processed > 0 and (processed % 10 == 0)):
+                        if (not seeking_window) and (
+                            rounded > int(progress_state["last_activity_pct"]) or (processed > 0 and (processed % 10 == 0))
+                        ):
                             _log(
                                 f"[progress] activities "
                                 + (f"{fetched}/{total}" if total > 0 and fetched > 0 else f"{pct}%")
