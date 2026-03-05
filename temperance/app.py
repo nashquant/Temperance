@@ -1197,7 +1197,7 @@ def _apply_planned_actual_matching(
 
     kept_parts: list[pd.DataFrame] = []
     for day_key, group in out.groupby("day_utc", sort=False):
-        g = group.sort_values("line_no").head(2).copy()
+        g = group.sort_values("line_no").copy()
         actual_n = int(actual_counts.get(str(day_key), 0))
         drop_n = 0
         if actual_n >= 1:
@@ -4371,7 +4371,7 @@ if view == "Week Planner":
     xtrain_block1_hr = int(round(max(lthr3 * 0.75, 1.0)))
     xtrain_block2_hr = int(round(max(lthr3 * 0.80, 1.0)))
     st.caption("Plan one dated activity at a time with `[date]:[activity]`.")
-    st.caption("Planner supports up to 2 planned activities per day.")
+    st.caption("Planner supports multiple planned activities per day.")
     st.markdown(
         "Date supports `3Mar26`, `2026-03-26`, or `26/03/2026`.\n\n"
         "You can ingest multiple activities in one save using separators: new line, `;`, or `,`.\n\n"
@@ -4429,9 +4429,6 @@ if view == "Week Planner":
                     continue
                 day_key = day_ts.date().isoformat()
                 next_line_no = int(max_line_by_day.get(day_key, 0)) + 1
-                if next_line_no > 2:
-                    errors.append(f"entry {idx}: day `{day_key}` already has 2 planned activities (max=2)")
-                    continue
                 max_line_by_day[day_key] = next_line_no
                 rows_to_upsert.append(
                     {
@@ -4667,17 +4664,27 @@ if view == "Week Planner":
             ]
             if not plot_df.empty:
                 if plot_metric_col == "if_proxy":
-                    planned_agg = (
+                    aggregated = (
                         plot_df.groupby("day", as_index=False)["if_proxy"]
                         .mean()
                         .rename(columns={"if_proxy": "value"})
                     )
                 else:
-                    planned_agg = (
+                    aggregated = (
                         plot_df.groupby("day", as_index=False)[plot_metric_col]
                         .sum()
                         .rename(columns={plot_metric_col: "value"})
                     )
+                full_days = pd.DataFrame(
+                    {
+                        "day": pd.date_range(
+                            selected_planned_week_start,
+                            selected_planned_week_end,
+                            freq="D",
+                        )
+                    }
+                )
+                planned_agg = full_days.merge(aggregated, on="day", how="left")
                 planned_agg["value"] = pd.to_numeric(planned_agg["value"], errors="coerce").fillna(0.0)
                 if plot_metric_col == "if_proxy":
                     planned_agg["label"] = planned_agg["value"].map(lambda v: f"{(float(v) * 100.0):.0f}%" if float(v) > 0 else "")
@@ -4835,9 +4842,6 @@ if view == "Week Planner":
                             continue
                         day_key = day_ts.date().isoformat()
                         next_line = int(max_line_by_day.get(day_key, 0)) + 1
-                        if next_line > 2:
-                            errors.append(f"day `{day_key}` already has 2 planned activities (max=2)")
-                            continue
                         max_line_by_day[day_key] = next_line
                         edit_rows.append(
                             {
