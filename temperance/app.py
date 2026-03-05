@@ -724,16 +724,16 @@ def _zone_seconds_from_activity_row(row: pd.Series) -> dict[str, float]:
     return out
 
 
-def _if_zone_guidance_text(lthr_bpm: float, lt_pace_sec_per_km: float) -> str:
+def _if_zone_guidance_df(lthr_bpm: float, lt_pace_sec_per_km: float) -> pd.DataFrame:
     def _hr_range(lo: float | None, hi: float | None) -> str:
         if lthr_bpm <= 0:
             return "-"
         if lo is None and hi is not None:
-            return f"< {int(round(hi * lthr_bpm))} bpm"
+            return f"< {int(round(hi * lthr_bpm))}"
         if lo is not None and hi is not None:
-            return f"{int(round(lo * lthr_bpm))}-{int(round(hi * lthr_bpm))} bpm"
+            return f"{int(round(lo * lthr_bpm))}-{int(round(hi * lthr_bpm))}"
         if lo is not None and hi is None:
-            return f"> {int(round(lo * lthr_bpm))} bpm"
+            return f"> {int(round(lo * lthr_bpm))}"
         return "-"
 
     def _pace_range(lo: float | None, hi: float | None) -> str:
@@ -749,17 +749,24 @@ def _if_zone_guidance_text(lthr_bpm: float, lt_pace_sec_per_km: float) -> str:
             return f"< {_pace_compact(lt_pace_sec_per_km / lo)}"
         return "-"
 
-    zone_specs: list[tuple[str, float | None, float | None]] = [
-        ("Z1", None, 0.80),
-        ("Z2", 0.80, 0.87),
-        ("Z3", 0.87, 0.94),
-        ("Z4", 0.94, 1.00),
-        ("Z5", 1.00, None),
+    zone_specs: list[tuple[str, str, float | None, float | None]] = [
+        ("Z1", "< 80%", None, 0.80),
+        ("Z2", "80% - <87%", 0.80, 0.87),
+        ("Z3", "87% - <94%", 0.87, 0.94),
+        ("Z4", "94% - <100%", 0.94, 1.00),
+        ("Z5", ">= 100%", 1.00, None),
     ]
-    parts: list[str] = []
-    for zone, lo, hi in zone_specs:
-        parts.append(f"{zone} HR {_hr_range(lo, hi)} · Pace {_pace_range(lo, hi)}")
-    return " | ".join(parts)
+    rows = []
+    for zone, if_range, lo, hi in zone_specs:
+        rows.append(
+            {
+                "Zone": zone,
+                "IF Range": if_range,
+                "Suggested HR (bpm)": _hr_range(lo, hi),
+                "Suggested Pace": _pace_range(lo, hi),
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def _plan_activity_kind(text: str) -> str:
@@ -2160,6 +2167,17 @@ lt_pace_curve_points = _curve_points_from_rows(saved_lt_pace_curve, "lt_pace_sec
 if view == "User Inputs":
     st.divider()
     st.header("User Inputs")
+    st.markdown("##### Suggested IF Zones (Read-only)")
+    st.caption(
+        f"Using latest values as of {datetime.now().date().isoformat()} "
+        f"(LTHR {float(derived_lthr_bpm):.0f} bpm, LT pace {_pace_compact(float(derived_threshold_pace_sec))}). "
+        "Thresholds are fixed: Z1 <80%, Z2 <87%, Z3 <94%, Z4 <100%, Z5 >=100%."
+    )
+    st.dataframe(
+        _if_zone_guidance_df(float(derived_lthr_bpm), float(derived_threshold_pace_sec)),
+        use_container_width=True,
+        hide_index=True,
+    )
     with st.expander("Specificity Factors", expanded=True):
         st.caption("Set base non-running factor plus activity-specific overrides.")
         profile_current = _normalize_specificity_profile(
@@ -2778,12 +2796,29 @@ if view == "Dashboard":
                     opacity=alt.condition(tss_sel, alt.value(1.0), alt.value(0.08), empty=True)
                 ).add_params(tss_sel)
                 threshold_value = 500.0 if weekly_toggle else 70.0
+                threshold_df = pd.DataFrame({"threshold": [threshold_value]})
                 tss_threshold = (
-                    alt.Chart(pd.DataFrame({"threshold": [threshold_value]}))
-                    .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
+                    alt.Chart(threshold_df)
+                    .mark_rule(color="#fb923c", strokeDash=[6, 4], strokeWidth=2.5, opacity=1.0)
                     .encode(y="threshold:Q")
                 )
-                tss_chart = alt.layer(tss_chart, tss_threshold)
+                tss_threshold_label = (
+                    alt.Chart(threshold_df)
+                    .mark_text(
+                        align="left",
+                        dx=8,
+                        dy=-6,
+                        color="#fdba74",
+                        fontSize=11,
+                        fontWeight=700,
+                    )
+                    .encode(
+                        x=alt.value(6),
+                        y="threshold:Q",
+                        text=alt.value(f"Target {int(threshold_value)}"),
+                    )
+                )
+                tss_chart = alt.layer(tss_chart, tss_threshold, tss_threshold_label)
                 tss_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), tss_chart)
                 if enable_zoom:
                     tss_chart = tss_chart.interactive()
@@ -4047,11 +4082,6 @@ if view == "Calendar":
             for i, day_name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
                 with header_cols[i + 1]:
                     st.markdown(f"**{day_name}**")
-            st.caption(
-                "Zone model guide (fixed IF, non-editable): "
-                "Z1 <80%, Z2 <87%, Z3 <94%, Z4 <100%, Z5 >=100%. "
-                + _if_zone_guidance_text(float(derived_lthr_bpm), float(derived_threshold_pace_sec))
-            )
 
             week_starts = pd.date_range(start=grid_start, end=grid_end, freq="7D")
             week_starts = week_starts.sort_values(ascending=False)
