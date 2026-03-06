@@ -2053,12 +2053,13 @@ def cached_filtered_views(
         complete_daily = pd.DataFrame({"day_utc": daily_index.strftime("%Y-%m-%d")})
         filtered_daily = complete_daily.merge(filtered_daily, on="day_utc", how="left")
         # Fitness/Fatigue are always computed on continuous daily data with missing days as zero load.
-        training_series = pd.to_numeric(
-            filtered_daily["tss_total"]
+        # Overreach should remain on the same stress model as TSS targeting:
+        # use TSS only (no Garmin-load fallback) and subtract LT-derived daily target.
+        training_series = (
+            pd.to_numeric(filtered_daily.get("tss_total"), errors="coerce").fillna(0.0)
             if "tss_total" in filtered_daily.columns
-            else filtered_daily["training_load_garmin"],
-            errors="coerce",
-        ).fillna(0.0)
+            else pd.Series([0.0] * len(filtered_daily), index=filtered_daily.index, dtype=float)
+        )
         daily_target = float(max(daily_tss_target, 0.0))
         filtered_daily["fitness"] = ema(training_series, 42)
         filtered_daily["fatigue"] = ema(training_series, 7)
