@@ -4137,9 +4137,9 @@ if view == "Calendar":
                     compare_chart_df[selected_metric], errors="coerce"
                 ).fillna(0.0)
                 compare_chart_df["day_display"] = (
-                    compact_week["day"].dt.strftime("%d %b")
+                    compare_chart_df["day"].dt.strftime("%d %b")
                     + "\n("
-                    + compact_week["day"].dt.strftime("%a")
+                    + compare_chart_df["day"].dt.strftime("%a")
                     + ")"
                 )
                 compare_chart_df["series"] = "Compare"
@@ -4183,6 +4183,13 @@ if view == "Calendar":
                     lambda v: _compact_bar_color(selected_metric, float(v))
                 )
                 compare_chart_df["bar_color"] = "#94a3b8"
+                # Guard against index-alignment and stale/null category issues that can blank the chart.
+                chart_df["day"] = pd.to_datetime(chart_df.get("day"), errors="coerce")
+                compare_chart_df["day"] = pd.to_datetime(compare_chart_df.get("day"), errors="coerce")
+                chart_df["metric_value"] = pd.to_numeric(chart_df.get("metric_value"), errors="coerce").fillna(0.0)
+                compare_chart_df["metric_value"] = pd.to_numeric(compare_chart_df.get("metric_value"), errors="coerce").fillna(0.0)
+                chart_df = chart_df.dropna(subset=["day", "day_display"]).copy()
+                compare_chart_df = compare_chart_df.dropna(subset=["day", "day_display"]).copy()
                 bar_df = pd.concat([compare_chart_df, chart_df], ignore_index=True)
                 bars = (
                     alt.Chart(bar_df)
