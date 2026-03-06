@@ -123,15 +123,15 @@ CUSTOM_ACTIVITIES_LIMIT = 5000
 # Points correspond to:
 # 5:00, 4:30, 4:00, 3:45, 3:30, 3:20, 3:15, 3:10, 3:00
 LT_PACE_TO_WEEKLY_TARGET_POINTS = [
-    (300.0, 67.0, 347.0),
-    (270.0, 81.0, 377.0),
-    (240.0, 96.0, 403.0),
-    (225.0, 111.0, 442.0),
-    (210.0, 127.0, 479.0),
-    (200.0, 142.0, 514.0),
-    (195.0, 154.0, 547.0),
-    (190.0, 167.0, 586.0),
-    (180.0, 194.0, 647.0),
+    (300.0, 67.0, 364.0),
+    (270.0, 81.0, 396.0),
+    (240.0, 96.0, 423.0),
+    (225.0, 111.0, 464.0),
+    (210.0, 127.0, 503.0),
+    (200.0, 142.0, 540.0),
+    (195.0, 154.0, 574.0),
+    (190.0, 167.0, 615.0),
+    (180.0, 194.0, 679.0),
 ]
 INJURY_WINDOWS = [
     {"label": "Injury 1", "start": "2025-05-15", "end": "2025-06-18", "severity": "injury"},
@@ -2067,6 +2067,10 @@ def cached_filtered_views(
             if "rtss_total" in filtered_daily.columns
             else pd.Series([0.0] * len(filtered_daily), index=filtered_daily.index)
         )
+        # If rTSS is unavailable/flat-zero for the selected data (common in non-running-heavy blocks),
+        # fallback to TSS so Injury Risk charts remain informative instead of appearing broken.
+        if float(rtss_series.abs().sum()) <= 1e-9:
+            rtss_series = pd.to_numeric(filtered_daily.get("tss_total"), errors="coerce").fillna(0.0)
         filtered_daily["leg_elasticity"] = ema(rtss_series, 100)
         filtered_daily["pounding"] = ema(rtss_series, 7)
         filtered_daily["injury_risk"] = (ema(rtss_series, 10) - daily_target).clip(lower=0.0)
@@ -3028,11 +3032,11 @@ if view == "Dashboard":
                 weekly_rff_long = rff_base.melt(
                     id_vars=["period_start"],
                     value_vars=["leg_elasticity", "pounding"],
-                    var_name="series",
+                    var_name="risk_series",
                     value_name="value",
                 )
                 weekly_rff_long["value"] = pd.to_numeric(weekly_rff_long["value"], errors="coerce").fillna(0.0)
-                weekly_rff_long["series"] = weekly_rff_long["series"].replace(
+                weekly_rff_long["risk_series"] = weekly_rff_long["risk_series"].replace(
                     {"leg_elasticity": "Leg Elasticity", "pounding": "Pounding"}
                 )
                 rff_chart = (
@@ -3042,11 +3046,11 @@ if view == "Dashboard":
                         x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
                         color=alt.Color(
-                            "series:N",
+                            "risk_series:N",
                             legend=alt.Legend(orient="bottom", direction="horizontal"),
                             scale=alt.Scale(domain=["Leg Elasticity", "Pounding"], range=["#22c55e", "#ef4444"]),
                         ),
-                        tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                        tooltip=["period_start:T", "risk_series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
                 rff_threshold = (
@@ -3165,11 +3169,11 @@ if view == "Dashboard":
                 weekly_fr_long = fr_base.melt(
                     id_vars=["period_start"],
                     value_vars=["overreach", "injury_risk"],
-                    var_name="series",
+                    var_name="risk_series",
                     value_name="value",
                 )
                 weekly_fr_long["value"] = pd.to_numeric(weekly_fr_long["value"], errors="coerce").fillna(0.0)
-                weekly_fr_long["series"] = weekly_fr_long["series"].replace(
+                weekly_fr_long["risk_series"] = weekly_fr_long["risk_series"].replace(
                     {"overreach": "Overreach", "injury_risk": "Injury Risk"}
                 )
                 fr_chart = (
@@ -3179,11 +3183,11 @@ if view == "Dashboard":
                         x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
                         color=alt.Color(
-                            "series:N",
+                            "risk_series:N",
                             legend=alt.Legend(orient="bottom", direction="horizontal"),
                             scale=alt.Scale(domain=["Overreach", "Injury Risk"], range=["#60a5fa", "#ef4444"]),
                         ),
-                        tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                        tooltip=["period_start:T", "risk_series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
                 fr_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), fr_chart)
@@ -4925,7 +4929,15 @@ if view == "Week Planner":
         planned_raw["if_proxy"] = plan_if_vals
         planned_raw["duration_s"] = plan_duration_s_vals
 
-        st.markdown("##### Planned weekly outlook (next 4 weeks)")
+        tss_goal_week = float(derived_weekly_tss_target) * 1.10
+        rtss_goal_week = float(derived_weekly_tss_target) * 0.90
+        dist_goal_week = float(derived_weekly_distance_target)
+        st.markdown("##### Planned weekly outlook")
+        st.caption(
+            f"TSS Goal = {int(round(tss_goal_week))}. "
+            f"rTSS Goal = {int(round(rtss_goal_week))}. "
+            f"Dist Goal = {int(round(dist_goal_week))} km."
+        )
         weekly_outlook = planned_raw.copy()
         selected_planned_week_start: pd.Timestamp | None = None
         weekly_outlook["day"] = pd.to_datetime(weekly_outlook["day_utc"], errors="coerce")
@@ -5036,7 +5048,7 @@ if view == "Week Planner":
                 else:
                     selected_planned_week_start = None
             else:
-                st.caption("No planned activities in the next 4 weeks.")
+                st.caption("No planned activities in the upcoming weeks.")
         else:
             st.caption("No valid planned dates to build a weekly outlook.")
         if selected_planned_week_start is not None and pd.notna(selected_planned_week_start):
