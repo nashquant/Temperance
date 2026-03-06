@@ -8,12 +8,6 @@ import pandas as pd
 import numpy as np
 
 from models import mechanical_load
-from tss import (
-    ActivityDistanceProxyInput,
-    PiecewiseLTHRProvider,
-    PiecewiseThresholdPaceProvider,
-    compute_distance_proxy,
-)
 
 
 def compute_metrics(
@@ -28,6 +22,35 @@ def compute_metrics(
 ) -> pd.DataFrame:
     if runs_df.empty:
         return runs_df
+
+    def _piecewise_series(
+        start_ts: pd.Series,
+        default_value: float,
+        points: list[tuple[datetime, float]] | None,
+    ) -> pd.Series:
+        out = pd.Series(float(default_value), index=start_ts.index, dtype=float)
+        if not points:
+            return out
+        points_df = pd.DataFrame(points, columns=["effective_at", "value"]).copy()
+        points_df["effective_at"] = pd.to_datetime(points_df["effective_at"], utc=True, errors="coerce")
+        points_df["value"] = pd.to_numeric(points_df["value"], errors="coerce")
+        points_df = points_df.dropna(subset=["effective_at", "value"]).sort_values("effective_at")
+        if points_df.empty:
+            return out
+
+        ts_df = pd.DataFrame({"idx": start_ts.index, "ts": pd.to_datetime(start_ts, utc=True, errors="coerce")})
+        ts_df = ts_df.dropna(subset=["ts"]).sort_values("ts")
+        if ts_df.empty:
+            return out
+
+        merged = pd.merge_asof(
+            ts_df,
+            points_df.rename(columns={"effective_at": "ts"}),
+            on="ts",
+            direction="backward",
+        )
+        out.loc[merged["idx"].to_numpy()] = pd.to_numeric(merged["value"], errors="coerce").fillna(float(default_value)).to_numpy()
+        return out
 
     df = runs_df.copy()
     df["start_time_utc"] = pd.to_datetime(df["start_time_utc"], utc=True, errors="coerce")
@@ -47,18 +70,16 @@ def compute_metrics(
     df["trimp"] = 0.0
     df["edwards_trimp"] = 0.0
 
-    pace_provider = None
-    if threshold_pace_curve_points:
-        pace_provider = PiecewiseThresholdPaceProvider(
-            default_threshold_pace_sec_per_km=threshold_pace_sec_per_km,
-            points=tuple(threshold_pace_curve_points),
-        )
-    lthr_provider = None
-    if lthr_curve_points:
-        lthr_provider = PiecewiseLTHRProvider(
-            default_lthr_bpm=lthr_bpm,
-            points=tuple(lthr_curve_points),
-        )
+    tp_series = _piecewise_series(
+        df["start_time_utc"],
+        default_value=float(threshold_pace_sec_per_km),
+        points=threshold_pace_curve_points,
+    )
+    lthr_series = _piecewise_series(
+        df["start_time_utc"],
+        default_value=float(lthr_bpm),
+        points=lthr_curve_points,
+    )
     df["rtss"] = pd.NA
     df["tss"] = pd.NA
 
@@ -72,94 +93,66 @@ def compute_metrics(
     )
 
     # hrTSS from LTHR curve.
-    tss_mask = (duration_s > 0) & (avg_hr > 0) & (avg_hr <= 260)
-    if lthr_bpm > 0 and lthr_provider is None:
-        df.loc[tss_mask, "tss"] = (
-            duration_s[tss_mask] * ((avg_hr[tss_mask] / float(lthr_bpm)) ** 2) / 3600.0 * 100.0
-        )
-    elif lthr_provider is not None:
-        for idx in df.index[tss_mask]:
-            start_dt = df.at[idx, "start_time_utc"]
-            if pd.isna(start_dt):
-                continue
-            lthr_at = float(lthr_provider.get_lthr_bpm(start_dt.to_pydatetime()))
-            if lthr_at <= 0:
-                continue
-            hr_v = float(avg_hr.loc[idx])
-            dur_v = float(duration_s.loc[idx])
-            df.at[idx, "tss"] = (dur_v * ((hr_v / lthr_at) ** 2) / 3600.0) * 100.0
+    tss_mask = (duration_s > 0) & (avg_hr > 0) & (avg_hr <= 260) & (lthr_series > 0)
+    df.loc[tss_mask, "tss"] = (
+        duration_s[tss_mask] * ((avg_hr[tss_mask] / lthr_series[tss_mask]) ** 2) / 3600.0 * 100.0
+    )
 
     # rTSS for running/treadmill only.
-    rtss_mask = running_idx & (duration_s > 0) & (avg_pace > 0)
-    if threshold_pace_sec_per_km > 0 and not threshold_pace_curve_points:
-        df.loc[rtss_mask, "rtss"] = (
-            duration_s[rtss_mask]
-            * ((float(threshold_pace_sec_per_km) / avg_pace[rtss_mask]) ** 2)
-            / 3600.0
-            * 100.0
-        )
-    elif threshold_pace_sec_per_km > 0 and pace_provider is not None:
-        for idx in df.index[rtss_mask]:
-            tp = float(pace_provider.get_threshold_pace_sec_per_km(df.at[idx, "start_time_utc"].to_pydatetime()))
-            if tp <= 0:
-                continue
-            pace_v = float(avg_pace.loc[idx])
-            dur_v = float(duration_s.loc[idx])
-            df.at[idx, "rtss"] = (dur_v * ((tp / pace_v) ** 2) / 3600.0) * 100.0
-
-    def _specificity_ratio_for_activity(sport_type: str | None) -> float:
-        lower = str(sport_type or "").lower()
-        if ("run" in lower) or ("treadmill" in lower):
-            return 1.0
-        return 0.8
+    rtss_mask = running_idx & (duration_s > 0) & (avg_pace > 0) & (tp_series > 0)
+    df.loc[rtss_mask, "rtss"] = (
+        duration_s[rtss_mask]
+        * ((tp_series[rtss_mask] / avg_pace[rtss_mask]) ** 2)
+        / 3600.0
+        * 100.0
+    )
 
     df["distance_proxy_km"] = pd.NA
     df["pace_proxy_sec_per_km"] = pd.NA
     df["distance_proxy_method"] = "unavailable"
     df["if_proxy"] = pd.NA
-    for idx, row in df.iterrows():
-        tp = float(threshold_pace_sec_per_km)
-        if pace_provider is not None and pd.notna(row.get("start_time_utc")):
-            tp = float(pace_provider.get_threshold_pace_sec_per_km(row["start_time_utc"].to_pydatetime()))
-        sport_lower = str(row.get("sport_type") or "").lower()
-        is_running_like_row = ("run" in sport_lower) or ("treadmill" in sport_lower)
-        distance_m = pd.to_numeric(row.get("distance_m"), errors="coerce")
-        avg_pace_row = pd.to_numeric(row.get("avg_pace_s_per_km"), errors="coerce")
-        proxy = compute_distance_proxy(
-            activity=ActivityDistanceProxyInput(
-                sport_type=row.get("sport_type"),
-                activity_duration_seconds=(
-                    float(pd.to_numeric(row.get("duration_s"), errors="coerce"))
-                    if pd.notna(pd.to_numeric(row.get("duration_s"), errors="coerce"))
-                    else None
-                ),
-                activity_distance_km=(
-                    float(distance_m) / 1000.0
-                    if pd.notna(distance_m)
-                    else None
-                ),
-                activity_avg_pace_sec_per_km=(
-                    float(avg_pace_row)
-                    if pd.notna(avg_pace_row)
-                    else None
-                ),
-            ),
-            threshold_pace_sec_per_km=tp,
-            tss=(
-                float(pd.to_numeric(row.get("tss"), errors="coerce"))
-                if pd.notna(pd.to_numeric(row.get("tss"), errors="coerce"))
-                else None
-            ),
-            specificity_ratio=_specificity_ratio_for_activity(row.get("sport_type")),
-        )
-        df.at[idx, "distance_proxy_km"] = proxy["distance_proxy_km"]
-        df.at[idx, "pace_proxy_sec_per_km"] = proxy["pace_proxy_sec_per_km"]
-        df.at[idx, "distance_proxy_method"] = proxy["distance_proxy_method"]
-        if tp > 0:
-            if is_running_like_row and pd.notna(avg_pace_row) and float(avg_pace_row) > 0:
-                df.at[idx, "if_proxy"] = tp / float(avg_pace_row)
-            elif proxy["pace_proxy_sec_per_km"] is not None and float(proxy["pace_proxy_sec_per_km"]) > 0:
-                df.at[idx, "if_proxy"] = tp / float(proxy["pace_proxy_sec_per_km"])
+    sport_lower = df["sport_type"].fillna("").astype(str).str.lower()
+    is_strength = sport_lower.str.contains("strength_training")
+    distance_m_num = pd.to_numeric(df.get("distance_m"), errors="coerce")
+    duration_num = pd.to_numeric(df.get("duration_s"), errors="coerce")
+    avg_pace_num = pd.to_numeric(df.get("avg_pace_s_per_km"), errors="coerce")
+    tss_num = pd.to_numeric(df.get("tss"), errors="coerce")
+
+    # Running/treadmill: proxy equals actual distance/pace.
+    run_mask = running_idx
+    run_distance = distance_m_num / 1000.0
+    df.loc[run_mask, "distance_proxy_km"] = run_distance[run_mask]
+    run_pace_valid = run_mask & (avg_pace_num > 0)
+    df.loc[run_pace_valid, "pace_proxy_sec_per_km"] = avg_pace_num[run_pace_valid].round()
+    df.loc[run_mask, "distance_proxy_method"] = "none_running"
+    run_if_valid = run_mask & (tp_series > 0) & (avg_pace_num > 0)
+    df.loc[run_if_valid, "if_proxy"] = tp_series[run_if_valid] / avg_pace_num[run_if_valid]
+
+    # Non-running: TSS parity solve with specificity_ratio fixed at 0.8.
+    non_run_mask = (~run_mask) & (~is_strength)
+    spec = 0.8
+    effective_rtss_target = (tss_num * spec).clip(lower=0.0)
+    common_valid = non_run_mask & (duration_num > 0) & (tp_series > 0) & np.isfinite(tss_num.to_numpy(dtype=float, na_value=np.nan))
+    zero_target = common_valid & (effective_rtss_target <= 0)
+    df.loc[zero_target, "distance_proxy_km"] = 0.0
+    df.loc[zero_target, "distance_proxy_method"] = "tss_parity_root_solve"
+
+    denom = (effective_rtss_target * 3600.0) / (duration_num * 100.0)
+    solved_pace = tp_series / np.sqrt(denom)
+    min_pace = np.maximum(90.0, tp_series / 2.0)
+    max_pace = np.minimum(1800.0, tp_series * 6.0)
+    parity_valid = (
+        common_valid
+        & (denom > 0)
+        & np.isfinite(solved_pace.to_numpy(dtype=float, na_value=np.nan))
+        & (solved_pace >= min_pace)
+        & (solved_pace <= max_pace)
+    )
+    df.loc[parity_valid, "pace_proxy_sec_per_km"] = solved_pace[parity_valid].round()
+    df.loc[parity_valid, "distance_proxy_km"] = duration_num[parity_valid] / solved_pace[parity_valid]
+    df.loc[parity_valid, "distance_proxy_method"] = "tss_parity_root_solve"
+    non_run_if_valid = parity_valid & (solved_pace > 0) & (tp_series > 0)
+    df.loc[non_run_if_valid, "if_proxy"] = tp_series[non_run_if_valid] / solved_pace[non_run_if_valid]
 
     df["mechanical_load"] = pd.NA
     if running_idx.any():

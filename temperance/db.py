@@ -862,6 +862,19 @@ def get_activity_splits_cache_key(db_path: Path) -> str:
     return f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}"
 
 
+def get_custom_activities_cache_key(db_path: Path) -> str:
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at, MAX(day_utc) AS max_day
+            FROM custom_activities
+            """
+        ).fetchone()
+    if not row:
+        return "0:none:none"
+    return f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}:{row['max_day'] or 'none'}"
+
+
 def get_table_counts(db_path: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     tables = [

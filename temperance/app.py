@@ -27,6 +27,7 @@ from config import load_config
 from db import (
     get_setting,
     get_activity_splits_cache_key,
+    get_custom_activities_cache_key,
     get_activity_splits_df,
     get_activity_records_df,
     get_activity_detail_raw,
@@ -122,15 +123,15 @@ CUSTOM_ACTIVITIES_LIMIT = 5000
 # Points correspond to:
 # 5:00, 4:30, 4:00, 3:45, 3:30, 3:20, 3:15, 3:10, 3:00
 LT_PACE_TO_WEEKLY_TARGET_POINTS = [
-    (300.0, 68.0, 428.0),
-    (270.0, 82.0, 466.0),
-    (240.0, 97.0, 498.0),
-    (225.0, 112.0, 546.0),
-    (210.0, 128.0, 591.0),
-    (200.0, 143.0, 634.0),
-    (195.0, 155.0, 675.0),
-    (190.0, 169.0, 723.0),
-    (180.0, 195.0, 799.0),
+    (300.0, 67.0, 385.0),
+    (270.0, 81.0, 419.0),
+    (240.0, 96.0, 448.0),
+    (225.0, 111.0, 491.0),
+    (210.0, 127.0, 532.0),
+    (200.0, 142.0, 571.0),
+    (195.0, 154.0, 608.0),
+    (190.0, 167.0, 651.0),
+    (180.0, 194.0, 719.0),
 ]
 INJURY_WINDOWS = [
     {"label": "Injury 1", "start": "2025-05-15", "end": "2025-06-18", "severity": "injury"},
@@ -1601,6 +1602,7 @@ def apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, fl
     return out
 
 
+@st.cache_data(show_spinner=False)
 def get_metrics_df_fast(
     db_path: Path,
     activities_cache_key: str,
@@ -1742,8 +1744,10 @@ def get_metrics_df_fast(
     return df
 
 
+@st.cache_data(show_spinner=False)
 def _build_custom_metrics_df_for_plots(
     db_path: Path,
+    custom_activities_cache_key: str,
     lthr_bpm: float,
     lthr_curve_points: list[tuple[datetime, float]] | None,
     threshold_pace_default_sec: float,
@@ -3108,11 +3112,40 @@ if view == "Dashboard":
                 weekly_dist_chart = weekly_dist_chart.encode(
                     opacity=alt.condition(weekly_dist_sel, alt.value(1.0), alt.value(0.08), empty=True)
                 ).add_params(weekly_dist_sel)
+                dist_threshold_value = float(
+                    derived_weekly_distance_target if weekly_toggle else derived_daily_distance_target
+                )
+                dist_threshold_df = pd.DataFrame({"threshold": [dist_threshold_value]})
+                dist_threshold = (
+                    alt.Chart(dist_threshold_df)
+                    .mark_rule(color="#f59e0b", strokeDash=[6, 4], strokeWidth=2.2, opacity=1.0)
+                    .encode(y="threshold:Q")
+                )
+                dist_threshold_label = (
+                    alt.Chart(dist_threshold_df)
+                    .mark_text(
+                        align="left",
+                        dx=8,
+                        dy=-6,
+                        color="#fbbf24",
+                        fontSize=11,
+                        fontWeight=700,
+                    )
+                    .encode(
+                        x=alt.value(6),
+                        y="threshold:Q",
+                        text=alt.value(f"Target {int(round(dist_threshold_value))} km"),
+                    )
+                )
+                weekly_dist_chart = alt.layer(weekly_dist_chart, dist_threshold, dist_threshold_label)
                 weekly_dist_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), weekly_dist_chart)
                 if enable_zoom:
                     weekly_dist_chart = weekly_dist_chart.interactive()
                 st.altair_chart(weekly_dist_chart, use_container_width=True)
                 st.caption(
+                    f"The dotted line is Distance target {int(round(dist_threshold_value))} km "
+                    f"({'weekly' if weekly_toggle else 'daily'} mode), derived from LT pace "
+                    f"{_pace_compact(float(derived_threshold_pace_sec))}. "
                     "Distance Eqv. = running-equivalent distance inferred from non-running sessions by matching "
                     "running rTSS to HR-based TSS scaled by specificity (applied once)."
                 )

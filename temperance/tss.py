@@ -61,11 +61,13 @@ class PiecewiseLTHRProvider:
         for _, lthr in self.points:
             if lthr <= 0:
                 raise ValueError("all LTHR curve values must be > 0")
+        # Normalize once; avoid sorting on every lookup call.
+        object.__setattr__(self, "points", tuple(sorted(self.points, key=lambda x: x[0])))
 
     def get_lthr_bpm(self, at: datetime) -> float:
         at_cmp = _normalize_datetime_for_compare(at)
         chosen = float(self.default_lthr_bpm)
-        for effective_at, lthr in sorted(self.points, key=lambda x: x[0]):
+        for effective_at, lthr in self.points:
             eff_cmp = _normalize_datetime_for_compare(effective_at)
             if eff_cmp <= at_cmp:
                 chosen = float(lthr)
@@ -92,11 +94,13 @@ class PiecewiseThresholdPaceProvider:
         for _, pace in self.points:
             if pace <= 0:
                 raise ValueError("all threshold pace curve values must be > 0")
+        # Normalize once; avoid sorting on every lookup call.
+        object.__setattr__(self, "points", tuple(sorted(self.points, key=lambda x: x[0])))
 
     def get_threshold_pace_sec_per_km(self, at: datetime) -> float:
         at_cmp = _normalize_datetime_for_compare(at)
         chosen = float(self.default_threshold_pace_sec_per_km)
-        for effective_at, pace in sorted(self.points, key=lambda x: x[0]):
+        for effective_at, pace in self.points:
             eff_cmp = _normalize_datetime_for_compare(effective_at)
             if eff_cmp <= at_cmp:
                 chosen = float(pace)
