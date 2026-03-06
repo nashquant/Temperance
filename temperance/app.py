@@ -2929,10 +2929,6 @@ if view == "Dashboard":
                     )
                     .properties(height=280)
                 )
-                tss_sel = alt.selection_point(name="summary_tss_legend_sel", fields=["series"], bind="legend")
-                tss_chart = tss_chart.encode(
-                    opacity=alt.condition(tss_sel, alt.value(1.0), alt.value(0.2), empty=True)
-                ).add_params(tss_sel)
                 threshold_value = float(derived_weekly_tss_target if weekly_toggle else derived_daily_tss_target)
                 threshold_df = pd.DataFrame({"threshold": [threshold_value]})
                 tss_threshold = (
@@ -3114,10 +3110,6 @@ if view == "Dashboard":
                     )
                     .properties(height=280)
                 )
-                weekly_dist_sel = alt.selection_point(name="summary_dist_legend_sel", fields=["series"], bind="legend")
-                weekly_dist_chart = weekly_dist_chart.encode(
-                    opacity=alt.condition(weekly_dist_sel, alt.value(1.0), alt.value(0.2), empty=True)
-                ).add_params(weekly_dist_sel)
                 dist_threshold_value = float(
                     derived_weekly_distance_target if weekly_toggle else derived_daily_distance_target
                 )
