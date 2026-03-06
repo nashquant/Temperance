@@ -3868,6 +3868,7 @@ if view == "Calendar":
                                 "rtss": total_rtss,
                                 "tss": total_tss,
                                 "distance_eqv_km": total_dist_eqv,
+                                "duration_s": if_weight_seconds,
                                 "if_proxy": (if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0),
                             }
                         )
@@ -3883,10 +3884,11 @@ if view == "Calendar":
                             rtss=("rtss", "sum"),
                             tss=("tss", "sum"),
                             distance_eqv_km=("distance_proxy_km", "sum"),
+                            duration_s=("duration_s", "sum"),
                         )
                     )
                     compare_week = compare_days.merge(compare_agg, on="day", how="left")
-                    for col in ["rtss", "tss", "distance_eqv_km"]:
+                    for col in ["rtss", "tss", "distance_eqv_km", "duration_s"]:
                         compare_week[col] = pd.to_numeric(compare_week[col], errors="coerce").fillna(0.0)
                     compare_if_by_day = []
                     for day_ts in compare_week["day"]:
@@ -4052,6 +4054,70 @@ if view == "Calendar":
                 st.markdown("<div class='compact-week-shell'>", unsafe_allow_html=True)
                 st.altair_chart(compact_chart, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
+
+                today_local = pd.Timestamp(datetime.now().astimezone().date())
+                cutoff_day = min(today_local, selected_week_end)
+                actual_to_date_mask = compact_week["day"] <= cutoff_day
+                if compare_choice == "Planned":
+                    compare_cutoff_day = cutoff_day
+                else:
+                    day_offset = int((cutoff_day - selected_week_start).days)
+                    day_offset = min(max(day_offset, 0), 6)
+                    compare_cutoff_day = compare_week_start + pd.Timedelta(days=day_offset)
+                compare_to_date_mask = compare_week["day"] <= compare_cutoff_day
+                metric_label_map = {k: lbl for k, lbl, _, _, _ in metric_defs}
+                compare_label = "planned" if compare_choice == "Planned" else str(compare_choice).lower()
+
+                def _agg_metric(df: pd.DataFrame, mask: pd.Series, metric_key: str) -> float:
+                    if df.empty or metric_key not in df.columns:
+                        return 0.0
+                    if metric_key == "if_proxy":
+                        dur = pd.to_numeric(df.loc[mask, "duration_s"], errors="coerce").fillna(0.0)
+                        ifv = pd.to_numeric(df.loc[mask, "if_proxy"], errors="coerce").fillna(0.0)
+                        dur_sum = float(dur.sum())
+                        return float((dur * ifv).sum() / dur_sum) if dur_sum > 0 else 0.0
+                    vals = pd.to_numeric(df.loc[mask, metric_key], errors="coerce").fillna(0.0)
+                    return float(vals.sum())
+
+                def _fmt_metric(metric_key: str, value: float) -> str:
+                    if metric_key == "if_proxy":
+                        return f"{(float(value) * 100.0):.0f}%"
+                    if metric_key == "distance_eqv_km":
+                        return f"{float(value):.0f} km"
+                    return f"{float(value):.0f}"
+
+                realized_to_date = _agg_metric(compact_week, actual_to_date_mask, selected_metric)
+                realized_week_total = _agg_metric(compact_week, compact_week["day"].notna(), selected_metric)
+                compare_to_date = _agg_metric(compare_week, compare_to_date_mask, selected_metric)
+                compare_week_total = _agg_metric(compare_week, compare_week["day"].notna(), selected_metric)
+                compare_remaining = compare_week_total - compare_to_date
+                projected_finish = realized_to_date + compare_remaining
+
+                def _emph(value_text: str) -> str:
+                    return (
+                        "<span style='display:inline-block;padding:1px 7px;border-radius:999px;"
+                        "background:rgba(226,232,240,0.14);border:1px solid rgba(148,163,184,0.38);"
+                        "font-weight:800;color:#f8fafc;'>"
+                        f"{value_text}</span>"
+                    )
+
+                narrative = (
+                    f"Today is {today_local:%A}. "
+                    f"{metric_label_map.get(selected_metric, 'Metric')} delivered: {_emph(_fmt_metric(selected_metric, realized_to_date))} "
+                    f"(vs. {compare_label} {_emph(_fmt_metric(selected_metric, compare_to_date))}). "
+                    f"Remaining {compare_label}: {_emph(_fmt_metric(selected_metric, compare_remaining))}. "
+                    f"Projected finish {_emph(_fmt_metric(selected_metric, projected_finish))}."
+                )
+                st.markdown(
+                    (
+                        "<div style='margin:8px 0 12px 0;padding:10px 12px;border-radius:10px;"
+                        "border:1px solid rgba(52,211,153,0.35);background:rgba(16,185,129,0.08);"
+                        "color:rgba(226,232,240,0.96);font-size:0.9rem;line-height:1.35;'>"
+                        f"{narrative}"
+                        "</div>"
+                    ),
+                    unsafe_allow_html=True,
+                )
 
                 metric_values = []
                 for metric_key, metric_label, metric_fmt, metric_unit, agg_mode in metric_defs:
