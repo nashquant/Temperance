@@ -3050,7 +3050,7 @@ if view == "Dashboard":
                             y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
                             color=alt.Color(
                                 "risk_series:N",
-                                legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
+                                legend=alt.Legend(title=None, orient="bottom", direction="horizontal"),
                                 scale=alt.Scale(domain=["Leg Elasticity", "Pounding"], range=["#22c55e", "#ef4444"]),
                             ),
                             tooltip=["period_start:T", "risk_series:N", alt.Tooltip("value:Q", format=".0f")],
@@ -3187,7 +3187,7 @@ if view == "Dashboard":
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
                         color=alt.Color(
                             "risk_series:N",
-                            legend=alt.Legend(orient="bottom", direction="horizontal"),
+                            legend=alt.Legend(title=None, orient="bottom", direction="horizontal"),
                             scale=alt.Scale(domain=["Overreach", "Injury Risk"], range=["#60a5fa", "#ef4444"]),
                         ),
                         tooltip=["period_start:T", "risk_series:N", alt.Tooltip("value:Q", format=".0f")],
