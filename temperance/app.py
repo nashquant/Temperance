@@ -2474,6 +2474,7 @@ if view == "User Inputs":
 
 activities_cache_key = get_activities_cache_key(cfg.db_path)
 activity_splits_cache_key = get_activity_splits_cache_key(cfg.db_path)
+custom_activities_cache_key = get_custom_activities_cache_key(cfg.db_path)
 metrics_df = get_metrics_df_fast(
     db_path=cfg.db_path,
     activities_cache_key=activities_cache_key,
@@ -2493,6 +2494,7 @@ if view == "Dashboard":
         metrics_df,
         _build_custom_metrics_df_for_plots(
             db_path=cfg.db_path,
+            custom_activities_cache_key=custom_activities_cache_key,
             lthr_bpm=float(derived_lthr_bpm),
             lthr_curve_points=lthr_curve_points,
             threshold_pace_default_sec=float(derived_threshold_pace_sec),
@@ -3413,6 +3415,7 @@ if view == "Calendar":
         metrics_df,
         _build_custom_metrics_df_for_plots(
             db_path=cfg.db_path,
+            custom_activities_cache_key=custom_activities_cache_key,
             lthr_bpm=float(derived_lthr_bpm),
             lthr_curve_points=lthr_curve_points,
             threshold_pace_default_sec=float(derived_threshold_pace_sec),
