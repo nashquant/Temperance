@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -117,6 +118,20 @@ DEFAULT_RESTING_HR = 45.0
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 CUSTOM_ACTIVITIES_LIMIT = 5000
+# LT pace (sec/km) -> upper-bound weekly targets derived from user-defined table.
+# Points correspond to:
+# 5:00, 4:30, 4:00, 3:45, 3:30, 3:20, 3:15, 3:10, 3:00
+LT_PACE_TO_WEEKLY_TARGET_POINTS = [
+    (300.0, 68.0, 428.0),
+    (270.0, 82.0, 466.0),
+    (240.0, 97.0, 498.0),
+    (225.0, 112.0, 546.0),
+    (210.0, 128.0, 591.0),
+    (200.0, 143.0, 634.0),
+    (195.0, 155.0, 675.0),
+    (190.0, 169.0, 723.0),
+    (180.0, 195.0, 799.0),
+]
 INJURY_WINDOWS = [
     {"label": "Injury 1", "start": "2025-05-15", "end": "2025-06-18", "severity": "injury"},
     {"label": "Light Injury", "start": "2025-11-03", "end": "2025-11-20", "severity": "light_injury"},
@@ -132,6 +147,33 @@ SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_GARMIN_OWNER_SCOPE = "garmin_owner_scope_v1"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
+
+
+def _lt_target_from_regression(
+    lt_pace_sec_per_km: float,
+    value_index: int,  # 1=km/week, 2=tss/week
+) -> float:
+    points = sorted(LT_PACE_TO_WEEKLY_TARGET_POINTS, key=lambda p: p[0], reverse=True)
+    x = np.array([p[0] for p in points], dtype=float)
+    y = np.array([p[value_index] for p in points], dtype=float)
+    pace = float(max(1.0, lt_pace_sec_per_km))
+    # Use smooth cubic regression in-range and linear edge extrapolation outside anchors.
+    if pace >= x[0]:
+        slope = (y[1] - y[0]) / (x[1] - x[0])
+        return float(y[0] + slope * (pace - x[0]))
+    if pace <= x[-1]:
+        slope = (y[-1] - y[-2]) / (x[-1] - x[-2])
+        return float(y[-1] + slope * (pace - x[-1]))
+    coeff = np.polyfit(x, y, 3)
+    return float(np.polyval(coeff, pace))
+
+
+def _weekly_tss_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
+    return max(_lt_target_from_regression(lt_pace_sec_per_km, value_index=2), 0.0)
+
+
+def _daily_tss_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
+    return _weekly_tss_target_from_lt_pace(lt_pace_sec_per_km) / 7.0
 
 AUTH_ALL_TABS = [
     "Dashboard",
@@ -1984,6 +2026,7 @@ def cached_filtered_views(
     metrics_df: pd.DataFrame,
     activity_filter: str,
     specificity_profile: dict[str, float],
+    daily_tss_target: float = 70.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     filtered_metrics = filter_by_activity_type(metrics_df, activity_filter)
     filtered_metrics = apply_specificity_factor(filtered_metrics, specificity_profile)
@@ -2004,9 +2047,10 @@ def cached_filtered_views(
             else filtered_daily["training_load_garmin"],
             errors="coerce",
         ).fillna(0.0)
+        daily_target = float(max(daily_tss_target, 0.0))
         filtered_daily["fitness"] = ema(training_series, 42)
         filtered_daily["fatigue"] = ema(training_series, 7)
-        filtered_daily["overreach"] = (ema(training_series, 10) - 70.0).clip(lower=0.0)
+        filtered_daily["overreach"] = (ema(training_series, 10) - daily_target).clip(lower=0.0)
         rtss_series = (
             pd.to_numeric(filtered_daily["rtss_total"], errors="coerce").fillna(0.0)
             if "rtss_total" in filtered_daily.columns
@@ -2014,7 +2058,7 @@ def cached_filtered_views(
         )
         filtered_daily["leg_elasticity"] = ema(rtss_series, 100)
         filtered_daily["pounding"] = ema(rtss_series, 7)
-        filtered_daily["injury_risk"] = (ema(rtss_series, 10) - 70.0).clip(lower=0.0)
+        filtered_daily["injury_risk"] = (ema(rtss_series, 10) - daily_target).clip(lower=0.0)
     return filtered_metrics, filtered_daily
 
 
@@ -2232,6 +2276,8 @@ derived_lthr_bpm = _curve_latest_value(saved_lthr_curve, "lthr_bpm", DEFAULT_LTH
 derived_threshold_pace_sec = _curve_latest_value(
     saved_lt_pace_curve, "lt_pace_sec_per_km", DEFAULT_THRESHOLD_PACE_SEC_PER_KM
 )
+derived_weekly_tss_target = _weekly_tss_target_from_lt_pace(float(derived_threshold_pace_sec))
+derived_daily_tss_target = derived_weekly_tss_target / 7.0
 lthr_curve_points = _curve_points_from_rows(saved_lthr_curve, "lthr_bpm")
 lt_pace_curve_points = _curve_points_from_rows(saved_lt_pace_curve, "lt_pace_sec_per_km")
 
@@ -2520,6 +2566,7 @@ if view == "Dashboard":
                 st.session_state.get("user_specificity_profile", {}),
                 fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
             ),
+            daily_tss_target=float(derived_daily_tss_target),
         )
         filtered_start_local = _to_local_naive(filtered_metrics["start_time_utc"])
         range_filtered_metrics = filtered_metrics[
@@ -2868,7 +2915,7 @@ if view == "Dashboard":
                 tss_chart = tss_chart.encode(
                     opacity=alt.condition(tss_sel, alt.value(1.0), alt.value(0.08), empty=True)
                 ).add_params(tss_sel)
-                threshold_value = 500.0 if weekly_toggle else 70.0
+                threshold_value = float(derived_weekly_tss_target if weekly_toggle else derived_daily_tss_target)
                 threshold_df = pd.DataFrame({"threshold": [threshold_value]})
                 tss_threshold = (
                     alt.Chart(threshold_df)
@@ -2888,7 +2935,7 @@ if view == "Dashboard":
                     .encode(
                         x=alt.value(6),
                         y="threshold:Q",
-                        text=alt.value(f"Target {int(threshold_value)}"),
+                        text=alt.value(f"Target {int(round(threshold_value))}"),
                     )
                 )
                 tss_chart = alt.layer(tss_chart, tss_threshold, tss_threshold_label)
@@ -2897,8 +2944,9 @@ if view == "Dashboard":
                     tss_chart = tss_chart.interactive()
                 st.altair_chart(tss_chart, use_container_width=True)
                 st.caption(
-                    f"The dotted line is Stress Score {int(threshold_value)} "
+                    f"The dotted line is Stress Score {int(round(threshold_value))} "
                     f"({'weekly' if weekly_toggle else 'daily'} mode). "
+                    f"Derived from LT pace {_pace_compact(float(derived_threshold_pace_sec))}. "
                     "For good training, keep TSS above it while rTSS stays below it."
                 )
 
@@ -2986,7 +3034,7 @@ if view == "Dashboard":
                     )
                 )
                 rff_threshold = (
-                    alt.Chart(pd.DataFrame({"threshold": [70.0]}))
+                    alt.Chart(pd.DataFrame({"threshold": [float(derived_daily_tss_target)]}))
                     .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
                     .encode(y="threshold:Q")
                 )
@@ -3420,6 +3468,7 @@ if view == "Calendar":
                     st.session_state.get("user_specificity_profile", {}),
                     fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
                 ),
+                daily_tss_target=float(derived_daily_tss_target),
             )
             cal_metrics = cal_metrics.copy()
             cal_metrics["start_local"] = _to_local_naive(cal_metrics["start_time_utc"])
