@@ -3890,6 +3890,8 @@ if view == "Calendar":
                 key="calendar_compact_week_mode",
                 help="Show one-week compact summary with metric-switch bars.",
             )
+            prev_compact_mode = bool(st.session_state.get("_calendar_prev_compact_mode", compact_mode))
+            st.session_state["_calendar_prev_compact_mode"] = compact_mode
 
             if compact_mode:
                 latest_day = pd.to_datetime(cal_metrics["day"], errors="coerce").max()
@@ -3897,6 +3899,9 @@ if view == "Calendar":
                     st.info("No activities available for compact view.")
                     st.stop()
                 latest_week_start = latest_day - pd.Timedelta(days=int(latest_day.weekday()))
+                # When switching from non-compact -> compact, reset to default anchor week.
+                if compact_mode and not prev_compact_mode:
+                    st.session_state["calendar_compact_week_start"] = default_week_start
                 if "calendar_compact_week_start" not in st.session_state:
                     st.session_state["calendar_compact_week_start"] = default_week_start
                 selected_week_start = pd.to_datetime(
