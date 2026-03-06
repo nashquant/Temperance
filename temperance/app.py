@@ -1602,7 +1602,6 @@ def apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, fl
     return out
 
 
-@st.cache_data(show_spinner=False)
 def get_metrics_df_fast(
     db_path: Path,
     activities_cache_key: str,
@@ -1744,7 +1743,6 @@ def get_metrics_df_fast(
     return df
 
 
-@st.cache_data(show_spinner=False)
 def _build_custom_metrics_df_for_plots(
     db_path: Path,
     custom_activities_cache_key: str,
@@ -2115,7 +2113,6 @@ def build_injury_layer(
     return alt.layer(red_layer, yellow_layer)
 
 
-@st.cache_data(show_spinner=False)
 def build_recovery_daily_frame(sleep_df: pd.DataFrame, wellness_df: pd.DataFrame) -> pd.DataFrame:
     parts: list[pd.DataFrame] = []
     if not sleep_df.empty:
