@@ -3029,40 +3029,45 @@ if view == "Dashboard":
                     rff_base["period_start"] = rff_base["period_start"].dt.to_period("W-SUN").dt.start_time
                     rff_base = rff_base.groupby("period_start", as_index=False)[["leg_elasticity", "pounding"]].mean().sort_values("period_start")
                 rff_base = rff_base.dropna(subset=["period_start"]).sort_values("period_start")
-                weekly_rff_long = rff_base.melt(
-                    id_vars=["period_start"],
-                    value_vars=["leg_elasticity", "pounding"],
-                    var_name="risk_series",
-                    value_name="value",
-                )
-                weekly_rff_long["value"] = pd.to_numeric(weekly_rff_long["value"], errors="coerce").fillna(0.0)
-                weekly_rff_long["risk_series"] = weekly_rff_long["risk_series"].replace(
-                    {"leg_elasticity": "Leg Elasticity", "pounding": "Pounding"}
-                )
-                rff_chart = (
-                    alt.Chart(weekly_rff_long)
-                    .mark_line(point=True)
-                    .encode(
-                        x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
-                        y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
-                        color=alt.Color(
-                            "risk_series:N",
-                            legend=alt.Legend(orient="bottom", direction="horizontal"),
-                            scale=alt.Scale(domain=["Leg Elasticity", "Pounding"], range=["#22c55e", "#ef4444"]),
-                        ),
-                        tooltip=["period_start:T", "risk_series:N", alt.Tooltip("value:Q", format=".0f")],
+                if rff_base.empty:
+                    st.caption("No Leg Elasticity/Pounding data in this range.")
+                else:
+                    leg_df = rff_base[["period_start", "leg_elasticity"]].copy()
+                    leg_df["value"] = pd.to_numeric(leg_df["leg_elasticity"], errors="coerce").fillna(0.0)
+                    leg_df["series"] = "Leg Elasticity"
+                    pound_df = rff_base[["period_start", "pounding"]].copy()
+                    pound_df["value"] = pd.to_numeric(pound_df["pounding"], errors="coerce").fillna(0.0)
+                    pound_df["series"] = "Pounding"
+
+                    leg_line = (
+                        alt.Chart(leg_df)
+                        .mark_line(point=True, color="#22c55e")
+                        .encode(
+                            x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                            y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                            tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                        )
                     )
-                )
-                rff_threshold = (
-                    alt.Chart(pd.DataFrame({"threshold": [float(derived_daily_tss_target)]}))
-                    .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
-                    .encode(y="threshold:Q")
-                )
-                rff_chart = alt.layer(rff_chart, rff_threshold)
-                rff_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), rff_chart)
-                if enable_zoom:
-                    rff_chart = rff_chart.interactive()
-                st.altair_chart(rff_chart, use_container_width=True)
+                    pound_line = (
+                        alt.Chart(pound_df)
+                        .mark_line(point=True, color="#ef4444")
+                        .encode(
+                            x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                            y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                            tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
+                        )
+                    )
+                    rff_threshold = (
+                        alt.Chart(pd.DataFrame({"threshold": [float(derived_daily_tss_target)]}))
+                        .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
+                        .encode(y="threshold:Q")
+                    )
+                    rff_chart = alt.layer(leg_line, pound_line, rff_threshold)
+                    rff_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), rff_chart)
+                    if enable_zoom:
+                        rff_chart = rff_chart.interactive()
+                    st.altair_chart(rff_chart, use_container_width=True)
+                    st.caption("Leg Elasticity (green) and Pounding (red).")
             else:
                 st.caption("No Leg Elasticity/Pounding data to plot.")
 
