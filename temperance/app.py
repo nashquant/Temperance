@@ -682,6 +682,15 @@ def _pace_compact(pace_s_per_km: float | int | None) -> str:
     return f"{minutes}:{seconds:02d}/km"
 
 
+def _to_local_naive(series: pd.Series) -> pd.Series:
+    local_tz = datetime.now().astimezone().tzinfo
+    return (
+        pd.to_datetime(series, utc=True, errors="coerce")
+        .dt.tz_convert(local_tz)
+        .dt.tz_localize(None)
+    )
+
+
 def _if_zone_from_if_proxy(if_proxy: float | int | None) -> str | None:
     if if_proxy is None:
         return None
@@ -2381,8 +2390,9 @@ if view == "Dashboard":
         st.caption("Missing-day fill mode is fixed to zero for chart calculations (EMA and aggregations).")
         controls = st.columns([1, 1, 1, 1.2])
         with controls[0]:
-            metrics_min_day = pd.to_datetime(dashboard_metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).min().date()
-            metrics_max_day = pd.to_datetime(dashboard_metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None).max().date()
+            metrics_local_start = _to_local_naive(dashboard_metrics_df["start_time_utc"])
+            metrics_min_day = metrics_local_start.min().date()
+            metrics_max_day = metrics_local_start.max().date()
             if daily_summary_df.empty:
                 min_day = metrics_min_day
                 max_day = metrics_max_day
@@ -2452,9 +2462,10 @@ if view == "Dashboard":
                 fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
             ),
         )
+        filtered_start_local = _to_local_naive(filtered_metrics["start_time_utc"])
         range_filtered_metrics = filtered_metrics[
-            (pd.to_datetime(filtered_metrics["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None) >= start_ts)
-            & (pd.to_datetime(filtered_metrics["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None) < end_exclusive_ts)
+            (filtered_start_local >= start_ts)
+            & (filtered_start_local < end_exclusive_ts)
         ].copy()
         filtered_daily_range = filtered_daily[
             (pd.to_datetime(filtered_daily["day_utc"], errors="coerce") >= start_ts)
@@ -3116,7 +3127,7 @@ if view == "Dashboard":
             ]
             if not range_filtered_metrics.empty and all(col in range_filtered_metrics.columns for col in zone_cols):
                 zone_df = range_filtered_metrics.copy()
-                zone_df["day"] = pd.to_datetime(zone_df["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
+                zone_df["day"] = _to_local_naive(zone_df["start_time_utc"])
                 zone_df = zone_df.dropna(subset=["day"])
                 zone_df["duration_s"] = pd.to_numeric(zone_df.get("duration_s"), errors="coerce").fillna(0.0)
                 for col in zone_cols:
@@ -3209,11 +3220,7 @@ if view == "Dashboard":
 
         table_source = range_filtered_metrics.copy()
         if not table_source.empty and not filtered_daily.empty:
-            table_source["day_utc"] = (
-                pd.to_datetime(table_source["start_time_utc"], utc=True, errors="coerce")
-                .dt.tz_localize(None)
-                .dt.date.astype(str)
-            )
+            table_source["day_utc"] = _to_local_naive(table_source["start_time_utc"]).dt.date.astype(str)
             daily_fit = (
                 filtered_daily[["day_utc", "fitness", "fatigue"]]
                 .dropna(subset=["day_utc"])
@@ -3270,7 +3277,7 @@ if view == "Calendar":
             st.session_state.pop("calendar_split_activity_id", None)
             st.session_state["calendar_split_open"] = False
         cal_base = calendar_metrics_df.copy()
-        cal_base["start_local"] = pd.to_datetime(cal_base["start_time_utc"], utc=True, errors="coerce").dt.tz_localize(None)
+        cal_base["start_local"] = _to_local_naive(cal_base["start_time_utc"])
         cal_base = cal_base.dropna(subset=["start_local"]).copy()
 
         if cal_base.empty:
@@ -3356,9 +3363,7 @@ if view == "Calendar":
                 ),
             )
             cal_metrics = cal_metrics.copy()
-            cal_metrics["start_local"] = pd.to_datetime(
-                cal_metrics["start_time_utc"], utc=True, errors="coerce"
-            ).dt.tz_localize(None)
+            cal_metrics["start_local"] = _to_local_naive(cal_metrics["start_time_utc"])
             cal_metrics = cal_metrics.dropna(subset=["start_local"]).copy()
             cal_metrics["day"] = cal_metrics["start_local"].dt.floor("D")
             cal_metrics = cal_metrics[
