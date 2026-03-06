@@ -175,6 +175,14 @@ def _weekly_tss_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
 def _daily_tss_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
     return _weekly_tss_target_from_lt_pace(lt_pace_sec_per_km) / 7.0
 
+
+def _weekly_distance_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
+    return max(_lt_target_from_regression(lt_pace_sec_per_km, value_index=1), 0.0)
+
+
+def _daily_distance_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
+    return _weekly_distance_target_from_lt_pace(lt_pace_sec_per_km) / 7.0
+
 AUTH_ALL_TABS = [
     "Dashboard",
     "Calendar",
@@ -2276,6 +2284,8 @@ derived_lthr_bpm = _curve_latest_value(saved_lthr_curve, "lthr_bpm", DEFAULT_LTH
 derived_threshold_pace_sec = _curve_latest_value(
     saved_lt_pace_curve, "lt_pace_sec_per_km", DEFAULT_THRESHOLD_PACE_SEC_PER_KM
 )
+derived_weekly_distance_target = _weekly_distance_target_from_lt_pace(float(derived_threshold_pace_sec))
+derived_daily_distance_target = derived_weekly_distance_target / 7.0
 derived_weekly_tss_target = _weekly_tss_target_from_lt_pace(float(derived_threshold_pace_sec))
 derived_daily_tss_target = derived_weekly_tss_target / 7.0
 lthr_curve_points = _curve_points_from_rows(saved_lthr_curve, "lthr_bpm")
