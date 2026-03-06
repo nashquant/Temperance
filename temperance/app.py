@@ -802,9 +802,14 @@ def _parse_minutes_token(text: str) -> float | None:
         m = float(hm.group(2)) if hm.group(2) else 0.0
         total = h * 60.0 + m
         return total if total > 0 else None
-    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b", t)
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:min|mins|minute|minutes)\b", t)
     if m:
         total = float(m.group(1))
+        return total if total > 0 else None
+    # Support shorthand minute notation like 20' or 20’.
+    q = re.search(r"(\d+(?:\.\d+)?)\s*[\'’]\b", t)
+    if q:
+        total = float(q.group(1))
         return total if total > 0 else None
     s = re.search(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", t)
     if s:
@@ -815,12 +820,20 @@ def _parse_minutes_token(text: str) -> float | None:
 
 def _parse_distance_km_token(text: str) -> float | None:
     m = re.search(r"(\d+(?:\.\d+)?)\s*km\b", text.lower())
-    if not m:
+    if m:
+        try:
+            km = float(m.group(1))
+        except Exception:
+            return None
+        return km if km > 0 else None
+    m_meters = re.search(r"(\d+(?:\.\d+)?)\s*m\b", text.lower())
+    if not m_meters:
         return None
     try:
-        km = float(m.group(1))
+        meters = float(m_meters.group(1))
     except Exception:
         return None
+    km = meters / 1000.0
     return km if km > 0 else None
 
 
@@ -863,10 +876,12 @@ def _parse_if_token(text: str) -> float | None:
 
 def _normalize_plan_text(text: str) -> str:
     t = " ".join(str(text or "").strip().split())
-    t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b", r"\1min", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:min|mins|minute|minutes)\b", r"\1min", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*[\'’]\b", r"\1min", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", r"\1s", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*h\b", r"\1h", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*km\b", r"\1km", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*m\b", r"\1m", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*bpm\b", r"\1bpm", t, flags=re.IGNORECASE)
     t = re.sub(r"\s*/\s*km\b", "/km", t, flags=re.IGNORECASE)
     t = re.sub(r"\s*\+\s*", " + ", t)
@@ -942,7 +957,7 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
             continue
 
         rep_match = re.search(
-            r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)\b",
+            r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|min|mins|minute|minutes|s|sec|secs|second|seconds)\b",
             chunk.lower(),
         )
         if rep_match:
@@ -963,6 +978,35 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
                     {
                         "kind": kind,
                         "duration_min": rep_minutes,
+                        "avg_hr_bpm": bpm,
+                        "pace_s_per_km": pace,
+                        "if_input": if_input,
+                        "source": chunk,
+                    }
+                )
+            last_kind = kind
+            continue
+
+        rep_m_match = re.search(r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*m\b", chunk.lower())
+        if rep_m_match:
+            reps = int(rep_m_match.group(1))
+            rep_km = float(rep_m_match.group(2)) / 1000.0
+            if reps <= 0 or rep_km <= 0:
+                warnings.append(f"Invalid interval block in: `{chunk}`")
+                continue
+            if not is_running_like:
+                warnings.append(f"Distance intervals are only supported for running/treadmill in: `{chunk}`")
+                continue
+            if pace is None or pace <= 0:
+                warnings.append(f"Distance intervals require pace in: `{chunk}` (add `@4:50/km`)")
+                continue
+            rep_minutes = (rep_km * pace) / 60.0
+            for _ in range(max(reps, 0)):
+                segments.append(
+                    {
+                        "kind": kind,
+                        "duration_min": rep_minutes,
+                        "distance_km": rep_km,
                         "avg_hr_bpm": bpm,
                         "pace_s_per_km": pace,
                         "if_input": if_input,
