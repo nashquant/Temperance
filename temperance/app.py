@@ -123,15 +123,15 @@ CUSTOM_ACTIVITIES_LIMIT = 5000
 # Points correspond to:
 # 5:00, 4:30, 4:00, 3:45, 3:30, 3:20, 3:15, 3:10, 3:00
 LT_PACE_TO_WEEKLY_TARGET_POINTS = [
-    (300.0, 67.0, 385.0),
-    (270.0, 81.0, 419.0),
-    (240.0, 96.0, 448.0),
-    (225.0, 111.0, 491.0),
-    (210.0, 127.0, 532.0),
-    (200.0, 142.0, 571.0),
-    (195.0, 154.0, 608.0),
-    (190.0, 167.0, 651.0),
-    (180.0, 194.0, 719.0),
+    (300.0, 67.0, 347.0),
+    (270.0, 81.0, 377.0),
+    (240.0, 96.0, 403.0),
+    (225.0, 111.0, 442.0),
+    (210.0, 127.0, 479.0),
+    (200.0, 142.0, 514.0),
+    (195.0, 154.0, 547.0),
+    (190.0, 167.0, 586.0),
+    (180.0, 194.0, 647.0),
 ]
 INJURY_WINDOWS = [
     {"label": "Injury 1", "start": "2025-05-15", "end": "2025-06-18", "severity": "injury"},
@@ -2753,12 +2753,12 @@ if view == "Dashboard":
                         )
                         .properties(height=chart_height)
                     )
-                    top_sel = alt.selection_point(fields=["series"], bind="legend")
+                    top_sel = alt.selection_point(name="dash_metric_legend_sel", fields=["series"], bind="legend")
                     chart = chart.encode(
                         opacity=alt.condition(
                             top_sel,
                             alt.Opacity("base_opacity:Q", legend=None),
-                            alt.value(0.08),
+                            alt.value(0.18),
                             empty=True,
                         )
                     ).add_params(top_sel)
@@ -2932,9 +2932,9 @@ if view == "Dashboard":
                     )
                     .properties(height=280)
                 )
-                tss_sel = alt.selection_point(fields=["series"], bind="legend")
+                tss_sel = alt.selection_point(name="summary_tss_legend_sel", fields=["series"], bind="legend")
                 tss_chart = tss_chart.encode(
-                    opacity=alt.condition(tss_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                    opacity=alt.condition(tss_sel, alt.value(1.0), alt.value(0.2), empty=True)
                 ).add_params(tss_sel)
                 threshold_value = float(derived_weekly_tss_target if weekly_toggle else derived_daily_tss_target)
                 threshold_df = pd.DataFrame({"threshold": [threshold_value]})
@@ -3009,9 +3009,9 @@ if view == "Dashboard":
                         tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
-                ff_sel = alt.selection_point(fields=["series"], bind="legend")
+                ff_sel = alt.selection_point(name="fitness_ff_legend_sel", fields=["series"], bind="legend")
                 ff_chart = ff_chart.encode(
-                    opacity=alt.condition(ff_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                    opacity=alt.condition(ff_sel, alt.value(1.0), alt.value(0.2), empty=True)
                 ).add_params(ff_sel)
                 ff_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), ff_chart)
                 if enable_zoom:
@@ -3031,12 +3031,14 @@ if view == "Dashboard":
                 if weekly_toggle:
                     rff_base["period_start"] = rff_base["period_start"].dt.to_period("W-SUN").dt.start_time
                     rff_base = rff_base.groupby("period_start", as_index=False)[["leg_elasticity", "pounding"]].mean().sort_values("period_start")
+                rff_base = rff_base.dropna(subset=["period_start"]).sort_values("period_start")
                 weekly_rff_long = rff_base.melt(
                     id_vars=["period_start"],
                     value_vars=["leg_elasticity", "pounding"],
                     var_name="series",
                     value_name="value",
                 )
+                weekly_rff_long["value"] = pd.to_numeric(weekly_rff_long["value"], errors="coerce").fillna(0.0)
                 weekly_rff_long["series"] = weekly_rff_long["series"].replace(
                     {"leg_elasticity": "Leg Elasticity", "pounding": "Pounding"}
                 )
@@ -3115,9 +3117,9 @@ if view == "Dashboard":
                     )
                     .properties(height=280)
                 )
-                weekly_dist_sel = alt.selection_point(fields=["series"], bind="legend")
+                weekly_dist_sel = alt.selection_point(name="summary_dist_legend_sel", fields=["series"], bind="legend")
                 weekly_dist_chart = weekly_dist_chart.encode(
-                    opacity=alt.condition(weekly_dist_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                    opacity=alt.condition(weekly_dist_sel, alt.value(1.0), alt.value(0.2), empty=True)
                 ).add_params(weekly_dist_sel)
                 dist_threshold_value = float(
                     derived_weekly_distance_target if weekly_toggle else derived_daily_distance_target
@@ -3170,12 +3172,14 @@ if view == "Dashboard":
                 if weekly_toggle:
                     fr_base["period_start"] = fr_base["period_start"].dt.to_period("W-SUN").dt.start_time
                     fr_base = fr_base.groupby("period_start", as_index=False)[["overreach", "injury_risk"]].mean().sort_values("period_start")
+                fr_base = fr_base.dropna(subset=["period_start"]).sort_values("period_start")
                 weekly_fr_long = fr_base.melt(
                     id_vars=["period_start"],
                     value_vars=["overreach", "injury_risk"],
                     var_name="series",
                     value_name="value",
                 )
+                weekly_fr_long["value"] = pd.to_numeric(weekly_fr_long["value"], errors="coerce").fillna(0.0)
                 weekly_fr_long["series"] = weekly_fr_long["series"].replace(
                     {"overreach": "Overreach", "injury_risk": "Injury Risk"}
                 )
@@ -3252,7 +3256,7 @@ if view == "Dashboard":
                         ),
                         tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
-                    legend_sel = alt.selection_point(fields=["series"], bind="legend")
+                    legend_sel = alt.selection_point(name="activity_energy_legend_sel", fields=["series"], bind="legend")
                     left_chart = base.transform_filter(alt.datum.series == "Garmin Training Load").mark_line(point=True).encode(
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Garmin Training Load"))
                     )
@@ -3260,10 +3264,10 @@ if view == "Dashboard":
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f", title="Total Calories", orient="right"))
                     )
                     left_chart = left_chart.encode(
-                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.2), empty=True)
                     )
                     right_chart = right_chart.encode(
-                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.08), empty=True)
+                        opacity=alt.condition(legend_sel, alt.value(1.0), alt.value(0.2), empty=True)
                     )
                     weekly_chart = alt.layer(left_chart, right_chart).resolve_scale(y="independent")
                     weekly_chart = weekly_chart.add_params(legend_sel)
@@ -3345,13 +3349,13 @@ if view == "Dashboard":
                         ),
                         tooltip=["period_start:T", "zone:N", alt.Tooltip("hours_label:N", title="hours")],
                     )
-                    zone_hours_sel = alt.selection_point(fields=["zone"], bind="legend")
+                    zone_hours_sel = alt.selection_point(name="zone_hours_legend_sel", fields=["zone"], bind="legend")
                     left_layer = (
                         base.transform_filter(alt.datum.axis_side == "left")
                         .mark_line(point=True)
                         .encode(
                             y=alt.Y("hours:Q", axis=alt.Axis(title="hours", format=".1f")),
-                            opacity=alt.condition(zone_hours_sel, alt.value(1.0), alt.value(0.08), empty=True),
+                            opacity=alt.condition(zone_hours_sel, alt.value(1.0), alt.value(0.2), empty=True),
                         )
                     )
                     right_layer = (
@@ -3359,7 +3363,7 @@ if view == "Dashboard":
                         .mark_line(point=True, strokeDash=[6, 4])
                         .encode(
                             y=alt.Y("hours:Q", axis=alt.Axis(title="total hours", format=".1f", orient="right")),
-                            opacity=alt.condition(zone_hours_sel, alt.value(1.0), alt.value(0.08), empty=True),
+                            opacity=alt.condition(zone_hours_sel, alt.value(1.0), alt.value(0.2), empty=True),
                         )
                     )
                     zone_hours_chart = (
@@ -6016,7 +6020,7 @@ if view == "Recovery Data":
             if plot_long_frames:
                 recovery_long = pd.concat(plot_long_frames, ignore_index=True).dropna(subset=["value"])
                 if not recovery_long.empty:
-                    rec_sel = alt.selection_point(fields=["series"], bind="legend")
+                    rec_sel = alt.selection_point(name="recovery_legend_sel", fields=["series"], bind="legend")
                     recovery_chart = (
                         alt.Chart(recovery_long)
                         .mark_line(point=True)
@@ -6025,7 +6029,7 @@ if view == "Recovery Data":
                             y=alt.Y("value:Q", axis=alt.Axis(format=".2f")),
                             color="series:N",
                             tooltip=["day:T", "series:N", alt.Tooltip("value:Q", format=".2f")],
-                            opacity=alt.condition(rec_sel, alt.value(1.0), alt.value(0.08), empty=True),
+                            opacity=alt.condition(rec_sel, alt.value(1.0), alt.value(0.2), empty=True),
                         )
                         .add_params(rec_sel)
                     )
