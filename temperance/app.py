@@ -6056,9 +6056,9 @@ if view == "Data Extract":
 
     extract_row2 = st.columns([1.3, 1.0, 1.2, 1.0])
     with extract_row2[0]:
-        include_details = st.checkbox("Include activity details", value=False)
+        include_details = st.checkbox("Include activity details", value=True)
     with extract_row2[1]:
-        include_wellness = st.checkbox("Include sleep + wellness", value=True)
+        include_wellness = st.checkbox("Include sleep + wellness", value=False)
     with extract_row2[2]:
         verify_raw_integrity = st.checkbox("Verify raw integrity", value=False)
     with extract_row2[3]:
@@ -6101,11 +6101,19 @@ if view == "Data Extract":
                         # don't skip activity updates when wellness is more recent (or vice-versa).
                         anchor = min(anchors)
                         incremental_anchor_day = (anchor - timedelta(days=2)).date()
+                        historical_gap_backfill = bool(earliest and start_day < earliest.date())
                         if start_day < incremental_anchor_day:
-                            _log(
-                                f"[info] incremental_anchor={anchor.isoformat()} "
-                                f"but honoring explicit earlier start_day={start_day.isoformat()} for backfill."
-                            )
+                            if historical_gap_backfill:
+                                _log(
+                                    f"[info] incremental_anchor={anchor.isoformat()} "
+                                    f"but honoring explicit earlier start_day={start_day.isoformat()} for historical gap backfill."
+                                )
+                            else:
+                                start_day = incremental_anchor_day
+                                _log(
+                                    f"[info] incremental_anchor={anchor.isoformat()} "
+                                    f"-> start_day clamped to {start_day.isoformat()} (ignored earlier non-gap start date)."
+                                )
                         else:
                             start_day = max(start_day, incremental_anchor_day)
                             _log(
