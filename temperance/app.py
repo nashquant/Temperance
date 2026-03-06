@@ -3447,6 +3447,15 @@ if view == "Calendar":
             with controls[0]:
                 cal_min_day = cal_base["start_local"].min().date()
                 cal_max_day = cal_base["start_local"].max().date()
+                min_week_start = pd.Timestamp(cal_min_day) - pd.Timedelta(days=int(pd.Timestamp(cal_min_day).weekday()))
+                max_week_start = pd.Timestamp(cal_max_day) - pd.Timedelta(days=int(pd.Timestamp(cal_max_day).weekday()))
+                today_week_start = pd.Timestamp(datetime.now().astimezone().date())
+                today_week_start = today_week_start - pd.Timedelta(days=int(today_week_start.weekday()))
+                default_week_start = (
+                    today_week_start
+                    if (today_week_start >= min_week_start and today_week_start <= max_week_start)
+                    else max_week_start
+                )
                 if compact_mode_early:
                     latest_week_start = pd.Timestamp(cal_max_day) - pd.Timedelta(
                         days=int(pd.Timestamp(cal_max_day).weekday())
@@ -3455,8 +3464,12 @@ if view == "Calendar":
                         st.session_state.get("calendar_compact_week_start"), errors="coerce"
                     )
                     if pd.isna(selected_preview):
-                        selected_preview = latest_week_start
+                        selected_preview = default_week_start
                     selected_preview = selected_preview - pd.Timedelta(days=int(selected_preview.weekday()))
+                    if selected_preview < min_week_start:
+                        selected_preview = min_week_start
+                    if selected_preview > max_week_start:
+                        selected_preview = max_week_start
                     is_future_week_preview = selected_preview > latest_week_start
 
                     current_compare_choice = str(
@@ -3885,13 +3898,17 @@ if view == "Calendar":
                     st.stop()
                 latest_week_start = latest_day - pd.Timedelta(days=int(latest_day.weekday()))
                 if "calendar_compact_week_start" not in st.session_state:
-                    st.session_state["calendar_compact_week_start"] = latest_week_start
+                    st.session_state["calendar_compact_week_start"] = default_week_start
                 selected_week_start = pd.to_datetime(
                     st.session_state.get("calendar_compact_week_start"), errors="coerce"
                 )
                 if pd.isna(selected_week_start):
-                    selected_week_start = latest_week_start
+                    selected_week_start = default_week_start
                 selected_week_start = selected_week_start - pd.Timedelta(days=int(selected_week_start.weekday()))
+                if selected_week_start < min_week_start:
+                    selected_week_start = min_week_start
+                if selected_week_start > max_week_start:
+                    selected_week_start = max_week_start
                 st.session_state["calendar_compact_week_start"] = selected_week_start
                 selected_week_end = selected_week_start + pd.Timedelta(days=6)
                 compare_choice = str(st.session_state.get("calendar_compact_compare_choice", "Planned"))
