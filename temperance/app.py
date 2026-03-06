@@ -2926,7 +2926,7 @@ if view == "Dashboard":
                         y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
                         color=alt.Color(
                             "series:N",
-                            legend=alt.Legend(title="", orient="bottom", direction="horizontal"),
+                            legend=alt.Legend(title=None, orient="bottom", direction="horizontal"),
                             scale=alt.Scale(domain=["TSS", "rTSS"], range=["#60a5fa", "#f59e0b"]),
                         ),
                         tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
