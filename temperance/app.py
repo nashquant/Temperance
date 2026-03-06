@@ -806,6 +806,10 @@ def _parse_minutes_token(text: str) -> float | None:
     if m:
         total = float(m.group(1))
         return total if total > 0 else None
+    s = re.search(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", t)
+    if s:
+        total = float(s.group(1)) / 60.0
+        return total if total > 0 else None
     return None
 
 
@@ -860,6 +864,7 @@ def _parse_if_token(text: str) -> float | None:
 def _normalize_plan_text(text: str) -> str:
     t = " ".join(str(text or "").strip().split())
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b", r"\1min", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", r"\1s", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*h\b", r"\1h", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*km\b", r"\1km", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*bpm\b", r"\1bpm", t, flags=re.IGNORECASE)
@@ -936,10 +941,20 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
             warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm`, `@70%`, or `@4:50/km`)")
             continue
 
-        rep_match = re.search(r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b", chunk.lower())
+        rep_match = re.search(
+            r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)\b",
+            chunk.lower(),
+        )
         if rep_match:
             reps = int(rep_match.group(1))
-            rep_minutes = float(rep_match.group(2))
+            rep_value = float(rep_match.group(2))
+            rep_unit = rep_match.group(3)
+            if rep_unit.startswith("h"):
+                rep_minutes = rep_value * 60.0
+            elif rep_unit.startswith("s"):
+                rep_minutes = rep_value / 60.0
+            else:
+                rep_minutes = rep_value
             if reps <= 0 or rep_minutes <= 0:
                 warnings.append(f"Invalid interval block in: `{chunk}`")
                 continue
