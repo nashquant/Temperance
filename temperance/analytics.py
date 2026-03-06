@@ -229,9 +229,7 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
                 "distance_km",
                 "distance_proxy_km",
                 "duration_s_total",
-                "trimp_total",
                 "mechanical_load_total",
-                "edwards_trimp_total",
                 "rtss_total",
                 "tss_total",
                 "training_load_garmin",
@@ -265,9 +263,7 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
             distance_km=("distance_km", "sum"),
             distance_proxy_km=("distance_proxy_km", "sum"),
             duration_s_total=("duration_s", "sum"),
-            trimp_total=("trimp", "sum"),
             mechanical_load_total=("mechanical_load", "sum"),
-            edwards_trimp_total=("edwards_trimp", "sum"),
             rtss_total=("rtss", "sum"),
             tss_total=("tss", "sum"),
             training_load_garmin=("training_load_garmin", "sum"),
@@ -420,6 +416,19 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     weekly = df.copy()
+    # Ensure numeric aggregations run on numeric dtypes (avoids slow object-groupby and NA artifacts).
+    numeric_cols = [
+        "rtss",
+        "tss",
+        "mechanical_load",
+        "distance_proxy_km",
+        "training_load_garmin",
+        "calories_total",
+        "distance_m",
+    ]
+    for col in numeric_cols:
+        if col in weekly.columns:
+            weekly[col] = pd.to_numeric(weekly[col], errors="coerce").fillna(0.0)
     weekly["week_start"] = weekly["start_time_utc"].dt.to_period("W-SUN").dt.start_time
     sport = weekly["sport_type"].fillna("").astype(str).str.lower()
     is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
@@ -428,8 +437,6 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
 
     agg_spec: dict[str, tuple[str, str]] = {
         "total_distance_km": ("distance_km", "sum"),
-        "total_trimp": ("trimp", "sum"),
-        "total_edwards_trimp": ("edwards_trimp", "sum"),
         "total_rtss": ("rtss", "sum"),
         "total_tss": ("tss", "sum"),
         "total_mechanical_load": ("mechanical_load", "sum"),

@@ -2897,18 +2897,22 @@ if view == "Dashboard":
                     tss_base = tss_base.rename(
                         columns={"week_start": "period_start", "total_tss": "tss", "total_rtss": "rtss"}
                     )
+                    tss_base["tss"] = pd.to_numeric(tss_base["tss"], errors="coerce").fillna(0.0)
+                    tss_base["rtss"] = pd.to_numeric(tss_base["rtss"], errors="coerce").fillna(0.0)
                 else:
                     tss_base = filtered_daily_range[["day_utc", "tss_total", "rtss_total"]].copy()
                     tss_base["period_start"] = pd.to_datetime(tss_base["day_utc"], errors="coerce")
                     tss_base["tss"] = pd.to_numeric(tss_base["tss_total"], errors="coerce").fillna(0.0)
                     tss_base["rtss"] = pd.to_numeric(tss_base["rtss_total"], errors="coerce").fillna(0.0)
                     tss_base = tss_base[["period_start", "tss", "rtss"]].dropna(subset=["period_start"]).sort_values("period_start")
+                tss_base = tss_base.dropna(subset=["period_start"]).sort_values("period_start")
                 tss_plot = tss_base.melt(
                     id_vars=["period_start"],
                     value_vars=["tss", "rtss"],
                     var_name="series",
                     value_name="value",
                 )
+                tss_plot["value"] = pd.to_numeric(tss_plot["value"], errors="coerce").fillna(0.0)
                 tss_plot["series"] = tss_plot["series"].replace(
                     {"tss": "TSS", "rtss": "rTSS"}
                 )
