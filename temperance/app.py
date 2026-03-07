@@ -3049,7 +3049,6 @@ if view in {"Dashboard", "Model Metrics"}:
         ordered_fitness_container = st.container()
 
         if render_summary:
-            with ordered_tss_container:
             if (
                 (weekly_toggle and "total_tss" in weekly.columns and "total_rtss" in weekly.columns and not weekly.empty)
                 or (
@@ -3083,7 +3082,7 @@ if view in {"Dashboard", "Model Metrics"}:
                 tss_plot["series"] = tss_plot["series"].replace(
                     {"tss": "TSS", "rtss": "rTSS"}
                 )
-                st.subheader("TSS vs rTSS")
+                ordered_tss_container.subheader("TSS vs rTSS")
                 tss_chart = (
                     alt.Chart(tss_plot)
                     .mark_line(point=True)
@@ -3129,12 +3128,12 @@ if view in {"Dashboard", "Model Metrics"}:
                 ).resolve_scale(y="independent")
                 if enable_zoom:
                     tss_chart = tss_chart.interactive()
-                st.altair_chart(
+                ordered_tss_container.altair_chart(
                     tss_chart,
                     use_container_width=True,
                     key="dashboard_summary_tss_rtss",
                 )
-                st.caption(
+                ordered_tss_container.caption(
                     f"The dotted line is Stress Score {int(round(threshold_value))} "
                     f"({'weekly' if weekly_toggle else 'daily'} mode). "
                     f"Derived from LT pace {_pace_compact(float(derived_threshold_pace_sec))}. "
@@ -3142,8 +3141,7 @@ if view in {"Dashboard", "Model Metrics"}:
                 )
 
         if render_fitness:
-            with ordered_fitness_container:
-                st.subheader("Fitness vs Fatigue")
+            ordered_fitness_container.subheader("Fitness vs Fatigue")
             if not filtered_daily_range.empty and "fitness" in filtered_daily_range.columns and "fatigue" in filtered_daily_range.columns:
                 weekly_ff_long = _section_long_series(
                     filtered_daily_range,
@@ -3188,17 +3186,16 @@ if view in {"Dashboard", "Model Metrics"}:
                     ).resolve_scale(y="independent")
                     if enable_zoom:
                         ff_chart = ff_chart.interactive()
-                    st.altair_chart(
+                    ordered_fitness_container.altair_chart(
                         ff_chart,
                         use_container_width=True,
                         key="dashboard_fitness_fatigue",
                     )
             else:
-                st.caption("No fitness/fatigue data to plot.")
+                ordered_fitness_container.caption("No fitness/fatigue data to plot.")
 
         if render_injury:
-            with ordered_leg_pounding_container:
-                st.subheader("Leg Elasticity vs Pounding")
+            ordered_leg_pounding_container.subheader("Leg Elasticity vs Pounding")
             if not filtered_daily_range.empty and "leg_elasticity" in filtered_daily_range.columns and "pounding" in filtered_daily_range.columns:
                 weekly_rff_long = _section_long_series(
                     filtered_daily_range,
@@ -3256,17 +3253,16 @@ if view in {"Dashboard", "Model Metrics"}:
                     )
                     if enable_zoom:
                         rff_chart = rff_chart.interactive()
-                    st.altair_chart(
+                    ordered_leg_pounding_container.altair_chart(
                         rff_chart,
                         use_container_width=True,
                         key="dashboard_injury_leg_pounding",
                     )
             else:
-                st.caption("No Leg Elasticity/Pounding data to plot.")
+                ordered_leg_pounding_container.caption("No Leg Elasticity/Pounding data to plot.")
 
         if render_summary:
-            with ordered_distance_container:
-                st.subheader("Distance vs Distance Eqv.")
+            ordered_distance_container.subheader("Distance vs Distance Eqv.")
             if (
                 (weekly_toggle and "total_distance_km" in weekly.columns and "total_distance_proxy_km" in weekly.columns and not weekly.empty)
                 or (
@@ -3345,12 +3341,12 @@ if view in {"Dashboard", "Model Metrics"}:
                 ).resolve_scale(y="independent")
                 if enable_zoom:
                     weekly_dist_chart = weekly_dist_chart.interactive()
-                st.altair_chart(
+                ordered_distance_container.altair_chart(
                     weekly_dist_chart,
                     use_container_width=True,
                     key="dashboard_summary_distance",
                 )
-                st.caption(
+                ordered_distance_container.caption(
                     f"The dotted line is Distance target {int(round(dist_threshold_value))} km "
                     f"({'weekly' if weekly_toggle else 'daily'} mode), derived from LT pace "
                     f"{_pace_compact(float(derived_threshold_pace_sec))}. "
@@ -3358,11 +3354,10 @@ if view in {"Dashboard", "Model Metrics"}:
                     "running rTSS to HR-based TSS scaled by specificity (applied once)."
                 )
             else:
-                st.caption("No distance-equivalent data to plot.")
+                ordered_distance_container.caption("No distance-equivalent data to plot.")
 
         if render_injury:
-            with ordered_overreach_container:
-                st.subheader("Overreach vs Injury Risk")
+            ordered_overreach_container.subheader("Overreach vs Injury Risk")
             if not filtered_daily_range.empty and "overreach" in filtered_daily_range.columns and "injury_risk" in filtered_daily_range.columns:
                 weekly_fr_long = _section_long_series(
                     filtered_daily_range,
@@ -3407,13 +3402,13 @@ if view in {"Dashboard", "Model Metrics"}:
                     ).resolve_scale(y="independent")
                     if enable_zoom:
                         fr_chart = fr_chart.interactive()
-                    st.altair_chart(
+                    ordered_overreach_container.altair_chart(
                         fr_chart,
                         use_container_width=True,
                         key="dashboard_injury_overreach",
                     )
             else:
-                st.caption("No Overreach/Injury Risk data to plot.")
+                ordered_overreach_container.caption("No Overreach/Injury Risk data to plot.")
 
         if render_fitness:
             st.subheader("Garmin Training Load vs. Total Calories")
