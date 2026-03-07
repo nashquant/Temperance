@@ -1587,6 +1587,7 @@ def apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, fl
     return out
 
 
+@st.cache_data(show_spinner=False)
 def get_metrics_df_fast(
     db_path: Path,
     activities_cache_key: str,
@@ -1728,6 +1729,7 @@ def get_metrics_df_fast(
     return df
 
 
+@st.cache_data(show_spinner=False)
 def _build_custom_metrics_df_for_plots(
     db_path: Path,
     custom_activities_cache_key: str,
@@ -2852,7 +2854,11 @@ if view == "Dashboard":
                             st.markdown(strip_html, unsafe_allow_html=True)
                     if enable_zoom:
                         chart = chart.interactive()
-                    st.altair_chart(chart, use_container_width=True)
+                    st.altair_chart(
+                        chart,
+                        use_container_width=True,
+                        key="dashboard_custom_metric_main",
+                    )
 
             if compare_mode and plot_frames:
                 compare_df = pd.concat(plot_frames, ignore_index=True)
@@ -2904,7 +2910,11 @@ if view == "Dashboard":
                 if enable_zoom:
                     compare_chart = compare_chart.interactive()
                     st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
-                st.altair_chart(compare_chart, use_container_width=True)
+                st.altair_chart(
+                    compare_chart,
+                    use_container_width=True,
+                    key="dashboard_custom_metric_compare",
+                )
             elif compare_mode:
                 st.caption("No comparable data found for the selected metrics/date range.")
         weekly = weekly_summary(range_filtered_metrics)
@@ -3046,7 +3056,11 @@ if view == "Dashboard":
                 ).resolve_scale(y="independent")
                 if enable_zoom:
                     tss_chart = tss_chart.interactive()
-                st.altair_chart(tss_chart, use_container_width=True)
+                st.altair_chart(
+                    tss_chart,
+                    use_container_width=True,
+                    key="dashboard_summary_tss_rtss",
+                )
                 st.caption(
                     f"The dotted line is Stress Score {int(round(threshold_value))} "
                     f"({'weekly' if weekly_toggle else 'daily'} mode). "
@@ -3071,7 +3085,7 @@ if view == "Dashboard":
                     ff_domain = _safe_y_domain(weekly_ff_long["value"])
                     ff_chart = (
                         alt.Chart(weekly_ff_long)
-                        .mark_line(point=alt.OverlayMarkDef(filled=True, size=54), strokeWidth=2.2)
+                        .mark_line(point=False, strokeWidth=2.2)
                         .encode(
                             x=alt.X(
                                 "period_start:T",
@@ -3094,13 +3108,13 @@ if view == "Dashboard":
                         )
                         .properties(height=280)
                     )
-                    ff_chart = alt.layer(
-                        build_injury_layer(saved_injury_windows, start_ts, end_ts),
-                        ff_chart,
-                    ).resolve_scale(y="independent")
                     if enable_zoom:
                         ff_chart = ff_chart.interactive()
-                    st.altair_chart(ff_chart, use_container_width=True)
+                    st.altair_chart(
+                        ff_chart,
+                        use_container_width=True,
+                        key="dashboard_fitness_fatigue",
+                    )
             else:
                 st.caption("No fitness/fatigue data to plot.")
 
@@ -3119,9 +3133,9 @@ if view == "Dashboard":
                     st.caption("No Leg Elasticity/Pounding data in this range.")
                 else:
                     rff_domain = _safe_y_domain(weekly_rff_long["value"])
-                    rff_line = (
+                    rff_chart = (
                         alt.Chart(weekly_rff_long)
-                        .mark_line(point=alt.OverlayMarkDef(filled=True, size=54), strokeWidth=2.2)
+                        .mark_line(point=False, strokeWidth=2.2)
                         .encode(
                             x=alt.X(
                                 "period_start:T",
@@ -3144,19 +3158,13 @@ if view == "Dashboard":
                         )
                         .properties(height=280)
                     )
-                    rff_threshold = (
-                        alt.Chart(pd.DataFrame({"threshold": [float(derived_daily_tss_target)]}))
-                        .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
-                        .encode(y="threshold:Q")
-                    )
-                    rff_chart = alt.layer(rff_line, rff_threshold)
-                    rff_chart = alt.layer(
-                        build_injury_layer(saved_injury_windows, start_ts, end_ts),
-                        rff_chart,
-                    ).resolve_scale(y="independent")
                     if enable_zoom:
                         rff_chart = rff_chart.interactive()
-                    st.altair_chart(rff_chart, use_container_width=True)
+                    st.altair_chart(
+                        rff_chart,
+                        use_container_width=True,
+                        key="dashboard_injury_leg_pounding",
+                    )
             else:
                 st.caption("No Leg Elasticity/Pounding data to plot.")
 
@@ -3240,7 +3248,11 @@ if view == "Dashboard":
                 ).resolve_scale(y="independent")
                 if enable_zoom:
                     weekly_dist_chart = weekly_dist_chart.interactive()
-                st.altair_chart(weekly_dist_chart, use_container_width=True)
+                st.altair_chart(
+                    weekly_dist_chart,
+                    use_container_width=True,
+                    key="dashboard_summary_distance",
+                )
                 st.caption(
                     f"The dotted line is Distance target {int(round(dist_threshold_value))} km "
                     f"({'weekly' if weekly_toggle else 'daily'} mode), derived from LT pace "
@@ -3297,7 +3309,11 @@ if view == "Dashboard":
                     ).resolve_scale(y="independent")
                     if enable_zoom:
                         fr_chart = fr_chart.interactive()
-                    st.altair_chart(fr_chart, use_container_width=True)
+                    st.altair_chart(
+                        fr_chart,
+                        use_container_width=True,
+                        key="dashboard_injury_overreach",
+                    )
             else:
                 st.caption("No Overreach/Injury Risk data to plot.")
 
@@ -3370,7 +3386,11 @@ if view == "Dashboard":
                     weekly_chart = weekly_chart.add_params(legend_sel)
                     if enable_zoom:
                         weekly_chart = weekly_chart.interactive()
-                    st.altair_chart(weekly_chart, use_container_width=True)
+                    st.altair_chart(
+                        weekly_chart,
+                        use_container_width=True,
+                        key="dashboard_fitness_training_load",
+                    )
             else:
                 st.caption("No Garmin training load/calories data to plot.")
 
@@ -3471,22 +3491,26 @@ if view == "Dashboard":
                     )
                     if enable_zoom:
                         zone_hours_chart = zone_hours_chart.interactive()
-                    st.altair_chart(zone_hours_chart, use_container_width=True)
+                    st.altair_chart(
+                        zone_hours_chart,
+                        use_container_width=True,
+                        key="dashboard_fitness_hr_zones",
+                    )
                     st.caption("Anaerobic (Z5) is tracked but not plotted in this view.")
             else:
                 st.caption("No heart-rate zone time data to plot.")
 
-        table_source = range_filtered_metrics.copy()
-        if not table_source.empty and not filtered_daily.empty:
-            table_source["day_utc"] = _to_local_naive(table_source["start_time_utc"]).dt.date.astype(str)
-            daily_fit = (
-                filtered_daily[["day_utc", "fitness", "fatigue"]]
-                .dropna(subset=["day_utc"])
-                .drop_duplicates(subset=["day_utc"], keep="last")
-            )
-            table_source = table_source.merge(daily_fit, on="day_utc", how="left")
-        table_df = display_table(table_source)
         if section_choice == "Activities":
+            table_source = range_filtered_metrics.copy()
+            if not table_source.empty and not filtered_daily.empty:
+                table_source["day_utc"] = _to_local_naive(table_source["start_time_utc"]).dt.date.astype(str)
+                daily_fit = (
+                    filtered_daily[["day_utc", "fitness", "fatigue"]]
+                    .dropna(subset=["day_utc"])
+                    .drop_duplicates(subset=["day_utc"], keep="last")
+                )
+                table_source = table_source.merge(daily_fit, on="day_utc", how="left")
+            table_df = display_table(table_source)
             st.subheader("Activities")
             table_df = table_df.copy()
             table_df["if_proxy_pct"] = pd.to_numeric(table_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
@@ -3511,7 +3535,7 @@ if view == "Dashboard":
                     "distance_proxy_method": st.column_config.TextColumn("Distance Proxy Method"),
                 },
             )
-            section_render_ms = (perf_counter() - section_render_t0) * 1000.0
+        section_render_ms = (perf_counter() - section_render_t0) * 1000.0
         total_ms = (perf_counter() - dashboard_block_t0) * 1000.0
         st.caption(
             "Perf timings (Dashboard): "
