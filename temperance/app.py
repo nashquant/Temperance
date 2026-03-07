@@ -669,6 +669,34 @@ def _duration_zone(seconds: float | int | None) -> str:
     return f"{secs}s"
 
 
+def _duration_compact_with_seconds(seconds: float | int | None) -> str:
+    if seconds is None:
+        return "-"
+    try:
+        total = int(round(float(seconds)))
+    except Exception:
+        return "-"
+    if total < 0:
+        total = 0
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    if hours > 0:
+        return f"{hours}h{minutes:02d}'{secs:02d}\""
+    return f"{minutes}'{secs:02d}\""
+
+
+def _truncate_to_decimals(value: float | int | None, digits: int = 2) -> float:
+    try:
+        v = float(value)
+    except Exception:
+        return 0.0
+    if not pd.notna(v):
+        return 0.0
+    factor = 10.0 ** max(int(digits), 0)
+    return float(np.floor(v * factor) / factor)
+
+
 def _sport_label(sport_type: str | None) -> str:
     raw = str(sport_type or "").strip().replace("_", " ")
     if not raw:
@@ -2149,9 +2177,18 @@ def _build_split_metrics_for_activity(
     for i, lap in enumerate(laps, start=1):
         if not isinstance(lap, dict):
             continue
-        dur_s = _num(lap, ["duration", "movingDuration", "elapsedDuration", "lapDuration", "totalDuration"])
+        dur_raw = _num(lap, ["duration", "movingDuration", "elapsedDuration", "lapDuration", "totalDuration"])
         dist_m = _num(lap, ["distance", "totalDistance", "sumDistance", "distanceInMeters", "distanceMeters"])
-        if dur_s is None or dur_s <= 0:
+        if dur_raw is None or dur_raw <= 0:
+            continue
+        # Match Strava-like lap timing display/computation: whole seconds.
+        dur_s = float(int(dur_raw))
+        if dur_s <= 0:
+            continue
+        # Garmin sometimes emits tiny transition laps without intensity marker.
+        # Drop these to keep split rows aligned with Strava's lap table.
+        intensity_type = str(lap.get("intensityType") or "").strip()
+        if (not intensity_type) and dur_s <= 2 and (dist_m is None or float(dist_m) <= 10.0):
             continue
         dist_km = (float(dist_m) / 1000.0) if (dist_m is not None and dist_m > 0) else 0.0
         pace_s = (float(dur_s) / dist_km) if dist_km > 0 else None
@@ -2170,7 +2207,7 @@ def _build_split_metrics_for_activity(
         rows.append(
             {
                 "split_idx": int(lap.get("lapIndex") or i),
-                "intensity_type": str(lap.get("intensityType") or ""),
+                "intensity_type": intensity_type,
                 "duration_s": float(dur_s),
                 "distance_km": float(dist_km),
                 "distance_eqv_km": float(dist_km) if is_running else 0.0,
@@ -2183,9 +2220,10 @@ def _build_split_metrics_for_activity(
             }
         )
 
-    out = pd.DataFrame(rows).sort_values("split_idx")
+    out = pd.DataFrame(rows).sort_values("split_idx").reset_index(drop=True)
     if out.empty:
         return out
+    out["split_idx"] = np.arange(1, len(out) + 1)
 
     # Keep lap totals coherent with the activity-level values shown in the calendar.
     act_tss = float(pd.to_numeric(pd.Series([activity_row.get("tss")]), errors="coerce").fillna(0.0).iloc[0])
@@ -4388,6 +4426,10 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"] strong {
                     color: rgba(168,85,247,0.96) !important;
                 }
+                div[class*="st-key-calendar_split_table"] [role="columnheader"] {
+                    font-weight: 700 !important;
+                    color: rgba(226,232,240,0.96) !important;
+                }
                 .cal-zones {
                     margin-top: 8px;
                     padding-top: 8px;
@@ -5377,9 +5419,18 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             plot_df["distance_eqv_km"] = pd.to_numeric(
                                 plot_df.get("distance_eqv_km"), errors="coerce"
                             ).fillna(0.0)
+                            plot_df["distance_km_ui"] = pd.to_numeric(
+                                plot_df.get("distance_km"), errors="coerce"
+                            ).fillna(0.0).map(lambda v: _truncate_to_decimals(v, 2))
+                            plot_df["distance_eqv_km_ui"] = pd.to_numeric(
+                                plot_df.get("distance_eqv_km"), errors="coerce"
+                            ).fillna(0.0).map(lambda v: _truncate_to_decimals(v, 2))
                             plot_df["pace_eqv_s_per_km"] = pd.to_numeric(
                                 plot_df.get("pace_eqv_s_per_km"), errors="coerce"
                             )
+                            plot_df["duration_display"] = plot_df["duration_s"].apply(_duration_compact_with_seconds)
+                            plot_df["pace_display"] = plot_df["pace_s_per_km"].apply(_pace_compact)
+                            plot_df["pace_eqv_display"] = plot_df["pace_eqv_s_per_km"].apply(_pace_compact)
                             plot_df["speed_eqv_kmh"] = pd.NA
                             valid_pace = plot_df["pace_eqv_s_per_km"] > 0
                             plot_df.loc[valid_pace, "speed_eqv_kmh"] = 3600.0 / plot_df.loc[valid_pace, "pace_eqv_s_per_km"]
@@ -5387,6 +5438,9 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 plot_df["speed_eqv_kmh"], errors="coerce"
                             ).fillna(0.0)
                             plot_df["intensity_factor"] = pd.to_numeric(
+                                plot_df.get("intensity_factor"), errors="coerce"
+                            ).fillna(0.0).clip(lower=0.0)
+                            plot_df["intensity_factor_color"] = pd.to_numeric(
                                 plot_df.get("intensity_factor"), errors="coerce"
                             ).fillna(0.0).clip(lower=0.0, upper=1.0)
                             plot_df = plot_df.sort_values("split_idx").reset_index(drop=True)
@@ -5411,7 +5465,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     ),
                                     y2=alt.Y2("y_zero:Q"),
                                     color=alt.Color(
-                                        "intensity_factor:Q",
+                                        "intensity_factor_color:Q",
                                         title="IF",
                                         scale=alt.Scale(
                                             domain=[0.0, 0.5, 1.0],
@@ -5423,14 +5477,14 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     tooltip=[
                                         alt.Tooltip("split_label:N", title="Split"),
                                         alt.Tooltip("intensity_type:N", title="Type"),
-                                        alt.Tooltip("duration_s:Q", title="Duration (s)", format=".0f"),
-                                        alt.Tooltip("distance_km:Q", title="Distance (km)", format=".2f"),
-                                        alt.Tooltip("distance_eqv_km:Q", title="Dist Eqv (km)", format=".2f"),
+                                        alt.Tooltip("duration_display:N", title="Duration"),
+                                        alt.Tooltip("distance_km_ui:Q", title="Distance (km)", format=".2f"),
+                                        alt.Tooltip("distance_eqv_km_ui:Q", title="Dist Eqv (km)", format=".2f"),
                                         alt.Tooltip("speed_eqv_kmh:Q", title="Speed Eqv (km/h)", format=".2f"),
                                         alt.Tooltip("avg_hr:Q", title="Avg HR", format=".0f"),
-                                        alt.Tooltip("intensity_factor:Q", title="IF", format=".0%"),
-                                        alt.Tooltip("pace_s_per_km:Q", title="Pace s/km", format=".1f"),
-                                        alt.Tooltip("pace_eqv_s_per_km:Q", title="Pace Eqv s/km", format=".1f"),
+                                        alt.Tooltip("intensity_factor:Q", title="IF", format=".1%"),
+                                        alt.Tooltip("pace_display:N", title="Pace"),
+                                        alt.Tooltip("pace_eqv_display:N", title="Pace Eqv"),
                                         alt.Tooltip("tss:Q", title="TSS", format=".0f"),
                                         alt.Tooltip("rtss:Q", title="rTSS", format=".0f"),
                                     ],
@@ -5439,36 +5493,33 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             )
                             st.altair_chart(chart, use_container_width=True)
                             table_df = plot_df.copy()
-                            table_df["duration"] = table_df["duration_s"].apply(_duration_short)
+                            table_df["duration"] = table_df["duration_s"].apply(_duration_compact_with_seconds)
+                            table_df["distance_display"] = pd.to_numeric(
+                                table_df.get("distance_km_ui"), errors="coerce"
+                            ).fillna(0.0).map(lambda v: f"{v:.2f}km")
                             table_df["pace"] = table_df["pace_s_per_km"].apply(_pace_compact)
                             table_df["pace_eqv"] = table_df["pace_eqv_s_per_km"].apply(_pace_compact)
-                            table_df["intensity_factor_pct"] = (
-                                pd.to_numeric(table_df.get("intensity_factor"), errors="coerce").fillna(0.0) * 100.0
-                            )
                             st.dataframe(
                                 table_df[
                                     [
-                                        "split_idx",
                                         "duration",
-                                        "distance_km",
-                                        "distance_eqv_km",
+                                        "distance_display",
                                         "avg_hr",
-                                        "intensity_factor_pct",
                                         "pace",
+                                        "distance_eqv_km_ui",
                                         "pace_eqv",
-                                        "tss",
-                                        "rtss",
                                     ]
                                 ],
                                 use_container_width=True,
+                                hide_index=True,
+                                key="calendar_split_table",
                                 column_config={
-                                    "split_idx": st.column_config.NumberColumn("Split", format="%d"),
-                                    "distance_km": st.column_config.NumberColumn("Distance (km)", format="%.2f"),
-                                    "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.2f"),
+                                    "duration": st.column_config.TextColumn("Duration"),
+                                    "distance_display": st.column_config.TextColumn("Distance"),
+                                    "distance_eqv_km_ui": st.column_config.NumberColumn("Dist Eqv (km)", format="%.2f"),
                                     "avg_hr": st.column_config.NumberColumn("Avg HR", format="%.0f"),
-                                    "intensity_factor_pct": st.column_config.NumberColumn("IF", format="%.0f%%"),
-                                    "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
-                                    "rtss": st.column_config.NumberColumn("rTSS", format="%.0f"),
+                                    "pace": st.column_config.TextColumn("Pace"),
+                                    "pace_eqv": st.column_config.TextColumn("Pace Eqv"),
                                 },
                             )
                         if st.button("Close", key="calendar_split_modal_close"):
