@@ -3085,7 +3085,7 @@ if view == "Dashboard":
                     ff_domain = _safe_y_domain(weekly_ff_long["value"])
                     ff_chart = (
                         alt.Chart(weekly_ff_long)
-                        .mark_line(point=False, strokeWidth=2.2)
+                        .mark_line(point=alt.OverlayMarkDef(filled=True, size=54), strokeWidth=2.2)
                         .encode(
                             x=alt.X(
                                 "period_start:T",
@@ -3136,7 +3136,8 @@ if view == "Dashboard":
                 if weekly_rff_long.empty:
                     st.caption("No Leg Elasticity/Pounding data in this range.")
                 else:
-                    rff_threshold_value = float(derived_weekly_tss_target if weekly_toggle else derived_daily_tss_target)
+                    # Keep threshold on the same scale users expect for this chart.
+                    rff_threshold_value = float(derived_daily_tss_target)
                     rff_domain = _safe_y_domain(
                         pd.concat(
                             [weekly_rff_long["value"], pd.Series([rff_threshold_value])],
@@ -3145,7 +3146,7 @@ if view == "Dashboard":
                     )
                     rff_chart = (
                         alt.Chart(weekly_rff_long)
-                        .mark_line(point=False, strokeWidth=2.2)
+                        .mark_line(point=alt.OverlayMarkDef(filled=True, size=54), strokeWidth=2.2)
                         .encode(
                             x=alt.X(
                                 "period_start:T",
