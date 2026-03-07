@@ -4677,7 +4677,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 div[class*="st-key-calendar_planned_done_if_tss_purple_"] button[kind="primary"] strong {
                     color: rgba(192,132,252,0.96) !important;
                 }
-                div[class*="st-key-calendar_split_table_v3"] [role="columnheader"] {
+                div[class*="st-key-calendar_split_table_v4"] [role="columnheader"] {
                     font-weight: 700 !important;
                     color: rgba(226,232,240,0.96) !important;
                 }
@@ -5755,10 +5755,10 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 table_df[
                                     [
                                         "split_idx",
+                                        "description",
                                         "duration",
                                         "distance_display",
                                         "pace",
-                                        "description",
                                         "avg_hr",
                                         "distance_eqv_km_ui",
                                         "pace_eqv",
@@ -5766,7 +5766,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 ],
                                 use_container_width=True,
                                 hide_index=True,
-                                key="calendar_split_table_v3",
+                                key="calendar_split_table_v4",
                                 column_config={
                                     "split_idx": st.column_config.NumberColumn("Lap", format="%d"),
                                     "description": st.column_config.TextColumn("Description"),
