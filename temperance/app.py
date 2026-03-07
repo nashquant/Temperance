@@ -5872,15 +5872,14 @@ if view == "Custom Activities":
                 st.caption("No custom activities found.")
         else:
             st.caption("No valid custom dates to build a weekly outlook.")
-
-            custom_metric_col, _custom_metric_spacer = st.columns([1, 4])
-            with custom_metric_col:
-                custom_plot_metric = st.selectbox(
-                    "Custom activity metric view",
-                    ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
-                    index=0,
-                    key="custom_metric_view_select",
-                )
+        custom_metric_col, _custom_metric_spacer = st.columns([1, 4])
+        with custom_metric_col:
+            custom_plot_metric = st.selectbox(
+                "Custom activity metric view",
+                ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
+                index=0,
+                key="custom_metric_view_select",
+            )
         custom_plot_metric_col = {
             "TSS": "tss",
             "rTSS": "rtss",
