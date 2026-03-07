@@ -141,6 +141,7 @@ def _daily_distance_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
 
 AUTH_ALL_TABS = [
     "Dashboard",
+    "Model Metrics",
     "Weekly Summary",
     "Activity Summary",
     "Custom Activities",
@@ -151,6 +152,7 @@ AUTH_ALL_TABS = [
 ]
 AUTH_VIEWER_TABS = [
     "Dashboard",
+    "Model Metrics",
     "Weekly Summary",
     "Activity Summary",
     "Custom Activities",
@@ -2311,15 +2313,16 @@ with st.sidebar:
     st.session_state["data_owner"] = data_owner
 
     allowed_tabs = AUTH_ALL_TABS if (not auth_on or role == "admin") else AUTH_VIEWER_TABS
-    preferred_order = ["Weekly Summary", "Activity Summary", "Dashboard"]
+    preferred_order = ["Weekly Summary", "Activity Summary", "Dashboard", "Model Metrics"]
     ordered_tabs = [v for v in preferred_order if v in allowed_tabs] + [
         v for v in allowed_tabs if v not in preferred_order
     ]
     page_labels = {
-        "Weekly Summary": "Weekly Summary",
-        "Activity Summary": "Activity Summary",
+        "Weekly Summary": "Week Outlook",
+        "Activity Summary": "Activity Dashboard",
         "Custom Activities": "Custom Activities",
-        "Dashboard": "Plot Charts",
+        "Dashboard": "Analytics Plots",
+        "Model Metrics": "Model Metrics",
         "Activity Detail": "Activity Detail",
         "Recovery Data": "Recovery Data",
         "Data Extract": "Data Extract",
@@ -2562,8 +2565,8 @@ metrics_df = _get_metrics_df_local_cached(
 )
 daily_summary_df = get_daily_summary_df(cfg.db_path)
 
-if view == "Dashboard":
-    st.header("Dashboard")
+if view in {"Dashboard", "Model Metrics"}:
+    st.header("Analytics Plots" if view == "Dashboard" else "Model Metrics")
     custom_metrics_df = _get_custom_metrics_df_local_cached(
         db_path=cfg.db_path,
         custom_activities_cache_key=custom_activities_cache_key,
@@ -2584,7 +2587,7 @@ if view == "Dashboard":
         )
     else:
         dashboard_block_t0 = perf_counter()
-        controls = st.columns([1, 1, 1])
+        controls = st.columns([0.85, 0.85, 0.85, 2.45])
         with controls[0]:
             metrics_local_start = _to_local_naive(dashboard_metrics_df["start_time_utc"])
             metrics_min_day = metrics_local_start.min().date()
@@ -2638,13 +2641,13 @@ if view == "Dashboard":
             weekly_toggle = weekly_mode == "Weekly"
         enable_zoom = False
 
-        run_custom_metric = True
+        run_custom_metric = view == "Model Metrics"
         compare_mode = False
         top_injury_overlay = False
-        render_summary = True
-        render_injury = True
-        render_fitness = True
-        render_activities = True
+        render_summary = view == "Dashboard"
+        render_injury = view == "Dashboard"
+        render_fitness = view == "Dashboard"
+        render_activities = view == "Dashboard"
 
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
@@ -3039,7 +3042,14 @@ if view == "Dashboard":
             pad = max(1.0, (vmax - vmin) * 0.10)
             return [min(vmin - pad, 0.0), vmax + pad]
 
+        ordered_tss_container = st.container()
+        ordered_leg_pounding_container = st.container()
+        ordered_distance_container = st.container()
+        ordered_overreach_container = st.container()
+        ordered_fitness_container = st.container()
+
         if render_summary:
+            with ordered_tss_container:
             if (
                 (weekly_toggle and "total_tss" in weekly.columns and "total_rtss" in weekly.columns and not weekly.empty)
                 or (
@@ -3132,7 +3142,8 @@ if view == "Dashboard":
                 )
 
         if render_fitness:
-            st.subheader("Fitness vs Fatigue")
+            with ordered_fitness_container:
+                st.subheader("Fitness vs Fatigue")
             if not filtered_daily_range.empty and "fitness" in filtered_daily_range.columns and "fatigue" in filtered_daily_range.columns:
                 weekly_ff_long = _section_long_series(
                     filtered_daily_range,
@@ -3186,7 +3197,8 @@ if view == "Dashboard":
                 st.caption("No fitness/fatigue data to plot.")
 
         if render_injury:
-            st.subheader("Leg Elasticity vs Pounding")
+            with ordered_leg_pounding_container:
+                st.subheader("Leg Elasticity vs Pounding")
             if not filtered_daily_range.empty and "leg_elasticity" in filtered_daily_range.columns and "pounding" in filtered_daily_range.columns:
                 weekly_rff_long = _section_long_series(
                     filtered_daily_range,
@@ -3253,7 +3265,8 @@ if view == "Dashboard":
                 st.caption("No Leg Elasticity/Pounding data to plot.")
 
         if render_summary:
-            st.subheader("Distance vs Distance Eqv.")
+            with ordered_distance_container:
+                st.subheader("Distance vs Distance Eqv.")
             if (
                 (weekly_toggle and "total_distance_km" in weekly.columns and "total_distance_proxy_km" in weekly.columns and not weekly.empty)
                 or (
@@ -3348,7 +3361,8 @@ if view == "Dashboard":
                 st.caption("No distance-equivalent data to plot.")
 
         if render_injury:
-            st.subheader("Overreach vs Injury Risk")
+            with ordered_overreach_container:
+                st.subheader("Overreach vs Injury Risk")
             if not filtered_daily_range.empty and "overreach" in filtered_daily_range.columns and "injury_risk" in filtered_daily_range.columns:
                 weekly_fr_long = _section_long_series(
                     filtered_daily_range,
@@ -3678,7 +3692,7 @@ if view == "Dashboard":
         )
 
 if view in {"Weekly Summary", "Activity Summary"}:
-    st.header("Weekly Summary" if view == "Weekly Summary" else "Activity Summary")
+    st.header("Week Outlook" if view == "Weekly Summary" else "Activity Dashboard")
 
     custom_metrics_df = _get_custom_metrics_df_local_cached(
         db_path=cfg.db_path,
@@ -3755,7 +3769,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 range_end_day = cal_max_day
                 cal_activity_filter = str(st.session_state.get("calendar_activity_filter", "All Activities"))
             else:
-                controls = st.columns([1, 1, 3.2])
+                controls = st.columns([0.85, 0.85, 3.3])
                 with controls[0]:
                     cal_range = st.selectbox(
                         "Quick range",
