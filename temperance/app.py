@@ -75,6 +75,7 @@ DEFAULT_RESTING_HR = 45.0
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 CUSTOM_ACTIVITIES_LIMIT = 5000
+OWNER_SCOPED_STATE_RESET_VERSION = 2
 # LT pace (sec/km) -> upper-bound weekly targets derived from user-defined table.
 # Points correspond to:
 # 5:00, 4:30, 4:00, 3:45, 3:30, 3:20, 3:15, 3:10, 3:00
@@ -2614,28 +2615,36 @@ if view not in allowed_tabs:
     st.stop()
 
 active_owner = str(st.session_state.get("data_owner") or "default")
+owner_scoped_keys = [
+    "calendar_compact_week_start",
+    "calendar_compact_compare_choice",
+    "calendar_compact_metric",
+    "calendar_activity_filter",
+    "calendar_quick_range",
+    "calendar_split_activity_id",
+    "calendar_split_open",
+    "planned_mark_done_pending",
+    "_metrics_df_local_cache_key",
+    "_metrics_df_local_cache_value",
+    "_custom_metrics_df_local_cache_key",
+    "_custom_metrics_df_local_cache_value",
+    "dashboard_metric_select",
+    "dashboard_ema_windows",
+    "dashboard_compare_mode",
+    "dashboard_top_injury_overlay",
+]
+owner_session_needs_reset = False
 if "_active_data_owner" not in st.session_state:
-    st.session_state["_active_data_owner"] = active_owner
+    owner_session_needs_reset = True
 elif str(st.session_state.get("_active_data_owner") or "") != active_owner:
+    owner_session_needs_reset = True
+if int(pd.to_numeric(st.session_state.get("_owner_scoped_state_reset_version", 0), errors="coerce") or 0) < int(
+    OWNER_SCOPED_STATE_RESET_VERSION
+):
+    owner_session_needs_reset = True
+if owner_session_needs_reset:
     st.session_state["_active_data_owner"] = active_owner
-    owner_scoped_keys = [
-        "calendar_compact_week_start",
-        "calendar_compact_compare_choice",
-        "calendar_compact_metric",
-        "calendar_activity_filter",
-        "calendar_quick_range",
-        "calendar_split_activity_id",
-        "calendar_split_open",
-        "planned_mark_done_pending",
-        "_metrics_df_local_cache_key",
-        "_metrics_df_local_cache_value",
-        "_custom_metrics_df_local_cache_key",
-        "_custom_metrics_df_local_cache_value",
-        "dashboard_metric_select",
-        "dashboard_ema_windows",
-        "dashboard_compare_mode",
-        "dashboard_top_injury_overlay",
-    ]
+    st.session_state["_owner_scoped_state_reset_version"] = int(OWNER_SCOPED_STATE_RESET_VERSION)
     for key in owner_scoped_keys:
         st.session_state.pop(key, None)
     st.rerun()
