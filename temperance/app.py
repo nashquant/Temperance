@@ -3222,18 +3222,6 @@ if view == "Dashboard":
                 if weekly_rff_long.empty:
                     st.caption("No Leg Elasticity/Pounding data in this range.")
                 else:
-                    weekly_rff_long = weekly_rff_long[
-                        weekly_rff_long["series"].isin(["Leg Elasticity", "Pounding"])
-                    ].copy()
-                    if weekly_rff_long.empty:
-                        st.caption("No Leg Elasticity/Pounding data to plot.")
-                        section_render_ms = (perf_counter() - section_render_t0) * 1000.0
-                        total_ms = (perf_counter() - dashboard_block_t0) * 1000.0
-                        st.caption(
-                            "Perf timings (Dashboard): "
-                            f"prep {prep_ms:.0f} ms · section {section_render_ms:.0f} ms · total {total_ms:.0f} ms"
-                        )
-                        st.stop()
                     # Keep threshold on the same scale users expect for this chart.
                     rff_threshold_value = float(derived_daily_tss_target)
                     rff_domain = _safe_y_domain(
@@ -3268,9 +3256,9 @@ if view == "Dashboard":
                         .properties(height=280)
                     )
                     rff_threshold = (
-                        alt.Chart(pd.DataFrame({"threshold": [rff_threshold_value]}))
+                        alt.Chart()
                         .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
-                        .encode(y=alt.Y("threshold:Q", axis=None))
+                        .encode(y=alt.datum(rff_threshold_value))
                     )
                     rff_chart = alt.layer(
                         build_injury_layer(saved_injury_windows, start_ts, end_ts),
@@ -3282,7 +3270,7 @@ if view == "Dashboard":
                     st.altair_chart(
                         rff_chart,
                         use_container_width=True,
-                        key=f"dashboard_injury_leg_pounding_v2_{'weekly' if weekly_toggle else 'daily'}",
+                        key="dashboard_injury_leg_pounding",
                     )
             else:
                 st.caption("No Leg Elasticity/Pounding data to plot.")
