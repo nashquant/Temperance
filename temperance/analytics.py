@@ -314,14 +314,38 @@ def ema(series: pd.Series, window: int) -> pd.Series:
     alpha = ema_alpha_from_days(window)
     if series.empty:
         return series
+    values = pd.to_numeric(series, errors="coerce").fillna(0.0)
+    # adjust=False matches recursive EMA:
+    # ema[t] = alpha*x[t] + (1-alpha)*ema[t-1]
+    return values.ewm(alpha=alpha, adjust=False).mean().astype(float)
 
-    values = pd.to_numeric(series, errors="coerce").fillna(0.0).to_numpy(dtype=float)
-    out = np.empty_like(values, dtype=float)
-    out[0] = values[0]
-    one_minus_alpha = 1.0 - alpha
-    for i in range(1, len(values)):
-        out[i] = (alpha * values[i]) + (one_minus_alpha * out[i - 1])
-    return pd.Series(out, index=series.index, dtype=float)
+
+def ema_multi(series: pd.Series, windows: list[int]) -> dict[int, pd.Series]:
+    """
+    Compute multiple EMAs over the same series in one recursive pass.
+    Recurrence per window w:
+      ema_w[t] = alpha_w * x[t] + (1-alpha_w) * ema_w[t-1]
+    """
+    if not windows:
+        return {}
+    uniq_windows: list[int] = []
+    seen: set[int] = set()
+    for w in windows:
+        if int(w) <= 0:
+            raise ValueError("window must be > 0")
+        iw = int(w)
+        if iw not in seen:
+            uniq_windows.append(iw)
+            seen.add(iw)
+
+    if series.empty:
+        return {w: series.copy() for w in uniq_windows}
+
+    values = pd.to_numeric(series, errors="coerce").fillna(0.0)
+    out: dict[int, pd.Series] = {}
+    for w in uniq_windows:
+        out[w] = values.ewm(alpha=ema_alpha_from_days(w), adjust=False).mean().astype(float)
+    return out
 
 
 def parse_ma_windows(text: str) -> tuple[list[int], list[tuple[int, int]]]:

@@ -16,7 +16,7 @@ from analytics import (
     build_daily_summary,
     compute_metrics,
     display_table,
-    ema,
+    ema_multi,
     ema_alpha_from_days,
     parse_ma_windows,
     prepare_metric_series,
@@ -2043,9 +2043,10 @@ def cached_filtered_views(
             else pd.Series([0.0] * len(filtered_daily), index=filtered_daily.index, dtype=float)
         )
         daily_target = float(max(daily_tss_target, 0.0))
-        filtered_daily["fitness"] = ema(training_series, 42)
-        filtered_daily["fatigue"] = ema(training_series, 7)
-        filtered_daily["overreach"] = (ema(training_series, 10) - daily_target).clip(lower=0.0)
+        training_ema = ema_multi(training_series, [42, 7, 10])
+        filtered_daily["fitness"] = training_ema[42]
+        filtered_daily["fatigue"] = training_ema[7]
+        filtered_daily["overreach"] = (training_ema[10] - daily_target).clip(lower=0.0)
         rtss_series = (
             pd.to_numeric(filtered_daily["rtss_total"], errors="coerce").fillna(0.0)
             if "rtss_total" in filtered_daily.columns
@@ -2055,9 +2056,10 @@ def cached_filtered_views(
         # fallback to TSS so Injury Risk charts remain informative instead of appearing broken.
         if float(rtss_series.abs().sum()) <= 1e-9:
             rtss_series = pd.to_numeric(filtered_daily.get("tss_total"), errors="coerce").fillna(0.0)
-        filtered_daily["leg_elasticity"] = ema(rtss_series, 100)
-        filtered_daily["pounding"] = ema(rtss_series, 7)
-        filtered_daily["injury_risk"] = (ema(rtss_series, 10) - daily_target).clip(lower=0.0)
+        rtss_ema = ema_multi(rtss_series, [100, 7, 10])
+        filtered_daily["leg_elasticity"] = rtss_ema[100]
+        filtered_daily["pounding"] = rtss_ema[7]
+        filtered_daily["injury_risk"] = (rtss_ema[10] - daily_target).clip(lower=0.0)
     return filtered_metrics, filtered_daily
 
 
@@ -2689,20 +2691,24 @@ if view == "Dashboard":
 
                 if not compare_mode:
                     overlay_cols: list[str] = []
+                    ema_windows_needed = list(ema_ns) + [w for pair in ema_pairs for w in pair]
+                    ema_map = ema_multi(frame["value"], ema_windows_needed) if ema_windows_needed else {}
                     for n in ema_ns:
                         col = f"EMA{n}"
-                        frame[col] = ema(frame["value"], n)
-                        overlay_cols.append(col)
+                        if n in ema_map:
+                            frame[col] = ema_map[n]
+                            overlay_cols.append(col)
                     for a, b in ema_pairs:
                         col_a = f"EMA{a}"
                         col_b = f"EMA{b}"
-                        if col_a not in frame.columns:
-                            frame[col_a] = ema(frame["value"], a)
-                        if col_b not in frame.columns:
-                            frame[col_b] = ema(frame["value"], b)
-                        spread_col = f"EMA{a}-EMA{b}"
-                        frame[spread_col] = frame[col_a] - frame[col_b]
-                        overlay_cols.append(spread_col)
+                        if a in ema_map:
+                            frame[col_a] = ema_map[a]
+                        if b in ema_map:
+                            frame[col_b] = ema_map[b]
+                        if col_a in frame.columns and col_b in frame.columns:
+                            spread_col = f"EMA{a}-EMA{b}"
+                            frame[spread_col] = frame[col_a] - frame[col_b]
+                            overlay_cols.append(spread_col)
                     overlay_cols = list(dict.fromkeys(overlay_cols))
                     overlay_chart_df = frame[["day", "value"] + overlay_cols]
                     overlay_long = overlay_chart_df.melt(
