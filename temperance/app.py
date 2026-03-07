@@ -104,6 +104,22 @@ SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_GARMIN_OWNER_SCOPE = "garmin_owner_scope_v1"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
+SETTINGS_KEY_IF_ZONE_THRESHOLDS = "if_zone_thresholds_v1"
+
+DEFAULT_IF_ZONE_THRESHOLDS = {
+    "z1_max": 0.75,
+    "z2_max": 0.85,
+    "z3_max": 0.95,
+    "z4_max": 1.05,
+}
+
+IF_ZONE_VISUALS = {
+    "Z1": {"token": "green", "accent": "rgba(52,211,153,0.96)", "bar": "#34d399", "description": "Recovery"},
+    "Z2": {"token": "blue", "accent": "rgba(56,189,248,0.96)", "bar": "#38bdf8", "description": "Easy"},
+    "Z3": {"token": "yellow", "accent": "rgba(251,191,36,0.96)", "bar": "#fbbf24", "description": "Steady"},
+    "Z4": {"token": "red", "accent": "rgba(251,113,133,0.96)", "bar": "#fb7185", "description": "Interval"},
+    "Z5": {"token": "purple", "accent": "rgba(168,85,247,0.96)", "bar": "#a855f7", "description": "VO2 Max"},
+}
 
 
 def _lt_target_from_regression(
@@ -389,6 +405,54 @@ def _default_lt_pace_curve() -> list[dict[str, object]]:
     return [{"date": "2025-01-01", "lt_pace_sec_per_km": float(DEFAULT_THRESHOLD_PACE_SEC_PER_KM)}]
 
 
+def _default_if_zone_thresholds() -> dict[str, float]:
+    return dict(DEFAULT_IF_ZONE_THRESHOLDS)
+
+
+def _normalize_if_zone_thresholds(payload: dict[str, object] | None) -> dict[str, float]:
+    base = _default_if_zone_thresholds()
+    if not isinstance(payload, dict):
+        return base
+    out = dict(base)
+    prev = 0.0
+    for key in ["z1_max", "z2_max", "z3_max", "z4_max"]:
+        try:
+            if key in payload and payload.get(key) is not None:
+                out[key] = float(payload.get(key))
+        except Exception:
+            out[key] = float(base[key])
+        out[key] = float(min(max(out[key], 0.01), 3.0))
+        if out[key] <= prev:
+            out[key] = min(max(prev + 0.01, 0.01), 3.0)
+        prev = out[key]
+    return out
+
+
+def _if_zone_thresholds_tuple(thresholds: dict[str, object] | None) -> tuple[float, float, float, float]:
+    normalized = _normalize_if_zone_thresholds(thresholds)
+    return (
+        float(normalized["z1_max"]),
+        float(normalized["z2_max"]),
+        float(normalized["z3_max"]),
+        float(normalized["z4_max"]),
+    )
+
+
+def _if_zone_thresholds_from_tuple(
+    thresholds_key: tuple[float, float, float, float] | None,
+) -> dict[str, float]:
+    if isinstance(thresholds_key, tuple) and len(thresholds_key) == 4:
+        return _normalize_if_zone_thresholds(
+            {
+                "z1_max": thresholds_key[0],
+                "z2_max": thresholds_key[1],
+                "z3_max": thresholds_key[2],
+                "z4_max": thresholds_key[3],
+            }
+        )
+    return _default_if_zone_thresholds()
+
+
 def _normalize_lthr_curve(rows: list[dict]) -> list[dict[str, object]]:
     out: list[dict[str, object]] = []
     for row in rows:
@@ -452,6 +516,17 @@ def _load_lt_pace_curve(db_path: Path) -> list[dict[str, object]]:
         return _default_lt_pace_curve()
     rows = [r for r in payload if isinstance(r, dict)]
     return _normalize_lt_pace_curve(rows)
+
+
+def _load_if_zone_thresholds(db_path: Path) -> dict[str, float]:
+    raw = get_setting(db_path, SETTINGS_KEY_IF_ZONE_THRESHOLDS)
+    if not raw:
+        return _default_if_zone_thresholds()
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return _default_if_zone_thresholds()
+    return _normalize_if_zone_thresholds(payload if isinstance(payload, dict) else None)
 
 
 def _load_non_running_factor(db_path: Path, default_value: float = 0.8) -> float:
@@ -710,25 +785,13 @@ def _split_description_from_token(token: str) -> str:
 
 def _split_description_from_if_proxy(if_proxy: float | int | None) -> str:
     zone = _if_zone_from_if_proxy(if_proxy)
-    return {
-        "Z1": "Recovery",
-        "Z2": "Easy",
-        "Z3": "Steady",
-        "Z4": "Interval",
-        "Z5": "VO2 Max",
-    }.get(str(zone or ""), "Recovery")
+    return str(IF_ZONE_VISUALS.get(str(zone or ""), IF_ZONE_VISUALS["Z1"]).get("description") or "Recovery")
 
 
 def _if_palette_from_if_proxy(if_proxy: float | int | None) -> tuple[str, str]:
     zone = _if_zone_from_if_proxy(if_proxy)
-    zone_styles = {
-        "Z1": ("green", "rgba(52,211,153,0.96)"),
-        "Z2": ("blue", "rgba(56,189,248,0.96)"),
-        "Z3": ("yellow", "rgba(251,191,36,0.96)"),
-        "Z4": ("red", "rgba(251,113,133,0.96)"),
-        "Z5": ("purple", "rgba(168,85,247,0.96)"),
-    }
-    return zone_styles.get(str(zone or ""), zone_styles["Z1"])
+    style = IF_ZONE_VISUALS.get(str(zone or ""), IF_ZONE_VISUALS["Z1"])
+    return str(style.get("token") or "green"), str(style.get("accent") or "rgba(52,211,153,0.96)")
 
 
 def _sport_label(sport_type: str | None) -> str:
@@ -802,7 +865,18 @@ def _to_local_naive(series: pd.Series) -> pd.Series:
     )
 
 
-def _if_zone_from_if_proxy(if_proxy: float | int | None) -> str | None:
+def _active_if_zone_thresholds() -> dict[str, float]:
+    try:
+        payload = st.session_state.get("user_if_zone_thresholds")
+    except Exception:
+        payload = None
+    return _normalize_if_zone_thresholds(payload if isinstance(payload, dict) else None)
+
+
+def _if_zone_from_if_proxy(
+    if_proxy: float | int | None,
+    thresholds: dict[str, object] | None = None,
+) -> str | None:
     if if_proxy is None:
         return None
     try:
@@ -811,15 +885,16 @@ def _if_zone_from_if_proxy(if_proxy: float | int | None) -> str | None:
         return None
     if not pd.notna(v) or v <= 0:
         return None
-    # Running IF model calibrated to LT pace:
-    # Z1 <0.77, Z2 <0.84, Z3 <0.93, Z4 <1.00, Z5 >=1.00
-    if v < 0.77:
+    t = _normalize_if_zone_thresholds(
+        thresholds if isinstance(thresholds, dict) else _active_if_zone_thresholds()
+    )
+    if v < float(t["z1_max"]):
         return "Z1"
-    if v < 0.84:
+    if v < float(t["z2_max"]):
         return "Z2"
-    if v < 0.93:
+    if v < float(t["z3_max"]):
         return "Z3"
-    if v < 1.00:
+    if v < float(t["z4_max"]):
         return "Z4"
     return "Z5"
 
@@ -847,7 +922,17 @@ def _zone_seconds_from_activity_row(row: pd.Series) -> dict[str, float]:
     return out
 
 
-def _if_zone_guidance_df(lthr_bpm: float, lt_pace_sec_per_km: float) -> pd.DataFrame:
+def _if_zone_guidance_df(
+    lthr_bpm: float,
+    lt_pace_sec_per_km: float,
+    thresholds: dict[str, object] | None = None,
+) -> pd.DataFrame:
+    t = _normalize_if_zone_thresholds(thresholds if isinstance(thresholds, dict) else _active_if_zone_thresholds())
+    z1 = float(t["z1_max"])
+    z2 = float(t["z2_max"])
+    z3 = float(t["z3_max"])
+    z4 = float(t["z4_max"])
+
     def _hr_range(lo: float | None, hi: float | None) -> str:
         if lthr_bpm <= 0:
             return "-"
@@ -873,11 +958,11 @@ def _if_zone_guidance_df(lthr_bpm: float, lt_pace_sec_per_km: float) -> pd.DataF
         return "-"
 
     zone_specs: list[tuple[str, str, float | None, float | None]] = [
-        ("Z1", "< 77%", None, 0.77),
-        ("Z2", "77% - <84%", 0.77, 0.84),
-        ("Z3", "84% - <93%", 0.84, 0.93),
-        ("Z4", "93% - <100%", 0.93, 1.00),
-        ("Z5", ">= 100%", 1.00, None),
+        ("Z1", f"< {z1 * 100.0:.0f}%", None, z1),
+        ("Z2", f"{z1 * 100.0:.0f}% - <{z2 * 100.0:.0f}%", z1, z2),
+        ("Z3", f"{z2 * 100.0:.0f}% - <{z3 * 100.0:.0f}%", z2, z3),
+        ("Z4", f"{z3 * 100.0:.0f}% - <{z4 * 100.0:.0f}%", z3, z4),
+        ("Z5", f">= {z4 * 100.0:.0f}%", z4, None),
     ]
     rows = []
     for zone, if_range, lo, hi in zone_specs:
@@ -1754,7 +1839,9 @@ def get_metrics_df_fast(
     threshold_pace_default_sec: float,
     threshold_pace_curve_points: list[tuple[datetime, float]] | None,
     use_split_method: bool,
+    if_zone_thresholds_key: tuple[float, float, float, float] | None = None,
 ) -> pd.DataFrame:
+    _ = if_zone_thresholds_key
     runs_df = get_runs_df(db_path)
     df = compute_metrics(
         runs_df,
@@ -1894,7 +1981,9 @@ def _build_custom_metrics_df_for_plots(
     lthr_curve_points: list[tuple[datetime, float]] | None,
     threshold_pace_default_sec: float,
     threshold_pace_curve_points: list[tuple[datetime, float]] | None,
+    if_zone_thresholds_key: tuple[float, float, float, float] | None = None,
 ) -> pd.DataFrame:
+    zone_thresholds = _if_zone_thresholds_from_tuple(if_zone_thresholds_key)
     raw = get_custom_activities_df(db_path)
     if raw.empty:
         return pd.DataFrame()
@@ -1970,7 +2059,7 @@ def _build_custom_metrics_df_for_plots(
             if seg_if > 0:
                 if_weighted_sum += seg_if * seg_duration_s
                 if_weight_seconds += seg_duration_s
-                seg_zone = _if_zone_from_if_proxy(seg_if)
+                seg_zone = _if_zone_from_if_proxy(seg_if, thresholds=zone_thresholds)
                 if seg_zone is not None:
                     zone_seconds[seg_zone] = zone_seconds.get(seg_zone, 0.0) + seg_duration_s
 
@@ -2002,7 +2091,7 @@ def _build_custom_metrics_df_for_plots(
         zoned_duration = float(sum(zone_seconds.values()))
         remaining_duration = max(float(total_duration_s) - zoned_duration, 0.0)
         if remaining_duration > 0 and if_proxy > 0:
-            fallback_zone = _if_zone_from_if_proxy(if_proxy)
+            fallback_zone = _if_zone_from_if_proxy(if_proxy, thresholds=zone_thresholds)
             if fallback_zone is not None:
                 zone_seconds[fallback_zone] = zone_seconds.get(fallback_zone, 0.0) + remaining_duration
         pace_proxy = (total_duration_s / total_dist_eqv_km) if total_dist_eqv_km > 0 else None
@@ -2086,6 +2175,7 @@ def _get_metrics_df_local_cached(
     threshold_pace_default_sec: float,
     threshold_pace_curve_points: list[tuple[datetime, float]] | None,
     use_split_method: bool,
+    if_zone_thresholds_key: tuple[float, float, float, float] | None = None,
 ) -> pd.DataFrame:
     cache_key = (
         str(db_path),
@@ -2096,6 +2186,7 @@ def _get_metrics_df_local_cached(
         float(threshold_pace_default_sec),
         _curve_points_cache_key(threshold_pace_curve_points),
         bool(use_split_method),
+        tuple(if_zone_thresholds_key or ()),
     )
     if st.session_state.get("_metrics_df_local_cache_key") == cache_key and isinstance(
         st.session_state.get("_metrics_df_local_cache_value"), pd.DataFrame
@@ -2110,6 +2201,7 @@ def _get_metrics_df_local_cached(
         threshold_pace_default_sec=threshold_pace_default_sec,
         threshold_pace_curve_points=threshold_pace_curve_points,
         use_split_method=use_split_method,
+        if_zone_thresholds_key=if_zone_thresholds_key,
     )
     st.session_state["_metrics_df_local_cache_key"] = cache_key
     st.session_state["_metrics_df_local_cache_value"] = df
@@ -2123,6 +2215,7 @@ def _get_custom_metrics_df_local_cached(
     lthr_curve_points: list[tuple[datetime, float]] | None,
     threshold_pace_default_sec: float,
     threshold_pace_curve_points: list[tuple[datetime, float]] | None,
+    if_zone_thresholds_key: tuple[float, float, float, float] | None = None,
 ) -> pd.DataFrame:
     cache_key = (
         str(db_path),
@@ -2131,6 +2224,7 @@ def _get_custom_metrics_df_local_cached(
         _curve_points_cache_key(lthr_curve_points),
         float(threshold_pace_default_sec),
         _curve_points_cache_key(threshold_pace_curve_points),
+        tuple(if_zone_thresholds_key or ()),
     )
     if st.session_state.get("_custom_metrics_df_local_cache_key") == cache_key and isinstance(
         st.session_state.get("_custom_metrics_df_local_cache_value"), pd.DataFrame
@@ -2143,6 +2237,7 @@ def _get_custom_metrics_df_local_cached(
         lthr_curve_points=lthr_curve_points,
         threshold_pace_default_sec=threshold_pace_default_sec,
         threshold_pace_curve_points=threshold_pace_curve_points,
+        if_zone_thresholds_key=if_zone_thresholds_key,
     )
     st.session_state["_custom_metrics_df_local_cache_key"] = cache_key
     st.session_state["_custom_metrics_df_local_cache_value"] = df
@@ -2520,6 +2615,7 @@ cfg.private_export_dir.mkdir(parents=True, exist_ok=True)
 saved_injury_windows = _load_injury_windows(cfg.db_path)
 saved_lthr_curve = _load_lthr_curve(cfg.db_path)
 saved_lt_pace_curve = _load_lt_pace_curve(cfg.db_path)
+saved_if_zone_thresholds = _load_if_zone_thresholds(cfg.db_path)
 saved_non_running_factor = _load_non_running_factor(cfg.db_path, default_value=0.8)
 saved_specificity_profile = _load_specificity_profile(cfg.db_path, fallback_default=saved_non_running_factor)
 if "user_specificity_profile" not in st.session_state:
@@ -2528,6 +2624,12 @@ if "user_non_running_factor" not in st.session_state:
     st.session_state["user_non_running_factor"] = float(
         st.session_state["user_specificity_profile"].get("non_running", saved_non_running_factor)
     )
+if "user_if_zone_thresholds" not in st.session_state:
+    st.session_state["user_if_zone_thresholds"] = dict(saved_if_zone_thresholds)
+active_if_zone_thresholds = _normalize_if_zone_thresholds(
+    st.session_state.get("user_if_zone_thresholds")
+)
+active_if_zone_thresholds_key = _if_zone_thresholds_tuple(active_if_zone_thresholds)
 derived_lthr_bpm = _curve_latest_value(saved_lthr_curve, "lthr_bpm", DEFAULT_LTHR)
 derived_threshold_pace_sec = _curve_latest_value(
     saved_lt_pace_curve, "lt_pace_sec_per_km", DEFAULT_THRESHOLD_PACE_SEC_PER_KM
@@ -2541,17 +2643,108 @@ lt_pace_curve_points = _curve_points_from_rows(saved_lt_pace_curve, "lt_pace_sec
 
 if view == "User Inputs":
     st.header("User Inputs")
-    st.markdown("##### Suggested IF Zones (Read-only)")
+    st.markdown("##### IF Zones")
+    z1_current = float(active_if_zone_thresholds["z1_max"])
+    z2_current = float(active_if_zone_thresholds["z2_max"])
+    z3_current = float(active_if_zone_thresholds["z3_max"])
+    z4_current = float(active_if_zone_thresholds["z4_max"])
     st.caption(
         f"Using latest values as of {datetime.now().date().isoformat()} "
         f"(LTHR {float(derived_lthr_bpm):.0f} bpm, LT pace {_pace_compact(float(derived_threshold_pace_sec))}). "
-        "Thresholds are fixed: Z1 <77%, Z2 <84%, Z3 <93%, Z4 <100%, Z5 >=100%."
+        f"Current thresholds: Z1 <{z1_current * 100.0:.0f}%, "
+        f"Z2 <{z2_current * 100.0:.0f}%, "
+        f"Z3 <{z3_current * 100.0:.0f}%, "
+        f"Z4 <{z4_current * 100.0:.0f}%, "
+        f"Z5 >={z4_current * 100.0:.0f}%."
     )
     st.dataframe(
-        _if_zone_guidance_df(float(derived_lthr_bpm), float(derived_threshold_pace_sec)),
+        _if_zone_guidance_df(
+            float(derived_lthr_bpm),
+            float(derived_threshold_pace_sec),
+            thresholds=active_if_zone_thresholds,
+        ),
         use_container_width=True,
         hide_index=True,
     )
+    with st.expander("Edit IF Zone Thresholds", expanded=True):
+        st.caption("Set upper bounds for Z1-Z4 in IF percent. Z5 is automatically >= Z4.")
+        zc1, zc2 = st.columns(2)
+        with zc1:
+            z1_pct = st.number_input(
+                "Z1 max IF (%)",
+                min_value=1.0,
+                max_value=300.0,
+                value=float(z1_current * 100.0),
+                step=1.0,
+                format="%.0f",
+                key="if_zone_z1_pct",
+            )
+            z2_pct = st.number_input(
+                "Z2 max IF (%)",
+                min_value=1.0,
+                max_value=300.0,
+                value=float(z2_current * 100.0),
+                step=1.0,
+                format="%.0f",
+                key="if_zone_z2_pct",
+            )
+        with zc2:
+            z3_pct = st.number_input(
+                "Z3 max IF (%)",
+                min_value=1.0,
+                max_value=300.0,
+                value=float(z3_current * 100.0),
+                step=1.0,
+                format="%.0f",
+                key="if_zone_z3_pct",
+            )
+            z4_pct = st.number_input(
+                "Z4 max IF (%)",
+                min_value=1.0,
+                max_value=300.0,
+                value=float(z4_current * 100.0),
+                step=1.0,
+                format="%.0f",
+                key="if_zone_z4_pct",
+            )
+        save_col, reset_col = st.columns([1, 1])
+        with save_col:
+            if st.button("Save IF Zones", key="save_if_zone_thresholds_btn", use_container_width=True):
+                new_thresholds = _normalize_if_zone_thresholds(
+                    {
+                        "z1_max": float(z1_pct) / 100.0,
+                        "z2_max": float(z2_pct) / 100.0,
+                        "z3_max": float(z3_pct) / 100.0,
+                        "z4_max": float(z4_pct) / 100.0,
+                    }
+                )
+                changed = save_setting_if_changed(
+                    cfg.db_path,
+                    SETTINGS_KEY_IF_ZONE_THRESHOLDS,
+                    _settings_json(new_thresholds),
+                )
+                st.session_state["user_if_zone_thresholds"] = dict(new_thresholds)
+                st.session_state["if_zone_z1_pct"] = float(new_thresholds["z1_max"] * 100.0)
+                st.session_state["if_zone_z2_pct"] = float(new_thresholds["z2_max"] * 100.0)
+                st.session_state["if_zone_z3_pct"] = float(new_thresholds["z3_max"] * 100.0)
+                st.session_state["if_zone_z4_pct"] = float(new_thresholds["z4_max"] * 100.0)
+                st.success("IF zones saved." if changed else "IF zones unchanged.")
+                st.rerun()
+        with reset_col:
+            if st.button("Reset IF Zones Defaults", key="reset_if_zone_thresholds_btn", use_container_width=True):
+                defaults = _default_if_zone_thresholds()
+                changed = save_setting_if_changed(
+                    cfg.db_path,
+                    SETTINGS_KEY_IF_ZONE_THRESHOLDS,
+                    _settings_json(defaults),
+                )
+                st.session_state["user_if_zone_thresholds"] = dict(defaults)
+                st.session_state["if_zone_z1_pct"] = float(defaults["z1_max"] * 100.0)
+                st.session_state["if_zone_z2_pct"] = float(defaults["z2_max"] * 100.0)
+                st.session_state["if_zone_z3_pct"] = float(defaults["z3_max"] * 100.0)
+                st.session_state["if_zone_z4_pct"] = float(defaults["z4_max"] * 100.0)
+                st.success("IF zones reset to defaults." if changed else "IF zones already at defaults.")
+                st.rerun()
     with st.expander("Specificity Factors", expanded=True):
         st.caption("Set base non-running factor plus activity-specific overrides.")
         profile_current = _normalize_specificity_profile(
@@ -2727,6 +2920,7 @@ metrics_df = _get_metrics_df_local_cached(
     threshold_pace_default_sec=float(derived_threshold_pace_sec),
     threshold_pace_curve_points=lt_pace_curve_points,
     use_split_method=bool(use_split_method),
+    if_zone_thresholds_key=active_if_zone_thresholds_key,
 )
 daily_summary_df = get_daily_summary_df(cfg.db_path)
 
@@ -2739,6 +2933,7 @@ if view in {"Dashboard", "Model Metrics"}:
         lthr_curve_points=lthr_curve_points,
         threshold_pace_default_sec=float(derived_threshold_pace_sec),
         threshold_pace_curve_points=lt_pace_curve_points,
+        if_zone_thresholds_key=active_if_zone_thresholds_key,
     )
     dashboard_metrics_df = _merge_metrics_with_custom(
         metrics_df,
@@ -3861,6 +4056,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
         lthr_curve_points=lthr_curve_points,
         threshold_pace_default_sec=float(derived_threshold_pace_sec),
         threshold_pace_curve_points=lt_pace_curve_points,
+        if_zone_thresholds_key=active_if_zone_thresholds_key,
     )
     calendar_metrics_df = _merge_metrics_with_custom(
         metrics_df,
@@ -5045,11 +5241,11 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             zone_totals[zone_key] += float(activity_zone_seconds.get(zone_key, 0.0))
                     zone_total_s = sum(zone_totals.values())
                     zone_colors = {
-                        "Z1": "#3b82f6",
-                        "Z2": "#65a30d",
-                        "Z3": "#facc15",
-                        "Z4": "#fb923c",
-                        "Z5": "#e11d48",
+                        "Z1": str(IF_ZONE_VISUALS["Z1"]["bar"]),
+                        "Z2": str(IF_ZONE_VISUALS["Z2"]["bar"]),
+                        "Z3": str(IF_ZONE_VISUALS["Z3"]["bar"]),
+                        "Z4": str(IF_ZONE_VISUALS["Z4"]["bar"]),
+                        "Z5": str(IF_ZONE_VISUALS["Z5"]["bar"]),
                     }
                     zone_rows_html = []
                     for zone in ["Z1", "Z2", "Z3", "Z4", "Z5"]:
