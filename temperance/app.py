@@ -2282,7 +2282,6 @@ lthr_curve_points = _curve_points_from_rows(saved_lthr_curve, "lthr_bpm")
 lt_pace_curve_points = _curve_points_from_rows(saved_lt_pace_curve, "lt_pace_sec_per_km")
 
 if view == "User Inputs":
-    st.divider()
     st.header("User Inputs")
     st.markdown("##### Suggested IF Zones (Read-only)")
     st.caption(
@@ -2474,7 +2473,6 @@ metrics_df = get_metrics_df_fast(
 daily_summary_df = get_daily_summary_df(cfg.db_path)
 
 if view == "Dashboard":
-    st.divider()
     st.header("Dashboard")
     dashboard_metrics_df = _merge_metrics_with_custom(
         metrics_df,
@@ -3470,7 +3468,6 @@ if view == "Dashboard":
             )
 
 if view in {"Weekly Summary", "Activity Summary"}:
-    st.divider()
     st.header("Weekly Summary" if view == "Weekly Summary" else "Activity Summary")
 
     calendar_metrics_df = _merge_metrics_with_custom(
@@ -4806,7 +4803,11 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     _show_split_details_dialog()
 
 if view in {"Week Planner", "Weekly Summary"}:
-    st.divider()
+    if view == "Weekly Summary":
+        st.markdown(
+            "<hr style='margin:6px 0 8px 0;border:0;border-top:1px solid rgba(148,163,184,0.28);'>",
+            unsafe_allow_html=True,
+        )
     if view == "Weekly Summary":
         st.markdown("### Plan Activities")
     else:
@@ -5333,7 +5334,6 @@ if view in {"Week Planner", "Weekly Summary"}:
                         st.rerun()
 
 if view == "Custom Activities":
-    st.divider()
     st.header("Custom Activities")
     st.caption(
         "Save custom activities to a separate table. Manual input uses `[date]:[activity]` "
@@ -5893,7 +5893,6 @@ if view == "Custom Activities":
                         st.rerun()
 
 if view == "Activity Detail":
-    st.divider()
     st.header("Activity Detail")
 
     if metrics_df.empty:
@@ -6029,7 +6028,6 @@ if view == "Activity Detail":
                 st.json(detail_raw)
 
 if view == "Recovery Data":
-    st.divider()
     st.header("Recovery Data (Garmin)")
 
     sleep_df = get_sleep_df(cfg.db_path)
@@ -6163,7 +6161,6 @@ if view == "Recovery Data":
             st.dataframe(wellness_df, use_container_width=True)
 
 if view == "Data Extract":
-    st.divider()
     st.header("Data Extract & Sync")
 
     last_sync = get_last_sync(cfg.db_path)
