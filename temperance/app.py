@@ -5054,7 +5054,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         day_df = week_df[week_df["day"] == day_ts].sort_values("start_local", ascending=False)
                         with row_cols[day_offset + 1]:
                             st.markdown(
-                                f"<div class='cal-day-header'>{day_ts:%d %b}</div>",
+                                f"<div class='cal-day-header'>{day_ts:%d %b} ({day_ts:%a})</div>",
                                 unsafe_allow_html=True,
                             )
                             has_actual_day = not day_df.empty
@@ -5424,8 +5424,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                         alt.Tooltip("split_label:N", title="Split"),
                                         alt.Tooltip("intensity_type:N", title="Type"),
                                         alt.Tooltip("duration_s:Q", title="Duration (s)", format=".0f"),
-                                        alt.Tooltip("distance_km:Q", title="Distance (km)", format=".0f"),
-                                        alt.Tooltip("distance_eqv_km:Q", title="Dist Eqv (km)", format=".0f"),
+                                        alt.Tooltip("distance_km:Q", title="Distance (km)", format=".2f"),
+                                        alt.Tooltip("distance_eqv_km:Q", title="Dist Eqv (km)", format=".2f"),
                                         alt.Tooltip("speed_eqv_kmh:Q", title="Speed Eqv (km/h)", format=".2f"),
                                         alt.Tooltip("avg_hr:Q", title="Avg HR", format=".0f"),
                                         alt.Tooltip("intensity_factor:Q", title="IF", format=".0%"),
@@ -5463,8 +5463,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 use_container_width=True,
                                 column_config={
                                     "split_idx": st.column_config.NumberColumn("Split", format="%d"),
-                                    "distance_km": st.column_config.NumberColumn("Distance (km)", format="%.0f"),
-                                    "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f"),
+                                    "distance_km": st.column_config.NumberColumn("Distance (km)", format="%.2f"),
+                                    "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.2f"),
                                     "avg_hr": st.column_config.NumberColumn("Avg HR", format="%.0f"),
                                     "intensity_factor_pct": st.column_config.NumberColumn("IF", format="%.0f%%"),
                                     "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
