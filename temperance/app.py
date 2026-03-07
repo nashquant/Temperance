@@ -4806,33 +4806,10 @@ if view == "Calendar":
 if view == "Week Planner":
     st.divider()
     st.header("Week Planner")
-    today_local = pd.Timestamp(date.today())
-    ex1 = today_local
-    ex2 = today_local + pd.Timedelta(days=1)
-    ex3 = today_local + pd.Timedelta(days=2)
-    ex4 = today_local + pd.Timedelta(days=3)
-    tp1 = float(_curve_value_at(lt_pace_curve_points, float(derived_threshold_pace_sec), ex1))
-    tp4 = float(_curve_value_at(lt_pace_curve_points, float(derived_threshold_pace_sec), ex4))
-    lthr2 = float(_curve_value_at(lthr_curve_points, float(derived_lthr_bpm), ex2))
-    lthr3 = float(_curve_value_at(lthr_curve_points, float(derived_lthr_bpm), ex3))
-    easy_run_pace = _pace_compact(tp1 / 0.70 if tp1 > 0 else None)
-    treadmill_easy_pace = _pace_compact(tp4 / 0.75 if tp4 > 0 else None)
-    treadmill_hard_pace = _pace_compact(tp4 / 0.95 if tp4 > 0 else None)
-    easy_xtrain_hr = int(round(max(lthr2 * 0.70, 1.0)))
-    xtrain_block1_hr = int(round(max(lthr3 * 0.75, 1.0)))
-    xtrain_block2_hr = int(round(max(lthr3 * 0.80, 1.0)))
     st.caption("Plan one dated activity at a time with `[date]:[activity]`.")
-    st.caption("Planner supports multiple planned activities per day.")
-    st.markdown(
-        "Date supports `3Mar26`, `2026-03-26`, or `26/03/2026`.\n\n"
-        "You can ingest multiple activities in one save using separators: new line, `;`, or `,`.\n\n"
-        "Examples:\n"
-        f"- `{ex1:%-d%b%y}: 15km run @{easy_run_pace}`\n"
-        f"- `{ex2:%Y-%m-%d}: 80min elliptical @{easy_xtrain_hr}bpm`\n"
-        f"- `{ex3:%Y-%m-%d}: 10min cycling @{xtrain_block1_hr}bpm + 4x10min @{xtrain_block2_hr}bpm`\n"
-        f"- `{ex4:%d/%m/%Y}: 10min treadmill @{treadmill_easy_pace} + 5x6min @{treadmill_hard_pace}`"
-    )
+    st.caption("You can ingest multiple activities in one save using separators: `;` or `,`.")
 
+    today_local = pd.Timestamp(date.today())
     previous_sunday = today_local - pd.Timedelta(days=int(today_local.weekday()) + 1)
     planner_profile_current = _normalize_specificity_profile(
         st.session_state.get("user_specificity_profile", {}),
@@ -4897,7 +4874,6 @@ if view == "Week Planner":
                 st.success(f"Saved {len(rows_to_upsert)} planned activit{'y' if len(rows_to_upsert)==1 else 'ies'}.")
                 st.rerun()
 
-    st.markdown("#### View planned activities")
     planned_raw = get_planned_activities_df(cfg.db_path)
     planned_raw = _apply_planned_actual_matching(planned_raw, metrics_df)
     if planned_raw.empty:
@@ -5035,22 +5011,6 @@ if view == "Week Planner":
                 if selected_week_key not in week_keys:
                     selected_week_key = week_keys[0]
                     st.session_state["planner_outlook_week_key"] = selected_week_key
-                selected_week_row = weekly_grouped[
-                    weekly_grouped["week_start"].dt.strftime("%Y-%m-%d") == selected_week_key
-                ]
-                if selected_week_row.empty:
-                    selected_week_row = weekly_grouped.iloc[[0]]
-                _planned_tss = float(pd.to_numeric(selected_week_row["tss"], errors="coerce").fillna(0.0).iloc[0])
-                _planned_rtss = float(pd.to_numeric(selected_week_row["rtss"], errors="coerce").fillna(0.0).iloc[0])
-                _planned_dist = float(pd.to_numeric(selected_week_row["distance_eqv_km"], errors="coerce").fillna(0.0).iloc[0])
-                _tss_pct = int(round((_planned_tss / tss_goal_week) * 100.0)) if tss_goal_week > 0 else 0
-                _rtss_pct = int(round((_planned_rtss / rtss_goal_week) * 100.0)) if rtss_goal_week > 0 else 0
-                _dist_pct = int(round((_planned_dist / dist_goal_week) * 100.0)) if dist_goal_week > 0 else 0
-                st.caption(
-                    f"TSS Goal = {int(round(tss_goal_week))} (vs. {_tss_pct}% plan). "
-                    f"rTSS Goal = {int(round(rtss_goal_week))} (vs. {_rtss_pct}% plan). "
-                    f"Dist Goal = {int(round(dist_goal_week))} km (vs. {_dist_pct}% planned)."
-                )
                 weekly_display = weekly_grouped[
                     [
                         "week_start",
@@ -5113,6 +5073,23 @@ if view == "Week Planner":
                         st.rerun()
                 else:
                     selected_planned_week_start = None
+
+                selected_week_row = weekly_grouped[
+                    weekly_grouped["week_start"].dt.strftime("%Y-%m-%d") == selected_week_key
+                ]
+                if selected_week_row.empty:
+                    selected_week_row = weekly_grouped.iloc[[0]]
+                _planned_tss = float(pd.to_numeric(selected_week_row["tss"], errors="coerce").fillna(0.0).iloc[0])
+                _planned_rtss = float(pd.to_numeric(selected_week_row["rtss"], errors="coerce").fillna(0.0).iloc[0])
+                _planned_dist = float(pd.to_numeric(selected_week_row["distance_eqv_km"], errors="coerce").fillna(0.0).iloc[0])
+                _tss_pct = int(round((_planned_tss / tss_goal_week) * 100.0)) if tss_goal_week > 0 else 0
+                _rtss_pct = int(round((_planned_rtss / rtss_goal_week) * 100.0)) if rtss_goal_week > 0 else 0
+                _dist_pct = int(round((_planned_dist / dist_goal_week) * 100.0)) if dist_goal_week > 0 else 0
+                st.caption(
+                    f"TSS Goal = {int(round(tss_goal_week))} (vs. {_tss_pct}% plan). "
+                    f"rTSS Goal = {int(round(rtss_goal_week))} (vs. {_rtss_pct}% plan). "
+                    f"Dist Goal = {int(round(dist_goal_week))} km (vs. {_dist_pct}% planned)."
+                )
             else:
                 st.caption("No planned activities in the upcoming weeks.")
         else:
@@ -5124,12 +5101,14 @@ if view == "Week Planner":
             st.caption("No valid planned dates to build a weekly outlook.")
         if selected_planned_week_start is not None and pd.notna(selected_planned_week_start):
             selected_planned_week_end = selected_planned_week_start + pd.Timedelta(days=6)
-            planned_plot_metric = st.selectbox(
-                "Planned metric view",
-                ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
-                index=0,
-                key="planned_metric_view_select",
-            )
+            metric_select_col, _metric_spacer = st.columns([1, 4])
+            with metric_select_col:
+                planned_plot_metric = st.selectbox(
+                    "Planned metric view",
+                    ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
+                    index=0,
+                    key="planned_metric_view_select",
+                )
             plot_metric_col = {
                 "TSS": "tss",
                 "rTSS": "rtss",
