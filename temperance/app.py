@@ -4327,427 +4327,427 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 st.markdown("<div class='compact-week-shell'>", unsafe_allow_html=True)
                 st.altair_chart(compact_chart, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
-                st.stop()
 
-            header_cols = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1])
-            with header_cols[0]:
-                st.markdown("**Week**")
-            for i, day_name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
-                with header_cols[i + 1]:
-                    st.markdown(f"**{day_name}**")
+            if not compact_mode:
+                header_cols = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1])
+                with header_cols[0]:
+                    st.markdown("**Week**")
+                for i, day_name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
+                    with header_cols[i + 1]:
+                        st.markdown(f"**{day_name}**")
 
-            week_starts = pd.date_range(start=grid_start, end=grid_end, freq="7D")
-            week_starts = week_starts.sort_values(ascending=False)
-            for ws in week_starts:
-                we = ws + pd.Timedelta(days=6)
-                week_df = cal_metrics[(cal_metrics["day"] >= ws) & (cal_metrics["day"] <= we)].copy()
-                if week_df.empty:
-                    continue
-                total_duration_h = float(pd.to_numeric(week_df["duration_s"], errors="coerce").fillna(0.0).sum() / 3600.0)
-                total_distance = float(pd.to_numeric(week_df["distance_km"], errors="coerce").fillna(0.0).sum())
-                total_distance_eqv = float(pd.to_numeric(week_df["distance_proxy_km"], errors="coerce").fillna(0.0).sum())
-                total_calories = float(pd.to_numeric(week_df["calories_total"], errors="coerce").fillna(0.0).sum())
-                total_tss = float(pd.to_numeric(week_df["tss"], errors="coerce").fillna(0.0).sum())
-                total_rtss = float(pd.to_numeric(week_df["rtss"], errors="coerce").fillna(0.0).sum())
-                zone_totals = {"Z1": 0.0, "Z2": 0.0, "Z3": 0.0, "Z4": 0.0, "Z5": 0.0}
-                for _, act_row in week_df.iterrows():
-                    activity_zone_seconds = _zone_seconds_from_activity_row(act_row)
-                    for zone_key in zone_totals:
-                        zone_totals[zone_key] += float(activity_zone_seconds.get(zone_key, 0.0))
-                zone_total_s = sum(zone_totals.values())
-                zone_colors = {
-                    "Z1": "#3b82f6",
-                    "Z2": "#65a30d",
-                    "Z3": "#facc15",
-                    "Z4": "#fb923c",
-                    "Z5": "#e11d48",
-                }
-                zone_rows_html = []
-                for zone in ["Z1", "Z2", "Z3", "Z4", "Z5"]:
-                    z_seconds = zone_totals.get(zone, 0.0)
-                    z_pct = (z_seconds / zone_total_s * 100.0) if zone_total_s > 0 else 0.0
-                    zone_rows_html.append(
-                        "<div class='cal-zone-row'>"
-                        f"<div>{zone}</div>"
-                        "<div class='cal-zone-track'>"
-                        f"<div class='cal-zone-fill' style='width:{z_pct:.1f}%;background:{zone_colors[zone]};'></div>"
-                        "</div>"
-                        f"<div>{_duration_zone(z_seconds)}</div>"
-                        f"<div>{z_pct:.1f}%</div>"
-                        "</div>"
-                    )
-
-                week_fitness = float("nan")
-                week_fatigue = float("nan")
-                week_overreach = float("nan")
-                week_injury_risk = float("nan")
-                if not cal_daily_lookup.empty:
-                    week_daily = cal_daily_lookup[cal_daily_lookup["day"] <= we]
-                    if not week_daily.empty:
-                        last_row = week_daily.iloc[-1]
-                        week_fitness = float(last_row["fitness"]) if pd.notna(last_row["fitness"]) else float("nan")
-                        week_fatigue = float(last_row["fatigue"]) if pd.notna(last_row["fatigue"]) else float("nan")
-                        week_overreach = float(last_row["overreach"]) if pd.notna(last_row["overreach"]) else float("nan")
-                        week_injury_risk = float(last_row["injury_risk"]) if pd.notna(last_row["injury_risk"]) else float("nan")
-
-                row_cols = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1])
-                with row_cols[0]:
-                    fitness_txt = "-" if pd.isna(week_fitness) else f"{week_fitness:.0f}"
-                    fatigue_txt = "-" if pd.isna(week_fatigue) else f"{week_fatigue:.0f}"
-                    overreach_txt = "-" if pd.isna(week_overreach) else f"{week_overreach:.0f}"
-                    injury_risk_txt = "-" if pd.isna(week_injury_risk) else f"{week_injury_risk:.0f}"
-                    st.markdown(
-                        (
-                            "<div class='cal-week-summary'>"
-                            f"<div><b>Week {int(ws.isocalendar().week)}</b></div>"
-                            f"<div>{ws:%d %b} - {we:%d %b}</div>"
-                            f"<div style='margin-top:6px;'>Time: <b>{total_duration_h:.1f}h</b></div>"
-                            f"<div>Dist: <b>{total_distance:.0f} km</b></div>"
-                            f"<div>Eqv.: <b>{total_distance_eqv:.0f} km</b></div>"
-                            f"<div>kcal: <b>{total_calories:.0f}</b></div>"
-                            f"<div>TSS: <b>{total_tss:.0f}</b> | rTSS: <b>{total_rtss:.0f}</b></div>"
-                            f"<div>Fit: <b>{fitness_txt}</b> | Fatg: <b>{fatigue_txt}</b></div>"
-                            f"<div>Ovr: <b>{overreach_txt}</b> | Risk: <b>{injury_risk_txt}</b></div>"
-                            "<div class='cal-zones'><b>Zones</b>"
-                            + "".join(zone_rows_html)
-                            + "</div>"
+                week_starts = pd.date_range(start=grid_start, end=grid_end, freq="7D")
+                week_starts = week_starts.sort_values(ascending=False)
+                for ws in week_starts:
+                    we = ws + pd.Timedelta(days=6)
+                    week_df = cal_metrics[(cal_metrics["day"] >= ws) & (cal_metrics["day"] <= we)].copy()
+                    if week_df.empty:
+                        continue
+                    total_duration_h = float(pd.to_numeric(week_df["duration_s"], errors="coerce").fillna(0.0).sum() / 3600.0)
+                    total_distance = float(pd.to_numeric(week_df["distance_km"], errors="coerce").fillna(0.0).sum())
+                    total_distance_eqv = float(pd.to_numeric(week_df["distance_proxy_km"], errors="coerce").fillna(0.0).sum())
+                    total_calories = float(pd.to_numeric(week_df["calories_total"], errors="coerce").fillna(0.0).sum())
+                    total_tss = float(pd.to_numeric(week_df["tss"], errors="coerce").fillna(0.0).sum())
+                    total_rtss = float(pd.to_numeric(week_df["rtss"], errors="coerce").fillna(0.0).sum())
+                    zone_totals = {"Z1": 0.0, "Z2": 0.0, "Z3": 0.0, "Z4": 0.0, "Z5": 0.0}
+                    for _, act_row in week_df.iterrows():
+                        activity_zone_seconds = _zone_seconds_from_activity_row(act_row)
+                        for zone_key in zone_totals:
+                            zone_totals[zone_key] += float(activity_zone_seconds.get(zone_key, 0.0))
+                    zone_total_s = sum(zone_totals.values())
+                    zone_colors = {
+                        "Z1": "#3b82f6",
+                        "Z2": "#65a30d",
+                        "Z3": "#facc15",
+                        "Z4": "#fb923c",
+                        "Z5": "#e11d48",
+                    }
+                    zone_rows_html = []
+                    for zone in ["Z1", "Z2", "Z3", "Z4", "Z5"]:
+                        z_seconds = zone_totals.get(zone, 0.0)
+                        z_pct = (z_seconds / zone_total_s * 100.0) if zone_total_s > 0 else 0.0
+                        zone_rows_html.append(
+                            "<div class='cal-zone-row'>"
+                            f"<div>{zone}</div>"
+                            "<div class='cal-zone-track'>"
+                            f"<div class='cal-zone-fill' style='width:{z_pct:.1f}%;background:{zone_colors[zone]};'></div>"
                             "</div>"
-                        ),
-                        unsafe_allow_html=True,
-                    )
+                            f"<div>{_duration_zone(z_seconds)}</div>"
+                            f"<div>{z_pct:.1f}%</div>"
+                            "</div>"
+                        )
 
-                for day_offset in range(7):
-                    day_ts = ws + pd.Timedelta(days=day_offset)
-                    day_df = week_df[week_df["day"] == day_ts].sort_values("start_local", ascending=False)
-                    with row_cols[day_offset + 1]:
+                    week_fitness = float("nan")
+                    week_fatigue = float("nan")
+                    week_overreach = float("nan")
+                    week_injury_risk = float("nan")
+                    if not cal_daily_lookup.empty:
+                        week_daily = cal_daily_lookup[cal_daily_lookup["day"] <= we]
+                        if not week_daily.empty:
+                            last_row = week_daily.iloc[-1]
+                            week_fitness = float(last_row["fitness"]) if pd.notna(last_row["fitness"]) else float("nan")
+                            week_fatigue = float(last_row["fatigue"]) if pd.notna(last_row["fatigue"]) else float("nan")
+                            week_overreach = float(last_row["overreach"]) if pd.notna(last_row["overreach"]) else float("nan")
+                            week_injury_risk = float(last_row["injury_risk"]) if pd.notna(last_row["injury_risk"]) else float("nan")
+
+                    row_cols = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1])
+                    with row_cols[0]:
+                        fitness_txt = "-" if pd.isna(week_fitness) else f"{week_fitness:.0f}"
+                        fatigue_txt = "-" if pd.isna(week_fatigue) else f"{week_fatigue:.0f}"
+                        overreach_txt = "-" if pd.isna(week_overreach) else f"{week_overreach:.0f}"
+                        injury_risk_txt = "-" if pd.isna(week_injury_risk) else f"{week_injury_risk:.0f}"
                         st.markdown(
-                            f"<div class='cal-day-header'>{day_ts:%d %b}</div>",
+                            (
+                                "<div class='cal-week-summary'>"
+                                f"<div><b>Week {int(ws.isocalendar().week)}</b></div>"
+                                f"<div>{ws:%d %b} - {we:%d %b}</div>"
+                                f"<div style='margin-top:6px;'>Time: <b>{total_duration_h:.1f}h</b></div>"
+                                f"<div>Dist: <b>{total_distance:.0f} km</b></div>"
+                                f"<div>Eqv.: <b>{total_distance_eqv:.0f} km</b></div>"
+                                f"<div>kcal: <b>{total_calories:.0f}</b></div>"
+                                f"<div>TSS: <b>{total_tss:.0f}</b> | rTSS: <b>{total_rtss:.0f}</b></div>"
+                                f"<div>Fit: <b>{fitness_txt}</b> | Fatg: <b>{fatigue_txt}</b></div>"
+                                f"<div>Ovr: <b>{overreach_txt}</b> | Risk: <b>{injury_risk_txt}</b></div>"
+                                "<div class='cal-zones'><b>Zones</b>"
+                                + "".join(zone_rows_html)
+                                + "</div>"
+                                "</div>"
+                            ),
                             unsafe_allow_html=True,
                         )
-                        has_actual_day = not day_df.empty
-                        day_cal = 0.0
-                        day_distance_eqv = 0.0
-                        if not day_activity_stats.empty:
-                            day_cal_rows = day_activity_stats[day_activity_stats["day"] == day_ts]
-                            if not day_cal_rows.empty:
-                                day_cal = float(day_cal_rows.iloc[0]["day_calories"])
-                                day_distance_eqv = float(day_cal_rows.iloc[0]["day_distance_eqv_km"])
-                        planned_distance_eqv = 0.0
-                        planned_tss = 0.0
-                        planned_rtss = 0.0
-                        planned_duration_s = 0.0
-                        planned_if = 0.0
-                        if not planned_day_lookup.empty:
-                            day_plan_rows = planned_day_lookup[planned_day_lookup["day"] == day_ts]
-                            if not day_plan_rows.empty:
-                                p = day_plan_rows.iloc[0]
-                                planned_distance_eqv = float(pd.to_numeric(pd.Series([p.get("planned_distance_eqv_km")]), errors="coerce").fillna(0.0).iloc[0])
-                                planned_tss = float(pd.to_numeric(pd.Series([p.get("planned_tss")]), errors="coerce").fillna(0.0).iloc[0])
-                                planned_rtss = float(pd.to_numeric(pd.Series([p.get("planned_rtss")]), errors="coerce").fillna(0.0).iloc[0])
-                                planned_duration_s = float(pd.to_numeric(pd.Series([p.get("planned_duration_s")]), errors="coerce").fillna(0.0).iloc[0])
-                                planned_if = float(pd.to_numeric(pd.Series([p.get("planned_if")]), errors="coerce").fillna(0.0).iloc[0])
-                        day_resting_hr = float("nan")
-                        day_stress_avg = float("nan")
-                        if not wellness_day_lookup.empty:
-                            day_well_rows = wellness_day_lookup[wellness_day_lookup["day"] == day_ts]
-                            if not day_well_rows.empty:
-                                day_resting_hr = float(day_well_rows.iloc[0]["resting_hr"]) if pd.notna(day_well_rows.iloc[0]["resting_hr"]) else float("nan")
-                                day_stress_avg = float(day_well_rows.iloc[0]["stress_avg"]) if pd.notna(day_well_rows.iloc[0]["stress_avg"]) else float("nan")
-                        # Planned headline metrics should only appear when the day has no actual activity.
-                        # Also guard against edge cases where grouped daily stats exist for the day.
-                        show_planned_meta = (
-                            (not has_actual_day)
-                            and (day_distance_eqv <= 0)
-                            and (day_cal <= 0)
-                        )
-                        day_meta_parts: list[str] = []
-                        if day_distance_eqv > 0:
-                            day_meta_parts.append(f"{day_distance_eqv:.0f} km")
-                        elif show_planned_meta and planned_distance_eqv > 0:
-                            day_meta_parts.append(f"{planned_distance_eqv:.0f} km")
-                        else:
-                            day_meta_parts.append("0 km")
-                        if day_cal > 0:
-                            day_meta_parts.append(f"{day_cal:.0f} kcal")
-                        fitfat_row = daily_fitfat_with_projection.get(day_ts)
-                        if fitfat_row:
-                            day_fit = fitfat_row.get("fitness")
-                            day_fat = fitfat_row.get("fatigue")
-                            if pd.notna(day_fit):
-                                day_meta_parts.append(f"Fit {float(day_fit):.0f}")
-                            if pd.notna(day_fat):
-                                day_meta_parts.append(f"Fatigue {float(day_fat):.0f}")
-                        if not pd.isna(day_resting_hr):
-                            day_meta_parts.append(f"RHR {day_resting_hr:.0f}")
-                        if not pd.isna(day_stress_avg):
-                            day_meta_parts.append(f"Stress {day_stress_avg:.0f}")
-                        if show_planned_meta and planned_duration_s > 0:
-                            day_meta_parts.append(_duration_short(planned_duration_s))
-                        if show_planned_meta and planned_if > 0:
-                            day_meta_parts.append(f"IF {(planned_if * 100.0):.0f}%")
-                        st.markdown(
-                            f"<div class='cal-card-meta' style='margin-bottom:6px;'>{' · '.join(day_meta_parts)}</div>",
-                            unsafe_allow_html=True,
-                        )
-                        rendered_cards = 0
-                        for _, act in day_df.iterrows():
-                            activity_id = str(act.get("activity_id"))
-                            is_custom_activity = activity_id.startswith("custom:")
-                            sport_label_raw = _sport_label(act.get("sport_type"))
-                            dur_text = _duration_short(act.get("duration_s"))
-                            hr_v = pd.to_numeric(act.get("avg_hr"), errors="coerce")
-                            hr_text = "-" if pd.isna(hr_v) else f"{int(round(float(hr_v)))} bpm"
-                            sport_lower = str(act.get("sport_type") or "").lower()
-                            is_running_activity = ("run" in sport_lower) or ("treadmill" in sport_lower)
-                            distance_v = pd.to_numeric(act.get("distance_km"), errors="coerce")
-                            distance_eqv_v = pd.to_numeric(act.get("distance_proxy_km"), errors="coerce")
-                            if is_running_activity:
-                                dist_text = (
-                                    f"{float(distance_v):.0f} km"
-                                    if pd.notna(distance_v) and float(distance_v) > 0
-                                    else ""
-                                )
-                            else:
-                                dist_text = (
-                                    f"{float(distance_eqv_v):.0f} km eqv."
-                                    if pd.notna(distance_eqv_v) and float(distance_eqv_v) > 0
-                                    else ""
-                                )
-                            tss_v = float(pd.to_numeric(act.get("tss"), errors="coerce") or 0.0)
-                            rtss_v = float(pd.to_numeric(act.get("rtss"), errors="coerce") or 0.0)
-                            pace_actual_v = pd.to_numeric(act.get("avg_pace_s_per_km"), errors="coerce")
-                            pace_eqv_v = pd.to_numeric(act.get("pace_proxy_sec_per_km"), errors="coerce")
-                            if_v = pd.to_numeric(act.get("if_proxy"), errors="coerce")
-                            if is_running_activity:
-                                pace_text = (
-                                    f"Pace {_pace_compact(pace_actual_v)}"
-                                    if pd.notna(pace_actual_v) and float(pace_actual_v) > 0
-                                    else "Pace -"
-                                )
-                            else:
-                                pace_text = (
-                                    f"Pace Eqv {_pace_compact(pace_eqv_v)}"
-                                    if pd.notna(pace_eqv_v) and float(pace_eqv_v) > 0
-                                    else "Pace Eqv -"
-                                )
-                            if_text = (
-                                f"IF {(float(if_v) * 100.0):.0f}%"
-                                if pd.notna(if_v) and float(if_v) > 0
-                                else "IF -"
+
+                    for day_offset in range(7):
+                        day_ts = ws + pd.Timedelta(days=day_offset)
+                        day_df = week_df[week_df["day"] == day_ts].sort_values("start_local", ascending=False)
+                        with row_cols[day_offset + 1]:
+                            st.markdown(
+                                f"<div class='cal-day-header'>{day_ts:%d %b}</div>",
+                                unsafe_allow_html=True,
                             )
-                            subtitle = f"{dur_text}" + (f" · {dist_text}" if dist_text else "")
-                            card_label = (
-                                f"**{'Custom · ' if is_custom_activity else ''}{sport_label_raw}**\n"
-                                f"{subtitle}\n"
-                                f"{hr_text}\n"
-                                f"{pace_text} · {if_text}\n"
-                                f"TSS {tss_v:.0f} · rTSS {rtss_v:.0f}"
+                            has_actual_day = not day_df.empty
+                            day_cal = 0.0
+                            day_distance_eqv = 0.0
+                            if not day_activity_stats.empty:
+                                day_cal_rows = day_activity_stats[day_activity_stats["day"] == day_ts]
+                                if not day_cal_rows.empty:
+                                    day_cal = float(day_cal_rows.iloc[0]["day_calories"])
+                                    day_distance_eqv = float(day_cal_rows.iloc[0]["day_distance_eqv_km"])
+                            planned_distance_eqv = 0.0
+                            planned_tss = 0.0
+                            planned_rtss = 0.0
+                            planned_duration_s = 0.0
+                            planned_if = 0.0
+                            if not planned_day_lookup.empty:
+                                day_plan_rows = planned_day_lookup[planned_day_lookup["day"] == day_ts]
+                                if not day_plan_rows.empty:
+                                    p = day_plan_rows.iloc[0]
+                                    planned_distance_eqv = float(pd.to_numeric(pd.Series([p.get("planned_distance_eqv_km")]), errors="coerce").fillna(0.0).iloc[0])
+                                    planned_tss = float(pd.to_numeric(pd.Series([p.get("planned_tss")]), errors="coerce").fillna(0.0).iloc[0])
+                                    planned_rtss = float(pd.to_numeric(pd.Series([p.get("planned_rtss")]), errors="coerce").fillna(0.0).iloc[0])
+                                    planned_duration_s = float(pd.to_numeric(pd.Series([p.get("planned_duration_s")]), errors="coerce").fillna(0.0).iloc[0])
+                                    planned_if = float(pd.to_numeric(pd.Series([p.get("planned_if")]), errors="coerce").fillna(0.0).iloc[0])
+                            day_resting_hr = float("nan")
+                            day_stress_avg = float("nan")
+                            if not wellness_day_lookup.empty:
+                                day_well_rows = wellness_day_lookup[wellness_day_lookup["day"] == day_ts]
+                                if not day_well_rows.empty:
+                                    day_resting_hr = float(day_well_rows.iloc[0]["resting_hr"]) if pd.notna(day_well_rows.iloc[0]["resting_hr"]) else float("nan")
+                                    day_stress_avg = float(day_well_rows.iloc[0]["stress_avg"]) if pd.notna(day_well_rows.iloc[0]["stress_avg"]) else float("nan")
+                            # Planned headline metrics should only appear when the day has no actual activity.
+                            # Also guard against edge cases where grouped daily stats exist for the day.
+                            show_planned_meta = (
+                                (not has_actual_day)
+                                and (day_distance_eqv <= 0)
+                                and (day_cal <= 0)
                             )
-                            if is_custom_activity:
-                                card_html = (
-                                    "<div class='cal-card'>"
-                                    f"<div class='cal-card-title'>Custom · {sport_label_raw}</div>"
-                                    f"<div class='cal-card-meta'>{subtitle}</div>"
-                                    f"<div class='cal-card-meta'>{hr_text}</div>"
-                                    f"<div class='cal-card-meta'>{pace_text} · {if_text}</div>"
-                                    f"<div class='cal-card-load'>TSS {tss_v:.0f} · rTSS {rtss_v:.0f}</div>"
-                                    "</div>"
-                                )
-                                st.markdown(card_html, unsafe_allow_html=True)
+                            day_meta_parts: list[str] = []
+                            if day_distance_eqv > 0:
+                                day_meta_parts.append(f"{day_distance_eqv:.0f} km")
+                            elif show_planned_meta and planned_distance_eqv > 0:
+                                day_meta_parts.append(f"{planned_distance_eqv:.0f} km")
                             else:
-                                if st.button(
-                                    card_label,
-                                    key=f"calendar_split_title_{activity_id}_{day_ts.date().isoformat()}",
-                                    use_container_width=True,
-                                    type="tertiary",
-                                ):
-                                    st.session_state["calendar_split_activity_id"] = activity_id
-                                    st.session_state["calendar_split_open"] = True
-                            rendered_cards += 1
-                        today_utc = datetime.now(timezone.utc).date()
-                        day_planned_cards = planned_cards_by_day.get(day_ts, [])
-                        if day_ts.date() >= today_utc and rendered_cards == 0 and day_planned_cards:
-                            for prow in day_planned_cards:
-                                p_activity = str(prow.get("activity") or "Planned")
-                                p_duration = _duration_short(prow.get("duration_s"))
-                                p_dist = float(pd.to_numeric(pd.Series([prow.get("distance_proxy_km")]), errors="coerce").fillna(0.0).iloc[0])
-                                p_if = float(pd.to_numeric(pd.Series([prow.get("if_proxy")]), errors="coerce").fillna(0.0).iloc[0])
-                                p_tss = float(pd.to_numeric(pd.Series([prow.get("tss")]), errors="coerce").fillna(0.0).iloc[0])
-                                p_rtss = float(pd.to_numeric(pd.Series([prow.get("rtss")]), errors="coerce").fillna(0.0).iloc[0])
+                                day_meta_parts.append("0 km")
+                            if day_cal > 0:
+                                day_meta_parts.append(f"{day_cal:.0f} kcal")
+                            fitfat_row = daily_fitfat_with_projection.get(day_ts)
+                            if fitfat_row:
+                                day_fit = fitfat_row.get("fitness")
+                                day_fat = fitfat_row.get("fatigue")
+                                if pd.notna(day_fit):
+                                    day_meta_parts.append(f"Fit {float(day_fit):.0f}")
+                                if pd.notna(day_fat):
+                                    day_meta_parts.append(f"Fatigue {float(day_fat):.0f}")
+                            if not pd.isna(day_resting_hr):
+                                day_meta_parts.append(f"RHR {day_resting_hr:.0f}")
+                            if not pd.isna(day_stress_avg):
+                                day_meta_parts.append(f"Stress {day_stress_avg:.0f}")
+                            if show_planned_meta and planned_duration_s > 0:
+                                day_meta_parts.append(_duration_short(planned_duration_s))
+                            if show_planned_meta and planned_if > 0:
+                                day_meta_parts.append(f"IF {(planned_if * 100.0):.0f}%")
+                            st.markdown(
+                                f"<div class='cal-card-meta' style='margin-bottom:6px;'>{' · '.join(day_meta_parts)}</div>",
+                                unsafe_allow_html=True,
+                            )
+                            rendered_cards = 0
+                            for _, act in day_df.iterrows():
+                                activity_id = str(act.get("activity_id"))
+                                is_custom_activity = activity_id.startswith("custom:")
+                                sport_label_raw = _sport_label(act.get("sport_type"))
+                                dur_text = _duration_short(act.get("duration_s"))
+                                hr_v = pd.to_numeric(act.get("avg_hr"), errors="coerce")
+                                hr_text = "-" if pd.isna(hr_v) else f"{int(round(float(hr_v)))} bpm"
+                                sport_lower = str(act.get("sport_type") or "").lower()
+                                is_running_activity = ("run" in sport_lower) or ("treadmill" in sport_lower)
+                                distance_v = pd.to_numeric(act.get("distance_km"), errors="coerce")
+                                distance_eqv_v = pd.to_numeric(act.get("distance_proxy_km"), errors="coerce")
+                                if is_running_activity:
+                                    dist_text = (
+                                        f"{float(distance_v):.0f} km"
+                                        if pd.notna(distance_v) and float(distance_v) > 0
+                                        else ""
+                                    )
+                                else:
+                                    dist_text = (
+                                        f"{float(distance_eqv_v):.0f} km eqv."
+                                        if pd.notna(distance_eqv_v) and float(distance_eqv_v) > 0
+                                        else ""
+                                    )
+                                tss_v = float(pd.to_numeric(act.get("tss"), errors="coerce") or 0.0)
+                                rtss_v = float(pd.to_numeric(act.get("rtss"), errors="coerce") or 0.0)
+                                pace_actual_v = pd.to_numeric(act.get("avg_pace_s_per_km"), errors="coerce")
+                                pace_eqv_v = pd.to_numeric(act.get("pace_proxy_sec_per_km"), errors="coerce")
+                                if_v = pd.to_numeric(act.get("if_proxy"), errors="coerce")
+                                if is_running_activity:
+                                    pace_text = (
+                                        f"Pace {_pace_compact(pace_actual_v)}"
+                                        if pd.notna(pace_actual_v) and float(pace_actual_v) > 0
+                                        else "Pace -"
+                                    )
+                                else:
+                                    pace_text = (
+                                        f"Pace Eqv {_pace_compact(pace_eqv_v)}"
+                                        if pd.notna(pace_eqv_v) and float(pace_eqv_v) > 0
+                                        else "Pace Eqv -"
+                                    )
+                                if_text = (
+                                    f"IF {(float(if_v) * 100.0):.0f}%"
+                                    if pd.notna(if_v) and float(if_v) > 0
+                                    else "IF -"
+                                )
+                                subtitle = f"{dur_text}" + (f" · {dist_text}" if dist_text else "")
+                                card_label = (
+                                    f"**{'Custom · ' if is_custom_activity else ''}{sport_label_raw}**\n"
+                                    f"{subtitle}\n"
+                                    f"{hr_text}\n"
+                                    f"{pace_text} · {if_text}\n"
+                                    f"TSS {tss_v:.0f} · rTSS {rtss_v:.0f}"
+                                )
+                                if is_custom_activity:
+                                    card_html = (
+                                        "<div class='cal-card'>"
+                                        f"<div class='cal-card-title'>Custom · {sport_label_raw}</div>"
+                                        f"<div class='cal-card-meta'>{subtitle}</div>"
+                                        f"<div class='cal-card-meta'>{hr_text}</div>"
+                                        f"<div class='cal-card-meta'>{pace_text} · {if_text}</div>"
+                                        f"<div class='cal-card-load'>TSS {tss_v:.0f} · rTSS {rtss_v:.0f}</div>"
+                                        "</div>"
+                                    )
+                                    st.markdown(card_html, unsafe_allow_html=True)
+                                else:
+                                    if st.button(
+                                        card_label,
+                                        key=f"calendar_split_title_{activity_id}_{day_ts.date().isoformat()}",
+                                        use_container_width=True,
+                                        type="tertiary",
+                                    ):
+                                        st.session_state["calendar_split_activity_id"] = activity_id
+                                        st.session_state["calendar_split_open"] = True
+                                rendered_cards += 1
+                            today_utc = datetime.now(timezone.utc).date()
+                            day_planned_cards = planned_cards_by_day.get(day_ts, [])
+                            if day_ts.date() >= today_utc and rendered_cards == 0 and day_planned_cards:
+                                for prow in day_planned_cards:
+                                    p_activity = str(prow.get("activity") or "Planned")
+                                    p_duration = _duration_short(prow.get("duration_s"))
+                                    p_dist = float(pd.to_numeric(pd.Series([prow.get("distance_proxy_km")]), errors="coerce").fillna(0.0).iloc[0])
+                                    p_if = float(pd.to_numeric(pd.Series([prow.get("if_proxy")]), errors="coerce").fillna(0.0).iloc[0])
+                                    p_tss = float(pd.to_numeric(pd.Series([prow.get("tss")]), errors="coerce").fillna(0.0).iloc[0])
+                                    p_rtss = float(pd.to_numeric(pd.Series([prow.get("rtss")]), errors="coerce").fillna(0.0).iloc[0])
+                                    st.markdown(
+                                        (
+                                            "<div class='cal-planned-card'>"
+                                            f"<div class='cal-planned-title'>Planned · {p_activity}</div>"
+                                            f"<div class='cal-planned-meta'>{p_duration} · {p_dist:.0f} km eqv.</div>"
+                                            f"<div class='cal-planned-meta'>IF {(p_if * 100.0):.0f}%</div>"
+                                            f"<div class='cal-planned-meta'>TSS {p_tss:.0f} · rTSS {p_rtss:.0f}</div>"
+                                            "</div>"
+                                        ),
+                                        unsafe_allow_html=True,
+                                    )
+                            if rendered_cards == 0 and day_ts.date() < today_utc:
                                 st.markdown(
                                     (
-                                        "<div class='cal-planned-card'>"
-                                        f"<div class='cal-planned-title'>Planned · {p_activity}</div>"
-                                        f"<div class='cal-planned-meta'>{p_duration} · {p_dist:.0f} km eqv.</div>"
-                                        f"<div class='cal-planned-meta'>IF {(p_if * 100.0):.0f}%</div>"
-                                        f"<div class='cal-planned-meta'>TSS {p_tss:.0f} · rTSS {p_rtss:.0f}</div>"
+                                        "<div class='cal-rest-card'>"
+                                        "<div class='cal-rest-title'>Rest Day</div>"
+                                        "<div class='cal-rest-sub'>Rest is part of training!</div>"
                                         "</div>"
                                     ),
                                     unsafe_allow_html=True,
                                 )
-                        if rendered_cards == 0 and day_ts.date() < today_utc:
-                            st.markdown(
-                                (
-                                    "<div class='cal-rest-card'>"
-                                    "<div class='cal-rest-title'>Rest Day</div>"
-                                    "<div class='cal-rest-sub'>Rest is part of training!</div>"
-                                    "</div>"
-                                ),
-                                unsafe_allow_html=True,
-                            )
 
-            selected_split_activity_id = (
-                st.session_state.get("calendar_split_activity_id")
-                if bool(st.session_state.get("calendar_split_open"))
-                else None
-            )
-            if selected_split_activity_id:
-                selected_activity_df = cal_metrics[
-                    cal_metrics["activity_id"].astype(str) == str(selected_split_activity_id)
-                ]
-                selected_activity_row = (
-                    selected_activity_df.sort_values("start_local", ascending=False).iloc[0]
-                    if not selected_activity_df.empty
+                selected_split_activity_id = (
+                    st.session_state.get("calendar_split_activity_id")
+                    if bool(st.session_state.get("calendar_split_open"))
                     else None
                 )
-                split_row = split_lookup.get(str(selected_split_activity_id))
-                split_metrics_df = (
-                    _build_split_metrics_for_activity(
-                        activity_row=selected_activity_row,
-                        split_row=split_row,
-                        lthr=float(
-                            _curve_value_at(
-                                lthr_curve_points,
-                                float(derived_lthr_bpm),
-                                pd.to_datetime(selected_activity_row.get("start_time_utc"), utc=True, errors="coerce"),
-                            )
-                        ),
-                        threshold_pace_default_sec=float(
-                            _curve_value_at(
-                                lt_pace_curve_points,
-                                float(derived_threshold_pace_sec),
-                                pd.to_datetime(selected_activity_row.get("start_time_utc"), utc=True, errors="coerce"),
-                            )
-                        ),
+                if selected_split_activity_id:
+                    selected_activity_df = cal_metrics[
+                        cal_metrics["activity_id"].astype(str) == str(selected_split_activity_id)
+                    ]
+                    selected_activity_row = (
+                        selected_activity_df.sort_values("start_local", ascending=False).iloc[0]
+                        if not selected_activity_df.empty
+                        else None
                     )
-                    if selected_activity_row is not None and split_row is not None
-                    else pd.DataFrame()
-                )
+                    split_row = split_lookup.get(str(selected_split_activity_id))
+                    split_metrics_df = (
+                        _build_split_metrics_for_activity(
+                            activity_row=selected_activity_row,
+                            split_row=split_row,
+                            lthr=float(
+                                _curve_value_at(
+                                    lthr_curve_points,
+                                    float(derived_lthr_bpm),
+                                    pd.to_datetime(selected_activity_row.get("start_time_utc"), utc=True, errors="coerce"),
+                                )
+                            ),
+                            threshold_pace_default_sec=float(
+                                _curve_value_at(
+                                    lt_pace_curve_points,
+                                    float(derived_threshold_pace_sec),
+                                    pd.to_datetime(selected_activity_row.get("start_time_utc"), utc=True, errors="coerce"),
+                                )
+                            ),
+                        )
+                        if selected_activity_row is not None and split_row is not None
+                        else pd.DataFrame()
+                    )
 
-                @st.dialog(f"Activity Splits · {selected_split_activity_id}", width="large")
-                def _show_split_details_dialog() -> None:
-                    if selected_activity_row is not None:
-                        st.caption(
-                            f"{pd.to_datetime(selected_activity_row.get('start_time_utc'), utc=True, errors='coerce'):%Y-%m-%d %H:%M UTC} · "
-                            f"{_sport_label(str(selected_activity_row.get('sport_type')))}"
-                        )
-                    if split_metrics_df.empty:
-                        st.info("No split laps found for this activity.")
-                    else:
-                        plot_df = split_metrics_df.copy()
-                        plot_df["split_label"] = "Lap " + plot_df["split_idx"].astype(int).astype(str)
-                        plot_df["distance_eqv_km"] = pd.to_numeric(
-                            plot_df.get("distance_eqv_km"), errors="coerce"
-                        ).fillna(0.0)
-                        plot_df["pace_eqv_s_per_km"] = pd.to_numeric(
-                            plot_df.get("pace_eqv_s_per_km"), errors="coerce"
-                        )
-                        plot_df["speed_eqv_kmh"] = pd.NA
-                        valid_pace = plot_df["pace_eqv_s_per_km"] > 0
-                        plot_df.loc[valid_pace, "speed_eqv_kmh"] = 3600.0 / plot_df.loc[valid_pace, "pace_eqv_s_per_km"]
-                        plot_df["speed_eqv_kmh"] = pd.to_numeric(
-                            plot_df["speed_eqv_kmh"], errors="coerce"
-                        ).fillna(0.0)
-                        plot_df["intensity_factor"] = pd.to_numeric(
-                            plot_df.get("intensity_factor"), errors="coerce"
-                        ).fillna(0.0).clip(lower=0.0, upper=1.0)
-                        plot_df = plot_df.sort_values("split_idx").reset_index(drop=True)
-                        if float(plot_df["distance_eqv_km"].sum()) <= 0:
-                            plot_df["distance_eqv_km"] = 1.0
-                        plot_df["x_end"] = plot_df["distance_eqv_km"].cumsum()
-                        plot_df["x_start"] = plot_df["x_end"] - plot_df["distance_eqv_km"]
-                        plot_df["y_zero"] = 0.0
-                        chart = (
-                            alt.Chart(plot_df)
-                            .mark_bar()
-                            .encode(
-                                x=alt.X(
-                                    "x_start:Q",
-                                    title="Equivalent Distance Progression (km)",
-                                ),
-                                x2="x_end:Q",
-                                y=alt.Y(
-                                    "speed_eqv_kmh:Q",
-                                    title="Equivalent Speed (km/h)",
-                                    scale=alt.Scale(zero=True),
-                                ),
-                                y2=alt.Y2("y_zero:Q"),
-                                color=alt.Color(
-                                    "intensity_factor:Q",
-                                    title="IF",
-                                    scale=alt.Scale(
-                                        domain=[0.0, 0.5, 1.0],
-                                        range=["#2563eb", "#22c55e", "#ef4444"],
-                                        clamp=True,
-                                    ),
-                                    legend=alt.Legend(orient="right"),
-                                ),
-                                tooltip=[
-                                    alt.Tooltip("split_label:N", title="Split"),
-                                    alt.Tooltip("intensity_type:N", title="Type"),
-                                    alt.Tooltip("duration_s:Q", title="Duration (s)", format=".0f"),
-                                    alt.Tooltip("distance_km:Q", title="Distance (km)", format=".0f"),
-                                    alt.Tooltip("distance_eqv_km:Q", title="Dist Eqv (km)", format=".0f"),
-                                    alt.Tooltip("speed_eqv_kmh:Q", title="Speed Eqv (km/h)", format=".2f"),
-                                    alt.Tooltip("avg_hr:Q", title="Avg HR", format=".0f"),
-                                    alt.Tooltip("intensity_factor:Q", title="IF", format=".0%"),
-                                    alt.Tooltip("pace_s_per_km:Q", title="Pace s/km", format=".1f"),
-                                    alt.Tooltip("pace_eqv_s_per_km:Q", title="Pace Eqv s/km", format=".1f"),
-                                    alt.Tooltip("tss:Q", title="TSS", format=".0f"),
-                                    alt.Tooltip("rtss:Q", title="rTSS", format=".0f"),
-                                ],
+                    @st.dialog(f"Activity Splits · {selected_split_activity_id}", width="large")
+                    def _show_split_details_dialog() -> None:
+                        if selected_activity_row is not None:
+                            st.caption(
+                                f"{pd.to_datetime(selected_activity_row.get('start_time_utc'), utc=True, errors='coerce'):%Y-%m-%d %H:%M UTC} · "
+                                f"{_sport_label(str(selected_activity_row.get('sport_type')))}"
                             )
-                            .properties(height=280)
-                        )
-                        st.altair_chart(chart, use_container_width=True)
-                        table_df = plot_df.copy()
-                        table_df["duration"] = table_df["duration_s"].apply(_duration_short)
-                        table_df["pace"] = table_df["pace_s_per_km"].apply(_pace_compact)
-                        table_df["pace_eqv"] = table_df["pace_eqv_s_per_km"].apply(_pace_compact)
-                        table_df["intensity_factor_pct"] = (
-                            pd.to_numeric(table_df.get("intensity_factor"), errors="coerce").fillna(0.0) * 100.0
-                        )
-                        st.dataframe(
-                            table_df[
-                                [
-                                    "split_idx",
-                                    "duration",
-                                    "distance_km",
-                                    "distance_eqv_km",
-                                    "avg_hr",
-                                    "intensity_factor_pct",
-                                    "pace",
-                                    "pace_eqv",
-                                    "tss",
-                                    "rtss",
-                                ]
-                            ],
-                            use_container_width=True,
-                            column_config={
-                                "split_idx": st.column_config.NumberColumn("Split", format="%d"),
-                                "distance_km": st.column_config.NumberColumn("Distance (km)", format="%.0f"),
-                                "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f"),
-                                "avg_hr": st.column_config.NumberColumn("Avg HR", format="%.0f"),
-                                "intensity_factor_pct": st.column_config.NumberColumn("IF", format="%.0f%%"),
-                                "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
-                                "rtss": st.column_config.NumberColumn("rTSS", format="%.0f"),
-                            },
-                        )
-                    if st.button("Close", key="calendar_split_modal_close"):
-                        st.session_state.pop("calendar_split_activity_id", None)
-                        st.session_state["calendar_split_open"] = False
-                        st.rerun()
-                _show_split_details_dialog()
+                        if split_metrics_df.empty:
+                            st.info("No split laps found for this activity.")
+                        else:
+                            plot_df = split_metrics_df.copy()
+                            plot_df["split_label"] = "Lap " + plot_df["split_idx"].astype(int).astype(str)
+                            plot_df["distance_eqv_km"] = pd.to_numeric(
+                                plot_df.get("distance_eqv_km"), errors="coerce"
+                            ).fillna(0.0)
+                            plot_df["pace_eqv_s_per_km"] = pd.to_numeric(
+                                plot_df.get("pace_eqv_s_per_km"), errors="coerce"
+                            )
+                            plot_df["speed_eqv_kmh"] = pd.NA
+                            valid_pace = plot_df["pace_eqv_s_per_km"] > 0
+                            plot_df.loc[valid_pace, "speed_eqv_kmh"] = 3600.0 / plot_df.loc[valid_pace, "pace_eqv_s_per_km"]
+                            plot_df["speed_eqv_kmh"] = pd.to_numeric(
+                                plot_df["speed_eqv_kmh"], errors="coerce"
+                            ).fillna(0.0)
+                            plot_df["intensity_factor"] = pd.to_numeric(
+                                plot_df.get("intensity_factor"), errors="coerce"
+                            ).fillna(0.0).clip(lower=0.0, upper=1.0)
+                            plot_df = plot_df.sort_values("split_idx").reset_index(drop=True)
+                            if float(plot_df["distance_eqv_km"].sum()) <= 0:
+                                plot_df["distance_eqv_km"] = 1.0
+                            plot_df["x_end"] = plot_df["distance_eqv_km"].cumsum()
+                            plot_df["x_start"] = plot_df["x_end"] - plot_df["distance_eqv_km"]
+                            plot_df["y_zero"] = 0.0
+                            chart = (
+                                alt.Chart(plot_df)
+                                .mark_bar()
+                                .encode(
+                                    x=alt.X(
+                                        "x_start:Q",
+                                        title="Equivalent Distance Progression (km)",
+                                    ),
+                                    x2="x_end:Q",
+                                    y=alt.Y(
+                                        "speed_eqv_kmh:Q",
+                                        title="Equivalent Speed (km/h)",
+                                        scale=alt.Scale(zero=True),
+                                    ),
+                                    y2=alt.Y2("y_zero:Q"),
+                                    color=alt.Color(
+                                        "intensity_factor:Q",
+                                        title="IF",
+                                        scale=alt.Scale(
+                                            domain=[0.0, 0.5, 1.0],
+                                            range=["#2563eb", "#22c55e", "#ef4444"],
+                                            clamp=True,
+                                        ),
+                                        legend=alt.Legend(orient="right"),
+                                    ),
+                                    tooltip=[
+                                        alt.Tooltip("split_label:N", title="Split"),
+                                        alt.Tooltip("intensity_type:N", title="Type"),
+                                        alt.Tooltip("duration_s:Q", title="Duration (s)", format=".0f"),
+                                        alt.Tooltip("distance_km:Q", title="Distance (km)", format=".0f"),
+                                        alt.Tooltip("distance_eqv_km:Q", title="Dist Eqv (km)", format=".0f"),
+                                        alt.Tooltip("speed_eqv_kmh:Q", title="Speed Eqv (km/h)", format=".2f"),
+                                        alt.Tooltip("avg_hr:Q", title="Avg HR", format=".0f"),
+                                        alt.Tooltip("intensity_factor:Q", title="IF", format=".0%"),
+                                        alt.Tooltip("pace_s_per_km:Q", title="Pace s/km", format=".1f"),
+                                        alt.Tooltip("pace_eqv_s_per_km:Q", title="Pace Eqv s/km", format=".1f"),
+                                        alt.Tooltip("tss:Q", title="TSS", format=".0f"),
+                                        alt.Tooltip("rtss:Q", title="rTSS", format=".0f"),
+                                    ],
+                                )
+                                .properties(height=280)
+                            )
+                            st.altair_chart(chart, use_container_width=True)
+                            table_df = plot_df.copy()
+                            table_df["duration"] = table_df["duration_s"].apply(_duration_short)
+                            table_df["pace"] = table_df["pace_s_per_km"].apply(_pace_compact)
+                            table_df["pace_eqv"] = table_df["pace_eqv_s_per_km"].apply(_pace_compact)
+                            table_df["intensity_factor_pct"] = (
+                                pd.to_numeric(table_df.get("intensity_factor"), errors="coerce").fillna(0.0) * 100.0
+                            )
+                            st.dataframe(
+                                table_df[
+                                    [
+                                        "split_idx",
+                                        "duration",
+                                        "distance_km",
+                                        "distance_eqv_km",
+                                        "avg_hr",
+                                        "intensity_factor_pct",
+                                        "pace",
+                                        "pace_eqv",
+                                        "tss",
+                                        "rtss",
+                                    ]
+                                ],
+                                use_container_width=True,
+                                column_config={
+                                    "split_idx": st.column_config.NumberColumn("Split", format="%d"),
+                                    "distance_km": st.column_config.NumberColumn("Distance (km)", format="%.0f"),
+                                    "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f"),
+                                    "avg_hr": st.column_config.NumberColumn("Avg HR", format="%.0f"),
+                                    "intensity_factor_pct": st.column_config.NumberColumn("IF", format="%.0f%%"),
+                                    "tss": st.column_config.NumberColumn("TSS", format="%.0f"),
+                                    "rtss": st.column_config.NumberColumn("rTSS", format="%.0f"),
+                                },
+                            )
+                        if st.button("Close", key="calendar_split_modal_close"):
+                            st.session_state.pop("calendar_split_activity_id", None)
+                            st.session_state["calendar_split_open"] = False
+                            st.rerun()
+                    _show_split_details_dialog()
 
 if view in {"Week Planner", "Weekly Summary"}:
     st.divider()
@@ -5461,6 +5461,9 @@ if view == "Custom Activities":
         st.markdown("##### Custom weekly outlook")
         custom_weekly_outlook = custom_raw.copy()
         selected_custom_week_start: pd.Timestamp | None = None
+        tss_goal_week = float(derived_weekly_tss_target) * 1.10
+        rtss_goal_week = float(derived_weekly_tss_target) * 0.90
+        dist_goal_week = float(derived_weekly_distance_target)
         custom_weekly_outlook["day"] = pd.to_datetime(custom_weekly_outlook["day_utc"], errors="coerce")
         custom_weekly_outlook = custom_weekly_outlook.dropna(subset=["day"])
         if not custom_weekly_outlook.empty:
@@ -5566,17 +5569,38 @@ if view == "Custom Activities":
                         st.rerun()
                 else:
                     selected_custom_week_start = None
+
+                selected_week_row = custom_weekly_grouped[
+                    custom_weekly_grouped["week_start"].dt.strftime("%Y-%m-%d") == selected_week_key
+                ]
+                if selected_week_row.empty:
+                    selected_week_row = custom_weekly_grouped.iloc[[0]]
+                _custom_tss = float(pd.to_numeric(selected_week_row["tss"], errors="coerce").fillna(0.0).iloc[0])
+                _custom_rtss = float(pd.to_numeric(selected_week_row["rtss"], errors="coerce").fillna(0.0).iloc[0])
+                _custom_dist = float(
+                    pd.to_numeric(selected_week_row["distance_eqv_km"], errors="coerce").fillna(0.0).iloc[0]
+                )
+                _tss_pct = int(round((_custom_tss / tss_goal_week) * 100.0)) if tss_goal_week > 0 else 0
+                _rtss_pct = int(round((_custom_rtss / rtss_goal_week) * 100.0)) if rtss_goal_week > 0 else 0
+                _dist_pct = int(round((_custom_dist / dist_goal_week) * 100.0)) if dist_goal_week > 0 else 0
+                st.caption(
+                    f"TSS Goal = {int(round(tss_goal_week))} (vs. {_tss_pct}% custom). "
+                    f"rTSS Goal = {int(round(rtss_goal_week))} (vs. {_rtss_pct}% custom). "
+                    f"Dist Goal = {int(round(dist_goal_week))} km (vs. {_dist_pct}% custom)."
+                )
             else:
                 st.caption("No custom activities found.")
         else:
             st.caption("No valid custom dates to build a weekly outlook.")
 
-        custom_plot_metric = st.selectbox(
-            "Custom metric view",
-            ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
-            index=0,
-            key="custom_metric_view_select",
-        )
+        custom_metric_col, _custom_metric_spacer = st.columns([1, 4])
+        with custom_metric_col:
+            custom_plot_metric = st.selectbox(
+                "Custom metric view",
+                ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
+                index=0,
+                key="custom_metric_view_select",
+            )
         custom_plot_metric_col = {
             "TSS": "tss",
             "rTSS": "rtss",
