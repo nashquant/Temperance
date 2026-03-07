@@ -858,7 +858,7 @@ def _parse_minutes_token(text: str) -> float | None:
         total = float(m.group(1))
         return total if total > 0 else None
     # Support shorthand minute notation like 20' or 20’.
-    q = re.search(r"(\d+(?:\.\d+)?)\s*[\'’]\b", t)
+    q = re.search(r"(\d+(?:\.\d+)?)\s*[\'’](?=\D|$)", t)
     if q:
         total = float(q.group(1))
         return total if total > 0 else None
@@ -928,7 +928,7 @@ def _parse_if_token(text: str) -> float | None:
 def _normalize_plan_text(text: str) -> str:
     t = " ".join(str(text or "").strip().split())
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:min|mins|minute|minutes)\b", r"\1min", t, flags=re.IGNORECASE)
-    t = re.sub(r"(\d+(?:\.\d+)?)\s*[\'’]\b", r"\1min", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*[\'’](?=\D|$)", r"\1min", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", r"\1s", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*h\b", r"\1h", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*km\b", r"\1km", t, flags=re.IGNORECASE)
@@ -4988,11 +4988,6 @@ if view == "Week Planner":
         rtss_goal_week = float(derived_weekly_tss_target) * 0.90
         dist_goal_week = float(derived_weekly_distance_target)
         st.markdown("##### Planned weekly outlook")
-        st.caption(
-            f"TSS Goal = {int(round(tss_goal_week))}. "
-            f"rTSS Goal = {int(round(rtss_goal_week))}. "
-            f"Dist Goal = {int(round(dist_goal_week))} km."
-        )
         weekly_outlook = planned_raw.copy()
         selected_planned_week_start: pd.Timestamp | None = None
         weekly_outlook["day"] = pd.to_datetime(weekly_outlook["day_utc"], errors="coerce")
@@ -5040,6 +5035,22 @@ if view == "Week Planner":
                 if selected_week_key not in week_keys:
                     selected_week_key = week_keys[0]
                     st.session_state["planner_outlook_week_key"] = selected_week_key
+                selected_week_row = weekly_grouped[
+                    weekly_grouped["week_start"].dt.strftime("%Y-%m-%d") == selected_week_key
+                ]
+                if selected_week_row.empty:
+                    selected_week_row = weekly_grouped.iloc[[0]]
+                _planned_tss = float(pd.to_numeric(selected_week_row["tss"], errors="coerce").fillna(0.0).iloc[0])
+                _planned_rtss = float(pd.to_numeric(selected_week_row["rtss"], errors="coerce").fillna(0.0).iloc[0])
+                _planned_dist = float(pd.to_numeric(selected_week_row["distance_eqv_km"], errors="coerce").fillna(0.0).iloc[0])
+                _tss_pct = int(round((_planned_tss / tss_goal_week) * 100.0)) if tss_goal_week > 0 else 0
+                _rtss_pct = int(round((_planned_rtss / rtss_goal_week) * 100.0)) if rtss_goal_week > 0 else 0
+                _dist_pct = int(round((_planned_dist / dist_goal_week) * 100.0)) if dist_goal_week > 0 else 0
+                st.caption(
+                    f"TSS Goal = {int(round(tss_goal_week))} (vs. {_tss_pct}% plan). "
+                    f"rTSS Goal = {int(round(rtss_goal_week))} (vs. {_rtss_pct}% plan). "
+                    f"Dist Goal = {int(round(dist_goal_week))} km (vs. {_dist_pct}% planned)."
+                )
                 weekly_display = weekly_grouped[
                     [
                         "week_start",
@@ -5105,6 +5116,11 @@ if view == "Week Planner":
             else:
                 st.caption("No planned activities in the upcoming weeks.")
         else:
+            st.caption(
+                f"TSS Goal = {int(round(tss_goal_week))}. "
+                f"rTSS Goal = {int(round(rtss_goal_week))}. "
+                f"Dist Goal = {int(round(dist_goal_week))} km."
+            )
             st.caption("No valid planned dates to build a weekly outlook.")
         if selected_planned_week_start is not None and pd.notna(selected_planned_week_start):
             selected_planned_week_end = selected_planned_week_start + pd.Timedelta(days=6)
