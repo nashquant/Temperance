@@ -4319,6 +4319,66 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     color: rgba(167,243,208,0.95) !important;
                     font-weight: 700 !important;
                 }
+                div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"],
+                div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"]:hover,
+                div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"]:focus,
+                div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"]:focus-visible,
+                div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"]:active {
+                    border: 1px dashed rgba(52,211,153,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"] strong {
+                    color: rgba(52,211,153,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_blue_"] button[kind="primary"],
+                div[class*="st-key-calendar_planned_done_if_blue_"] button[kind="primary"]:hover,
+                div[class*="st-key-calendar_planned_done_if_blue_"] button[kind="primary"]:focus,
+                div[class*="st-key-calendar_planned_done_if_blue_"] button[kind="primary"]:focus-visible,
+                div[class*="st-key-calendar_planned_done_if_blue_"] button[kind="primary"]:active {
+                    border: 1px dashed rgba(56,189,248,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_blue_"] button[kind="primary"] strong {
+                    color: rgba(56,189,248,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_yellow_"] button[kind="primary"],
+                div[class*="st-key-calendar_planned_done_if_yellow_"] button[kind="primary"]:hover,
+                div[class*="st-key-calendar_planned_done_if_yellow_"] button[kind="primary"]:focus,
+                div[class*="st-key-calendar_planned_done_if_yellow_"] button[kind="primary"]:focus-visible,
+                div[class*="st-key-calendar_planned_done_if_yellow_"] button[kind="primary"]:active {
+                    border: 1px dashed rgba(251,191,36,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_yellow_"] button[kind="primary"] strong {
+                    color: rgba(251,191,36,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_red_"] button[kind="primary"],
+                div[class*="st-key-calendar_planned_done_if_red_"] button[kind="primary"]:hover,
+                div[class*="st-key-calendar_planned_done_if_red_"] button[kind="primary"]:focus,
+                div[class*="st-key-calendar_planned_done_if_red_"] button[kind="primary"]:focus-visible,
+                div[class*="st-key-calendar_planned_done_if_red_"] button[kind="primary"]:active {
+                    border: 1px dashed rgba(251,113,133,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_red_"] button[kind="primary"] strong {
+                    color: rgba(251,113,133,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_orange_"] button[kind="primary"],
+                div[class*="st-key-calendar_planned_done_if_orange_"] button[kind="primary"]:hover,
+                div[class*="st-key-calendar_planned_done_if_orange_"] button[kind="primary"]:focus,
+                div[class*="st-key-calendar_planned_done_if_orange_"] button[kind="primary"]:focus-visible,
+                div[class*="st-key-calendar_planned_done_if_orange_"] button[kind="primary"]:active {
+                    border: 1px dashed rgba(249,115,22,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_orange_"] button[kind="primary"] strong {
+                    color: rgba(249,115,22,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"],
+                div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"]:hover,
+                div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"]:focus,
+                div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"]:focus-visible,
+                div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"]:active {
+                    border: 1px dashed rgba(168,85,247,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"] strong {
+                    color: rgba(168,85,247,0.96) !important;
+                }
                 .cal-zones {
                     margin-top: 8px;
                     padding-top: 8px;
@@ -5173,6 +5233,12 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     p_line_no = int(
                                         pd.to_numeric(pd.Series([prow.get("line_no")]), errors="coerce").fillna(0).iloc[0]
                                     )
+                                    planned_colors = _actual_activity_palette(
+                                        if_proxy=p_if,
+                                        tss_value=p_tss,
+                                        daily_tss_upper_bound=derived_daily_tss_target,
+                                    )
+                                    planned_token = str(planned_colors.get("token") or "green")
                                     planned_card_label = (
                                         f"**Planned · {p_activity}**\n"
                                         f"{p_duration} · {p_dist:.0f} km eqv.\n"
@@ -5181,7 +5247,10 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     )
                                     if st.button(
                                         planned_card_label,
-                                        key=f"calendar_planned_done_{p_day_utc}_{p_line_no}_{rendered_cards}",
+                                        key=(
+                                            f"calendar_planned_done_if_{planned_token}_"
+                                            f"{p_day_utc}_{p_line_no}_{rendered_cards}"
+                                        ),
                                         use_container_width=True,
                                         type="primary",
                                     ):
