@@ -679,6 +679,8 @@ def _sport_label(sport_type: str | None) -> str:
 def _actual_activity_palette(
     if_proxy: float | int | None,
     tss_value: float | int | None = None,
+    rtss_value: float | int | None = None,
+    sport_type: str | None = None,
     daily_tss_upper_bound: float | int | None = None,
 ) -> dict[str, str]:
     if if_proxy is None:
@@ -708,14 +710,21 @@ def _actual_activity_palette(
     except Exception:
         tss_v = 0.0
     try:
+        rtss_v = float(rtss_value) if rtss_value is not None else 0.0
+    except Exception:
+        rtss_v = 0.0
+    try:
         daily_cap = float(daily_tss_upper_bound) if daily_tss_upper_bound is not None else 0.0
     except Exception:
         daily_cap = 0.0
-    if pd.notna(tss_v) and pd.notna(daily_cap) and daily_cap > 0:
-        if tss_v > (daily_cap * 1.5):
+    sport_lower = str(sport_type or "").lower()
+    is_running_like = ("run" in sport_lower) or ("treadmill" in sport_lower)
+    override_load = rtss_v if is_running_like else tss_v
+    if pd.notna(override_load) and pd.notna(daily_cap) and daily_cap > 0:
+        if override_load > (daily_cap * 1.5):
             token = "purple"
             accent = "rgba(168,85,247,0.96)"
-        elif tss_v > daily_cap:
+        elif override_load > daily_cap:
             token = "orange"
             accent = "rgba(249,115,22,0.96)"
 
@@ -5163,6 +5172,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 activity_colors = _actual_activity_palette(
                                     if_proxy=if_v,
                                     tss_value=tss_v,
+                                    rtss_value=rtss_v,
+                                    sport_type=str(act.get("sport_type") or ""),
                                     daily_tss_upper_bound=derived_daily_tss_target,
                                 )
                                 activity_token = str(activity_colors.get("token") or "green")
@@ -5236,6 +5247,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     planned_colors = _actual_activity_palette(
                                         if_proxy=p_if,
                                         tss_value=p_tss,
+                                        rtss_value=p_rtss,
+                                        sport_type=p_activity,
                                         daily_tss_upper_bound=derived_daily_tss_target,
                                     )
                                     planned_token = str(planned_colors.get("token") or "green")
