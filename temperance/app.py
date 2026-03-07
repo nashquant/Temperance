@@ -140,7 +140,8 @@ def _daily_distance_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
 
 AUTH_ALL_TABS = [
     "Dashboard",
-    "Calendar",
+    "Weekly Summary",
+    "Activity Summary",
     "Week Planner",
     "Custom Activities",
     "Activity Detail",
@@ -150,7 +151,8 @@ AUTH_ALL_TABS = [
 ]
 AUTH_VIEWER_TABS = [
     "Dashboard",
-    "Calendar",
+    "Weekly Summary",
+    "Activity Summary",
     "Week Planner",
     "Custom Activities",
     "Activity Detail",
@@ -2221,12 +2223,13 @@ with st.sidebar:
     st.session_state["data_owner"] = data_owner
 
     allowed_tabs = AUTH_ALL_TABS if (not auth_on or role == "admin") else AUTH_VIEWER_TABS
-    preferred_order = ["Calendar", "Week Planner", "Dashboard"]
+    preferred_order = ["Weekly Summary", "Activity Summary", "Week Planner", "Dashboard"]
     ordered_tabs = [v for v in preferred_order if v in allowed_tabs] + [
         v for v in allowed_tabs if v not in preferred_order
     ]
     page_labels = {
-        "Calendar": "Activity Summary",
+        "Weekly Summary": "Weekly Summary",
+        "Activity Summary": "Activity Summary",
         "Week Planner": "Week Planner",
         "Custom Activities": "Custom Activities",
         "Dashboard": "Plot Charts",
@@ -2236,7 +2239,7 @@ with st.sidebar:
         "User Inputs": "User Inputs",
     }
     label_to_view = {page_labels.get(v, v): v for v in ordered_tabs}
-    default_view = "Calendar" if "Calendar" in ordered_tabs else ordered_tabs[0]
+    default_view = "Weekly Summary" if "Weekly Summary" in ordered_tabs else ordered_tabs[0]
     default_idx = ordered_tabs.index(default_view)
     selected_label = st.radio(
         "Page",
@@ -2494,8 +2497,7 @@ if view == "Dashboard":
             "For your full archive, run Comprehensive Garmin Extract from Jan 1, 2025."
         )
     else:
-        st.caption("Missing-day fill mode is fixed to zero for chart calculations (EMA and aggregations).")
-        controls = st.columns([1, 1, 1, 1.2])
+        controls = st.columns([1, 1, 1])
         with controls[0]:
             metrics_local_start = _to_local_naive(dashboard_metrics_df["start_time_utc"])
             metrics_min_day = metrics_local_start.min().date()
@@ -2545,13 +2547,26 @@ if view == "Dashboard":
                 index=0,
             )
         with controls[2]:
-            chart_type = "line"
-            st.caption("Chart type: line")
-            weekly_toggle = st.checkbox("Weekly aggregation", value=True)
-        with controls[3]:
-            compare_mode = st.checkbox("Compare mode (up to 3 metrics)", value=False)
-            enable_zoom = st.checkbox("Zoom/pan", value=False)
-            top_injury_overlay = st.checkbox("Top injury overlay", value=False)
+            weekly_mode = st.selectbox("Aggregation", ["Weekly", "Daily"], index=0, key="dashboard_aggregation_mode")
+            weekly_toggle = weekly_mode == "Weekly"
+        enable_zoom = False
+
+        section_col, _section_spacer = st.columns([1, 4])
+        with section_col:
+            section_choice = st.selectbox(
+                "Section",
+                ["Summary", "Injury Risk", "Fitness", "Activities", "Custom metric"],
+                index=0,
+            )
+        run_custom_metric = section_choice == "Custom metric"
+        compare_mode = False
+        top_injury_overlay = False
+        if run_custom_metric:
+            custom_opts = st.columns([1, 1, 4])
+            with custom_opts[0]:
+                compare_mode = st.checkbox("Compare mode (up to 3 metrics)", value=False, key="dashboard_compare_mode")
+            with custom_opts[1]:
+                top_injury_overlay = st.checkbox("Top injury overlay", value=False, key="dashboard_top_injury_overlay")
 
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
@@ -2611,6 +2626,9 @@ if view == "Dashboard":
                     prepared_base_df[col] = pd.to_numeric(prepared_base_df[col], errors="coerce").fillna(0.0)
             prepared_base_df["day"] = pd.to_datetime(prepared_base_df["day_utc"], errors="coerce")
             series_full_index = pd.date_range(start=start_ts, end=end_ts, freq="D")
+            if not run_custom_metric:
+                compare_mode = False
+                top_injury_overlay = False
             if compare_mode:
                 left_axis_labels = st.multiselect(
                     "Left axis metrics",
@@ -2627,20 +2645,21 @@ if view == "Dashboard":
             else:
                 metric_labels = list(metric_map.keys())
                 default_metric = "TSS"
-                default_index = metric_labels.index(default_metric) if default_metric in metric_labels else 0
-                selected_labels = [st.selectbox("Metric", metric_labels, index=default_index)]
+                if "dashboard_metric_select" not in st.session_state:
+                    st.session_state["dashboard_metric_select"] = default_metric
+                selected_metric_label = str(st.session_state.get("dashboard_metric_select") or default_metric)
+                if selected_metric_label not in metric_labels:
+                    selected_metric_label = default_metric if default_metric in metric_labels else metric_labels[0]
+                    st.session_state["dashboard_metric_select"] = selected_metric_label
+                selected_labels = [selected_metric_label]
 
             ema_ns: list[int] = []
             ema_pairs: list[tuple[int, int]] = []
             if not compare_mode:
-                ema_windows = st.text_input("EMA windows (days, comma-separated)", value="4,16")
+                if "dashboard_ema_windows" not in st.session_state:
+                    st.session_state["dashboard_ema_windows"] = "4,16"
+                ema_windows = str(st.session_state.get("dashboard_ema_windows") or "4,16")
                 ema_ns, ema_pairs = parse_ma_windows(ema_windows)
-                if ema_ns:
-                    alpha_text = ", ".join([f"EMA {n} -> alpha={ema_alpha_from_days(n):.4f}" for n in ema_ns])
-                    st.caption(alpha_text)
-                if ema_pairs:
-                    pair_text = ", ".join([f"EMA{a}-EMA{b}" for a, b in ema_pairs])
-                    st.caption(f"EMA spread overlays: {pair_text}")
 
             plot_frames: list[pd.DataFrame] = []
             if compare_mode:
@@ -2649,6 +2668,8 @@ if view == "Dashboard":
                 ]
             else:
                 labels_and_axis = [(label, "left") for label in selected_labels]
+            if not run_custom_metric:
+                labels_and_axis = []
 
             for label, axis_side in labels_and_axis:
                 metric, weekly_agg = metric_map[label]
@@ -2857,12 +2878,26 @@ if view == "Dashboard":
                 st.altair_chart(compare_chart, use_container_width=True)
             elif compare_mode:
                 st.caption("No comparable data found for the selected metrics/date range.")
-
-        section_choice = st.selectbox(
-            "Section",
-            ["Summary", "Injury Risk", "Fitness", "Activities"],
-            index=0,
-        )
+            elif run_custom_metric:
+                metric_labels = list(metric_map.keys())
+                selected_metric_label = str(st.session_state.get("dashboard_metric_select") or "TSS")
+                metric_index = metric_labels.index(selected_metric_label) if selected_metric_label in metric_labels else 0
+                st.selectbox(
+                    "Metric",
+                    metric_labels,
+                    index=metric_index,
+                    key="dashboard_metric_select",
+                )
+                st.text_input(
+                    "EMA windows (days, comma-separated)",
+                    key="dashboard_ema_windows",
+                )
+                if ema_ns:
+                    alpha_text = ", ".join([f"EMA {n} -> alpha={ema_alpha_from_days(n):.4f}" for n in ema_ns])
+                    st.caption(alpha_text)
+                if ema_pairs:
+                    pair_text = ", ".join([f"EMA{a}-EMA{b}" for a, b in ema_pairs])
+                    st.caption(f"EMA spread overlays: {pair_text}")
 
         weekly = weekly_summary(range_filtered_metrics)
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
@@ -3410,10 +3445,9 @@ if view == "Dashboard":
                 },
             )
 
-if view == "Calendar":
+if view in {"Weekly Summary", "Activity Summary"}:
     st.divider()
-    st.header("Calendar")
-    st.caption("Week grid with activity cards and weekly summary.")
+    st.header("Weekly Summary" if view == "Weekly Summary" else "Activity Summary")
 
     calendar_metrics_df = _merge_metrics_with_custom(
         metrics_df,
@@ -3430,7 +3464,7 @@ if view == "Calendar":
     if calendar_metrics_df.empty:
         st.info("No activities available.")
     else:
-        if previous_view != "Calendar":
+        if previous_view not in {"Weekly Summary", "Activity Summary"}:
             st.session_state.pop("calendar_split_activity_id", None)
             st.session_state["calendar_split_open"] = False
         cal_base = calendar_metrics_df.copy()
@@ -3440,59 +3474,57 @@ if view == "Calendar":
         if cal_base.empty:
             st.info("No valid activity timestamps available.")
         else:
-            compact_mode_early = bool(st.session_state.get("calendar_compact_week_mode", True))
-            controls = st.columns([1.2, 1.0])
-            with controls[0]:
-                cal_min_day = cal_base["start_local"].min().date()
-                cal_max_day = cal_base["start_local"].max().date()
-                min_week_start = pd.Timestamp(cal_min_day) - pd.Timedelta(days=int(pd.Timestamp(cal_min_day).weekday()))
-                max_week_start = pd.Timestamp(cal_max_day) - pd.Timedelta(days=int(pd.Timestamp(cal_max_day).weekday()))
-                today_week_start = pd.Timestamp(datetime.now().astimezone().date())
-                today_week_start = today_week_start - pd.Timedelta(days=int(today_week_start.weekday()))
-                default_week_start = (
-                    today_week_start
-                    if (today_week_start >= min_week_start and today_week_start <= max_week_start)
-                    else max_week_start
+            compact_mode_early = view == "Weekly Summary"
+            compare_options: list[str] = ["Previous week", "2 weeks ago", "3 weeks ago", "4 weeks ago", "Planned"]
+            cal_min_day = cal_base["start_local"].min().date()
+            cal_max_day = cal_base["start_local"].max().date()
+            min_week_start = pd.Timestamp(cal_min_day) - pd.Timedelta(days=int(pd.Timestamp(cal_min_day).weekday()))
+            max_week_start = pd.Timestamp(cal_max_day) - pd.Timedelta(days=int(pd.Timestamp(cal_max_day).weekday()))
+            today_week_start = pd.Timestamp(datetime.now().astimezone().date())
+            today_week_start = today_week_start - pd.Timedelta(days=int(today_week_start.weekday()))
+            default_week_start = (
+                today_week_start
+                if (today_week_start >= min_week_start and today_week_start <= max_week_start)
+                else max_week_start
+            )
+            if compact_mode_early:
+                latest_week_start = pd.Timestamp(cal_max_day) - pd.Timedelta(
+                    days=int(pd.Timestamp(cal_max_day).weekday())
                 )
-                if compact_mode_early:
-                    latest_week_start = pd.Timestamp(cal_max_day) - pd.Timedelta(
-                        days=int(pd.Timestamp(cal_max_day).weekday())
-                    )
-                    selected_preview = pd.to_datetime(
-                        st.session_state.get("calendar_compact_week_start"), errors="coerce"
-                    )
-                    if pd.isna(selected_preview):
-                        selected_preview = default_week_start
-                    selected_preview = selected_preview - pd.Timedelta(days=int(selected_preview.weekday()))
-                    if selected_preview < min_week_start:
-                        selected_preview = min_week_start
-                    if selected_preview > max_week_start:
-                        selected_preview = max_week_start
-                    is_future_week_preview = selected_preview > latest_week_start
+                selected_preview = pd.to_datetime(
+                    st.session_state.get("calendar_compact_week_start"), errors="coerce"
+                )
+                if pd.isna(selected_preview):
+                    selected_preview = default_week_start
+                selected_preview = selected_preview - pd.Timedelta(days=int(selected_preview.weekday()))
+                if selected_preview < min_week_start:
+                    selected_preview = min_week_start
+                if selected_preview > max_week_start:
+                    selected_preview = max_week_start
+                is_future_week_preview = selected_preview > latest_week_start
 
-                    current_compare_choice = str(
-                        st.session_state.get("calendar_compact_compare_choice", "Planned")
-                    )
-                    if is_future_week_preview and current_compare_choice == "Planned":
-                        st.session_state["calendar_compact_compare_choice"] = "Previous week"
-                        current_compare_choice = "Previous week"
+                current_compare_choice = str(
+                    st.session_state.get("calendar_compact_compare_choice", "Planned")
+                )
+                if is_future_week_preview and current_compare_choice == "Planned":
+                    st.session_state["calendar_compact_compare_choice"] = "Previous week"
+                    current_compare_choice = "Previous week"
 
-                    compare_options = ["Previous week", "2 weeks ago", "3 weeks ago", "4 weeks ago"]
-                    if not is_future_week_preview:
-                        compare_options.append("Planned")
-                        if "calendar_compact_compare_choice" not in st.session_state:
-                            st.session_state["calendar_compact_compare_choice"] = "Planned"
-                    elif current_compare_choice not in compare_options:
-                        st.session_state["calendar_compact_compare_choice"] = "Previous week"
+                compare_options = ["Previous week", "2 weeks ago", "3 weeks ago", "4 weeks ago"]
+                if not is_future_week_preview:
+                    compare_options.append("Planned")
+                    if "calendar_compact_compare_choice" not in st.session_state:
+                        st.session_state["calendar_compact_compare_choice"] = "Planned"
+                elif current_compare_choice not in compare_options:
+                    st.session_state["calendar_compact_compare_choice"] = "Previous week"
 
-                    compare_choice = st.selectbox(
-                        "Compare against",
-                        compare_options,
-                        key="calendar_compact_compare_choice",
-                    )
-                    range_start_day = cal_min_day
-                    range_end_day = cal_max_day
-                else:
+                compare_choice = str(st.session_state.get("calendar_compact_compare_choice", "Planned"))
+                range_start_day = cal_min_day
+                range_end_day = cal_max_day
+                cal_activity_filter = str(st.session_state.get("calendar_activity_filter", "All Activities"))
+            else:
+                controls = st.columns([1, 1, 3.2])
+                with controls[0]:
                     cal_range = st.selectbox(
                         "Quick range",
                         ["3M", "6M", "9M", "1Y", "2Y", "ALL"],
@@ -3512,13 +3544,13 @@ if view == "Calendar":
                     else:
                         range_start_day = cal_min_day
                     range_end_day = cal_max_day
-            with controls[1]:
-                cal_activity_filter = st.selectbox(
-                    "Activity filter",
-                    ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
-                    index=0,
-                    key="calendar_activity_filter",
-                )
+                with controls[1]:
+                    cal_activity_filter = st.selectbox(
+                        "Activity filter",
+                        ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
+                        index=0,
+                        key="calendar_activity_filter",
+                    )
             range_start_ts = pd.Timestamp(range_start_day)
             range_end_ts = pd.Timestamp(range_end_day)
             grid_start = range_start_ts - pd.Timedelta(days=int(range_start_ts.weekday()))
@@ -3841,11 +3873,11 @@ if view == "Calendar":
                     border-radius: 999px;
                 }
                 .compact-week-shell {
-                    border: 1px solid rgba(52, 211, 153, 0.20);
-                    border-radius: 16px;
-                    padding: 12px 14px 8px;
-                    background: radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.10), rgba(2, 6, 23, 0.0) 60%);
-                    margin-bottom: 10px;
+                    border: none;
+                    border-radius: 0;
+                    padding: 0;
+                    background: transparent;
+                    margin-bottom: 2px;
                 }
                 .compact-metric-card {
                     border: 1px solid rgba(148, 163, 184, 0.24);
@@ -3873,8 +3905,8 @@ if view == "Calendar":
                 }
                 @media (max-width: 768px) {
                     .compact-week-shell {
-                        padding: 8px 10px 6px;
-                        border-radius: 12px;
+                        padding: 0;
+                        border-radius: 0;
                     }
                 }
                 </style>
@@ -3882,14 +3914,7 @@ if view == "Calendar":
                 unsafe_allow_html=True,
             )
 
-            compact_mode = st.toggle(
-                "Compact week view",
-                value=True,
-                key="calendar_compact_week_mode",
-                help="Show one-week compact summary with metric-switch bars.",
-            )
-            prev_compact_mode = bool(st.session_state.get("_calendar_prev_compact_mode", compact_mode))
-            st.session_state["_calendar_prev_compact_mode"] = compact_mode
+            compact_mode = view == "Weekly Summary"
 
             if compact_mode:
                 latest_day = pd.to_datetime(cal_metrics["day"], errors="coerce").max()
@@ -3897,9 +3922,6 @@ if view == "Calendar":
                     st.info("No activities available for compact view.")
                     st.stop()
                 latest_week_start = latest_day - pd.Timedelta(days=int(latest_day.weekday()))
-                # When switching from non-compact -> compact, reset to default anchor week.
-                if compact_mode and not prev_compact_mode:
-                    st.session_state["calendar_compact_week_start"] = default_week_start
                 if "calendar_compact_week_start" not in st.session_state:
                     st.session_state["calendar_compact_week_start"] = default_week_start
                 selected_week_start = pd.to_datetime(
@@ -3928,12 +3950,36 @@ if view == "Calendar":
                 compare_week_start = selected_week_start - pd.Timedelta(days=7 * compare_weeks)
                 compare_week_end = compare_week_start + pd.Timedelta(days=6)
 
-                st.markdown(f"### {selected_week_start:%B %-d} - {selected_week_end:%-d}")
-                if compare_choice == "Planned":
-                    st.caption(f"Comparing: Planned {selected_week_start:%b %-d} - {selected_week_end:%-d}")
-                else:
-                    st.caption(f"Comparing: {compare_week_start:%b %-d} - {compare_week_end:%-d}")
-                nav1, nav2 = st.columns(2)
+                st.markdown(
+                    (
+                        "<div style='margin:-10px 0 8px 0;font-size:2rem;font-weight:700;"
+                        "line-height:1.2;color:rgba(248,250,252,0.98);'>"
+                        f"{selected_week_start:%B %-d} - {selected_week_end:%-d}"
+                        "</div>"
+                    ),
+                    unsafe_allow_html=True,
+                )
+                compact_metric_keys = ["rtss", "tss", "distance_eqv_km"]
+                compact_metric_labels = {
+                    "rtss": "rTSS",
+                    "tss": "TSS",
+                    "distance_eqv_km": "Distance Eqv",
+                }
+                week_scope_for_selector = cal_metrics[
+                    (cal_metrics["day"] >= selected_week_start)
+                    & (cal_metrics["day"] <= selected_week_end)
+                ].copy()
+                metric_values_week = {
+                    "rtss": float(pd.to_numeric(week_scope_for_selector.get("rtss"), errors="coerce").fillna(0.0).sum()),
+                    "tss": float(pd.to_numeric(week_scope_for_selector.get("tss"), errors="coerce").fillna(0.0).sum()),
+                    "distance_eqv_km": float(pd.to_numeric(week_scope_for_selector.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()),
+                }
+                if "calendar_compact_metric" not in st.session_state:
+                    st.session_state["calendar_compact_metric"] = "tss"
+                if str(st.session_state.get("calendar_compact_metric")) not in compact_metric_keys:
+                    st.session_state["calendar_compact_metric"] = "tss"
+
+                nav1, nav2, nav3, nav4, nav5, _nav_spacer = st.columns([0.75, 0.75, 1.0, 1.0, 1.1, 0.55])
                 with nav1:
                     if st.button("◀ Prev week", key="compact_prev_week", use_container_width=True):
                         st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
@@ -3942,6 +3988,32 @@ if view == "Calendar":
                     if st.button("Next week ▶", key="compact_next_week", use_container_width=True):
                         st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
                         st.rerun()
+                with nav3:
+                    st.selectbox(
+                        "Compare against",
+                        compare_options,
+                        key="calendar_compact_compare_choice",
+                        label_visibility="collapsed",
+                    )
+                with nav4:
+                    st.selectbox(
+                        "Activity filter",
+                        ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
+                        key="calendar_activity_filter",
+                        label_visibility="collapsed",
+                    )
+                with nav5:
+                    st.selectbox(
+                        "Metric",
+                        compact_metric_keys,
+                        key="calendar_compact_metric",
+                        label_visibility="collapsed",
+                        format_func=lambda k: (
+                            f"{compact_metric_labels.get(k, k)} - {int(round(metric_values_week.get(k, 0.0)))}"
+                            + (" km" if k == "distance_eqv_km" else "")
+                        ),
+                    )
+                compare_choice = str(st.session_state.get("calendar_compact_compare_choice", compare_choice))
 
                 compact_days = pd.DataFrame({"day": pd.date_range(selected_week_start, selected_week_end, freq="D")})
                 compact_agg = (
@@ -4079,32 +4151,6 @@ if view == "Calendar":
                         dur_total = float(dur.sum())
                         compare_if_by_day.append(if_total / dur_total if dur_total > 0 else 0.0)
                     compare_week["if_proxy"] = compare_if_by_day
-                week_scope_df = cal_metrics[
-                    (cal_metrics["day"] >= selected_week_start)
-                    & (cal_metrics["day"] <= selected_week_end)
-                ].copy()
-                week_scope_df["duration_s"] = pd.to_numeric(
-                    week_scope_df.get("duration_s"), errors="coerce"
-                )
-                week_scope_df["if_proxy"] = pd.to_numeric(
-                    week_scope_df.get("if_proxy"), errors="coerce"
-                )
-                valid_if_mask = (
-                    week_scope_df["duration_s"].notna()
-                    & week_scope_df["if_proxy"].notna()
-                    & (week_scope_df["duration_s"] > 0)
-                )
-                if valid_if_mask.any():
-                    week_if_weighted = float(
-                        (
-                            week_scope_df.loc[valid_if_mask, "if_proxy"]
-                            * week_scope_df.loc[valid_if_mask, "duration_s"]
-                        ).sum()
-                        / week_scope_df.loc[valid_if_mask, "duration_s"].sum()
-                    )
-                else:
-                    week_if_weighted = 0.0
-
                 compact_week["day_label"] = compact_week["day"].dt.strftime("%a").str.upper()
                 compact_week["day_num"] = compact_week["day"].dt.day
 
@@ -4112,13 +4158,10 @@ if view == "Calendar":
                     ("rtss", "rTSS", ".0f", "", "sum"),
                     ("tss", "TSS", ".0f", "", "sum"),
                     ("distance_eqv_km", "Distance Eqv", ".0f", " km", "sum"),
-                    ("if_proxy", "IF", ".0f", "%", "mean"),
                 ]
-                if "calendar_compact_metric" not in st.session_state:
-                    st.session_state["calendar_compact_metric"] = "distance_eqv_km"
-                selected_metric = str(st.session_state.get("calendar_compact_metric") or "distance_eqv_km")
+                selected_metric = str(st.session_state.get("calendar_compact_metric") or "tss")
                 if selected_metric not in {k for k, _, _, _, _ in metric_defs}:
-                    selected_metric = "distance_eqv_km"
+                    selected_metric = "tss"
                     st.session_state["calendar_compact_metric"] = selected_metric
 
                 chart_df = compact_week.copy()
@@ -4148,10 +4191,6 @@ if view == "Calendar":
                     chart_df["metric_label"] = chart_df["metric_value"].map(
                         lambda v: f"{v:.0f} km" if float(v) > 0 else ""
                     )
-                elif selected_metric == "if_proxy":
-                    chart_df["metric_label"] = chart_df["metric_value"].map(
-                        lambda v: f"{(float(v) * 100.0):.0f}%" if float(v) > 0 else ""
-                    )
                 else:
                     chart_df["metric_label"] = chart_df["metric_value"].map(
                         lambda v: f"{v:.0f}" if float(v) > 0 else ""
@@ -4162,12 +4201,6 @@ if view == "Calendar":
                         if value < 50:
                             return "#34d399"
                         if value <= 100:
-                            return "#facc15"
-                        return "#60a5fa"
-                    if metric_key == "if_proxy":
-                        if value < 0.5:
-                            return "#34d399"
-                        if value <= 0.7:
                             return "#facc15"
                         return "#60a5fa"
                     if metric_key == "distance_eqv_km":
@@ -4216,7 +4249,7 @@ if view == "Calendar":
                             alt.Tooltip(
                                 "metric_value:Q",
                                 title=y_title,
-                                format=(".0%" if selected_metric == "if_proxy" else ".0f"),
+                                format=".0f",
                             ),
                         ],
                     )
@@ -4234,14 +4267,6 @@ if view == "Calendar":
                         text=alt.Text("metric_label:N"),
                     )
                 )
-                compact_chart = alt.layer(bars, labels).properties(
-                    height=250,
-                    padding={"left": 52, "right": 10, "top": 8, "bottom": 42},
-                )
-                st.markdown("<div class='compact-week-shell'>", unsafe_allow_html=True)
-                st.altair_chart(compact_chart, use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-
                 today_local = pd.Timestamp(datetime.now().astimezone().date())
                 cutoff_day = min(today_local, selected_week_end)
                 actual_to_date_mask = compact_week["day"] <= cutoff_day
@@ -4258,17 +4283,10 @@ if view == "Calendar":
                 def _agg_metric(df: pd.DataFrame, mask: pd.Series, metric_key: str) -> float:
                     if df.empty or metric_key not in df.columns:
                         return 0.0
-                    if metric_key == "if_proxy":
-                        dur = pd.to_numeric(df.loc[mask, "duration_s"], errors="coerce").fillna(0.0)
-                        ifv = pd.to_numeric(df.loc[mask, "if_proxy"], errors="coerce").fillna(0.0)
-                        dur_sum = float(dur.sum())
-                        return float((dur * ifv).sum() / dur_sum) if dur_sum > 0 else 0.0
                     vals = pd.to_numeric(df.loc[mask, metric_key], errors="coerce").fillna(0.0)
                     return float(vals.sum())
 
                 def _fmt_metric(metric_key: str, value: float) -> str:
-                    if metric_key == "if_proxy":
-                        return f"{(float(value) * 100.0):.0f}%"
                     if metric_key == "distance_eqv_km":
                         return f"{float(value):.0f} km"
                     return f"{float(value):.0f}"
@@ -4297,7 +4315,7 @@ if view == "Calendar":
                 )
                 st.markdown(
                     (
-                        "<div style='margin:8px 0 12px 0;padding:10px 12px;border-radius:10px;"
+                        "<div style='margin:0 0 2px 0;padding:10px 12px;border-radius:10px;"
                         "border:1px solid rgba(52,211,153,0.35);background:rgba(16,185,129,0.08);"
                         "color:rgba(226,232,240,0.96);font-size:0.9rem;line-height:1.35;'>"
                         f"{narrative}"
@@ -4305,36 +4323,13 @@ if view == "Calendar":
                     ),
                     unsafe_allow_html=True,
                 )
-
-                metric_values = []
-                for metric_key, metric_label, metric_fmt, metric_unit, agg_mode in metric_defs:
-                    metric_series = pd.to_numeric(compact_week[metric_key], errors="coerce").fillna(0.0)
-                    if metric_key == "if_proxy":
-                        value = week_if_weighted
-                    else:
-                        value = float(metric_series.mean() if agg_mode == "mean" else metric_series.sum())
-                    metric_values.append((metric_key, metric_label, metric_fmt, metric_unit, value))
-
-                row1 = st.columns(2)
-                row2 = st.columns(2)
-                button_rows = [row1, row2]
-                for i, (metric_key, metric_label, metric_fmt, metric_unit, value) in enumerate(metric_values):
-                    row = button_rows[i // 2]
-                    with row[i % 2]:
-                        if metric_key == "if_proxy":
-                            button_label = f"{metric_label} {(float(value) * 100.0):.0f}%"
-                        else:
-                            button_label = f"{metric_label} {value:{metric_fmt}}{metric_unit}"
-                        button_type = "primary" if metric_key == selected_metric else "secondary"
-                        if st.button(
-                            button_label,
-                            key=f"compact_metric_select_{metric_key}",
-                            use_container_width=True,
-                            type=button_type,
-                        ):
-                            if metric_key != selected_metric:
-                                st.session_state["calendar_compact_metric"] = metric_key
-                                st.rerun()
+                compact_chart = alt.layer(bars, labels).properties(
+                    height=250,
+                    padding={"left": 52, "right": 10, "top": 0, "bottom": 42},
+                )
+                st.markdown("<div class='compact-week-shell'>", unsafe_allow_html=True)
+                st.altair_chart(compact_chart, use_container_width=True)
+                st.markdown("</div>", unsafe_allow_html=True)
                 st.stop()
 
             header_cols = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1])
