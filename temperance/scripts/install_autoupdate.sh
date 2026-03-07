@@ -23,6 +23,7 @@ Env overrides:
   INTERVAL_SECONDS   Check interval in seconds (default: 3600)
   GIT_REMOTE         Git remote to track (default: origin)
   GIT_BRANCH         Git branch to track (default: main)
+  TEMPERANCE_ENABLE_GIT_AUTOSYNC  Set to 1 to allow fetch/pull (default: disabled)
 EOF
 }
 
@@ -74,6 +75,7 @@ unload_job() {
 status_job() {
   echo "Tracking: ${GIT_REMOTE}/${GIT_BRANCH}"
   echo "Interval: ${INTERVAL_SECONDS}s"
+  echo "Auto-sync enabled: ${TEMPERANCE_ENABLE_GIT_AUTOSYNC:-0}"
   launchctl print "gui/$(id -u)/${LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${LABEL}: not loaded"
 }
 
@@ -127,4 +129,3 @@ case "${cmd}" in
     exit 1
     ;;
 esac
-
