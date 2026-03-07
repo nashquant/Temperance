@@ -2557,18 +2557,9 @@ if view == "Dashboard":
                 ["Summary", "Injury Risk", "Fitness", "Activities", "Custom metric"],
                 index=0,
             )
-        perf_col, _perf_spacer = st.columns([1, 4])
-        with perf_col:
-            st.checkbox("Show perf timings", value=True, key="dashboard_show_perf_timing")
         run_custom_metric = section_choice == "Custom metric"
         compare_mode = False
         top_injury_overlay = False
-        if run_custom_metric:
-            custom_opts = st.columns([1, 1, 4])
-            with custom_opts[0]:
-                compare_mode = st.checkbox("Compare mode (up to 3 metrics)", value=False, key="dashboard_compare_mode")
-            with custom_opts[1]:
-                top_injury_overlay = st.checkbox("Top injury overlay", value=False, key="dashboard_top_injury_overlay")
 
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
@@ -2617,6 +2608,34 @@ if view == "Dashboard":
         for c in all_plot_metric_cols:
             if c not in filtered_daily_range.columns:
                 filtered_daily_range[c] = 0.0
+        if run_custom_metric:
+            metric_labels = list(metric_map.keys())
+            default_metric = "TSS"
+            if "dashboard_metric_select" not in st.session_state:
+                st.session_state["dashboard_metric_select"] = default_metric
+            selected_metric_label = str(st.session_state.get("dashboard_metric_select") or default_metric)
+            if selected_metric_label not in metric_labels:
+                selected_metric_label = default_metric if default_metric in metric_labels else metric_labels[0]
+                st.session_state["dashboard_metric_select"] = selected_metric_label
+            if "dashboard_ema_windows" not in st.session_state:
+                st.session_state["dashboard_ema_windows"] = "4,16"
+            custom_controls = st.columns([1.0, 1.0, 0.9, 0.9, 1.4])
+            with custom_controls[0]:
+                st.selectbox(
+                    "Metric",
+                    metric_labels,
+                    index=metric_labels.index(selected_metric_label),
+                    key="dashboard_metric_select",
+                )
+            with custom_controls[1]:
+                st.text_input(
+                    "EMA Days",
+                    key="dashboard_ema_windows",
+                )
+            with custom_controls[2]:
+                compare_mode = st.checkbox("Compare mode (up to 3 metrics)", value=False, key="dashboard_compare_mode")
+            with custom_controls[3]:
+                top_injury_overlay = st.checkbox("Top injury overlay", value=False, key="dashboard_top_injury_overlay")
 
         base_df = filtered_daily_range.copy()
         prep_ms = (perf_counter() - dashboard_block_t0) * 1000.0
@@ -2888,27 +2907,6 @@ if view == "Dashboard":
                 st.altair_chart(compare_chart, use_container_width=True)
             elif compare_mode:
                 st.caption("No comparable data found for the selected metrics/date range.")
-            elif run_custom_metric:
-                metric_labels = list(metric_map.keys())
-                selected_metric_label = str(st.session_state.get("dashboard_metric_select") or "TSS")
-                metric_index = metric_labels.index(selected_metric_label) if selected_metric_label in metric_labels else 0
-                st.selectbox(
-                    "Metric",
-                    metric_labels,
-                    index=metric_index,
-                    key="dashboard_metric_select",
-                )
-                st.text_input(
-                    "EMA windows (days, comma-separated)",
-                    key="dashboard_ema_windows",
-                )
-                if ema_ns:
-                    alpha_text = ", ".join([f"EMA {n} -> alpha={ema_alpha_from_days(n):.4f}" for n in ema_ns])
-                    st.caption(alpha_text)
-                if ema_pairs:
-                    pair_text = ", ".join([f"EMA{a}-EMA{b}" for a, b in ema_pairs])
-                    st.caption(f"EMA spread overlays: {pair_text}")
-
         weekly = weekly_summary(range_filtered_metrics)
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
 
@@ -3482,11 +3480,10 @@ if view == "Dashboard":
             )
             section_render_ms = (perf_counter() - section_render_t0) * 1000.0
         total_ms = (perf_counter() - dashboard_block_t0) * 1000.0
-        if bool(st.session_state.get("dashboard_show_perf_timing")):
-            st.caption(
-                "Perf timings (Dashboard): "
-                f"prep {prep_ms:.0f} ms · section {section_render_ms:.0f} ms · total {total_ms:.0f} ms"
-            )
+        st.caption(
+            "Perf timings (Dashboard): "
+            f"prep {prep_ms:.0f} ms · section {section_render_ms:.0f} ms · total {total_ms:.0f} ms"
+        )
 
 if view in {"Weekly Summary", "Activity Summary"}:
     st.header("Weekly Summary" if view == "Weekly Summary" else "Activity Summary")
