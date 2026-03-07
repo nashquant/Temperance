@@ -48,6 +48,7 @@ from db import (
     init_db,
     log_sync,
     delete_planned_activities,
+    set_planned_activity_manual_done,
     delete_custom_activities,
     replace_planned_activities_for_range,
     upsert_planned_activities_rows,
@@ -4065,7 +4066,11 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     padding: 8px 10px;
                     margin-bottom: 8px;
                 }
-                div[data-testid="stButton"] > button[kind="tertiary"] {
+                div[data-testid="stButton"] > button[kind="tertiary"],
+                div[data-testid="stButton"] > button[kind="tertiary"]:hover,
+                div[data-testid="stButton"] > button[kind="tertiary"]:focus,
+                div[data-testid="stButton"] > button[kind="tertiary"]:focus-visible,
+                div[data-testid="stButton"] > button[kind="tertiary"]:active {
                     background: rgba(15,23,42,0.78);
                     border: 1px solid rgba(148,163,184,0.26);
                     border-radius: 10px;
@@ -4077,6 +4082,9 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     padding: 7px 8px;
                     font-weight: 400;
                     letter-spacing: 0;
+                    box-shadow: none !important;
+                    transform: none !important;
+                    transition: none !important;
                 }
                 div[data-testid="stButton"] > button[kind="tertiary"] p,
                 div[data-testid="stButton"] > button[kind="tertiary"] span,
@@ -4145,6 +4153,38 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     font-size: 0.74rem;
                     color: rgba(226,232,240,0.82);
                     line-height: 1.15;
+                }
+                div[data-testid="stButton"] > button[kind="primary"],
+                div[data-testid="stButton"] > button[kind="primary"]:hover,
+                div[data-testid="stButton"] > button[kind="primary"]:focus,
+                div[data-testid="stButton"] > button[kind="primary"]:focus-visible,
+                div[data-testid="stButton"] > button[kind="primary"]:active {
+                    background: rgba(15,23,42,0.50);
+                    border: 1px dashed rgba(52,211,153,0.42);
+                    border-radius: 10px;
+                    color: rgba(226,232,240,0.90);
+                    text-align: left;
+                    white-space: pre-line;
+                    line-height: 1.12;
+                    min-height: 78px;
+                    padding: 7px 8px;
+                    font-weight: 400;
+                    letter-spacing: 0;
+                    box-shadow: none !important;
+                    transform: none !important;
+                    transition: none !important;
+                }
+                div[data-testid="stButton"] > button[kind="primary"] p,
+                div[data-testid="stButton"] > button[kind="primary"] span,
+                div[data-testid="stButton"] > button[kind="primary"] div {
+                    font-size: 0.8rem !important;
+                    line-height: 1.12 !important;
+                    color: rgba(226,232,240,0.90) !important;
+                    font-weight: 400 !important;
+                }
+                div[data-testid="stButton"] > button[kind="primary"] strong {
+                    color: rgba(167,243,208,0.95) !important;
+                    font-weight: 700 !important;
                 }
                 .cal-zones {
                     margin-top: 8px;
@@ -4965,17 +5005,27 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     p_if = float(pd.to_numeric(pd.Series([prow.get("if_proxy")]), errors="coerce").fillna(0.0).iloc[0])
                                     p_tss = float(pd.to_numeric(pd.Series([prow.get("tss")]), errors="coerce").fillna(0.0).iloc[0])
                                     p_rtss = float(pd.to_numeric(pd.Series([prow.get("rtss")]), errors="coerce").fillna(0.0).iloc[0])
-                                    st.markdown(
-                                        (
-                                            "<div class='cal-planned-card'>"
-                                            f"<div class='cal-planned-title'>Planned · {p_activity}</div>"
-                                            f"<div class='cal-planned-meta'>{p_duration} · {p_dist:.0f} km eqv.</div>"
-                                            f"<div class='cal-planned-meta'>IF {(p_if * 100.0):.0f}%</div>"
-                                            f"<div class='cal-planned-meta'>TSS {p_tss:.0f} · rTSS {p_rtss:.0f}</div>"
-                                            "</div>"
-                                        ),
-                                        unsafe_allow_html=True,
+                                    p_day_utc = str(prow.get("day_utc") or day_ts.date().isoformat())
+                                    p_line_no = int(
+                                        pd.to_numeric(pd.Series([prow.get("line_no")]), errors="coerce").fillna(0).iloc[0]
                                     )
+                                    planned_card_label = (
+                                        f"**Planned · {p_activity}**\n"
+                                        f"{p_duration} · {p_dist:.0f} km eqv.\n"
+                                        f"IF {(p_if * 100.0):.0f}%\n"
+                                        f"TSS {p_tss:.0f} · rTSS {p_rtss:.0f}"
+                                    )
+                                    if st.button(
+                                        planned_card_label,
+                                        key=f"calendar_planned_done_{p_day_utc}_{p_line_no}_{rendered_cards}",
+                                        use_container_width=True,
+                                        type="primary",
+                                    ):
+                                        st.session_state["planned_mark_done_pending"] = {
+                                            "day_utc": p_day_utc,
+                                            "line_no": p_line_no,
+                                            "label": f"{p_day_utc} · Planned {p_activity}",
+                                        }
                             if rendered_cards == 0 and not day_planned_cards and day_ts.date() < today_local_date:
                                 st.markdown(
                                     (
@@ -4986,6 +5036,47 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     ),
                                     unsafe_allow_html=True,
                                 )
+
+                pending_planned_done = st.session_state.get("planned_mark_done_pending")
+                if isinstance(pending_planned_done, dict):
+                    pending_day_utc = str(pending_planned_done.get("day_utc") or "").strip()
+                    pending_line_no = int(
+                        pd.to_numeric(pd.Series([pending_planned_done.get("line_no")]), errors="coerce").fillna(0).iloc[0]
+                    )
+                    pending_label = str(pending_planned_done.get("label") or "planned activity")
+
+                    @st.dialog("Mark this activity as done?", width="small")
+                    def _confirm_mark_planned_done() -> None:
+                        st.markdown(f"**{pending_label}**")
+                        yes_col, no_col = st.columns(2)
+                        with yes_col:
+                            if st.button("Yes", key="planned_done_confirm_yes", use_container_width=True):
+                                pending_day_ts = pd.to_datetime(pending_day_utc, errors="coerce")
+                                today_local_day = pd.Timestamp(datetime.now().astimezone().date()).normalize()
+                                if pd.isna(pending_day_ts):
+                                    st.error("Invalid planned activity date.")
+                                    return
+                                if pending_day_ts.normalize() > today_local_day:
+                                    st.error("Cannot mark future planned activities as done.")
+                                    return
+                                updated = set_planned_activity_manual_done(
+                                    cfg.db_path,
+                                    day_utc=pending_day_utc,
+                                    line_no=pending_line_no,
+                                    manual_done=True,
+                                )
+                                if not updated:
+                                    st.error("Could not mark activity as done. Please refresh and try again.")
+                                    return
+                                st.session_state.pop("planned_mark_done_pending", None)
+                                st.success("Planned activity marked as done.")
+                                st.rerun()
+                        with no_col:
+                            if st.button("No", key="planned_done_confirm_no", use_container_width=True):
+                                st.session_state.pop("planned_mark_done_pending", None)
+                                st.rerun()
+
+                    _confirm_mark_planned_done()
 
                 selected_split_activity_id = (
                     st.session_state.get("calendar_split_activity_id")

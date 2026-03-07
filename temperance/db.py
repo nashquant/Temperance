@@ -1078,6 +1078,30 @@ def delete_planned_activities(
     return len(keys)
 
 
+def set_planned_activity_manual_done(
+    db_path: Path,
+    day_utc: str,
+    line_no: int,
+    manual_done: bool,
+) -> bool:
+    with closing(get_conn(db_path)) as conn:
+        cur = conn.execute(
+            """
+            UPDATE planned_activities
+            SET manual_done = ?, updated_at = ?
+            WHERE day_utc = ? AND line_no = ?
+            """,
+            (
+                int(bool(manual_done)),
+                UTC_NOW(),
+                str(day_utc),
+                int(line_no),
+            ),
+        )
+        conn.commit()
+        return int(cur.rowcount or 0) > 0
+
+
 def upsert_planned_activities_rows(
     db_path: Path,
     rows: list[dict[str, Any]],
