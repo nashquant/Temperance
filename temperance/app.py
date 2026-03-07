@@ -142,7 +142,6 @@ AUTH_ALL_TABS = [
     "Dashboard",
     "Weekly Summary",
     "Activity Summary",
-    "Week Planner",
     "Custom Activities",
     "Activity Detail",
     "Recovery Data",
@@ -153,7 +152,6 @@ AUTH_VIEWER_TABS = [
     "Dashboard",
     "Weekly Summary",
     "Activity Summary",
-    "Week Planner",
     "Custom Activities",
     "Activity Detail",
     "Recovery Data",
@@ -2223,14 +2221,13 @@ with st.sidebar:
     st.session_state["data_owner"] = data_owner
 
     allowed_tabs = AUTH_ALL_TABS if (not auth_on or role == "admin") else AUTH_VIEWER_TABS
-    preferred_order = ["Weekly Summary", "Activity Summary", "Week Planner", "Dashboard"]
+    preferred_order = ["Weekly Summary", "Activity Summary", "Dashboard"]
     ordered_tabs = [v for v in preferred_order if v in allowed_tabs] + [
         v for v in allowed_tabs if v not in preferred_order
     ]
     page_labels = {
         "Weekly Summary": "Weekly Summary",
         "Activity Summary": "Activity Summary",
-        "Week Planner": "Week Planner",
         "Custom Activities": "Custom Activities",
         "Dashboard": "Plot Charts",
         "Activity Detail": "Activity Detail",
@@ -4752,9 +4749,12 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         st.rerun()
                 _show_split_details_dialog()
 
-if view == "Week Planner":
+if view in {"Week Planner", "Weekly Summary"}:
     st.divider()
-    st.header("Week Planner")
+    if view == "Weekly Summary":
+        st.markdown("### Plan Activities")
+    else:
+        st.header("Week Planner")
     st.caption("Plan one dated activity at a time with `[date]:[activity]`.")
     st.caption("You can ingest multiple activities in one save using separators: `;` or `,`.")
 
