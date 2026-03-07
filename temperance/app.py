@@ -4468,6 +4468,18 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     color: rgba(249,115,22,0.96) !important;
                     font-weight: 700 !important;
                 }
+                div[class*="st-key-calendar_split_title_if_tss_orange_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_if_tss_orange_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_if_tss_orange_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_if_tss_orange_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_if_tss_orange_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(251,146,60,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_if_tss_orange_"] button[kind="tertiary"] strong {
+                    color: rgba(251,146,60,0.96) !important;
+                    font-weight: 700 !important;
+                }
                 div[class*="st-key-calendar_split_title_if_purple_"] button[kind="tertiary"],
                 div[class*="st-key-calendar_split_title_if_purple_"] button[kind="tertiary"]:hover,
                 div[class*="st-key-calendar_split_title_if_purple_"] button[kind="tertiary"]:focus,
@@ -4478,6 +4490,18 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 }
                 div[class*="st-key-calendar_split_title_if_purple_"] button[kind="tertiary"] strong {
                     color: rgba(168,85,247,0.96) !important;
+                    font-weight: 700 !important;
+                }
+                div[class*="st-key-calendar_split_title_if_tss_purple_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_if_tss_purple_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_if_tss_purple_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_if_tss_purple_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_if_tss_purple_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(192,132,252,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_if_tss_purple_"] button[kind="tertiary"] strong {
+                    color: rgba(192,132,252,0.96) !important;
                     font-weight: 700 !important;
                 }
                 .cal-card-title {
@@ -4623,6 +4647,16 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 div[class*="st-key-calendar_planned_done_if_orange_"] button[kind="primary"] strong {
                     color: rgba(249,115,22,0.96) !important;
                 }
+                div[class*="st-key-calendar_planned_done_if_tss_orange_"] button[kind="primary"],
+                div[class*="st-key-calendar_planned_done_if_tss_orange_"] button[kind="primary"]:hover,
+                div[class*="st-key-calendar_planned_done_if_tss_orange_"] button[kind="primary"]:focus,
+                div[class*="st-key-calendar_planned_done_if_tss_orange_"] button[kind="primary"]:focus-visible,
+                div[class*="st-key-calendar_planned_done_if_tss_orange_"] button[kind="primary"]:active {
+                    border: 1px dashed rgba(251,146,60,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_tss_orange_"] button[kind="primary"] strong {
+                    color: rgba(251,146,60,0.96) !important;
+                }
                 div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"],
                 div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"]:hover,
                 div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"]:focus,
@@ -4632,6 +4666,16 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 }
                 div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"] strong {
                     color: rgba(168,85,247,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_tss_purple_"] button[kind="primary"],
+                div[class*="st-key-calendar_planned_done_if_tss_purple_"] button[kind="primary"]:hover,
+                div[class*="st-key-calendar_planned_done_if_tss_purple_"] button[kind="primary"]:focus,
+                div[class*="st-key-calendar_planned_done_if_tss_purple_"] button[kind="primary"]:focus-visible,
+                div[class*="st-key-calendar_planned_done_if_tss_purple_"] button[kind="primary"]:active {
+                    border: 1px dashed rgba(192,132,252,0.96) !important;
+                }
+                div[class*="st-key-calendar_planned_done_if_tss_purple_"] button[kind="primary"] strong {
+                    color: rgba(192,132,252,0.96) !important;
                 }
                 div[class*="st-key-calendar_split_table_v3"] [role="columnheader"] {
                     font-weight: 700 !important;
