@@ -702,10 +702,33 @@ def _split_description_from_token(token: str) -> str:
         "green": "Recovery",
         "blue": "Easy",
         "yellow": "Steady",
-        "red": "Speed",
-        "orange": "Speed",
-        "purple": "Speed",
+        "red": "Interval",
+        "orange": "Overload",
+        "purple": "VO2 Max",
     }.get(str(token or "").strip().lower(), "Recovery")
+
+
+def _split_description_from_if_proxy(if_proxy: float | int | None) -> str:
+    zone = _if_zone_from_if_proxy(if_proxy)
+    return {
+        "Z1": "Recovery",
+        "Z2": "Easy",
+        "Z3": "Steady",
+        "Z4": "Interval",
+        "Z5": "VO2 Max",
+    }.get(str(zone or ""), "Recovery")
+
+
+def _if_palette_from_if_proxy(if_proxy: float | int | None) -> tuple[str, str]:
+    zone = _if_zone_from_if_proxy(if_proxy)
+    zone_styles = {
+        "Z1": ("green", "rgba(52,211,153,0.96)"),
+        "Z2": ("blue", "rgba(56,189,248,0.96)"),
+        "Z3": ("yellow", "rgba(251,191,36,0.96)"),
+        "Z4": ("red", "rgba(251,113,133,0.96)"),
+        "Z5": ("purple", "rgba(168,85,247,0.96)"),
+    }
+    return zone_styles.get(str(zone or ""), zone_styles["Z1"])
 
 
 def _sport_label(sport_type: str | None) -> str:
@@ -722,27 +745,7 @@ def _actual_activity_palette(
     sport_type: str | None = None,
     daily_tss_upper_bound: float | int | None = None,
 ) -> dict[str, str]:
-    if if_proxy is None:
-        v = 0.0
-    else:
-        try:
-            v = float(if_proxy)
-        except Exception:
-            v = 0.0
-    if not pd.notna(v):
-        v = 0.0
-    if v > 0.90:
-        token = "red"
-        accent = "rgba(251,113,133,0.96)"
-    elif v > 0.80:
-        token = "yellow"
-        accent = "rgba(251,191,36,0.96)"
-    elif v > 0.70:
-        token = "blue"
-        accent = "rgba(56,189,248,0.96)"
-    else:
-        token = "green"
-        accent = "rgba(52,211,153,0.96)"
+    token, accent = _if_palette_from_if_proxy(if_proxy)
 
     try:
         tss_v = float(tss_value) if tss_value is not None else 0.0
@@ -5510,23 +5513,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             ).fillna(0.0).map(lambda v: f"{v:.2f}km")
                             table_df["pace"] = table_df["pace_s_per_km"].apply(_pace_compact)
                             table_df["pace_eqv"] = table_df["pace_eqv_s_per_km"].apply(_pace_compact)
-                            split_sport_type = (
-                                str(selected_activity_row.get("sport_type") or "")
-                                if selected_activity_row is not None
-                                else ""
-                            )
-                            table_df["description"] = table_df.apply(
-                                lambda r: _split_description_from_token(
-                                    _actual_activity_palette(
-                                        if_proxy=r.get("intensity_factor"),
-                                        tss_value=r.get("tss"),
-                                        rtss_value=r.get("rtss"),
-                                        sport_type=split_sport_type,
-                                        daily_tss_upper_bound=derived_daily_tss_target,
-                                    ).get("token", "green")
-                                ),
-                                axis=1,
-                            )
+                            table_df["description"] = table_df["intensity_factor"].apply(_split_description_from_if_proxy)
                             st.dataframe(
                                 table_df[
                                     [
