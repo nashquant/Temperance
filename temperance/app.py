@@ -5373,8 +5373,22 @@ if view == "Custom Activities":
                 st.rerun()
 
     custom_raw = get_custom_activities_df(cfg.db_path)
+    st.markdown("##### Custom Activity outlook")
     if custom_raw.empty:
-        st.caption("No custom activities saved yet.")
+        placeholder_outlook = pd.DataFrame(
+            columns=["Display", "Week", "Activities", "Duration (h)", "TSS", "rTSS", "Dist Eqv (km)", "IF"]
+        )
+        st.dataframe(placeholder_outlook, use_container_width=True, hide_index=True)
+        custom_metric_col, _custom_metric_spacer = st.columns([1, 4])
+        with custom_metric_col:
+            st.selectbox(
+                "Custom activity metric view",
+                ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
+                index=0,
+                key="custom_metric_view_select",
+                disabled=True,
+            )
+        st.caption("No custom activities saved yet. Save one above to populate outlook, chart, and table.")
     else:
         custom_raw = custom_raw.sort_values(["day_utc", "line_no"], ascending=[False, True]).copy()
         custom_raw["row_id"] = custom_raw["day_utc"].astype(str) + "::" + custom_raw["line_no"].astype(int).astype(str)
@@ -5458,7 +5472,6 @@ if view == "Custom Activities":
         custom_raw["if_proxy"] = custom_if_vals
         custom_raw["duration_s"] = custom_duration_vals
 
-        st.markdown("##### Custom Activity outlook")
         custom_weekly_outlook = custom_raw.copy()
         selected_custom_week_start: pd.Timestamp | None = None
         tss_goal_week = float(derived_weekly_tss_target) * 1.10
