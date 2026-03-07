@@ -3256,9 +3256,9 @@ if view == "Dashboard":
                         .properties(height=280)
                     )
                     rff_threshold = (
-                        alt.Chart()
+                        alt.Chart(pd.DataFrame({"threshold": [rff_threshold_value]}))
                         .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
-                        .encode(y=alt.datum(rff_threshold_value))
+                        .encode(y=alt.Y("threshold:Q"))
                     )
                     rff_chart = alt.layer(
                         build_injury_layer(saved_injury_windows, start_ts, end_ts),
