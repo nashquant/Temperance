@@ -811,7 +811,8 @@ def _actual_activity_palette(
     sport_type: str | None = None,
     daily_tss_upper_bound: float | int | None = None,
 ) -> dict[str, str]:
-    token, accent = _if_palette_from_if_proxy(if_proxy)
+    if_token, if_accent = _if_palette_from_if_proxy(if_proxy)
+    token, accent = if_token, if_accent
 
     try:
         tss_v = float(tss_value) if tss_value is not None else 0.0
@@ -832,7 +833,7 @@ def _actual_activity_palette(
         if override_load > (daily_cap * 1.5):
             token = "tss_purple"
             accent = "rgba(192,132,252,0.96)"
-        elif override_load > daily_cap:
+        elif override_load > daily_cap and if_token not in {"red", "purple"}:
             token = "tss_orange"
             accent = "rgba(251,146,60,0.96)"
 
