@@ -943,9 +943,17 @@ def _parse_dated_activity_entry(text: str) -> tuple[pd.Timestamp | None, str, st
     raw = str(text or "").strip()
     if not raw:
         return None, "", "Input is empty. Use `[date]:[activity]`."
-    if ":" not in raw:
-        return None, "", "Missing `:` separator. Use `[date]:[activity]`."
-    date_text, activity_text = raw.split(":", 1)
+    if ":" in raw:
+        date_text, activity_text = raw.split(":", 1)
+    else:
+        # Support shorthand without `:` such as `T-160' elliptical @140bpm`
+        # interpreted as `T-1:60' elliptical @140bpm`.
+        compact_match = re.match(r"^\s*([tT][+-]\d)(.+)$", raw)
+        if compact_match:
+            date_text = compact_match.group(1)
+            activity_text = compact_match.group(2)
+        else:
+            return None, "", "Missing `:` separator. Use `[date]:[activity]`."
     date_text = date_text.strip()
     activity_text = _normalize_plan_text(activity_text)
     if not date_text:
@@ -954,14 +962,36 @@ def _parse_dated_activity_entry(text: str) -> tuple[pd.Timestamp | None, str, st
         return None, "", "Missing activity after `:`."
 
     date_value: pd.Timestamp | None = None
+    date_key = date_text.strip().lower()
+    if date_key in {"today", "tomorrow", "yesterday", "t"}:
+        base_local = pd.Timestamp(datetime.now().astimezone().date())
+        if date_key in {"today", "t"}:
+            date_value = base_local
+        elif date_key == "tomorrow":
+            date_value = base_local + pd.Timedelta(days=1)
+        else:
+            date_value = base_local - pd.Timedelta(days=1)
+    else:
+        # Accept aliases: T+N / T-N (N days from today)
+        t_offset_match = re.match(r"^t([+-]\d+)$", date_key)
+        if t_offset_match:
+            try:
+                offset_days = int(t_offset_match.group(1))
+            except Exception:
+                offset_days = 0
+            base_local = pd.Timestamp(datetime.now().astimezone().date())
+            date_value = base_local + pd.Timedelta(days=offset_days)
+
     for fmt in ("%d%b%y", "%Y-%m-%d", "%d/%m/%Y"):
+        if date_value is not None:
+            break
         try:
             date_value = pd.Timestamp(datetime.strptime(date_text, fmt))
             break
         except Exception:
             continue
     if date_value is None:
-        return None, activity_text, "Invalid date format. Use one of: `3Mar26`, `2026-03-26`, `26/03/2026`."
+        return None, activity_text, "Invalid date format. Use one of: `today`, `tomorrow`, `yesterday`, `T`, `T+1`, `T-1`, `3Mar26`, `2026-03-26`, `26/03/2026`."
     return date_value, activity_text, None
 
 
@@ -2957,7 +2987,10 @@ if view == "Dashboard":
                     )
                 )
                 tss_chart = alt.layer(tss_chart, tss_threshold, tss_threshold_label)
-                tss_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), tss_chart)
+                tss_chart = alt.layer(
+                    build_injury_layer(saved_injury_windows, start_ts, end_ts),
+                    tss_chart,
+                ).resolve_scale(y="independent")
                 if enable_zoom:
                     tss_chart = tss_chart.interactive()
                 st.altair_chart(tss_chart, use_container_width=True)
@@ -3010,7 +3043,10 @@ if view == "Dashboard":
                 ff_chart = ff_chart.encode(
                     opacity=alt.condition(ff_sel, alt.value(1.0), alt.value(0.2), empty=True)
                 ).add_params(ff_sel)
-                ff_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), ff_chart)
+                ff_chart = alt.layer(
+                    build_injury_layer(saved_injury_windows, start_ts, end_ts),
+                    ff_chart,
+                ).resolve_scale(y="independent")
                 if enable_zoom:
                     ff_chart = ff_chart.interactive()
                 st.altair_chart(ff_chart, use_container_width=True)
@@ -3062,7 +3098,10 @@ if view == "Dashboard":
                         .encode(y="threshold:Q")
                     )
                     rff_chart = alt.layer(rff_line, rff_threshold)
-                    rff_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), rff_chart)
+                    rff_chart = alt.layer(
+                        build_injury_layer(saved_injury_windows, start_ts, end_ts),
+                        rff_chart,
+                    ).resolve_scale(y="independent")
                     if enable_zoom:
                         rff_chart = rff_chart.interactive()
                     st.altair_chart(rff_chart, use_container_width=True)
@@ -3143,7 +3182,10 @@ if view == "Dashboard":
                     )
                 )
                 weekly_dist_chart = alt.layer(weekly_dist_chart, dist_threshold, dist_threshold_label)
-                weekly_dist_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), weekly_dist_chart)
+                weekly_dist_chart = alt.layer(
+                    build_injury_layer(saved_injury_windows, start_ts, end_ts),
+                    weekly_dist_chart,
+                ).resolve_scale(y="independent")
                 if enable_zoom:
                     weekly_dist_chart = weekly_dist_chart.interactive()
                 st.altair_chart(weekly_dist_chart, use_container_width=True)
@@ -3193,7 +3235,10 @@ if view == "Dashboard":
                         tooltip=["period_start:T", "risk_series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
                 )
-                fr_chart = alt.layer(build_injury_layer(saved_injury_windows, start_ts, end_ts), fr_chart)
+                fr_chart = alt.layer(
+                    build_injury_layer(saved_injury_windows, start_ts, end_ts),
+                    fr_chart,
+                ).resolve_scale(y="independent")
                 if enable_zoom:
                     fr_chart = fr_chart.interactive()
                 st.altair_chart(fr_chart, use_container_width=True)
