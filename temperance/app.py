@@ -2015,9 +2015,16 @@ def _build_custom_metrics_df_for_plots(
         if not segments:
             continue
 
-        day_for_curve = pd.to_datetime(day_utc, utc=True, errors="coerce")
-        if pd.isna(day_for_curve):
+        day_local_naive = pd.to_datetime(day_utc, errors="coerce")
+        if pd.isna(day_local_naive):
             continue
+        day_local_naive = pd.Timestamp(day_local_naive).normalize()
+        local_tz = datetime.now().astimezone().tzinfo
+        try:
+            day_local = day_local_naive.tz_localize(local_tz)
+        except Exception:
+            day_local = day_local_naive.tz_localize("UTC")
+        day_for_curve = day_local.tz_convert("UTC")
         lthr_for_day = float(_curve_value_at(lthr_curve_points or [], float(lthr_bpm), day_for_curve))
         tp_for_day = float(
             _curve_value_at(
@@ -2097,7 +2104,7 @@ def _build_custom_metrics_df_for_plots(
             if fallback_zone is not None:
                 zone_seconds[fallback_zone] = zone_seconds.get(fallback_zone, 0.0) + remaining_duration
         pace_proxy = (total_duration_s / total_dist_eqv_km) if total_dist_eqv_km > 0 else None
-        start_time = day_for_curve + pd.Timedelta(minutes=max(line_no, 1))
+        start_time = (day_local + pd.Timedelta(minutes=max(line_no, 1))).tz_convert("UTC")
 
         rows.append(
             {
