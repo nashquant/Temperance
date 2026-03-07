@@ -3064,12 +3064,18 @@ if view == "Dashboard":
                     weekly_rff_long["risk_series"] = weekly_rff_long["risk_series"].replace(
                         {"leg_elasticity": "Leg Elasticity", "pounding": "Pounding"}
                     )
+                    rff_max = float(pd.to_numeric(weekly_rff_long["value"], errors="coerce").fillna(0.0).max())
+                    rff_upper = max(5.0, rff_max * 1.10)
                     rff_line = (
                         alt.Chart(weekly_rff_long)
                         .mark_line(point=True)
                         .encode(
                             x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
-                            y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                            y=alt.Y(
+                                "value:Q",
+                                axis=alt.Axis(format=".0f"),
+                                scale=alt.Scale(domain=[-1.0, rff_upper]),
+                            ),
                             color=alt.Color(
                                 "risk_series:N",
                                 legend=alt.Legend(title=None, orient="bottom", direction="horizontal"),
@@ -3077,6 +3083,7 @@ if view == "Dashboard":
                             ),
                             tooltip=["period_start:T", "risk_series:N", alt.Tooltip("value:Q", format=".0f")],
                         )
+                        .properties(height=280)
                     )
                     rff_threshold = (
                         alt.Chart(pd.DataFrame({"threshold": [float(derived_daily_tss_target)]}))
@@ -3207,12 +3214,18 @@ if view == "Dashboard":
                 weekly_fr_long["risk_series"] = weekly_fr_long["risk_series"].replace(
                     {"overreach": "Overreach", "injury_risk": "Injury Risk"}
                 )
+                fr_max = float(pd.to_numeric(weekly_fr_long["value"], errors="coerce").fillna(0.0).max())
+                fr_upper = max(5.0, fr_max * 1.10)
                 fr_chart = (
                     alt.Chart(weekly_fr_long)
                     .mark_line(point=True)
                     .encode(
                         x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
-                        y=alt.Y("value:Q", axis=alt.Axis(format=".0f")),
+                        y=alt.Y(
+                            "value:Q",
+                            axis=alt.Axis(format=".0f"),
+                            scale=alt.Scale(domain=[-1.0, fr_upper]),
+                        ),
                         color=alt.Color(
                             "risk_series:N",
                             legend=alt.Legend(title=None, orient="bottom", direction="horizontal"),
@@ -3220,6 +3233,7 @@ if view == "Dashboard":
                         ),
                         tooltip=["period_start:T", "risk_series:N", alt.Tooltip("value:Q", format=".0f")],
                     )
+                    .properties(height=280)
                 )
                 fr_chart = alt.layer(
                     build_injury_layer(saved_injury_windows, start_ts, end_ts),
@@ -4294,6 +4308,30 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 compare_week_total = _agg_metric(compare_week, compare_week["day"].notna(), selected_metric)
                 compare_remaining = compare_week_total - compare_to_date
                 projected_finish = realized_to_date + compare_remaining
+                projected_fatigue = float("nan")
+                try:
+                    fatigue_anchor = float("nan")
+                    if not cal_daily_lookup.empty and "fatigue" in cal_daily_lookup.columns:
+                        _daily_hist = cal_daily_lookup[cal_daily_lookup["day"] <= cutoff_day].sort_values("day")
+                        if not _daily_hist.empty:
+                            fatigue_anchor = float(
+                                pd.to_numeric(_daily_hist.iloc[-1].get("fatigue"), errors="coerce")
+                            )
+                    if pd.isna(fatigue_anchor):
+                        fatigue_anchor = 0.0
+                    alpha_fatigue = float(ema_alpha_from_days(7))
+                    projected_fatigue = fatigue_anchor
+                    for day_ts in pd.date_range(cutoff_day + pd.Timedelta(days=1), selected_week_end, freq="D"):
+                        if compare_choice == "Planned":
+                            day_target_tss = _agg_metric(compare_week, compare_week["day"] == day_ts, "tss")
+                        else:
+                            day_offset = int((day_ts - selected_week_start).days)
+                            day_offset = min(max(day_offset, 0), 6)
+                            cmp_day = compare_week_start + pd.Timedelta(days=day_offset)
+                            day_target_tss = _agg_metric(compare_week, compare_week["day"] == cmp_day, "tss")
+                        projected_fatigue = alpha_fatigue * float(day_target_tss) + (1.0 - alpha_fatigue) * projected_fatigue
+                except Exception:
+                    projected_fatigue = float("nan")
 
                 def _emph(value_text: str) -> str:
                     return (
@@ -4309,6 +4347,11 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     f"(vs. {compare_label} {_emph(_fmt_metric(selected_metric, compare_to_date))}). "
                     f"Remaining {compare_label}: {_emph(_fmt_metric(selected_metric, compare_remaining))}. "
                     f"Projected finish {_emph(_fmt_metric(selected_metric, projected_finish))}."
+                    + (
+                        f" Projected fatigue {_emph(f'{projected_fatigue:.0f}')}."
+                        if pd.notna(projected_fatigue)
+                        else ""
+                    )
                 )
                 st.markdown(
                     (
