@@ -6,6 +6,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import replace
 from pathlib import Path
+from time import perf_counter
 
 import altair as alt
 import numpy as np
@@ -2494,6 +2495,7 @@ if view == "Dashboard":
             "For your full archive, run Comprehensive Garmin Extract from Jan 1, 2025."
         )
     else:
+        dashboard_block_t0 = perf_counter()
         controls = st.columns([1, 1, 1])
         with controls[0]:
             metrics_local_start = _to_local_naive(dashboard_metrics_df["start_time_utc"])
@@ -2555,6 +2557,9 @@ if view == "Dashboard":
                 ["Summary", "Injury Risk", "Fitness", "Activities", "Custom metric"],
                 index=0,
             )
+        perf_col, _perf_spacer = st.columns([1, 4])
+        with perf_col:
+            st.checkbox("Show perf timings", value=True, key="dashboard_show_perf_timing")
         run_custom_metric = section_choice == "Custom metric"
         compare_mode = False
         top_injury_overlay = False
@@ -2614,9 +2619,12 @@ if view == "Dashboard":
                 filtered_daily_range[c] = 0.0
 
         base_df = filtered_daily_range.copy()
+        prep_ms = (perf_counter() - dashboard_block_t0) * 1000.0
+        section_render_ms = 0.0
         if base_df.empty:
             st.info(f"No data for activity filter: {activity_filter}")
         else:
+            section_render_t0 = perf_counter()
             prepared_base_df = base_df.copy()
             numeric_metric_cols = sorted({m for m, _ in metric_map.values()})
             for col in numeric_metric_cols:
@@ -3471,6 +3479,13 @@ if view == "Dashboard":
                     "pace_proxy_display": st.column_config.TextColumn("Pace Proxy"),
                     "distance_proxy_method": st.column_config.TextColumn("Distance Proxy Method"),
                 },
+            )
+            section_render_ms = (perf_counter() - section_render_t0) * 1000.0
+        total_ms = (perf_counter() - dashboard_block_t0) * 1000.0
+        if bool(st.session_state.get("dashboard_show_perf_timing")):
+            st.caption(
+                "Perf timings (Dashboard): "
+                f"prep {prep_ms:.0f} ms · section {section_render_ms:.0f} ms · total {total_ms:.0f} ms"
             )
 
 if view in {"Weekly Summary", "Activity Summary"}:
