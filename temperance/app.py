@@ -3108,6 +3108,10 @@ if view == "Dashboard":
                         )
                         .properties(height=280)
                     )
+                    ff_chart = alt.layer(
+                        build_injury_layer(saved_injury_windows, start_ts, end_ts),
+                        ff_chart,
+                    ).resolve_scale(y="independent")
                     if enable_zoom:
                         ff_chart = ff_chart.interactive()
                     st.altair_chart(
@@ -3132,7 +3136,13 @@ if view == "Dashboard":
                 if weekly_rff_long.empty:
                     st.caption("No Leg Elasticity/Pounding data in this range.")
                 else:
-                    rff_domain = _safe_y_domain(weekly_rff_long["value"])
+                    rff_threshold_value = float(derived_weekly_tss_target if weekly_toggle else derived_daily_tss_target)
+                    rff_domain = _safe_y_domain(
+                        pd.concat(
+                            [weekly_rff_long["value"], pd.Series([rff_threshold_value])],
+                            ignore_index=True,
+                        )
+                    )
                     rff_chart = (
                         alt.Chart(weekly_rff_long)
                         .mark_line(point=False, strokeWidth=2.2)
@@ -3158,6 +3168,16 @@ if view == "Dashboard":
                         )
                         .properties(height=280)
                     )
+                    rff_threshold = (
+                        alt.Chart(pd.DataFrame({"threshold": [rff_threshold_value]}))
+                        .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
+                        .encode(y="threshold:Q")
+                    )
+                    rff_chart = alt.layer(rff_chart, rff_threshold)
+                    rff_chart = alt.layer(
+                        build_injury_layer(saved_injury_windows, start_ts, end_ts),
+                        rff_chart,
+                    ).resolve_scale(y="independent")
                     if enable_zoom:
                         rff_chart = rff_chart.interactive()
                     st.altair_chart(
