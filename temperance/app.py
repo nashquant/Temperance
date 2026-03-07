@@ -2638,16 +2638,13 @@ if view == "Dashboard":
             weekly_toggle = weekly_mode == "Weekly"
         enable_zoom = False
 
-        section_col, _section_spacer = st.columns([1, 4])
-        with section_col:
-            section_choice = st.selectbox(
-                "Section",
-                ["Summary", "Injury Risk", "Fitness", "Activities", "Custom metric"],
-                index=0,
-            )
-        run_custom_metric = section_choice == "Custom metric"
+        run_custom_metric = True
         compare_mode = False
         top_injury_overlay = False
+        render_summary = True
+        render_injury = True
+        render_fitness = True
+        render_activities = True
 
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
@@ -2707,23 +2704,8 @@ if view == "Dashboard":
                 st.session_state["dashboard_metric_select"] = selected_metric_label
             if "dashboard_ema_windows" not in st.session_state:
                 st.session_state["dashboard_ema_windows"] = "4,16"
-            custom_controls = st.columns([1.0, 1.0, 0.9, 0.9, 1.4])
-            with custom_controls[0]:
-                st.selectbox(
-                    "Metric",
-                    metric_labels,
-                    index=metric_labels.index(selected_metric_label),
-                    key="dashboard_metric_select",
-                )
-            with custom_controls[1]:
-                st.text_input(
-                    "EMA Days",
-                    key="dashboard_ema_windows",
-                )
-            with custom_controls[2]:
-                compare_mode = st.checkbox("Compare mode (up to 3 metrics)", value=False, key="dashboard_compare_mode")
-            with custom_controls[3]:
-                top_injury_overlay = st.checkbox("Top injury overlay", value=False, key="dashboard_top_injury_overlay")
+            compare_mode = bool(st.session_state.get("dashboard_compare_mode", False))
+            top_injury_overlay = bool(st.session_state.get("dashboard_top_injury_overlay", False))
 
         base_df = filtered_daily_range.copy()
         prep_ms = (perf_counter() - dashboard_block_t0) * 1000.0
@@ -2774,6 +2756,9 @@ if view == "Dashboard":
                 ema_windows = str(st.session_state.get("dashboard_ema_windows") or "4,16")
                 ema_ns, ema_pairs = parse_ma_windows(ema_windows)
 
+            custom_metric_main_chart = None
+            custom_metric_compare_chart = None
+            custom_metric_compare_empty = False
             plot_frames: list[pd.DataFrame] = []
             if compare_mode:
                 labels_and_axis = [(label, "left") for label in left_axis_labels] + [
@@ -2940,11 +2925,7 @@ if view == "Dashboard":
                             st.markdown(strip_html, unsafe_allow_html=True)
                     if enable_zoom:
                         chart = chart.interactive()
-                    st.altair_chart(
-                        chart,
-                        use_container_width=True,
-                        key="dashboard_custom_metric_main",
-                    )
+                    custom_metric_main_chart = chart
 
             if compare_mode and plot_frames:
                 compare_df = pd.concat(plot_frames, ignore_index=True)
@@ -2996,13 +2977,9 @@ if view == "Dashboard":
                 if enable_zoom:
                     compare_chart = compare_chart.interactive()
                     st.caption("Tip: drag chart to pan/zoom, double-click to reset.")
-                st.altair_chart(
-                    compare_chart,
-                    use_container_width=True,
-                    key="dashboard_custom_metric_compare",
-                )
+                custom_metric_compare_chart = compare_chart
             elif compare_mode:
-                st.caption("No comparable data found for the selected metrics/date range.")
+                custom_metric_compare_empty = True
         weekly = weekly_summary(range_filtered_metrics)
         weekly["week_start"] = pd.to_datetime(weekly["week_start"])
 
@@ -3062,7 +3039,7 @@ if view == "Dashboard":
             pad = max(1.0, (vmax - vmin) * 0.10)
             return [min(vmin - pad, 0.0), vmax + pad]
 
-        if section_choice == "Summary":
+        if render_summary:
             if (
                 (weekly_toggle and "total_tss" in weekly.columns and "total_rtss" in weekly.columns and not weekly.empty)
                 or (
@@ -3154,7 +3131,7 @@ if view == "Dashboard":
                     "For good training, keep TSS above it while rTSS stays below it."
                 )
 
-        if section_choice == "Fitness":
+        if render_fitness:
             st.subheader("Fitness vs Fatigue")
             if not filtered_daily_range.empty and "fitness" in filtered_daily_range.columns and "fatigue" in filtered_daily_range.columns:
                 weekly_ff_long = _section_long_series(
@@ -3208,7 +3185,7 @@ if view == "Dashboard":
             else:
                 st.caption("No fitness/fatigue data to plot.")
 
-        if section_choice == "Injury Risk":
+        if render_injury:
             st.subheader("Leg Elasticity vs Pounding")
             if not filtered_daily_range.empty and "leg_elasticity" in filtered_daily_range.columns and "pounding" in filtered_daily_range.columns:
                 weekly_rff_long = _section_long_series(
@@ -3275,7 +3252,7 @@ if view == "Dashboard":
             else:
                 st.caption("No Leg Elasticity/Pounding data to plot.")
 
-        if section_choice == "Summary":
+        if render_summary:
             st.subheader("Distance vs Distance Eqv.")
             if (
                 (weekly_toggle and "total_distance_km" in weekly.columns and "total_distance_proxy_km" in weekly.columns and not weekly.empty)
@@ -3370,7 +3347,7 @@ if view == "Dashboard":
             else:
                 st.caption("No distance-equivalent data to plot.")
 
-        if section_choice == "Injury Risk":
+        if render_injury:
             st.subheader("Overreach vs Injury Risk")
             if not filtered_daily_range.empty and "overreach" in filtered_daily_range.columns and "injury_risk" in filtered_daily_range.columns:
                 weekly_fr_long = _section_long_series(
@@ -3424,7 +3401,7 @@ if view == "Dashboard":
             else:
                 st.caption("No Overreach/Injury Risk data to plot.")
 
-        if section_choice == "Fitness":
+        if render_fitness:
             st.subheader("Garmin Training Load vs. Total Calories")
             if (
                 (weekly_toggle and "total_garmin_training_load" in weekly.columns and "total_calories" in weekly.columns and not weekly.empty)
@@ -3501,7 +3478,7 @@ if view == "Dashboard":
             else:
                 st.caption("No Garmin training load/calories data to plot.")
 
-        if section_choice == "Fitness":
+        if render_fitness:
             st.subheader("HR Zone Time (hours)")
             zone_cols = [
                 "hr_time_in_zone_1",
@@ -3607,7 +3584,7 @@ if view == "Dashboard":
             else:
                 st.caption("No heart-rate zone time data to plot.")
 
-        if section_choice == "Activities":
+        if render_activities:
             table_source = range_filtered_metrics.copy()
             if not table_source.empty and not filtered_daily.empty:
                 table_source["day_utc"] = _to_local_naive(table_source["start_time_utc"]).dt.date.astype(str)
@@ -3620,7 +3597,18 @@ if view == "Dashboard":
             table_df = display_table(table_source)
             st.subheader("Activities")
             table_df = table_df.copy()
-            table_df["if_proxy_pct"] = pd.to_numeric(table_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
+            if "if_proxy" in table_df.columns:
+                raw_if_proxy = table_df["if_proxy"]
+                # Duplicate column labels can return a DataFrame here; force 1-D.
+                if isinstance(raw_if_proxy, pd.DataFrame):
+                    if_proxy_series = raw_if_proxy.iloc[:, 0]
+                elif isinstance(raw_if_proxy, pd.Series):
+                    if_proxy_series = raw_if_proxy
+                else:
+                    if_proxy_series = pd.Series(raw_if_proxy, index=table_df.index)
+            else:
+                if_proxy_series = pd.Series(0.0, index=table_df.index)
+            table_df["if_proxy_pct"] = pd.to_numeric(if_proxy_series, errors="coerce").fillna(0.0) * 100.0
             table_df = table_df.drop(columns=["if_proxy"], errors="ignore")
             st.dataframe(
                 table_df,
@@ -3642,6 +3630,46 @@ if view == "Dashboard":
                     "distance_proxy_method": st.column_config.TextColumn("Distance Proxy Method"),
                 },
             )
+        if run_custom_metric:
+            st.subheader("Custom Metric")
+            metric_labels = list(metric_map.keys())
+            selected_metric_label = str(st.session_state.get("dashboard_metric_select") or "TSS")
+            if selected_metric_label not in metric_labels:
+                selected_metric_label = "TSS" if "TSS" in metric_labels else metric_labels[0]
+            custom_controls = st.columns([1.0, 1.0, 0.9, 0.9, 1.4])
+            with custom_controls[0]:
+                st.selectbox(
+                    "Metric",
+                    metric_labels,
+                    index=metric_labels.index(selected_metric_label),
+                    key="dashboard_metric_select",
+                )
+            with custom_controls[1]:
+                st.text_input("EMA Days", key="dashboard_ema_windows")
+            with custom_controls[2]:
+                st.checkbox("Compare mode (up to 3 metrics)", key="dashboard_compare_mode")
+            with custom_controls[3]:
+                st.checkbox("Top injury overlay", key="dashboard_top_injury_overlay")
+
+            compare_mode_active = bool(st.session_state.get("dashboard_compare_mode", False))
+            if compare_mode_active:
+                if custom_metric_compare_chart is not None:
+                    st.altair_chart(
+                        custom_metric_compare_chart,
+                        use_container_width=True,
+                        key="dashboard_custom_metric_compare",
+                    )
+                elif custom_metric_compare_empty:
+                    st.caption("No comparable data found for the selected metrics/date range.")
+            else:
+                if custom_metric_main_chart is not None:
+                    st.altair_chart(
+                        custom_metric_main_chart,
+                        use_container_width=True,
+                        key="dashboard_custom_metric_main",
+                    )
+                else:
+                    st.caption("No data found for selected custom metric/date range.")
         section_render_ms = (perf_counter() - section_render_t0) * 1000.0
         total_ms = (perf_counter() - dashboard_block_t0) * 1000.0
         st.caption(
