@@ -2613,6 +2613,33 @@ if view not in allowed_tabs:
     st.error("You do not have access to this page.")
     st.stop()
 
+active_owner = str(st.session_state.get("data_owner") or "default")
+if "_active_data_owner" not in st.session_state:
+    st.session_state["_active_data_owner"] = active_owner
+elif str(st.session_state.get("_active_data_owner") or "") != active_owner:
+    st.session_state["_active_data_owner"] = active_owner
+    owner_scoped_keys = [
+        "calendar_compact_week_start",
+        "calendar_compact_compare_choice",
+        "calendar_compact_metric",
+        "calendar_activity_filter",
+        "calendar_quick_range",
+        "calendar_split_activity_id",
+        "calendar_split_open",
+        "planned_mark_done_pending",
+        "_metrics_df_local_cache_key",
+        "_metrics_df_local_cache_value",
+        "_custom_metrics_df_local_cache_key",
+        "_custom_metrics_df_local_cache_value",
+        "dashboard_metric_select",
+        "dashboard_ema_windows",
+        "dashboard_compare_mode",
+        "dashboard_top_injury_overlay",
+    ]
+    for key in owner_scoped_keys:
+        st.session_state.pop(key, None)
+    st.rerun()
+
 previous_view = st.session_state.get("_previous_view")
 st.session_state["_previous_view"] = view
 
@@ -2964,7 +2991,7 @@ if view in {"Dashboard", "Model Metrics"}:
                 daily_max_day = pd.to_datetime(daily_summary_df["day_utc"], errors="coerce").max().date()
                 min_day = min(metrics_min_day, daily_min_day)
                 max_day = max(metrics_max_day, daily_max_day)
-            quick_range = st.selectbox("Quick range", ["YTD", "3M", "6M", "9M", "1Y", "2Y", "ALL", "Custom"], index=4)
+            quick_range = st.selectbox("Quick range", ["YTD", "3M", "6M", "9M", "1Y", "2Y", "ALL", "Custom"], index=1)
             if quick_range == "YTD":
                 q_start = max(min_day, date(max_day.year, 1, 1))
                 q_end = max_day
