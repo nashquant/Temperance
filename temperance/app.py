@@ -882,6 +882,19 @@ def _parse_if_token(text: str) -> float | None:
     return v
 
 
+def _parse_tss_token(text: str) -> float | None:
+    m = re.search(r"@\s*(\d+(?:\.\d+)?)\s*tss\b", text.lower())
+    if not m:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*tss\b", text.lower())
+    if not m:
+        return None
+    try:
+        v = float(m.group(1))
+    except Exception:
+        return None
+    return v if v > 0 else None
+
+
 def _normalize_plan_text(text: str) -> str:
     t = " ".join(str(text or "").strip().split())
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:min|mins|minute|minutes)\b", r"\1min", t, flags=re.IGNORECASE)
@@ -959,12 +972,18 @@ def _split_dated_activity_entries(text: str) -> list[str]:
     return [p.strip() for p in re.split(r"[\n;,]+", raw) if p.strip()]
 
 
-def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | None]], list[str]]:
+def _expand_planned_segments(
+    line: str,
+    lthr_bpm: float | None = None,
+    threshold_pace_sec_per_km: float | None = None,
+) -> tuple[list[dict[str, float | str | None]], list[str]]:
     segments: list[dict[str, float | str | None]] = []
     warnings: list[str] = []
     raw = _normalize_plan_text(line)
     if not raw:
         return segments, warnings
+    lthr_value = float(lthr_bpm or 0.0)
+    threshold_pace_value = float(threshold_pace_sec_per_km or 0.0)
 
     chunks = [c.strip() for c in re.split(r"\s*\+\s*", raw) if c.strip()]
     last_kind: str | None = None
@@ -973,6 +992,7 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
         bpm = _parse_bpm_token(chunk)
         pace = _parse_pace_token(chunk)
         if_input = _parse_if_token(chunk)
+        tss_input = _parse_tss_token(chunk)
         if kind == "other" and pace is not None:
             # pace implies run-like segment
             kind = "run"
@@ -990,8 +1010,8 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
                 "(use `@140bpm` or `@70%` for non-running)."
             )
             continue
-        if bpm is None and pace is None and if_input is None:
-            warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm`, `@70%`, or `@4:50/km`)")
+        if bpm is None and pace is None and if_input is None and tss_input is None:
+            warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm`, `@70%`, `@4:50/km`, or `@40TSS`)")
             continue
 
         rep_match = re.search(
@@ -1011,6 +1031,16 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
             if reps <= 0 or rep_minutes <= 0:
                 warnings.append(f"Invalid interval block in: `{chunk}`")
                 continue
+            if tss_input is not None and tss_input > 0 and bpm is None and pace is None and if_input is None:
+                seg_duration_h = rep_minutes / 60.0
+                per_rep_tss = float(tss_input) / float(max(reps, 1))
+                if seg_duration_h > 0:
+                    derived_if = (per_rep_tss / (seg_duration_h * 100.0)) ** 0.5
+                    if_input = max(float(derived_if), 0.0)
+                    if is_running_like and pace is None and threshold_pace_value > 0 and if_input > 0:
+                        pace = threshold_pace_value / if_input
+                    elif (not is_running_like) and bpm is None and lthr_value > 0 and if_input > 0:
+                        bpm = lthr_value * if_input
             for _ in range(max(reps, 0)):
                 segments.append(
                     {
@@ -1019,6 +1049,7 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
                         "avg_hr_bpm": bpm,
                         "pace_s_per_km": pace,
                         "if_input": if_input,
+                        "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
                         "source": chunk,
                     }
                 )
@@ -1035,6 +1066,11 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
             if not is_running_like:
                 warnings.append(f"Distance intervals are only supported for running/treadmill in: `{chunk}`")
                 continue
+            if pace is None and tss_input is not None and tss_input > 0 and threshold_pace_value > 0:
+                per_rep_tss = float(tss_input) / float(max(reps, 1))
+                pace = (rep_km * (threshold_pace_value ** 2) * 100.0) / (3600.0 * per_rep_tss)
+                if pace > 0:
+                    if_input = threshold_pace_value / pace
             if pace is None or pace <= 0:
                 warnings.append(f"Distance intervals require pace in: `{chunk}` (add `@4:50/km`)")
                 continue
@@ -1048,6 +1084,7 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
                         "avg_hr_bpm": bpm,
                         "pace_s_per_km": pace,
                         "if_input": if_input,
+                        "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
                         "source": chunk,
                     }
                 )
@@ -1064,6 +1101,11 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
             if not is_running_like:
                 warnings.append(f"Distance intervals are only supported for running/treadmill in: `{chunk}`")
                 continue
+            if pace is None and tss_input is not None and tss_input > 0 and threshold_pace_value > 0:
+                per_rep_tss = float(tss_input) / float(max(reps, 1))
+                pace = (rep_km * (threshold_pace_value ** 2) * 100.0) / (3600.0 * per_rep_tss)
+                if pace > 0:
+                    if_input = threshold_pace_value / pace
             if pace is None or pace <= 0:
                 warnings.append(f"Distance intervals require pace in: `{chunk}` (add `@4:50/km`)")
                 continue
@@ -1077,6 +1119,7 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
                         "avg_hr_bpm": bpm,
                         "pace_s_per_km": pace,
                         "if_input": if_input,
+                        "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
                         "source": chunk,
                     }
                 )
@@ -1093,6 +1136,10 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
                         "(non-running should use minutes + bpm/%IF)."
                     )
                     continue
+                if pace is None and tss_input is not None and tss_input > 0 and threshold_pace_value > 0:
+                    pace = (distance_km * (threshold_pace_value ** 2) * 100.0) / (3600.0 * float(tss_input))
+                    if pace > 0:
+                        if_input = threshold_pace_value / pace
                 if pace is None or pace <= 0:
                     warnings.append(f"Distance-based segment requires pace in: `{chunk}` (add `@4:50/km`)")
                     continue
@@ -1103,6 +1150,24 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
         if minutes <= 0:
             warnings.append(f"Duration must be > 0 in: `{chunk}`")
             continue
+        if tss_input is not None and tss_input > 0 and bpm is None and pace is None and if_input is None:
+            duration_h = float(minutes) / 60.0
+            if duration_h <= 0:
+                warnings.append(f"TSS-based intensity requires positive duration in: `{chunk}`")
+                continue
+            derived_if = (float(tss_input) / (duration_h * 100.0)) ** 0.5
+            if_input = max(float(derived_if), 0.0)
+            if is_running_like:
+                if threshold_pace_value <= 0:
+                    warnings.append(f"Missing LT pace to convert TSS to pace in: `{chunk}`")
+                    continue
+                if if_input > 0:
+                    pace = threshold_pace_value / if_input
+            else:
+                if lthr_value <= 0:
+                    warnings.append(f"Missing LTHR to convert TSS to HR in: `{chunk}`")
+                    continue
+                bpm = lthr_value * if_input
         segments.append(
             {
                 "kind": kind,
@@ -1110,6 +1175,7 @@ def _expand_planned_segments(line: str) -> tuple[list[dict[str, float | str | No
                 "avg_hr_bpm": bpm,
                 "pace_s_per_km": pace,
                 "if_input": if_input,
+                "tss_target": float(tss_input) if tss_input else None,
                 "source": chunk,
             }
         )
@@ -5076,7 +5142,11 @@ if view in {"Week Planner", "Weekly Summary"}:
                 if day_ts < previous_sunday:
                     errors.append(f"entry {idx}: date `{day_ts:%Y-%m-%d}` is before `{previous_sunday:%Y-%m-%d}`")
                     continue
-                segs, warns = _expand_planned_segments(normalized)
+                segs, warns = _expand_planned_segments(
+                    normalized,
+                    lthr_bpm=float(derived_lthr_bpm),
+                    threshold_pace_sec_per_km=float(derived_threshold_pace_sec),
+                )
                 if warns or not segs:
                     details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
                     errors.append(f"entry {idx}: {details}")
@@ -5528,7 +5598,11 @@ if view in {"Week Planner", "Weekly Summary"}:
                         if day_ts < previous_sunday:
                             errors.append(f"Date `{day_text}` is before allowed floor `{previous_sunday:%Y-%m-%d}`")
                             continue
-                        segs, warns = _expand_planned_segments(workout_text)
+                        segs, warns = _expand_planned_segments(
+                            workout_text,
+                            lthr_bpm=float(derived_lthr_bpm),
+                            threshold_pace_sec_per_km=float(derived_threshold_pace_sec),
+                        )
                         if warns or not segs:
                             errors.append(
                                 f"`{workout_text}` invalid: " + ("; ".join(warns[:2]) if warns else "unparseable")
@@ -5615,7 +5689,11 @@ if view == "Custom Activities":
                 if custom_day_ts is None:
                     errors.append(f"entry {idx}: could not parse date")
                     continue
-                segs, warns = _expand_planned_segments(normalized)
+                segs, warns = _expand_planned_segments(
+                    normalized,
+                    lthr_bpm=float(derived_lthr_bpm),
+                    threshold_pace_sec_per_km=float(derived_threshold_pace_sec),
+                )
                 if warns or not segs:
                     details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
                     errors.append(f"entry {idx}: {details}")
@@ -6077,7 +6155,11 @@ if view == "Custom Activities":
                         except Exception:
                             errors.append(f"Invalid date `{day_text}`")
                             continue
-                        segs, warns = _expand_planned_segments(activity_text)
+                        segs, warns = _expand_planned_segments(
+                            activity_text,
+                            lthr_bpm=float(derived_lthr_bpm),
+                            threshold_pace_sec_per_km=float(derived_threshold_pace_sec),
+                        )
                         if warns or not segs:
                             errors.append(
                                 f"`{activity_text}` invalid: " + ("; ".join(warns[:2]) if warns else "unparseable")
