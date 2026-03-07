@@ -676,32 +676,49 @@ def _sport_label(sport_type: str | None) -> str:
     return raw.title()
 
 
-def _actual_activity_palette(sport_type: str | None) -> dict[str, str]:
-    sport = str(sport_type or "").strip().lower()
-    if "treadmill" in sport:
-        token = "treadmill"
-        accent = "rgba(251,191,36,0.96)"
-    elif "run" in sport:
-        token = "run"
-        accent = "rgba(251,113,133,0.96)"
-    elif ("cycl" in sport) or ("bike" in sport):
-        token = "cycling"
-        accent = "rgba(56,189,248,0.96)"
-    elif "elliptical" in sport:
-        token = "elliptical"
-        accent = "rgba(52,211,153,0.96)"
-    elif "swim" in sport:
-        token = "swim"
-        accent = "rgba(34,211,238,0.96)"
-    elif ("walk" in sport) or ("hike" in sport):
-        token = "walk"
-        accent = "rgba(163,230,53,0.96)"
-    elif ("strength" in sport) or ("weight" in sport) or ("gym" in sport):
-        token = "strength"
-        accent = "rgba(249,115,22,0.96)"
+def _actual_activity_palette(
+    if_proxy: float | int | None,
+    tss_value: float | int | None = None,
+    daily_tss_upper_bound: float | int | None = None,
+) -> dict[str, str]:
+    if if_proxy is None:
+        v = 0.0
     else:
-        token = "other"
-        accent = "rgba(148,163,184,0.96)"
+        try:
+            v = float(if_proxy)
+        except Exception:
+            v = 0.0
+    if not pd.notna(v):
+        v = 0.0
+    if v > 0.90:
+        token = "red"
+        accent = "rgba(251,113,133,0.96)"
+    elif v > 0.80:
+        token = "yellow"
+        accent = "rgba(251,191,36,0.96)"
+    elif v > 0.70:
+        token = "blue"
+        accent = "rgba(56,189,248,0.96)"
+    else:
+        token = "green"
+        accent = "rgba(52,211,153,0.96)"
+
+    try:
+        tss_v = float(tss_value) if tss_value is not None else 0.0
+    except Exception:
+        tss_v = 0.0
+    try:
+        daily_cap = float(daily_tss_upper_bound) if daily_tss_upper_bound is not None else 0.0
+    except Exception:
+        daily_cap = 0.0
+    if pd.notna(tss_v) and pd.notna(daily_cap) and daily_cap > 0:
+        if tss_v > (daily_cap * 1.5):
+            token = "purple"
+            accent = "rgba(168,85,247,0.96)"
+        elif tss_v > daily_cap:
+            token = "orange"
+            accent = "rgba(249,115,22,0.96)"
+
     return {
         "token": token,
         "accent": accent,
@@ -4137,100 +4154,76 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     line-height: 1.12 !important;
                     font-weight: 400 !important;
                 }
-                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"],
-                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"]:hover,
-                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"]:focus,
-                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"]:focus-visible,
-                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"]:active {
-                    border: 2px solid rgba(251,113,133,0.96) !important;
-                    background: rgba(15,23,42,0.78) !important;
-                }
-                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"] strong {
-                    color: rgba(251,113,133,0.96) !important;
-                    font-weight: 700 !important;
-                }
-                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"],
-                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"]:hover,
-                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"]:focus,
-                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"]:focus-visible,
-                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"]:active {
-                    border: 2px solid rgba(251,191,36,0.96) !important;
-                    background: rgba(15,23,42,0.78) !important;
-                }
-                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"] strong {
-                    color: rgba(251,191,36,0.96) !important;
-                    font-weight: 700 !important;
-                }
-                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"],
-                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"]:hover,
-                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"]:focus,
-                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"]:focus-visible,
-                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"]:active {
-                    border: 2px solid rgba(56,189,248,0.96) !important;
-                    background: rgba(15,23,42,0.78) !important;
-                }
-                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"] strong {
-                    color: rgba(56,189,248,0.96) !important;
-                    font-weight: 700 !important;
-                }
-                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"],
-                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"]:hover,
-                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"]:focus,
-                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"]:focus-visible,
-                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"]:active {
+                div[class*="st-key-calendar_split_title_if_green_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_if_green_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_if_green_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_if_green_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_if_green_"] button[kind="tertiary"]:active {
                     border: 2px solid rgba(52,211,153,0.96) !important;
                     background: rgba(15,23,42,0.78) !important;
                 }
-                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"] strong {
+                div[class*="st-key-calendar_split_title_if_green_"] button[kind="tertiary"] strong {
                     color: rgba(52,211,153,0.96) !important;
                     font-weight: 700 !important;
                 }
-                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"],
-                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"]:hover,
-                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"]:focus,
-                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"]:focus-visible,
-                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"]:active {
-                    border: 2px solid rgba(34,211,238,0.96) !important;
+                div[class*="st-key-calendar_split_title_if_blue_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_if_blue_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_if_blue_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_if_blue_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_if_blue_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(56,189,248,0.96) !important;
                     background: rgba(15,23,42,0.78) !important;
                 }
-                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"] strong {
-                    color: rgba(34,211,238,0.96) !important;
+                div[class*="st-key-calendar_split_title_if_blue_"] button[kind="tertiary"] strong {
+                    color: rgba(56,189,248,0.96) !important;
                     font-weight: 700 !important;
                 }
-                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"],
-                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"]:hover,
-                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"]:focus,
-                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"]:focus-visible,
-                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"]:active {
-                    border: 2px solid rgba(163,230,53,0.96) !important;
+                div[class*="st-key-calendar_split_title_if_yellow_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_if_yellow_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_if_yellow_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_if_yellow_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_if_yellow_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(251,191,36,0.96) !important;
                     background: rgba(15,23,42,0.78) !important;
                 }
-                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"] strong {
-                    color: rgba(163,230,53,0.96) !important;
+                div[class*="st-key-calendar_split_title_if_yellow_"] button[kind="tertiary"] strong {
+                    color: rgba(251,191,36,0.96) !important;
                     font-weight: 700 !important;
                 }
-                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"],
-                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"]:hover,
-                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"]:focus,
-                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"]:focus-visible,
-                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"]:active {
+                div[class*="st-key-calendar_split_title_if_red_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_if_red_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_if_red_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_if_red_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_if_red_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(251,113,133,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_if_red_"] button[kind="tertiary"] strong {
+                    color: rgba(251,113,133,0.96) !important;
+                    font-weight: 700 !important;
+                }
+                div[class*="st-key-calendar_split_title_if_orange_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_if_orange_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_if_orange_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_if_orange_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_if_orange_"] button[kind="tertiary"]:active {
                     border: 2px solid rgba(249,115,22,0.96) !important;
                     background: rgba(15,23,42,0.78) !important;
                 }
-                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"] strong {
+                div[class*="st-key-calendar_split_title_if_orange_"] button[kind="tertiary"] strong {
                     color: rgba(249,115,22,0.96) !important;
                     font-weight: 700 !important;
                 }
-                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"],
-                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"]:hover,
-                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"]:focus,
-                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"]:focus-visible,
-                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"]:active {
-                    border: 2px solid rgba(148,163,184,0.96) !important;
+                div[class*="st-key-calendar_split_title_if_purple_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_if_purple_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_if_purple_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_if_purple_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_if_purple_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(168,85,247,0.96) !important;
                     background: rgba(15,23,42,0.78) !important;
                 }
-                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"] strong {
-                    color: rgba(148,163,184,0.96) !important;
+                div[class*="st-key-calendar_split_title_if_purple_"] button[kind="tertiary"] strong {
+                    color: rgba(168,85,247,0.96) !important;
                     font-weight: 700 !important;
                 }
                 .cal-card-title {
@@ -5065,12 +5058,6 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             for act_idx, (_, act) in enumerate(day_df.iterrows()):
                                 activity_id = str(act.get("activity_id"))
                                 is_custom_activity = activity_id.startswith("custom:")
-                                activity_sport_type = str(act.get("sport_type") or "")
-                                activity_colors = _actual_activity_palette(activity_sport_type)
-                                activity_token = str(activity_colors.get("token") or "other")
-                                activity_accent = activity_colors["accent"]
-                                activity_border = activity_colors["border"]
-                                activity_bg = activity_colors["background"]
                                 sport_label_raw = _sport_label(act.get("sport_type"))
                                 dur_text = _duration_short(act.get("duration_s"))
                                 hr_v = pd.to_numeric(act.get("avg_hr"), errors="coerce")
@@ -5113,6 +5100,15 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     if pd.notna(if_v) and float(if_v) > 0
                                     else "IF -"
                                 )
+                                activity_colors = _actual_activity_palette(
+                                    if_proxy=if_v,
+                                    tss_value=tss_v,
+                                    daily_tss_upper_bound=derived_daily_tss_target,
+                                )
+                                activity_token = str(activity_colors.get("token") or "green")
+                                activity_accent = activity_colors["accent"]
+                                activity_border = activity_colors["border"]
+                                activity_bg = activity_colors["background"]
                                 subtitle = f"{dur_text}" + (f" · {dist_text}" if dist_text else "")
                                 card_label = (
                                     f"**{'Custom · ' if is_custom_activity else ''}{sport_label_raw}**\n"
@@ -5137,7 +5133,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     if not activity_key_slug:
                                         activity_key_slug = "activity"
                                     button_key = (
-                                        f"calendar_split_title_{activity_token}_{day_ts.date().strftime('%Y%m%d')}_{act_idx}_"
+                                        f"calendar_split_title_if_{activity_token}_{day_ts.date().strftime('%Y%m%d')}_{act_idx}_"
                                         f"{activity_key_slug[:24]}"
                                     )
                                     actual_render_items.append(
