@@ -2668,6 +2668,7 @@ if view == "User Inputs":
     )
     with st.expander("Edit IF Zone Thresholds", expanded=True):
         st.caption("Set upper bounds for Z1-Z4 in IF percent. Z5 is automatically >= Z4.")
+        zone_editor_nonce = int(pd.to_numeric(st.session_state.get("if_zone_editor_nonce", 0), errors="coerce") or 0)
         zc1, zc2 = st.columns(2)
         with zc1:
             z1_pct = st.number_input(
@@ -2677,7 +2678,7 @@ if view == "User Inputs":
                 value=float(z1_current * 100.0),
                 step=1.0,
                 format="%.0f",
-                key="if_zone_z1_pct",
+                key=f"if_zone_z1_pct_{zone_editor_nonce}",
             )
             z2_pct = st.number_input(
                 "Z2 max IF (%)",
@@ -2686,7 +2687,7 @@ if view == "User Inputs":
                 value=float(z2_current * 100.0),
                 step=1.0,
                 format="%.0f",
-                key="if_zone_z2_pct",
+                key=f"if_zone_z2_pct_{zone_editor_nonce}",
             )
         with zc2:
             z3_pct = st.number_input(
@@ -2696,7 +2697,7 @@ if view == "User Inputs":
                 value=float(z3_current * 100.0),
                 step=1.0,
                 format="%.0f",
-                key="if_zone_z3_pct",
+                key=f"if_zone_z3_pct_{zone_editor_nonce}",
             )
             z4_pct = st.number_input(
                 "Z4 max IF (%)",
@@ -2705,7 +2706,7 @@ if view == "User Inputs":
                 value=float(z4_current * 100.0),
                 step=1.0,
                 format="%.0f",
-                key="if_zone_z4_pct",
+                key=f"if_zone_z4_pct_{zone_editor_nonce}",
             )
         save_col, reset_col = st.columns([1, 1])
         with save_col:
@@ -2724,10 +2725,7 @@ if view == "User Inputs":
                     _settings_json(new_thresholds),
                 )
                 st.session_state["user_if_zone_thresholds"] = dict(new_thresholds)
-                st.session_state["if_zone_z1_pct"] = float(new_thresholds["z1_max"] * 100.0)
-                st.session_state["if_zone_z2_pct"] = float(new_thresholds["z2_max"] * 100.0)
-                st.session_state["if_zone_z3_pct"] = float(new_thresholds["z3_max"] * 100.0)
-                st.session_state["if_zone_z4_pct"] = float(new_thresholds["z4_max"] * 100.0)
+                st.session_state["if_zone_editor_nonce"] = zone_editor_nonce + 1
                 st.success("IF zones saved." if changed else "IF zones unchanged.")
                 st.rerun()
         with reset_col:
@@ -2739,10 +2737,7 @@ if view == "User Inputs":
                     _settings_json(defaults),
                 )
                 st.session_state["user_if_zone_thresholds"] = dict(defaults)
-                st.session_state["if_zone_z1_pct"] = float(defaults["z1_max"] * 100.0)
-                st.session_state["if_zone_z2_pct"] = float(defaults["z2_max"] * 100.0)
-                st.session_state["if_zone_z3_pct"] = float(defaults["z3_max"] * 100.0)
-                st.session_state["if_zone_z4_pct"] = float(defaults["z4_max"] * 100.0)
+                st.session_state["if_zone_editor_nonce"] = zone_editor_nonce + 1
                 st.success("IF zones reset to defaults." if changed else "IF zones already at defaults.")
                 st.rerun()
     with st.expander("Specificity Factors", expanded=True):
