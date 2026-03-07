@@ -4691,12 +4691,12 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     f"Today is {today_local:%A}: "
                     f"WTD {metric_label_map.get(selected_metric, 'Metric')} delivered: {_emph(_fmt_metric(selected_metric, realized_to_date))} "
                     f"(vs. {compare_label} {_emph(_fmt_metric(selected_metric, compare_to_date))}). "
-                    f"{_emph(_fmt_metric(selected_metric, compare_remaining))} "
-                    f"{metric_label_map.get(selected_metric, 'Metric')} more to go. "
+                    f"Remaining {metric_label_map.get(selected_metric, 'Metric')} to go "
+                    f"{_emph(_fmt_metric(selected_metric, compare_remaining))}. "
                     f"Projected finish {metric_label_map.get(selected_metric, 'Metric')} "
                     f"{_emph(_fmt_metric(selected_metric, projected_finish))}."
                     + (
-                        f" Projected fatigue end of week {_emph(f'{projected_fatigue:.0f}')}."
+                        f" Estimated fatigue EoW {_emph(f'{projected_fatigue:.0f}')}."
                         if pd.notna(projected_fatigue)
                         else ""
                     )
