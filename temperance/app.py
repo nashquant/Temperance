@@ -5458,7 +5458,7 @@ if view == "Custom Activities":
         custom_raw["if_proxy"] = custom_if_vals
         custom_raw["duration_s"] = custom_duration_vals
 
-        st.markdown("##### Custom weekly outlook")
+        st.markdown("##### Custom Activity outlook")
         custom_weekly_outlook = custom_raw.copy()
         selected_custom_week_start: pd.Timestamp | None = None
         tss_goal_week = float(derived_weekly_tss_target) * 1.10
@@ -5593,14 +5593,14 @@ if view == "Custom Activities":
         else:
             st.caption("No valid custom dates to build a weekly outlook.")
 
-        custom_metric_col, _custom_metric_spacer = st.columns([1, 4])
-        with custom_metric_col:
-            custom_plot_metric = st.selectbox(
-                "Custom metric view",
-                ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
-                index=0,
-                key="custom_metric_view_select",
-            )
+            custom_metric_col, _custom_metric_spacer = st.columns([1, 4])
+            with custom_metric_col:
+                custom_plot_metric = st.selectbox(
+                    "Custom activity metric view",
+                    ["TSS", "rTSS", "Dist Eqv (km)", "IF"],
+                    index=0,
+                    key="custom_metric_view_select",
+                )
         custom_plot_metric_col = {
             "TSS": "tss",
             "rTSS": "rtss",
@@ -5664,7 +5664,7 @@ if view == "Custom Activities":
             )
             st.altair_chart((custom_chart + custom_labels).properties(height=150), use_container_width=True)
         else:
-            st.caption("Select a week in `Display` above to show the custom metric chart.")
+            st.caption("Select a week in `Display` above to show the custom activity metric chart.")
 
         custom_rows_for_editor = custom_raw.copy()
         if selected_custom_week_start is not None and pd.notna(selected_custom_week_start):
