@@ -697,6 +697,17 @@ def _truncate_to_decimals(value: float | int | None, digits: int = 2) -> float:
     return float(np.floor(v * factor) / factor)
 
 
+def _split_description_from_token(token: str) -> str:
+    return {
+        "green": "Recovery",
+        "blue": "Easy",
+        "yellow": "Steady",
+        "red": "Speed",
+        "orange": "Speed",
+        "purple": "Speed",
+    }.get(str(token or "").strip().lower(), "Recovery")
+
+
 def _sport_label(sport_type: str | None) -> str:
     raw = str(sport_type or "").strip().replace("_", " ")
     if not raw:
@@ -4426,7 +4437,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 div[class*="st-key-calendar_planned_done_if_purple_"] button[kind="primary"] strong {
                     color: rgba(168,85,247,0.96) !important;
                 }
-                div[class*="st-key-calendar_split_table"] [role="columnheader"] {
+                div[class*="st-key-calendar_split_table_v3"] [role="columnheader"] {
                     font-weight: 700 !important;
                     color: rgba(226,232,240,0.96) !important;
                 }
@@ -5455,12 +5466,12 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 .encode(
                                     x=alt.X(
                                         "x_start:Q",
-                                        title="Equivalent Distance Progression (km)",
+                                        title="Eqv Dist (Km)",
                                     ),
                                     x2="x_end:Q",
                                     y=alt.Y(
                                         "speed_eqv_kmh:Q",
-                                        title="Equivalent Speed (km/h)",
+                                        title="Eqv Speed (Km/h)",
                                         scale=alt.Scale(zero=True),
                                     ),
                                     y2=alt.Y2("y_zero:Q"),
@@ -5499,21 +5510,42 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             ).fillna(0.0).map(lambda v: f"{v:.2f}km")
                             table_df["pace"] = table_df["pace_s_per_km"].apply(_pace_compact)
                             table_df["pace_eqv"] = table_df["pace_eqv_s_per_km"].apply(_pace_compact)
+                            split_sport_type = (
+                                str(selected_activity_row.get("sport_type") or "")
+                                if selected_activity_row is not None
+                                else ""
+                            )
+                            table_df["description"] = table_df.apply(
+                                lambda r: _split_description_from_token(
+                                    _actual_activity_palette(
+                                        if_proxy=r.get("intensity_factor"),
+                                        tss_value=r.get("tss"),
+                                        rtss_value=r.get("rtss"),
+                                        sport_type=split_sport_type,
+                                        daily_tss_upper_bound=derived_daily_tss_target,
+                                    ).get("token", "green")
+                                ),
+                                axis=1,
+                            )
                             st.dataframe(
                                 table_df[
                                     [
+                                        "split_idx",
                                         "duration",
                                         "distance_display",
-                                        "avg_hr",
                                         "pace",
+                                        "description",
+                                        "avg_hr",
                                         "distance_eqv_km_ui",
                                         "pace_eqv",
                                     ]
                                 ],
                                 use_container_width=True,
                                 hide_index=True,
-                                key="calendar_split_table",
+                                key="calendar_split_table_v3",
                                 column_config={
+                                    "split_idx": st.column_config.NumberColumn("Lap", format="%d"),
+                                    "description": st.column_config.TextColumn("Description"),
                                     "duration": st.column_config.TextColumn("Duration"),
                                     "distance_display": st.column_config.TextColumn("Distance"),
                                     "distance_eqv_km_ui": st.column_config.NumberColumn("Dist Eqv (km)", format="%.2f"),
