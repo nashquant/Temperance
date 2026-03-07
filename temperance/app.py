@@ -676,6 +676,31 @@ def _sport_label(sport_type: str | None) -> str:
     return raw.title()
 
 
+def _actual_activity_palette(sport_type: str | None) -> dict[str, str]:
+    sport = str(sport_type or "").strip().lower()
+    if "treadmill" in sport:
+        accent = "rgba(251,191,36,0.96)"
+    elif "run" in sport:
+        accent = "rgba(251,113,133,0.96)"
+    elif ("cycl" in sport) or ("bike" in sport):
+        accent = "rgba(56,189,248,0.96)"
+    elif "elliptical" in sport:
+        accent = "rgba(52,211,153,0.96)"
+    elif "swim" in sport:
+        accent = "rgba(34,211,238,0.96)"
+    elif ("walk" in sport) or ("hike" in sport):
+        accent = "rgba(163,230,53,0.96)"
+    elif ("strength" in sport) or ("weight" in sport) or ("gym" in sport):
+        accent = "rgba(249,115,22,0.96)"
+    else:
+        accent = "rgba(148,163,184,0.96)"
+    return {
+        "accent": accent,
+        "border": accent,
+        "background": "rgba(15,23,42,0.78)",
+    }
+
+
 def _pace_compact(pace_s_per_km: float | int | None) -> str:
     if pace_s_per_km is None:
         return "-"
@@ -4058,6 +4083,13 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     margin-bottom: 6px;
                     font-weight: 600;
                 }
+                .cal-day-meta {
+                    margin-bottom: 6px;
+                    min-height: 38px;
+                    max-height: 38px;
+                    overflow: hidden;
+                    line-height: 1.2;
+                }
                 .cal-day-muted { opacity: 0.45; }
                 .cal-card {
                     background: rgba(15,23,42,0.78);
@@ -4917,13 +4949,20 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             if show_planned_meta and planned_if > 0:
                                 day_meta_parts.append(f"IF {(planned_if * 100.0):.0f}%")
                             st.markdown(
-                                f"<div class='cal-card-meta' style='margin-bottom:6px;'>{' · '.join(day_meta_parts)}</div>",
+                                f"<div class='cal-card-meta cal-day-meta'>{' · '.join(day_meta_parts)}</div>",
                                 unsafe_allow_html=True,
                             )
                             rendered_cards = 0
-                            for _, act in day_df.iterrows():
+                            actual_button_css_rules: list[str] = []
+                            actual_render_items: list[dict[str, object]] = []
+                            for act_idx, (_, act) in enumerate(day_df.iterrows()):
                                 activity_id = str(act.get("activity_id"))
                                 is_custom_activity = activity_id.startswith("custom:")
+                                activity_sport_type = str(act.get("sport_type") or "")
+                                activity_colors = _actual_activity_palette(activity_sport_type)
+                                activity_accent = activity_colors["accent"]
+                                activity_border = activity_colors["border"]
+                                activity_bg = activity_colors["background"]
                                 sport_label_raw = _sport_label(act.get("sport_type"))
                                 dur_text = _duration_short(act.get("duration_s"))
                                 hr_v = pd.to_numeric(act.get("avg_hr"), errors="coerce")
@@ -4976,23 +5015,65 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 )
                                 if is_custom_activity:
                                     card_html = (
-                                        "<div class='cal-card'>"
-                                        f"<div class='cal-card-title'>Custom · {sport_label_raw}</div>"
+                                        f"<div class='cal-card' style='border:2px solid {activity_border}; background:{activity_bg};'>"
+                                        f"<div class='cal-card-title' style='color:{activity_accent};'>Custom · {sport_label_raw}</div>"
                                         f"<div class='cal-card-meta'>{subtitle}</div>"
                                         f"<div class='cal-card-meta'>{hr_text}</div>"
                                         f"<div class='cal-card-meta'>{pace_text} · {if_text}</div>"
                                         f"<div class='cal-card-load'>TSS {tss_v:.0f} · rTSS {rtss_v:.0f}</div>"
                                         "</div>"
                                     )
-                                    st.markdown(card_html, unsafe_allow_html=True)
+                                    actual_render_items.append({"kind": "custom", "card_html": card_html})
+                                else:
+                                    activity_key_slug = re.sub(r"[^0-9A-Za-z_]+", "_", activity_id).strip("_")
+                                    if not activity_key_slug:
+                                        activity_key_slug = "activity"
+                                    button_key = (
+                                        f"calendar_split_title_{day_ts.date().strftime('%Y%m%d')}_{act_idx}_"
+                                        f"{activity_key_slug[:24]}"
+                                    )
+                                    actual_button_css_rules.append(
+                                        (
+                                            f"div.st-key-{button_key} button[kind=\"tertiary\"],"
+                                            f"div.st-key-{button_key} button[kind=\"tertiary\"]:hover,"
+                                            f"div.st-key-{button_key} button[kind=\"tertiary\"]:focus,"
+                                            f"div.st-key-{button_key} button[kind=\"tertiary\"]:focus-visible,"
+                                            f"div.st-key-{button_key} button[kind=\"tertiary\"]:active {{"
+                                            f"border: 2px solid {activity_border} !important;"
+                                            f"background: {activity_bg} !important;"
+                                            "}"
+                                            f"div.st-key-{button_key} button[kind=\"tertiary\"] strong {{"
+                                            f"color: {activity_accent} !important;"
+                                            "font-weight: 700 !important;"
+                                            "}"
+                                        )
+                                    )
+                                    actual_render_items.append(
+                                        {
+                                            "kind": "button",
+                                            "card_label": card_label,
+                                            "button_key": button_key,
+                                            "activity_id": activity_id,
+                                        }
+                                    )
+                            if actual_button_css_rules:
+                                st.markdown(
+                                    "<style>" + "".join(actual_button_css_rules) + "</style>",
+                                    unsafe_allow_html=True,
+                                )
+                            for item in actual_render_items:
+                                if str(item.get("kind")) == "custom":
+                                    st.markdown(str(item.get("card_html") or ""), unsafe_allow_html=True)
                                 else:
                                     if st.button(
-                                        card_label,
-                                        key=f"calendar_split_title_{activity_id}_{day_ts.date().isoformat()}",
+                                        str(item.get("card_label") or ""),
+                                        key=str(item.get("button_key") or ""),
                                         use_container_width=True,
                                         type="tertiary",
                                     ):
-                                        st.session_state["calendar_split_activity_id"] = activity_id
+                                        st.session_state["calendar_split_activity_id"] = str(
+                                            item.get("activity_id") or ""
+                                        )
                                         st.session_state["calendar_split_open"] = True
                                 rendered_cards += 1
                             today_local_date = pd.Timestamp(today_local_day).date()
