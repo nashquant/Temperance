@@ -679,22 +679,31 @@ def _sport_label(sport_type: str | None) -> str:
 def _actual_activity_palette(sport_type: str | None) -> dict[str, str]:
     sport = str(sport_type or "").strip().lower()
     if "treadmill" in sport:
+        token = "treadmill"
         accent = "rgba(251,191,36,0.96)"
     elif "run" in sport:
+        token = "run"
         accent = "rgba(251,113,133,0.96)"
     elif ("cycl" in sport) or ("bike" in sport):
+        token = "cycling"
         accent = "rgba(56,189,248,0.96)"
     elif "elliptical" in sport:
+        token = "elliptical"
         accent = "rgba(52,211,153,0.96)"
     elif "swim" in sport:
+        token = "swim"
         accent = "rgba(34,211,238,0.96)"
     elif ("walk" in sport) or ("hike" in sport):
+        token = "walk"
         accent = "rgba(163,230,53,0.96)"
     elif ("strength" in sport) or ("weight" in sport) or ("gym" in sport):
+        token = "strength"
         accent = "rgba(249,115,22,0.96)"
     else:
+        token = "other"
         accent = "rgba(148,163,184,0.96)"
     return {
+        "token": token,
         "accent": accent,
         "border": accent,
         "background": "rgba(15,23,42,0.78)",
@@ -4085,10 +4094,13 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 }
                 .cal-day-meta {
                     margin-bottom: 6px;
-                    min-height: 38px;
-                    max-height: 38px;
+                    min-height: 32px;
+                    max-height: 32px;
                     overflow: hidden;
                     line-height: 1.2;
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
                 }
                 .cal-day-muted { opacity: 0.45; }
                 .cal-card {
@@ -4124,6 +4136,102 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     font-size: 0.8rem !important;
                     line-height: 1.12 !important;
                     font-weight: 400 !important;
+                }
+                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(251,113,133,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_run_"] button[kind="tertiary"] strong {
+                    color: rgba(251,113,133,0.96) !important;
+                    font-weight: 700 !important;
+                }
+                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(251,191,36,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_treadmill_"] button[kind="tertiary"] strong {
+                    color: rgba(251,191,36,0.96) !important;
+                    font-weight: 700 !important;
+                }
+                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(56,189,248,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_cycling_"] button[kind="tertiary"] strong {
+                    color: rgba(56,189,248,0.96) !important;
+                    font-weight: 700 !important;
+                }
+                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(52,211,153,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_elliptical_"] button[kind="tertiary"] strong {
+                    color: rgba(52,211,153,0.96) !important;
+                    font-weight: 700 !important;
+                }
+                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(34,211,238,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_swim_"] button[kind="tertiary"] strong {
+                    color: rgba(34,211,238,0.96) !important;
+                    font-weight: 700 !important;
+                }
+                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(163,230,53,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_walk_"] button[kind="tertiary"] strong {
+                    color: rgba(163,230,53,0.96) !important;
+                    font-weight: 700 !important;
+                }
+                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(249,115,22,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_strength_"] button[kind="tertiary"] strong {
+                    color: rgba(249,115,22,0.96) !important;
+                    font-weight: 700 !important;
+                }
+                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"],
+                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"]:hover,
+                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"]:focus,
+                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"]:focus-visible,
+                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"]:active {
+                    border: 2px solid rgba(148,163,184,0.96) !important;
+                    background: rgba(15,23,42,0.78) !important;
+                }
+                div[class*="st-key-calendar_split_title_other_"] button[kind="tertiary"] strong {
+                    color: rgba(148,163,184,0.96) !important;
+                    font-weight: 700 !important;
                 }
                 .cal-card-title {
                     font-size: 0.78rem;
@@ -4953,13 +5061,13 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 unsafe_allow_html=True,
                             )
                             rendered_cards = 0
-                            actual_button_css_rules: list[str] = []
                             actual_render_items: list[dict[str, object]] = []
                             for act_idx, (_, act) in enumerate(day_df.iterrows()):
                                 activity_id = str(act.get("activity_id"))
                                 is_custom_activity = activity_id.startswith("custom:")
                                 activity_sport_type = str(act.get("sport_type") or "")
                                 activity_colors = _actual_activity_palette(activity_sport_type)
+                                activity_token = str(activity_colors.get("token") or "other")
                                 activity_accent = activity_colors["accent"]
                                 activity_border = activity_colors["border"]
                                 activity_bg = activity_colors["background"]
@@ -5029,24 +5137,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     if not activity_key_slug:
                                         activity_key_slug = "activity"
                                     button_key = (
-                                        f"calendar_split_title_{day_ts.date().strftime('%Y%m%d')}_{act_idx}_"
+                                        f"calendar_split_title_{activity_token}_{day_ts.date().strftime('%Y%m%d')}_{act_idx}_"
                                         f"{activity_key_slug[:24]}"
-                                    )
-                                    actual_button_css_rules.append(
-                                        (
-                                            f"div.st-key-{button_key} button[kind=\"tertiary\"],"
-                                            f"div.st-key-{button_key} button[kind=\"tertiary\"]:hover,"
-                                            f"div.st-key-{button_key} button[kind=\"tertiary\"]:focus,"
-                                            f"div.st-key-{button_key} button[kind=\"tertiary\"]:focus-visible,"
-                                            f"div.st-key-{button_key} button[kind=\"tertiary\"]:active {{"
-                                            f"border: 2px solid {activity_border} !important;"
-                                            f"background: {activity_bg} !important;"
-                                            "}"
-                                            f"div.st-key-{button_key} button[kind=\"tertiary\"] strong {{"
-                                            f"color: {activity_accent} !important;"
-                                            "font-weight: 700 !important;"
-                                            "}"
-                                        )
                                     )
                                     actual_render_items.append(
                                         {
@@ -5056,11 +5148,6 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                             "activity_id": activity_id,
                                         }
                                     )
-                            if actual_button_css_rules:
-                                st.markdown(
-                                    "<style>" + "".join(actual_button_css_rules) + "</style>",
-                                    unsafe_allow_html=True,
-                                )
                             for item in actual_render_items:
                                 if str(item.get("kind")) == "custom":
                                     st.markdown(str(item.get("card_html") or ""), unsafe_allow_html=True)
