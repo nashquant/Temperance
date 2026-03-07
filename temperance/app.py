@@ -779,7 +779,9 @@ def _split_description_from_token(token: str) -> str:
         "yellow": "Steady",
         "red": "Interval",
         "orange": "Overload",
+        "tss_orange": "Overload",
         "purple": "VO2 Max",
+        "tss_purple": "VO2 Max",
     }.get(str(token or "").strip().lower(), "Recovery")
 
 
@@ -827,11 +829,11 @@ def _actual_activity_palette(
     override_load = rtss_v if is_running_like else tss_v
     if pd.notna(override_load) and pd.notna(daily_cap) and daily_cap > 0:
         if override_load > (daily_cap * 1.5):
-            token = "purple"
-            accent = "rgba(168,85,247,0.96)"
+            token = "tss_purple"
+            accent = "rgba(192,132,252,0.96)"
         elif override_load > daily_cap:
-            token = "orange"
-            accent = "rgba(249,115,22,0.96)"
+            token = "tss_orange"
+            accent = "rgba(251,146,60,0.96)"
 
     return {
         "token": token,
