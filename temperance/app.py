@@ -972,6 +972,12 @@ def _split_dated_activity_entries(text: str) -> list[str]:
     return [p.strip() for p in re.split(r"[\n;,]+", raw) if p.strip()]
 
 
+def _planned_row_signature(day_utc: str, workout_text: str) -> str:
+    day_key = str(day_utc or "").strip()
+    workout_key = _normalize_plan_text(str(workout_text or "")).lower()
+    return f"{day_key}::{workout_key}"
+
+
 def _filter_effective_planned_rows(planned_df: pd.DataFrame, today_local_day: pd.Timestamp) -> pd.DataFrame:
     if planned_df.empty:
         return planned_df.copy()
@@ -1452,45 +1458,9 @@ def _apply_planned_actual_matching(
 ) -> pd.DataFrame:
     if planned_rows.empty:
         return planned_rows
-    out = planned_rows.copy()
-    # `manual_done` is now the source of truth for resolving today's planned-vs-done
-    # conflicts. When present, avoid any automatic line dropping by actual count.
-    if "manual_done" in out.columns:
-        return out
-    out["day_utc"] = out["day_utc"].astype(str)
-    out["line_no"] = pd.to_numeric(out["line_no"], errors="coerce").fillna(0).astype(int)
-    out = out.sort_values(["day_utc", "line_no"], ascending=[True, True]).copy()
-
-    actual_counts: dict[str, int] = {}
-    if not actual_metrics.empty and "start_time_utc" in actual_metrics.columns:
-        actual_ts = pd.to_datetime(actual_metrics["start_time_utc"], utc=True, errors="coerce")
-        actual_ts = actual_ts.dropna()
-        if not actual_ts.empty:
-            local_tz = datetime.now().astimezone().tzinfo
-            local_days = actual_ts.dt.tz_convert(local_tz).dt.strftime("%Y-%m-%d")
-            actual_counts = local_days.value_counts().to_dict()
-
-    now_local = datetime.now().astimezone()
-    today_str = now_local.strftime("%Y-%m-%d")
-    after_5pm_today = now_local.hour >= 17
-
-    kept_parts: list[pd.DataFrame] = []
-    for day_key, group in out.groupby("day_utc", sort=False):
-        g = group.sort_values("line_no").copy()
-        actual_n = int(actual_counts.get(str(day_key), 0))
-        drop_n = 0
-        if actual_n >= 1:
-            drop_n = 1
-        # Keep second planned workout for split morning sessions unless day is effectively "closed".
-        day_closed = (str(day_key) < today_str) or (str(day_key) == today_str and after_5pm_today)
-        if actual_n > 2 and day_closed:
-            drop_n = 2
-        g = g.iloc[min(drop_n, len(g)) :]
-        if not g.empty:
-            kept_parts.append(g)
-    if not kept_parts:
-        return out.iloc[0:0].copy()
-    return pd.concat(kept_parts, ignore_index=True)
+    # Deprecated behavior: do not auto-drop planned rows by actual-count matching.
+    # Visibility/completion is controlled by date + `manual_done`.
+    return planned_rows.copy()
 
 
 def _to_seconds(value: object) -> float | None:
@@ -4373,6 +4343,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 compact_week["if_proxy"] = if_by_day
                 compare_days = pd.DataFrame({"day": pd.date_range(compare_week_start, compare_week_end, freq="D")})
                 planned_remaining_metric_totals = {"rtss": 0.0, "tss": 0.0, "distance_eqv_km": 0.0}
+                planned_remaining_tss_by_day: dict[pd.Timestamp, float] = {}
                 if compare_choice == "Planned":
                     planned_rows = get_planned_activities_df(
                         cfg.db_path,
@@ -4402,6 +4373,15 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             planned_remaining_rows_metrics["day"] = pd.to_datetime(
                                 planned_remaining_rows_metrics.get("day_utc"), errors="coerce"
                             ).dt.floor("D")
+                            _planned_remaining_tss = (
+                                planned_remaining_rows_metrics.dropna(subset=["day"])
+                                .groupby("day", as_index=False)["tss"]
+                                .sum()
+                            )
+                            planned_remaining_tss_by_day = {
+                                pd.Timestamp(r["day"]): float(pd.to_numeric(r["tss"], errors="coerce") or 0.0)
+                                for _, r in _planned_remaining_tss.iterrows()
+                            }
                             remaining_start_day = max(today_local_now, selected_week_start)
                             planned_remaining_rows_metrics = planned_remaining_rows_metrics[
                                 (planned_remaining_rows_metrics["day"] >= remaining_start_day)
@@ -4682,9 +4662,14 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         fatigue_anchor = 0.0
                     alpha_fatigue = float(ema_alpha_from_days(7))
                     projected_fatigue = fatigue_anchor
+                    # Include remaining planned load for "today" (if any) before projecting future days.
+                    if compare_choice == "Planned":
+                        remaining_today_tss = float(planned_remaining_tss_by_day.get(pd.Timestamp(cutoff_day), 0.0))
+                        if remaining_today_tss > 0:
+                            projected_fatigue = projected_fatigue + (alpha_fatigue * remaining_today_tss)
                     for day_ts in pd.date_range(cutoff_day + pd.Timedelta(days=1), selected_week_end, freq="D"):
                         if compare_choice == "Planned":
-                            day_target_tss = _agg_metric(compare_week, compare_week["day"] == day_ts, "tss")
+                            day_target_tss = float(planned_remaining_tss_by_day.get(pd.Timestamp(day_ts), 0.0))
                         else:
                             day_offset = int((day_ts - selected_week_start).days)
                             day_offset = min(max(day_offset, 0), 6)
@@ -4703,13 +4688,15 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     )
 
                 narrative = (
-                    f"Today is {today_local:%A}. "
-                    f"{metric_label_map.get(selected_metric, 'Metric')} delivered: {_emph(_fmt_metric(selected_metric, realized_to_date))} "
+                    f"Today is {today_local:%A}: "
+                    f"WTD {metric_label_map.get(selected_metric, 'Metric')} delivered: {_emph(_fmt_metric(selected_metric, realized_to_date))} "
                     f"(vs. {compare_label} {_emph(_fmt_metric(selected_metric, compare_to_date))}). "
-                    f"Remaining {compare_label}: {_emph(_fmt_metric(selected_metric, compare_remaining))}. "
-                    f"Projected finish {_emph(_fmt_metric(selected_metric, projected_finish))}."
+                    f"{_emph(_fmt_metric(selected_metric, compare_remaining))} "
+                    f"{metric_label_map.get(selected_metric, 'Metric')} more to go. "
+                    f"Projected finish {metric_label_map.get(selected_metric, 'Metric')} "
+                    f"{_emph(_fmt_metric(selected_metric, projected_finish))}."
                     + (
-                        f" Projected fatigue {_emph(f'{projected_fatigue:.0f}')}."
+                        f" Projected fatigue end of week {_emph(f'{projected_fatigue:.0f}')}."
                         if pd.notna(projected_fatigue)
                         else ""
                     )
@@ -4968,9 +4955,9 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                         st.session_state["calendar_split_activity_id"] = activity_id
                                         st.session_state["calendar_split_open"] = True
                                 rendered_cards += 1
-                            today_utc = datetime.now(timezone.utc).date()
+                            today_local_date = pd.Timestamp(today_local_day).date()
                             day_planned_cards = planned_cards_by_day.get(day_ts, [])
-                            if day_ts.date() >= today_utc and rendered_cards == 0 and day_planned_cards:
+                            if day_ts.date() >= today_local_date and day_planned_cards:
                                 for prow in day_planned_cards:
                                     p_activity = str(prow.get("activity") or "Planned")
                                     p_duration = _duration_short(prow.get("duration_s"))
@@ -4989,7 +4976,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                         ),
                                         unsafe_allow_html=True,
                                     )
-                            if rendered_cards == 0 and day_ts.date() < today_utc:
+                            if rendered_cards == 0 and not day_planned_cards and day_ts.date() < today_local_date:
                                 st.markdown(
                                     (
                                         "<div class='cal-rest-card'>"
@@ -5194,6 +5181,15 @@ if view in {"Week Planner", "Weekly Summary"}:
             max_line_by_day = (
                 existing.groupby("day_utc")["line_no"].max().to_dict() if not existing.empty else {}
             )
+            existing_signatures: set[str] = set()
+            if not existing.empty:
+                for _, er in existing.iterrows():
+                    existing_signatures.add(
+                        _planned_row_signature(
+                            str(er.get("day_utc") or ""),
+                            str(er.get("workout_text") or ""),
+                        )
+                    )
             rows_to_upsert: list[dict[str, object]] = []
             errors: list[str] = []
             for idx, raw_entry in enumerate(entries, start=1):
@@ -5217,6 +5213,12 @@ if view in {"Week Planner", "Weekly Summary"}:
                     errors.append(f"entry {idx}: {details}")
                     continue
                 day_key = day_ts.date().isoformat()
+                sig = _planned_row_signature(day_key, normalized)
+                if sig in existing_signatures:
+                    errors.append(
+                        f"entry {idx}: duplicate skipped for `{day_key}` (`{normalized}` already exists)."
+                    )
+                    continue
                 next_line_no = int(max_line_by_day.get(day_key, 0)) + 1
                 max_line_by_day[day_key] = next_line_no
                 rows_to_upsert.append(
@@ -5228,6 +5230,7 @@ if view in {"Week Planner", "Weekly Summary"}:
                         "manual_done": False,
                     }
                 )
+                existing_signatures.add(sig)
             if rows_to_upsert:
                 upsert_planned_activities_rows(cfg.db_path, rows_to_upsert)
             if errors:
@@ -5656,6 +5659,15 @@ if view in {"Week Planner", "Weekly Summary"}:
                     max_line_by_day = (
                         remaining.groupby("day_utc")["line_no"].max().to_dict() if not remaining.empty else {}
                     )
+                    remaining_signatures: set[str] = set()
+                    if not remaining.empty:
+                        for _, rr in remaining.iterrows():
+                            remaining_signatures.add(
+                                _planned_row_signature(
+                                    str(rr.get("day_utc") or ""),
+                                    str(rr.get("workout_text") or ""),
+                                )
+                            )
                     errors: list[str] = []
                     for _, r in selected_rows.iterrows():
                         day_text = str(r.get("day_utc") or "").strip()
@@ -5684,6 +5696,12 @@ if view in {"Week Planner", "Weekly Summary"}:
                             )
                             continue
                         day_key = day_ts.date().isoformat()
+                        sig = _planned_row_signature(day_key, workout_text)
+                        if sig in remaining_signatures:
+                            errors.append(
+                                f"`{day_key}` + `{workout_text}` duplicates an existing planned row."
+                            )
+                            continue
                         next_line = int(max_line_by_day.get(day_key, 0)) + 1
                         max_line_by_day[day_key] = next_line
                         edit_rows.append(
@@ -5695,6 +5713,7 @@ if view in {"Week Planner", "Weekly Summary"}:
                                 "manual_done": done_value,
                             }
                         )
+                        remaining_signatures.add(sig)
                     if errors:
                         st.error("Cannot save edits:\n- " + "\n- ".join(errors[:8]))
                     else:
