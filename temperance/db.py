@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS planned_activities (
     line_no INTEGER NOT NULL,
     workout_text TEXT NOT NULL,
     parsed_json TEXT,
+    manual_done INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (day_utc, line_no)
@@ -240,12 +241,24 @@ def run_migrations(db_path: Path) -> None:
                 line_no INTEGER NOT NULL,
                 workout_text TEXT NOT NULL,
                 parsed_json TEXT,
+                manual_done INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (day_utc, line_no)
             )
             """
         )
+        existing_cols = {
+            str(r["name"])
+            for r in conn.execute("PRAGMA table_info(planned_activities)").fetchall()
+        }
+        if "manual_done" not in existing_cols:
+            conn.execute(
+                """
+                ALTER TABLE planned_activities
+                ADD COLUMN manual_done INTEGER NOT NULL DEFAULT 0
+                """
+            )
         conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_planned_activities_day
@@ -997,7 +1010,7 @@ def get_planned_activities_df(
     with closing(get_conn(db_path)) as conn:
         return pd.read_sql_query(
             f"""
-            SELECT day_utc, line_no, workout_text, parsed_json, created_at, updated_at
+            SELECT day_utc, line_no, workout_text, parsed_json, manual_done, created_at, updated_at
             FROM planned_activities
             {where_sql}
             ORDER BY day_utc ASC, line_no ASC
@@ -1026,8 +1039,8 @@ def replace_planned_activities_for_range(
             conn.executemany(
                 """
                 INSERT INTO planned_activities (
-                    day_utc, line_no, workout_text, parsed_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    day_utc, line_no, workout_text, parsed_json, manual_done, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -1035,6 +1048,7 @@ def replace_planned_activities_for_range(
                         int(r.get("line_no") or 0),
                         str(r.get("workout_text") or "").strip(),
                         json.dumps(r.get("parsed_json")) if r.get("parsed_json") is not None else None,
+                        int(bool(r.get("manual_done", False))),
                         now,
                         now,
                     )
@@ -1075,11 +1089,12 @@ def upsert_planned_activities_rows(
         conn.executemany(
             """
             INSERT INTO planned_activities (
-                day_utc, line_no, workout_text, parsed_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                day_utc, line_no, workout_text, parsed_json, manual_done, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(day_utc, line_no) DO UPDATE SET
                 workout_text = excluded.workout_text,
                 parsed_json = excluded.parsed_json,
+                manual_done = excluded.manual_done,
                 updated_at = excluded.updated_at
             """,
             [
@@ -1088,6 +1103,7 @@ def upsert_planned_activities_rows(
                     int(r.get("line_no") or 0),
                     str(r.get("workout_text") or "").strip(),
                     json.dumps(r.get("parsed_json")) if r.get("parsed_json") is not None else None,
+                    int(bool(r.get("manual_done", False))),
                     now,
                     now,
                 )

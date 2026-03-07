@@ -972,6 +972,18 @@ def _split_dated_activity_entries(text: str) -> list[str]:
     return [p.strip() for p in re.split(r"[\n;,]+", raw) if p.strip()]
 
 
+def _filter_effective_planned_rows(planned_df: pd.DataFrame, today_local_day: pd.Timestamp) -> pd.DataFrame:
+    if planned_df.empty:
+        return planned_df.copy()
+    out = planned_df.copy()
+    day_col = pd.to_datetime(out.get("day_utc"), errors="coerce").dt.normalize()
+    done_col = pd.to_numeric(out.get("manual_done"), errors="coerce").fillna(0.0) > 0
+    past_mask = day_col < pd.Timestamp(today_local_day).normalize()
+    today_done_mask = (day_col == pd.Timestamp(today_local_day).normalize()) & done_col
+    keep_mask = ~(past_mask | today_done_mask)
+    return out.loc[keep_mask].copy()
+
+
 def _expand_planned_segments(
     line: str,
     lthr_bpm: float | None = None,
@@ -1441,6 +1453,10 @@ def _apply_planned_actual_matching(
     if planned_rows.empty:
         return planned_rows
     out = planned_rows.copy()
+    # `manual_done` is now the source of truth for resolving today's planned-vs-done
+    # conflicts. When present, avoid any automatic line dropping by actual count.
+    if "manual_done" in out.columns:
+        return out
     out["day_utc"] = out["day_utc"].astype(str)
     out["line_no"] = pd.to_numeric(out["line_no"], errors="coerce").fillna(0).astype(int)
     out = out.sort_values(["day_utc", "line_no"], ascending=[True, True]).copy()
@@ -3920,6 +3936,11 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 start_day_utc=grid_start.date().isoformat(),
                 end_day_utc=grid_end.date().isoformat(),
             )
+            today_local_day = pd.Timestamp(datetime.now().astimezone().date()).normalize()
+            planned_rows_for_calendar = _filter_effective_planned_rows(
+                planned_rows_for_calendar,
+                today_local_day=today_local_day,
+            )
             planned_rows_for_calendar = _apply_planned_actual_matching(
                 planned_rows_for_calendar,
                 metrics_df,
@@ -4351,6 +4372,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     if_by_day.append(if_total / dur_total if dur_total > 0 else 0.0)
                 compact_week["if_proxy"] = if_by_day
                 compare_days = pd.DataFrame({"day": pd.date_range(compare_week_start, compare_week_end, freq="D")})
+                planned_remaining_metric_totals = {"rtss": 0.0, "tss": 0.0, "distance_eqv_km": 0.0}
                 if compare_choice == "Planned":
                     planned_rows = get_planned_activities_df(
                         cfg.db_path,
@@ -4358,10 +4380,50 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         end_day_utc=selected_week_end.date().isoformat(),
                     )
                     planned_rows = _apply_planned_actual_matching(planned_rows, metrics_df)
+                    today_local_now = pd.Timestamp(datetime.now().astimezone().date()).normalize()
+                    planned_rows_remaining = _filter_effective_planned_rows(
+                        planned_rows,
+                        today_local_day=today_local_now,
+                    )
                     planner_specificity_profile = _normalize_specificity_profile(
                         st.session_state.get("user_specificity_profile", {}),
                         fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
                     )
+                    if not planned_rows_remaining.empty:
+                        planned_remaining_rows_metrics = _compute_planned_rows_metrics_df(
+                            planned_rows=planned_rows_remaining,
+                            lthr_curve_points=lthr_curve_points,
+                            lthr_default_bpm=float(derived_lthr_bpm),
+                            lt_pace_curve_points=lt_pace_curve_points,
+                            lt_pace_default_sec=float(derived_threshold_pace_sec),
+                            specificity_profile=planner_specificity_profile,
+                        )
+                        if not planned_remaining_rows_metrics.empty:
+                            planned_remaining_rows_metrics["day"] = pd.to_datetime(
+                                planned_remaining_rows_metrics.get("day_utc"), errors="coerce"
+                            ).dt.floor("D")
+                            remaining_start_day = max(today_local_now, selected_week_start)
+                            planned_remaining_rows_metrics = planned_remaining_rows_metrics[
+                                (planned_remaining_rows_metrics["day"] >= remaining_start_day)
+                                & (planned_remaining_rows_metrics["day"] <= selected_week_end)
+                            ].copy()
+                            planned_remaining_metric_totals = {
+                                "rtss": float(
+                                    pd.to_numeric(
+                                        planned_remaining_rows_metrics.get("rtss"), errors="coerce"
+                                    ).fillna(0.0).sum()
+                                ),
+                                "tss": float(
+                                    pd.to_numeric(
+                                        planned_remaining_rows_metrics.get("tss"), errors="coerce"
+                                    ).fillna(0.0).sum()
+                                ),
+                                "distance_eqv_km": float(
+                                    pd.to_numeric(
+                                        planned_remaining_rows_metrics.get("distance_proxy_km"), errors="coerce"
+                                    ).fillna(0.0).sum()
+                                ),
+                            }
                     planned_day_stats: list[dict[str, float | pd.Timestamp]] = []
                     for day_ts in pd.date_range(selected_week_start, selected_week_end, freq="D"):
                         day_key = day_ts.date().isoformat()
@@ -4602,7 +4664,10 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 realized_week_total = _agg_metric(compact_week, compact_week["day"].notna(), selected_metric)
                 compare_to_date = _agg_metric(compare_week, compare_to_date_mask, selected_metric)
                 compare_week_total = _agg_metric(compare_week, compare_week["day"].notna(), selected_metric)
-                compare_remaining = compare_week_total - compare_to_date
+                if compare_choice == "Planned":
+                    compare_remaining = float(planned_remaining_metric_totals.get(selected_metric, 0.0))
+                else:
+                    compare_remaining = compare_week_total - compare_to_date
                 projected_finish = realized_to_date + compare_remaining
                 projected_fatigue = float("nan")
                 try:
@@ -5160,6 +5225,7 @@ if view in {"Week Planner", "Weekly Summary"}:
                         "line_no": next_line_no,
                         "workout_text": normalized,
                         "parsed_json": segs,
+                        "manual_done": False,
                     }
                 )
             if rows_to_upsert:
@@ -5496,12 +5562,14 @@ if view in {"Week Planner", "Weekly Summary"}:
                 "rtss",
                 "distance_eqv_km",
                 "if_proxy",
+                "manual_done",
                 "parsed_json",
                 "updated_at",
             ]
         ].copy()
         editor_df["day_of_week"] = pd.to_datetime(editor_df["day_utc"], errors="coerce").dt.strftime("%a")
         editor_df["if_proxy_pct"] = pd.to_numeric(editor_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
+        editor_df["manual_done"] = pd.to_numeric(editor_df.get("manual_done"), errors="coerce").fillna(0.0) > 0
         if "duration_s" in editor_df.columns:
             planner_duration_s = pd.to_numeric(editor_df["duration_s"], errors="coerce")
         else:
@@ -5532,6 +5600,7 @@ if view in {"Week Planner", "Weekly Summary"}:
                 "distance_eqv_km",
                 "duration_h",
                 "if_proxy_pct",
+                "manual_done",
                 "parsed_json",
                 "updated_at",
             ],
@@ -5548,6 +5617,7 @@ if view in {"Week Planner", "Weekly Summary"}:
                 "rtss": st.column_config.NumberColumn("rTSS", format="%.0f", disabled=True),
                 "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f", disabled=True),
                 "if_proxy_pct": st.column_config.NumberColumn("IF", format="%.0f%%", disabled=True),
+                "manual_done": st.column_config.CheckboxColumn("Done"),
                 "parsed_json": st.column_config.TextColumn("Parsed JSON", disabled=True),
                 "updated_at": st.column_config.TextColumn("Updated At", disabled=True),
             },
@@ -5590,6 +5660,7 @@ if view in {"Week Planner", "Weekly Summary"}:
                     for _, r in selected_rows.iterrows():
                         day_text = str(r.get("day_utc") or "").strip()
                         workout_text = _normalize_plan_text(str(r.get("workout_text") or ""))
+                        done_value = bool(r.get("manual_done", False))
                         try:
                             day_ts = pd.Timestamp(day_text)
                         except Exception:
@@ -5597,6 +5668,10 @@ if view in {"Week Planner", "Weekly Summary"}:
                             continue
                         if day_ts < previous_sunday:
                             errors.append(f"Date `{day_text}` is before allowed floor `{previous_sunday:%Y-%m-%d}`")
+                            continue
+                        today_local_day = pd.Timestamp(datetime.now().astimezone().date()).normalize()
+                        if done_value and day_ts.normalize() > today_local_day:
+                            errors.append(f"`{day_text}` is in the future. Cannot mark done for future planned activities.")
                             continue
                         segs, warns = _expand_planned_segments(
                             workout_text,
@@ -5617,6 +5692,7 @@ if view in {"Week Planner", "Weekly Summary"}:
                                 "line_no": next_line,
                                 "workout_text": workout_text,
                                 "parsed_json": segs,
+                                "manual_done": done_value,
                             }
                         )
                     if errors:
