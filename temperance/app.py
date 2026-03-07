@@ -69,52 +69,6 @@ from garmin_client import (
 
 st.set_page_config(page_title="Temperance", layout="wide")
 
-_assets_dir = Path(__file__).resolve().parent / "assets"
-_logo_png = _assets_dir / "temperance_logo.png"
-_logo_svg = _assets_dir / "temperance_logo.svg"
-# Prefer SVG to avoid accidental baked backgrounds in raster exports.
-_logo_file = _logo_svg if _logo_svg.exists() else _logo_png
-
-st.markdown(
-    """
-    <style>
-      .temp-hero-wrap {
-        border: 1px solid rgba(148,163,184,0.3);
-        background: linear-gradient(120deg, rgba(2,132,199,0.12), rgba(37,99,235,0.08));
-        border-radius: 14px;
-        padding: 14px 18px;
-        margin-bottom: 0.4rem;
-      }
-      .temp-hero-title {
-        margin: 0;
-        font-size: 1.75rem;
-      }
-      .temp-hero-sub {
-        margin: 0.35rem 0 0;
-        color: #475569;
-      }
-      .temp-hero-logo {
-        width: 112px;
-        max-width: 100%;
-        height: auto;
-        object-fit: contain;
-        display: block;
-      }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-st.markdown('<div class="temp-hero-wrap">', unsafe_allow_html=True)
-logo_col, text_col = st.columns([1, 8], vertical_alignment="center")
-with logo_col:
-    if _logo_file.exists():
-        st.image(str(_logo_file), width=112)
-with text_col:
-    st.markdown('<h1 class="temp-hero-title">Temperance</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="temp-hero-sub">Local-first running load tracker (aerobic + mechanical)</p>', unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
-
 DEFAULT_RESTING_HR = 45.0
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0

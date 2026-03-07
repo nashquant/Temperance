@@ -15,6 +15,13 @@ log() {
   printf '[%s] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"
 }
 
+# Auto-sync disabled by default.
+# Set TEMPERANCE_ENABLE_GIT_AUTOSYNC=1 if you explicitly want this script active.
+if [[ "${TEMPERANCE_ENABLE_GIT_AUTOSYNC:-0}" != "1" ]]; then
+  log "auto-sync disabled (TEMPERANCE_ENABLE_GIT_AUTOSYNC != 1); skipping."
+  exit 0
+fi
+
 cd "${REPO_DIR}"
 
 if [[ ! -d .git ]]; then
@@ -61,4 +68,3 @@ if [[ -x "${KEEPALIVE_SCRIPT}" ]]; then
 else
   log "keepalive script not found/executable; skipped restart."
 fi
-
