@@ -1907,6 +1907,91 @@ def _merge_metrics_with_custom(base_df: pd.DataFrame, custom_df: pd.DataFrame) -
     return merged
 
 
+def _curve_points_cache_key(points: list[tuple[datetime, float]] | None) -> tuple[tuple[str, float], ...]:
+    out: list[tuple[str, float]] = []
+    for ts, val in (points or []):
+        ts_norm = pd.to_datetime(ts, utc=True, errors="coerce")
+        ts_key = ts_norm.isoformat() if pd.notna(ts_norm) else str(ts)
+        try:
+            v_key = float(val)
+        except Exception:
+            v_key = 0.0
+        out.append((ts_key, v_key))
+    return tuple(out)
+
+
+def _get_metrics_df_local_cached(
+    db_path: Path,
+    activities_cache_key: str,
+    activity_splits_cache_key: str,
+    lthr_bpm: float,
+    lthr_curve_points: list[tuple[datetime, float]] | None,
+    threshold_pace_default_sec: float,
+    threshold_pace_curve_points: list[tuple[datetime, float]] | None,
+    use_split_method: bool,
+) -> pd.DataFrame:
+    cache_key = (
+        str(db_path),
+        str(activities_cache_key),
+        str(activity_splits_cache_key),
+        float(lthr_bpm),
+        _curve_points_cache_key(lthr_curve_points),
+        float(threshold_pace_default_sec),
+        _curve_points_cache_key(threshold_pace_curve_points),
+        bool(use_split_method),
+    )
+    if st.session_state.get("_metrics_df_local_cache_key") == cache_key and isinstance(
+        st.session_state.get("_metrics_df_local_cache_value"), pd.DataFrame
+    ):
+        return st.session_state["_metrics_df_local_cache_value"]
+    df = get_metrics_df_fast(
+        db_path=db_path,
+        activities_cache_key=activities_cache_key,
+        activity_splits_cache_key=activity_splits_cache_key,
+        lthr_bpm=lthr_bpm,
+        lthr_curve_points=lthr_curve_points,
+        threshold_pace_default_sec=threshold_pace_default_sec,
+        threshold_pace_curve_points=threshold_pace_curve_points,
+        use_split_method=use_split_method,
+    )
+    st.session_state["_metrics_df_local_cache_key"] = cache_key
+    st.session_state["_metrics_df_local_cache_value"] = df
+    return df
+
+
+def _get_custom_metrics_df_local_cached(
+    db_path: Path,
+    custom_activities_cache_key: str,
+    lthr_bpm: float,
+    lthr_curve_points: list[tuple[datetime, float]] | None,
+    threshold_pace_default_sec: float,
+    threshold_pace_curve_points: list[tuple[datetime, float]] | None,
+) -> pd.DataFrame:
+    cache_key = (
+        str(db_path),
+        str(custom_activities_cache_key),
+        float(lthr_bpm),
+        _curve_points_cache_key(lthr_curve_points),
+        float(threshold_pace_default_sec),
+        _curve_points_cache_key(threshold_pace_curve_points),
+    )
+    if st.session_state.get("_custom_metrics_df_local_cache_key") == cache_key and isinstance(
+        st.session_state.get("_custom_metrics_df_local_cache_value"), pd.DataFrame
+    ):
+        return st.session_state["_custom_metrics_df_local_cache_value"]
+    df = _build_custom_metrics_df_for_plots(
+        db_path=db_path,
+        custom_activities_cache_key=custom_activities_cache_key,
+        lthr_bpm=lthr_bpm,
+        lthr_curve_points=lthr_curve_points,
+        threshold_pace_default_sec=threshold_pace_default_sec,
+        threshold_pace_curve_points=threshold_pace_curve_points,
+    )
+    st.session_state["_custom_metrics_df_local_cache_key"] = cache_key
+    st.session_state["_custom_metrics_df_local_cache_value"] = df
+    return df
+
+
 def _build_split_metrics_for_activity(
     activity_row: pd.Series,
     split_row: dict | None,
@@ -2465,7 +2550,7 @@ if view == "User Inputs":
 activities_cache_key = get_activities_cache_key(cfg.db_path)
 activity_splits_cache_key = get_activity_splits_cache_key(cfg.db_path)
 custom_activities_cache_key = get_custom_activities_cache_key(cfg.db_path)
-metrics_df = get_metrics_df_fast(
+metrics_df = _get_metrics_df_local_cached(
     db_path=cfg.db_path,
     activities_cache_key=activities_cache_key,
     activity_splits_cache_key=activity_splits_cache_key,
@@ -2479,16 +2564,17 @@ daily_summary_df = get_daily_summary_df(cfg.db_path)
 
 if view == "Dashboard":
     st.header("Dashboard")
+    custom_metrics_df = _get_custom_metrics_df_local_cached(
+        db_path=cfg.db_path,
+        custom_activities_cache_key=custom_activities_cache_key,
+        lthr_bpm=float(derived_lthr_bpm),
+        lthr_curve_points=lthr_curve_points,
+        threshold_pace_default_sec=float(derived_threshold_pace_sec),
+        threshold_pace_curve_points=lt_pace_curve_points,
+    )
     dashboard_metrics_df = _merge_metrics_with_custom(
         metrics_df,
-        _build_custom_metrics_df_for_plots(
-            db_path=cfg.db_path,
-            custom_activities_cache_key=custom_activities_cache_key,
-            lthr_bpm=float(derived_lthr_bpm),
-            lthr_curve_points=lthr_curve_points,
-            threshold_pace_default_sec=float(derived_threshold_pace_sec),
-            threshold_pace_curve_points=lt_pace_curve_points,
-        ),
+        custom_metrics_df,
     )
 
     if dashboard_metrics_df.empty:
@@ -3170,15 +3256,15 @@ if view == "Dashboard":
                         .properties(height=280)
                     )
                     rff_threshold = (
-                        alt.Chart(pd.DataFrame({"threshold": [rff_threshold_value]}))
+                        alt.Chart()
                         .mark_rule(color="#f59e0b", strokeDash=[6, 4], opacity=0.8)
-                        .encode(y="threshold:Q")
+                        .encode(y=alt.datum(rff_threshold_value))
                     )
-                    rff_chart = alt.layer(rff_chart, rff_threshold)
                     rff_chart = alt.layer(
                         build_injury_layer(saved_injury_windows, start_ts, end_ts),
                         rff_chart,
-                    ).resolve_scale(y="independent")
+                        rff_threshold,
+                    )
                     if enable_zoom:
                         rff_chart = rff_chart.interactive()
                     st.altair_chart(
@@ -3566,16 +3652,17 @@ if view == "Dashboard":
 if view in {"Weekly Summary", "Activity Summary"}:
     st.header("Weekly Summary" if view == "Weekly Summary" else "Activity Summary")
 
+    custom_metrics_df = _get_custom_metrics_df_local_cached(
+        db_path=cfg.db_path,
+        custom_activities_cache_key=custom_activities_cache_key,
+        lthr_bpm=float(derived_lthr_bpm),
+        lthr_curve_points=lthr_curve_points,
+        threshold_pace_default_sec=float(derived_threshold_pace_sec),
+        threshold_pace_curve_points=lt_pace_curve_points,
+    )
     calendar_metrics_df = _merge_metrics_with_custom(
         metrics_df,
-        _build_custom_metrics_df_for_plots(
-            db_path=cfg.db_path,
-            custom_activities_cache_key=custom_activities_cache_key,
-            lthr_bpm=float(derived_lthr_bpm),
-            lthr_curve_points=lthr_curve_points,
-            threshold_pace_default_sec=float(derived_threshold_pace_sec),
-            threshold_pace_curve_points=lt_pace_curve_points,
-        ),
+        custom_metrics_df,
     )
 
     if calendar_metrics_df.empty:

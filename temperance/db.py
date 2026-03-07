@@ -648,12 +648,15 @@ def upsert_wellness_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
 
 def get_runs_df(db_path: Path) -> pd.DataFrame:
     with closing(get_conn(db_path)) as conn:
+        # Avoid loading heavy raw payload blobs on every rerun; charts/metrics do not use raw_json.
+        cols = [
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(activities)").fetchall()
+            if str(row["name"]) != "raw_json"
+        ]
+        col_sql = ", ".join([f'"{c}"' for c in cols]) if cols else "*"
         return pd.read_sql_query(
-            """
-            SELECT *
-            FROM activities
-            ORDER BY start_time_utc DESC
-            """,
+            f"SELECT {col_sql} FROM activities ORDER BY start_time_utc DESC",
             conn,
         )
 
