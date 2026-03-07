@@ -2915,6 +2915,8 @@ if view == "Dashboard":
             value_cols: list[str],
             label_map: dict[str, str],
             use_weekly: bool,
+            start_day: pd.Timestamp | None = None,
+            end_day: pd.Timestamp | None = None,
         ) -> pd.DataFrame:
             if source_df.empty:
                 return pd.DataFrame(columns=["period_start", "series", "value"])
@@ -2938,6 +2940,16 @@ if view == "Dashboard":
                 var_name="series",
                 value_name="value",
             )
+            long_df["period_start"] = pd.to_datetime(long_df["period_start"], errors="coerce")
+            long_df = long_df.dropna(subset=["period_start"]).copy()
+            # Keep chart range deterministic and prevent silently off-range points.
+            if start_day is not None and end_day is not None:
+                range_start = pd.Timestamp(start_day)
+                range_end_exclusive = pd.Timestamp(end_day) + pd.Timedelta(days=1)
+                long_df = long_df[
+                    (long_df["period_start"] >= range_start)
+                    & (long_df["period_start"] < range_end_exclusive)
+                ].copy()
             long_df["value"] = pd.to_numeric(long_df["value"], errors="coerce").fillna(0.0)
             long_df["series"] = long_df["series"].map(label_map).fillna(long_df["series"].astype(str))
             return long_df.dropna(subset=["period_start"]).sort_values(["period_start", "series"])
@@ -3050,6 +3062,8 @@ if view == "Dashboard":
                     value_cols=["fitness", "fatigue"],
                     label_map={"fitness": "Fitness", "fatigue": "Fatigue"},
                     use_weekly=weekly_toggle,
+                    start_day=start_ts,
+                    end_day=end_ts,
                 )
                 if weekly_ff_long.empty:
                     st.caption("No fitness/fatigue data to plot.")
@@ -3062,6 +3076,9 @@ if view == "Dashboard":
                             x=alt.X(
                                 "period_start:T",
                                 axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
+                                scale=alt.Scale(
+                                    domain=[pd.Timestamp(start_ts), pd.Timestamp(end_ts) + pd.Timedelta(days=1)]
+                                ),
                             ),
                             y=alt.Y(
                                 "value:Q",
@@ -3095,6 +3112,8 @@ if view == "Dashboard":
                     value_cols=["leg_elasticity", "pounding"],
                     label_map={"leg_elasticity": "Leg Elasticity", "pounding": "Pounding"},
                     use_weekly=weekly_toggle,
+                    start_day=start_ts,
+                    end_day=end_ts,
                 )
                 if weekly_rff_long.empty:
                     st.caption("No Leg Elasticity/Pounding data in this range.")
@@ -3104,7 +3123,13 @@ if view == "Dashboard":
                         alt.Chart(weekly_rff_long)
                         .mark_line(point=alt.OverlayMarkDef(filled=True, size=54), strokeWidth=2.2)
                         .encode(
-                            x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                            x=alt.X(
+                                "period_start:T",
+                                axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
+                                scale=alt.Scale(
+                                    domain=[pd.Timestamp(start_ts), pd.Timestamp(end_ts) + pd.Timedelta(days=1)]
+                                ),
+                            ),
                             y=alt.Y(
                                 "value:Q",
                                 axis=alt.Axis(format=".0f"),
@@ -3234,6 +3259,8 @@ if view == "Dashboard":
                     value_cols=["overreach", "injury_risk"],
                     label_map={"overreach": "Overreach", "injury_risk": "Injury Risk"},
                     use_weekly=weekly_toggle,
+                    start_day=start_ts,
+                    end_day=end_ts,
                 )
                 if weekly_fr_long.empty:
                     st.caption("No Overreach/Injury Risk data to plot.")
@@ -3243,7 +3270,13 @@ if view == "Dashboard":
                         alt.Chart(weekly_fr_long)
                         .mark_line(point=alt.OverlayMarkDef(filled=True, size=54), strokeWidth=2.2)
                         .encode(
-                            x=alt.X("period_start:T", axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10)),
+                            x=alt.X(
+                                "period_start:T",
+                                axis=alt.Axis(title="", format="%b %d", labelOverlap="greedy", tickCount=10),
+                                scale=alt.Scale(
+                                    domain=[pd.Timestamp(start_ts), pd.Timestamp(end_ts) + pd.Timedelta(days=1)]
+                                ),
+                            ),
                             y=alt.Y(
                                 "value:Q",
                                 axis=alt.Axis(format=".0f"),
