@@ -1204,6 +1204,7 @@ def _expand_planned_segments(
         bpm = _parse_bpm_token(chunk)
         pace = _parse_pace_token(chunk)
         if_input = _parse_if_token(chunk)
+        if_input_source: str | None = "explicit" if if_input is not None else None
         tss_input = _parse_tss_token(chunk)
         if kind == "other" and pace is not None:
             # pace implies run-like segment
@@ -1249,6 +1250,7 @@ def _expand_planned_segments(
                 if seg_duration_h > 0:
                     derived_if = (per_rep_tss / (seg_duration_h * 100.0)) ** 0.5
                     if_input = max(float(derived_if), 0.0)
+                    if_input_source = "tss_derived"
                     if is_running_like and pace is None and threshold_pace_value > 0 and if_input > 0:
                         pace = threshold_pace_value / if_input
                     elif (not is_running_like) and bpm is None and lthr_value > 0 and if_input > 0:
@@ -1261,6 +1263,7 @@ def _expand_planned_segments(
                         "avg_hr_bpm": bpm,
                         "pace_s_per_km": pace,
                         "if_input": if_input,
+                        "if_input_source": if_input_source,
                         "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
                         "source": chunk,
                     }
@@ -1296,6 +1299,7 @@ def _expand_planned_segments(
                         "avg_hr_bpm": bpm,
                         "pace_s_per_km": pace,
                         "if_input": if_input,
+                        "if_input_source": if_input_source,
                         "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
                         "source": chunk,
                     }
@@ -1331,6 +1335,7 @@ def _expand_planned_segments(
                         "avg_hr_bpm": bpm,
                         "pace_s_per_km": pace,
                         "if_input": if_input,
+                        "if_input_source": if_input_source,
                         "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
                         "source": chunk,
                     }
@@ -1369,6 +1374,7 @@ def _expand_planned_segments(
                 continue
             derived_if = (float(tss_input) / (duration_h * 100.0)) ** 0.5
             if_input = max(float(derived_if), 0.0)
+            if_input_source = "tss_derived"
             if is_running_like:
                 if threshold_pace_value <= 0:
                     warnings.append(f"Missing LT pace to convert TSS to pace in: `{chunk}`")
@@ -1387,6 +1393,7 @@ def _expand_planned_segments(
                 "avg_hr_bpm": bpm,
                 "pace_s_per_km": pace,
                 "if_input": if_input,
+                "if_input_source": if_input_source,
                 "tss_target": float(tss_input) if tss_input else None,
                 "source": chunk,
             }
@@ -1483,6 +1490,35 @@ def _planned_segment_metrics(
     }
 
 
+def _segment_with_effective_intensity_for_metrics(
+    seg: dict[str, float | str | None],
+    seg_kind: str,
+    seg_spec: float,
+) -> dict[str, float | str | None]:
+    """Ensure @TSS for non-running is treated as final post-scale TSS target."""
+    seg_for_metrics = dict(seg)
+    is_running_like = seg_kind in {"run", "treadmill"}
+    if is_running_like:
+        return seg_for_metrics
+    if_input_source = str(seg_for_metrics.get("if_input_source") or "").strip().lower()
+    if if_input_source != "tss_derived":
+        return seg_for_metrics
+    tss_target = pd.to_numeric(pd.Series([seg_for_metrics.get("tss_target")]), errors="coerce").fillna(0.0).iloc[0]
+    duration_min = pd.to_numeric(pd.Series([seg_for_metrics.get("duration_min")]), errors="coerce").fillna(0.0).iloc[0]
+    spec = float(max(seg_spec, 0.0))
+    duration_h = float(max(duration_min, 0.0)) / 60.0
+    if spec <= 0 or duration_h <= 0 or float(tss_target) <= 0:
+        return seg_for_metrics
+    # tss_target is user-facing final TSS; metrics apply seg_spec later, so invert it here.
+    unscaled_tss_target = float(tss_target) / spec
+    derived_if = (unscaled_tss_target / (duration_h * 100.0)) ** 0.5
+    if derived_if > 0:
+        seg_for_metrics["if_input"] = float(derived_if)
+        seg_for_metrics["avg_hr_bpm"] = None
+        seg_for_metrics["pace_s_per_km"] = None
+    return seg_for_metrics
+
+
 def _sum_duration_s_from_parsed_segments(raw_segments: object) -> float:
     segments: list[dict[str, object]] = []
     if isinstance(raw_segments, list):
@@ -1566,8 +1602,9 @@ def _compute_planned_rows_metrics_df(
         for seg in segments:
             seg_kind = str(seg.get("kind") or "").strip().lower()
             seg_spec = _specificity_factor_for_plan_kind(seg_kind, specificity_profile)
+            seg_for_metrics = _segment_with_effective_intensity_for_metrics(seg, seg_kind=seg_kind, seg_spec=seg_spec)
             m = _planned_segment_metrics(
-                seg,
+                seg_for_metrics,
                 lthr_bpm=lthr_for_day,
                 threshold_pace_sec_per_km=lt_pace_for_day,
                 non_running_factor=seg_spec,
@@ -4764,6 +4801,44 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         padding: 0;
                         border-radius: 0;
                     }
+                    div[data-testid="stHorizontalBlock"]:has(.cal-week-summary) {
+                        flex-direction: column !important;
+                        align-items: stretch !important;
+                        gap: 0.55rem !important;
+                    }
+                    div[data-testid="stHorizontalBlock"]:has(.cal-week-summary) > div[data-testid="column"] {
+                        width: 100% !important;
+                        min-width: 100% !important;
+                        flex: 1 1 100% !important;
+                    }
+                    .cal-week-summary {
+                        margin-bottom: 2px;
+                        padding: 10px 12px;
+                    }
+                    .cal-day-header {
+                        margin-top: 6px;
+                        margin-bottom: 4px;
+                        font-size: 0.96rem;
+                    }
+                    .cal-day-meta {
+                        min-height: 0;
+                        max-height: none;
+                        margin-bottom: 6px;
+                        -webkit-line-clamp: unset;
+                    }
+                    div[data-testid="stButton"] > button[kind="tertiary"],
+                    div[data-testid="stButton"] > button[kind="tertiary"]:hover,
+                    div[data-testid="stButton"] > button[kind="tertiary"]:focus,
+                    div[data-testid="stButton"] > button[kind="tertiary"]:focus-visible,
+                    div[data-testid="stButton"] > button[kind="tertiary"]:active,
+                    div[data-testid="stButton"] > button[kind="primary"],
+                    div[data-testid="stButton"] > button[kind="primary"]:hover,
+                    div[data-testid="stButton"] > button[kind="primary"]:focus,
+                    div[data-testid="stButton"] > button[kind="primary"]:focus-visible,
+                    div[data-testid="stButton"] > button[kind="primary"]:active {
+                        min-height: 70px;
+                        padding: 8px 10px;
+                    }
                 }
                 </style>
                 """,
@@ -6574,8 +6649,9 @@ if view == "Custom Activities":
             for seg in segments:
                 seg_kind = str(seg.get("kind") or "").strip().lower()
                 seg_spec = _specificity_factor_for_plan_kind(seg_kind, custom_specificity_profile)
+                seg_for_metrics = _segment_with_effective_intensity_for_metrics(seg, seg_kind=seg_kind, seg_spec=seg_spec)
                 m = _planned_segment_metrics(
-                    seg,
+                    seg_for_metrics,
                     lthr_bpm=lthr_for_day,
                     threshold_pace_sec_per_km=lt_pace_for_day,
                     non_running_factor=seg_spec,
