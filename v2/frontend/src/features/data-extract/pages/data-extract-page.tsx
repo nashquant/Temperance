@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -10,6 +10,10 @@ import { useCustomActivitiesQuery } from '@/features/custom-activities/hooks/use
 import { deleteCustomActivity, ingestCustomActivities } from '@/features/custom-activities/services/custom-activities-api';
 import { useDataExtractStatusQuery } from '@/features/data-extract/hooks/use-data-extract-status';
 import { runComprehensiveExtract } from '@/features/data-extract/services/data-extract-api';
+import { PlannedMetricSelector } from '@/features/plan-activities/components/planned-metric-selector';
+import { PlannedWeekChart } from '@/features/plan-activities/components/planned-week-chart';
+import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { queryClient } from '@/lib/query-client';
 
 function todayIso(): string {
@@ -26,6 +30,8 @@ export function DataExtractPage(): JSX.Element {
   const [includeDetails, setIncludeDetails] = useState(true);
   const [includeWellness, setIncludeWellness] = useState(false);
   const [customEntryText, setCustomEntryText] = useState('');
+  const [customSelectedWeek, setCustomSelectedWeek] = useState('');
+  const [customMetric, setCustomMetric] = useState<PlannedMetricView>('tss');
 
   const [result, setResult] = useState<string | null>(null);
   const [customResult, setCustomResult] = useState<string | null>(null);
@@ -170,6 +176,38 @@ export function DataExtractPage(): JSX.Element {
     },
   });
 
+  const customWeeks = customActivitiesQuery.data?.weeks ?? [];
+  const selectedCustomWeek = useMemo(() => {
+    if (customWeeks.length === 0) return null;
+    if (!customSelectedWeek) return customWeeks[0];
+    return customWeeks.find((week) => week.week_start === customSelectedWeek) ?? customWeeks[0];
+  }, [customSelectedWeek, customWeeks]);
+
+  const customRowsForWeek = useMemo(() => {
+    if (!selectedCustomWeek) return [];
+    const start = new Date(`${selectedCustomWeek.week_start}T00:00:00`);
+    const end = new Date(`${selectedCustomWeek.week_end}T23:59:59`);
+    return (customActivitiesQuery.data?.rows ?? []).filter((row) => {
+      const day = new Date(`${row.day_utc}T12:00:00`);
+      return day >= start && day <= end;
+    });
+  }, [customActivitiesQuery.data?.rows, selectedCustomWeek]);
+
+  const customWeekChartRows = useMemo(() => {
+    if (!selectedCustomWeek) return [];
+    const start = new Date(`${selectedCustomWeek.week_start}T00:00:00`);
+    return Array.from({ length: 7 }).map((_, index) => {
+      const day = new Date(start);
+      day.setDate(start.getDate() + index);
+      const dayIso = day.toISOString().slice(0, 10);
+      const total = customRowsForWeek
+        .filter((row) => row.day_utc === dayIso)
+        .reduce((sum, row) => sum + Number(row[customMetric] ?? 0), 0);
+      const dayLabel = new Intl.DateTimeFormat('en-US', { weekday: 'short', day: 'numeric', month: 'short' }).format(day);
+      return { dayLabel, value: total };
+    });
+  }, [customMetric, customRowsForWeek, selectedCustomWeek]);
+
   if (statusQuery.isLoading) {
     return (
       <section className="space-y-3">
@@ -257,18 +295,42 @@ export function DataExtractPage(): JSX.Element {
             {customResult ? <p className="text-xs text-muted-foreground">{customResult}</p> : null}
           </div>
 
-          {customActivitiesQuery.data?.weeks?.length ? (
-            <div className="grid gap-2 md:grid-cols-4">
-              {customActivitiesQuery.data.weeks.slice(0, 4).map((week) => (
-                <div key={week.week_start} className="rounded border p-2 text-xs">
-                  <p className="text-muted-foreground">{week.week_start} - {week.week_end}</p>
-                  <p className="font-semibold">{week.custom_activities} activities</p>
+          {customWeeks.length > 0 ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={selectedCustomWeek?.week_start ?? ''}
+                  onValueChange={(value) => setCustomSelectedWeek(value)}
+                >
+                  <SelectTrigger className="w-[220px]">
+                    <SelectValue placeholder="Select week" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customWeeks.map((week) => (
+                      <SelectItem key={week.week_start} value={week.week_start}>
+                        {week.week_start} - {week.week_end}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <PlannedMetricSelector value={customMetric} onValueChange={setCustomMetric} />
+              </div>
+
+              {selectedCustomWeek ? (
+                <div className="rounded border p-2 text-xs">
                   <p className="text-muted-foreground">
-                    TSS {Math.round(week.tss)} · rTSS {Math.round(week.rtss)} · Dist {Math.round(week.distance_eqv_km)} kmeq
+                    {selectedCustomWeek.week_start} - {selectedCustomWeek.week_end}
+                  </p>
+                  <p className="font-semibold">{selectedCustomWeek.custom_activities} activities</p>
+                  <p className="text-muted-foreground">
+                    TSS {Math.round(selectedCustomWeek.tss)} · rTSS {Math.round(selectedCustomWeek.rtss)} · Dist{' '}
+                    {Math.round(selectedCustomWeek.distance_eqv_km)} kmeq
                   </p>
                 </div>
-              ))}
-            </div>
+              ) : null}
+
+              <PlannedWeekChart data={customWeekChartRows} metric={customMetric} />
+            </>
           ) : null}
 
           <div className="overflow-x-auto rounded border">
@@ -284,7 +346,7 @@ export function DataExtractPage(): JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {(customActivitiesQuery.data?.rows ?? []).slice(0, 30).map((row) => (
+                {customRowsForWeek.map((row) => (
                   <tr key={`${row.day_utc}-${row.line_no}`} className="border-t">
                     <td className="px-2 py-2">{row.day_utc}</td>
                     <td className="px-2 py-2">{row.activity}</td>
@@ -302,10 +364,10 @@ export function DataExtractPage(): JSX.Element {
                     </td>
                   </tr>
                 ))}
-                {!customActivitiesQuery.isLoading && (customActivitiesQuery.data?.rows.length ?? 0) === 0 ? (
+                {!customActivitiesQuery.isLoading && customRowsForWeek.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-2 py-3 text-center text-xs text-muted-foreground">
-                      No custom activities yet.
+                      No custom activities in the selected week.
                     </td>
                   </tr>
                 ) : null}
