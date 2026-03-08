@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -30,13 +30,42 @@ export function DataExtractPage(): JSX.Element {
   const [result, setResult] = useState<string | null>(null);
   const [customResult, setCustomResult] = useState<string | null>(null);
   const [extractLogs, setExtractLogs] = useState<string[]>([]);
+  const previousCountsRef = useRef<Record<string, number> | null>(null);
+  const baselineCountsRef = useRef<Record<string, number> | null>(null);
+  const heartbeatTickRef = useRef(0);
+
+  const stamp = () => `[${new Date().toLocaleTimeString()}]`;
+  const safeCount = (counts: Record<string, number> | null | undefined, key: string) => Number(counts?.[key] ?? 0);
+  const summarizeDelta = (
+    current: Record<string, number>,
+    previous: Record<string, number>,
+    baseline: Record<string, number>,
+  ) => {
+    const keys = ['activities', 'activity_details', 'activity_splits', 'sleep_daily', 'wellness_daily'];
+    const stepParts: string[] = [];
+    const totalParts: string[] = [];
+
+    keys.forEach((key) => {
+      const step = safeCount(current, key) - safeCount(previous, key);
+      const total = safeCount(current, key) - safeCount(baseline, key);
+      if (step > 0) stepParts.push(`${key} +${step}`);
+      if (total > 0) totalParts.push(`${key} +${total}`);
+    });
+
+    return { stepParts, totalParts };
+  };
 
   const comprehensiveMutation = useMutation({
     mutationFn: async () => {
       if (!session?.token) throw new Error('Missing auth token');
+      const counts = statusQuery.data?.counts ?? {};
+      previousCountsRef.current = { ...counts };
+      baselineCountsRef.current = { ...counts };
+      heartbeatTickRef.current = 0;
       setExtractLogs((previous) => [
         ...previous,
-        `[${new Date().toLocaleTimeString()}] Started comprehensive extract`,
+        `${stamp()} Started comprehensive extract`,
+        `${stamp()} Baseline: activities=${safeCount(counts, 'activities')}, details=${safeCount(counts, 'activity_details')}, splits=${safeCount(counts, 'activity_splits')}, sleep=${safeCount(counts, 'sleep_daily')}, wellness=${safeCount(counts, 'wellness_daily')}`,
       ]);
       return runComprehensiveExtract({
         token: session.token,
@@ -52,10 +81,13 @@ export function DataExtractPage(): JSX.Element {
     },
     onSuccess: async (response) => {
       await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
+      const latest = await statusQuery.refetch();
+      const counts = latest.data?.counts ?? {};
       setResult(`Comprehensive extract complete: ${response.summary}`);
       setExtractLogs((previous) => [
         ...previous,
-        `[${new Date().toLocaleTimeString()}] Completed: ${response.summary}`,
+        `${stamp()} Completed: ${response.summary}`,
+        `${stamp()} Final counts: activities=${safeCount(counts, 'activities')}, details=${safeCount(counts, 'activity_details')}, splits=${safeCount(counts, 'activity_splits')}, sleep=${safeCount(counts, 'sleep_daily')}, wellness=${safeCount(counts, 'wellness_daily')}`,
         ...response.errors.map((error) => `[${new Date().toLocaleTimeString()}] Warning: ${error}`),
       ]);
     },
@@ -63,21 +95,40 @@ export function DataExtractPage(): JSX.Element {
       setResult(error instanceof Error ? error.message : 'Comprehensive extract failed');
       setExtractLogs((previous) => [
         ...previous,
-        `[${new Date().toLocaleTimeString()}] Failed: ${error instanceof Error ? error.message : 'Comprehensive extract failed'}`,
+        `${stamp()} Failed: ${error instanceof Error ? error.message : 'Comprehensive extract failed'}`,
       ]);
     },
   });
 
   useEffect(() => {
     if (!comprehensiveMutation.isPending) return undefined;
+    let busy = false;
     const interval = window.setInterval(() => {
-      setExtractLogs((previous) => [
-        ...previous,
-        `[${new Date().toLocaleTimeString()}] Extract still running...`,
-      ]);
-    }, 3000);
+      if (busy) return;
+      busy = true;
+      void statusQuery.refetch().then((snapshot) => {
+        const current = snapshot.data?.counts ?? null;
+        const previous = previousCountsRef.current;
+        const baseline = baselineCountsRef.current;
+        heartbeatTickRef.current += 1;
+        if (!current || !previous || !baseline) return;
+
+        const { stepParts, totalParts } = summarizeDelta(current, previous, baseline);
+        if (stepParts.length > 0) {
+          setExtractLogs((prior) => [
+            ...prior,
+            `${stamp()} Pulled ${stepParts.join(', ')} | run total: ${totalParts.join(', ')}`,
+          ]);
+        } else if (heartbeatTickRef.current % 4 === 0) {
+          setExtractLogs((prior) => [...prior, `${stamp()} Extract running... no new rows in last poll`]);
+        }
+        previousCountsRef.current = { ...current };
+      }).finally(() => {
+        busy = false;
+      });
+    }, 2500);
     return () => window.clearInterval(interval);
-  }, [comprehensiveMutation.isPending]);
+  }, [comprehensiveMutation.isPending, statusQuery]);
 
   const customIngestMutation = useMutation({
     mutationFn: async () => {

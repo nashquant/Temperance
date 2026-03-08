@@ -1,3 +1,10 @@
+function safeDateFromIso(dayIso: string): Date | null {
+  const raw = String(dayIso || '').trim();
+  if (!raw) return null;
+  const date = new Date(`${raw}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function formatMetricValue(value: number, metric: 'tss' | 'rtss' | 'distance'): string {
   if (metric === 'distance') {
     return `${value.toFixed(1)} km`;
@@ -7,7 +14,8 @@ export function formatMetricValue(value: number, metric: 'tss' | 'rtss' | 'dista
 }
 
 export function formatDayLabel(dayIso: string): string {
-  const date = new Date(`${dayIso}T00:00:00`);
+  const date = safeDateFromIso(dayIso);
+  if (!date) return dayIso || '-';
   return new Intl.DateTimeFormat('en-US', {
     day: 'numeric',
     month: 'short',
@@ -16,8 +24,9 @@ export function formatDayLabel(dayIso: string): string {
 }
 
 export function formatRange(startIso: string, endIso: string): string {
-  const start = new Date(`${startIso}T00:00:00`);
-  const end = new Date(`${endIso}T00:00:00`);
+  const start = safeDateFromIso(startIso);
+  const end = safeDateFromIso(endIso);
+  if (!start || !end) return 'Current week';
 
   const formattedStart = new Intl.DateTimeFormat('en-US', {
     month: 'short',
