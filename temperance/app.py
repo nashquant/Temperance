@@ -2622,31 +2622,74 @@ def build_recovery_daily_frame(sleep_df: pd.DataFrame, wellness_df: pd.DataFrame
         merged = merged.merge(p, on="day", how="outer")
     return merged.sort_values("day")
 
-with st.sidebar:
-    st.header("Navigation")
-    auth_on = _auth_enabled()
-    users = _auth_users()
-    if "auth_user" not in st.session_state:
-        st.session_state["auth_user"] = None
-    if "auth_role" not in st.session_state:
-        st.session_state["auth_role"] = None
+auth_on = _auth_enabled()
+users = _auth_users()
+if "auth_user" not in st.session_state:
+    st.session_state["auth_user"] = None
+if "auth_role" not in st.session_state:
+    st.session_state["auth_role"] = None
 
-    if auth_on and not users:
-        st.error("Auth enabled but no credentials configured. Set TEMPERANCE_ADMIN_PASSWORD.")
-        st.stop()
+if auth_on and not users:
+    st.error("Auth enabled but no credentials configured. Set TEMPERANCE_ADMIN_PASSWORD.")
+    st.stop()
 
-    if auth_on and not st.session_state.get("auth_user"):
-        st.subheader("Login")
-        login_user = st.text_input("User", key="login_user")
-        login_pass = st.text_input("Password", type="password", key="login_pass")
-        if st.button("Sign in", key="login_submit"):
+if auth_on and not st.session_state.get("auth_user"):
+    st.markdown(
+        """
+        <style>
+        .auth-login-shell {
+            max-width: 440px;
+            margin: 6vh auto 0 auto;
+            padding: 18px 16px 14px 16px;
+            border: 1px solid rgba(148,163,184,0.28);
+            border-radius: 14px;
+            background: rgba(15,23,42,0.70);
+        }
+        .auth-login-title {
+            font-size: 1.55rem;
+            font-weight: 700;
+            line-height: 1.2;
+            margin-bottom: 4px;
+        }
+        .auth-login-subtitle {
+            color: rgba(148,163,184,0.95);
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+        @media (max-width: 768px) {
+            .auth-login-shell {
+                margin-top: 2vh;
+                max-width: 100%;
+                padding: 14px 12px 12px 12px;
+                border-radius: 10px;
+            }
+        }
+        </style>
+        <div class="auth-login-shell">
+            <div class="auth-login-title">Sign in</div>
+            <div class="auth-login-subtitle">Access your Temperance dashboard</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    login_error = None
+    with st.form("main_login_form", clear_on_submit=False):
+        login_user = st.text_input("User", key="login_user_main")
+        login_pass = st.text_input("Password", type="password", key="login_pass_main")
+        login_submit = st.form_submit_button("Sign in", use_container_width=True)
+        if login_submit:
             resolved_user, user_data = resolve_user(users, login_user)
             if user_data and password_matches(login_pass, user_data["password_hash"]):
                 st.session_state["auth_user"] = resolved_user
                 st.session_state["auth_role"] = user_data["role"]
                 st.rerun()
-            st.error("Invalid credentials.")
-        st.stop()
+            login_error = "Invalid credentials."
+    if login_error:
+        st.error(login_error)
+    st.stop()
+
+with st.sidebar:
+    st.header("Navigation")
 
     if auth_on:
         st.caption(f"Signed in as `{st.session_state.get('auth_user')}` ({st.session_state.get('auth_role')})")
