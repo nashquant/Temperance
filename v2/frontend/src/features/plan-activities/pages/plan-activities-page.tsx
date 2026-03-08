@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -11,7 +11,12 @@ import { PlannedMetricSelector } from '@/features/plan-activities/components/pla
 import { PlannedWeekChart } from '@/features/plan-activities/components/planned-week-chart';
 import { PlannedWeekSelector } from '@/features/plan-activities/components/planned-week-selector';
 import { usePlanActivitiesQuery } from '@/features/plan-activities/hooks/use-plan-activities-query';
-import { deletePlannedActivity, setPlannedManualDone } from '@/features/plan-activities/services/plan-activities-api';
+import {
+  deletePlannedActivity,
+  ingestPlannedActivities,
+  setPlannedManualDone,
+  updatePlannedWorkout,
+} from '@/features/plan-activities/services/plan-activities-api';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
 import { queryClient } from '@/lib/query-client';
 
@@ -26,6 +31,13 @@ export function PlanActivitiesPage(): JSX.Element {
   const query = usePlanActivitiesQuery(4);
   const [metric, setMetric] = useState<PlannedMetricView>('tss');
   const [selectedWeek, setSelectedWeek] = useState<string>('');
+  const [entryText, setEntryText] = useState('');
+  const [ingestResult, setIngestResult] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<Record<string, string>>({});
+
+  const refetchPlan = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['plan-activities'] });
+  };
 
   const manualDoneMutation = useMutation({
     mutationFn: async ({ dayUtc, lineNo, manualDone }: { dayUtc: string; lineNo: number; manualDone: boolean }) => {
@@ -38,9 +50,7 @@ export function PlanActivitiesPage(): JSX.Element {
         manualDone,
       });
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['plan-activities'] });
-    },
+    onSuccess: refetchPlan,
   });
 
   const deleteMutation = useMutation({
@@ -53,9 +63,45 @@ export function PlanActivitiesPage(): JSX.Element {
         lineNo,
       });
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['plan-activities'] });
+    onSuccess: refetchPlan,
+  });
+
+  const ingestMutation = useMutation({
+    mutationFn: async (text: string) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return ingestPlannedActivities({
+        token: session.token,
+        owner: profile?.owner,
+        entryText: text,
+      });
     },
+    onSuccess: async (response) => {
+      await refetchPlan();
+      if (response.errors.length > 0) {
+        setIngestResult(`Saved ${response.saved_count}. Some entries were skipped.`);
+      } else {
+        setIngestResult(`Saved ${response.saved_count} planned activit${response.saved_count === 1 ? 'y' : 'ies'}.`);
+      }
+      if (response.saved_count > 0) setEntryText('');
+    },
+    onError: (error) => {
+      setIngestResult(error instanceof Error ? error.message : 'Unable to save planned activities.');
+    },
+  });
+
+  const workoutUpdateMutation = useMutation({
+    mutationFn: async ({ dayUtc, lineNo, workoutText, manualDone }: { dayUtc: string; lineNo: number; workoutText: string; manualDone: boolean }) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      await updatePlannedWorkout({
+        token: session.token,
+        owner: profile?.owner,
+        dayUtc,
+        lineNo,
+        workoutText,
+        manualDone,
+      });
+    },
+    onSuccess: refetchPlan,
   });
 
   const weeks = query.data?.weeks ?? [];
@@ -72,6 +118,14 @@ export function PlanActivitiesPage(): JSX.Element {
       return day >= start && day <= end;
     });
   }, [effectiveWeek, query.data]);
+
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    selectedRows.forEach((row) => {
+      next[`${row.day_utc}-${row.line_no}`] = row.workout_text;
+    });
+    setEditValues(next);
+  }, [selectedRows]);
 
   const chartRows = useMemo(() => {
     if (!effectiveWeek) return [];
@@ -94,8 +148,26 @@ export function PlanActivitiesPage(): JSX.Element {
     <section className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Plan Activities</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Weekly planned outlook and per-activity planner details.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Use `[date]:[activity]` and `+` for intervals (same parser behavior as v1).</p>
       </div>
+
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <p className="text-sm font-medium">Quick add planned activities</p>
+          <textarea
+            className="min-h-[88px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+            placeholder="e.g. 3Mar26: 80min elliptical @140bpm; 2026-03-26: 10min run @4:50 + 5x6min @3:40/km"
+            value={entryText}
+            onChange={(event) => setEntryText(event.target.value)}
+          />
+          <div className="flex items-center gap-2">
+            <Button onClick={() => ingestMutation.mutate(entryText)} disabled={ingestMutation.isPending || !entryText.trim()}>
+              {ingestMutation.isPending ? 'Saving...' : 'Save planned entry'}
+            </Button>
+            {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
+          </div>
+        </CardContent>
+      </Card>
 
       {query.isLoading ? (
         <div className="space-y-3">
@@ -126,11 +198,7 @@ export function PlanActivitiesPage(): JSX.Element {
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <PlannedWeekSelector
-                  weeks={weeks}
-                  value={effectiveWeek}
-                  onValueChange={(next) => setSelectedWeek(next)}
-                />
+                <PlannedWeekSelector weeks={weeks} value={effectiveWeek} onValueChange={(next) => setSelectedWeek(next)} />
                 <PlannedMetricSelector value={metric} onValueChange={setMetric} />
               </div>
 
@@ -169,43 +237,70 @@ export function PlanActivitiesPage(): JSX.Element {
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedRows.map((row) => (
-                          <tr key={`${row.day_utc}-${row.line_no}`} className="border-t">
-                            <td className="px-3 py-2">
-                              <input
-                                type="checkbox"
-                                checked={row.manual_done}
-                                onChange={(event) =>
-                                  manualDoneMutation.mutate({
-                                    dayUtc: row.day_utc,
-                                    lineNo: row.line_no,
-                                    manualDone: event.target.checked,
-                                  })
-                                }
-                              />
-                            </td>
-                            <td className="px-3 py-2">{dayLabel(row.day_utc)}</td>
-                            <td className="px-3 py-2">{row.activity}</td>
-                            <td className="px-3 py-2">{row.workout_text}</td>
-                            <td className="px-3 py-2 text-right">{Math.round(row.tss)}</td>
-                            <td className="px-3 py-2 text-right">{Math.round(row.rtss)}</td>
-                            <td className="px-3 py-2 text-right">{row.distance_eqv_km.toFixed(1)} km</td>
-                            <td className="px-3 py-2 text-right">{row.if_proxy_pct.toFixed(0)}%</td>
-                            <td className="px-3 py-2 text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  if (window.confirm('Delete this planned activity?')) {
-                                    deleteMutation.mutate({ dayUtc: row.day_utc, lineNo: row.line_no });
+                        {selectedRows.map((row) => {
+                          const rowKey = `${row.day_utc}-${row.line_no}`;
+                          return (
+                            <tr key={rowKey} className="border-t">
+                              <td className="px-3 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={row.manual_done}
+                                  onChange={(event) =>
+                                    manualDoneMutation.mutate({
+                                      dayUtc: row.day_utc,
+                                      lineNo: row.line_no,
+                                      manualDone: event.target.checked,
+                                    })
                                   }
-                                }}
-                              >
-                                Delete
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
+                                />
+                              </td>
+                              <td className="px-3 py-2">{dayLabel(row.day_utc)}</td>
+                              <td className="px-3 py-2">{row.activity}</td>
+                              <td className="px-3 py-2">
+                                <input
+                                  className="w-full min-w-[320px] rounded border border-input bg-transparent px-2 py-1"
+                                  value={editValues[rowKey] ?? ''}
+                                  onChange={(event) =>
+                                    setEditValues((previous) => ({ ...previous, [rowKey]: event.target.value }))
+                                  }
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right">{Math.round(row.tss)}</td>
+                              <td className="px-3 py-2 text-right">{Math.round(row.rtss)}</td>
+                              <td className="px-3 py-2 text-right">{row.distance_eqv_km.toFixed(1)} km</td>
+                              <td className="px-3 py-2 text-right">{row.if_proxy_pct.toFixed(0)}%</td>
+                              <td className="px-3 py-2 text-right">
+                                <div className="flex justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      workoutUpdateMutation.mutate({
+                                        dayUtc: row.day_utc,
+                                        lineNo: row.line_no,
+                                        workoutText: editValues[rowKey] ?? row.workout_text,
+                                        manualDone: row.manual_done,
+                                      })
+                                    }
+                                  >
+                                    Save
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      if (window.confirm('Delete this planned activity?')) {
+                                        deleteMutation.mutate({ dayUtc: row.day_utc, lineNo: row.line_no });
+                                      }
+                                    }}
+                                  >
+                                    Delete
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

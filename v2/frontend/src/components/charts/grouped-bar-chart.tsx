@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { formatMetricValue } from '@/features/weekly-outlook/utils/formatters';
 
@@ -23,6 +23,11 @@ function GroupedBarChartComponent({
   compareLabel,
 }: GroupedBarChartProps): JSX.Element {
   const axisLabel = metric === 'distance' ? 'Distance (km)' : metric === 'rtss' ? 'rTSS' : 'TSS';
+  const valueLabelFormatter = (value: number) => {
+    if (value <= 0) return '';
+    if (metric === 'distance') return value.toFixed(1);
+    return String(Math.round(value));
+  };
 
   const series = useMemo(
     () => [
@@ -45,7 +50,14 @@ function GroupedBarChartComponent({
           />
           <Legend />
           {series.map((item) => (
-            <Bar key={item.dataKey} dataKey={item.dataKey} name={item.name} fill={item.fill} radius={[6, 6, 0, 0]} />
+            <Bar key={item.dataKey} dataKey={item.dataKey} name={item.name} fill={item.fill} radius={[6, 6, 0, 0]}>
+              <LabelList
+                dataKey={item.dataKey}
+                position="top"
+                formatter={valueLabelFormatter}
+                style={{ fontSize: 13, fontWeight: 700, fill: '#e2e8f0' }}
+              />
+            </Bar>
           ))}
         </BarChart>
       </ResponsiveContainer>

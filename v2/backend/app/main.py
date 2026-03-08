@@ -46,6 +46,7 @@ from db import (  # noqa: E402
     get_runs_df,
     get_setting,
     set_planned_activity_manual_done,
+    upsert_planned_activities_rows,
 )
 
 DEFAULT_LTHR = 178.0
@@ -54,6 +55,8 @@ SETTINGS_KEY_LTHR_CURVE = "lthr_curve_v1"
 SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
 TOKEN_TTL_S = int(os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60))
+MAX_PLANNED_ENTRY_CHARS = 4000
+MAX_PLANNED_ENTRIES_PER_SAVE = 40
 LT_PACE_TO_WEEKLY_TARGET_POINTS = [
     (300.0, 67.0, 364.0),
     (270.0, 81.0, 396.0),
@@ -76,6 +79,17 @@ class PlannedManualDoneRequest(BaseModel):
     day_utc: str
     line_no: int
     manual_done: bool
+
+
+class PlannedIngestRequest(BaseModel):
+    entry_text: str
+
+
+class PlannedWorkoutUpdateRequest(BaseModel):
+    day_utc: str
+    line_no: int
+    workout_text: str
+    manual_done: bool | None = None
 
 
 app = FastAPI(title="Temperance v2 API", version="0.2.0")
@@ -431,6 +445,364 @@ def _curve_value_at(
         else:
             break
     return float(chosen)
+
+
+def _pace_mmss_to_sec(value: str) -> float:
+    text = str(value or "").strip()
+    parts = text.split(":")
+    if len(parts) != 2:
+        raise ValueError("invalid pace format")
+    minutes = int(parts[0])
+    seconds = int(parts[1])
+    total = minutes * 60 + seconds
+    if total <= 0:
+        raise ValueError("pace must be > 0")
+    return float(total)
+
+
+def _plan_activity_kind(text: str) -> str:
+    t = str(text or "").lower()
+    if "treadmill" in t:
+        return "treadmill"
+    if "run" in t:
+        return "run"
+    if "ellipt" in t:
+        return "elliptical"
+    if "cycl" in t or "bike" in t:
+        return "cycling"
+    return "other"
+
+
+def _parse_minutes_token(text: str) -> float | None:
+    t = str(text or "").lower().strip()
+    hm = re.search(r"(\d+(?:\.\d+)?)\s*h(?:\s*(\d+(?:\.\d+)?)\s*m(?:in)?)?", t)
+    if hm:
+        h = float(hm.group(1))
+        m = float(hm.group(2)) if hm.group(2) else 0.0
+        total = h * 60.0 + m
+        return total if total > 0 else None
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:min|mins|minute|minutes)\b", t)
+    if m:
+        total = float(m.group(1))
+        return total if total > 0 else None
+    q = re.search(r"(\d+(?:\.\d+)?)\s*[\'’](?=\D|$)", t)
+    if q:
+        total = float(q.group(1))
+        return total if total > 0 else None
+    s = re.search(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", t)
+    if s:
+        total = float(s.group(1)) / 60.0
+        return total if total > 0 else None
+    return None
+
+
+def _parse_distance_km_token(text: str) -> float | None:
+    lower = str(text or "").lower()
+    m = re.search(r"(\d+(?:\.\d+)?)\s*km\b", lower)
+    if m:
+        try:
+            km = float(m.group(1))
+        except Exception:
+            return None
+        return km if km > 0 else None
+    m_meters = re.search(r"(\d+(?:\.\d+)?)\s*m\b", lower)
+    if not m_meters:
+        return None
+    try:
+        meters = float(m_meters.group(1))
+    except Exception:
+        return None
+    km = meters / 1000.0
+    return km if km > 0 else None
+
+
+def _parse_bpm_token(text: str) -> float | None:
+    lower = str(text or "").lower()
+    m = re.search(r"@\s*(\d+(?:\.\d+)?)\s*bpm", lower)
+    if not m:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*bpm", lower)
+    if m:
+        v = float(m.group(1))
+        return v if v > 0 else None
+    return None
+
+
+def _parse_pace_token(text: str) -> float | None:
+    lower = str(text or "").lower()
+    m = re.search(r"@\s*(\d{1,2}:\d{2})(?:\s*/?\s*km)?", lower)
+    if not m:
+        m = re.search(r"(\d{1,2}:\d{2})\s*/\s*km", lower)
+    if not m:
+        return None
+    try:
+        return _pace_mmss_to_sec(m.group(1))
+    except Exception:
+        return None
+
+
+def _parse_if_token(text: str) -> float | None:
+    lower = str(text or "").lower()
+    m = re.search(r"@\s*(\d+(?:\.\d+)?)\s*%", lower)
+    if not m:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*%", lower)
+    if not m:
+        return None
+    try:
+        v = float(m.group(1)) / 100.0
+    except Exception:
+        return None
+    return v if v > 0 else None
+
+
+def _parse_tss_token(text: str) -> float | None:
+    lower = str(text or "").lower()
+    m = re.search(r"@\s*(\d+(?:\.\d+)?)\s*tss\b", lower)
+    if not m:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*tss\b", lower)
+    if not m:
+        return None
+    try:
+        v = float(m.group(1))
+    except Exception:
+        return None
+    return v if v > 0 else None
+
+
+def _normalize_plan_text(text: str) -> str:
+    t = " ".join(str(text or "").strip().split())
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:min|mins|minute|minutes)\b", r"\1min", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*[\'’](?=\D|$)", r"\1min", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", r"\1s", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*h\b", r"\1h", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*km\b", r"\1km", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*m\b", r"\1m", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*bpm\b", r"\1bpm", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s*/\s*km\b", "/km", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s*\+\s*", " + ", t)
+    return t
+
+
+def _strip_meridiem_tokens(text: str) -> tuple[str, str | None]:
+    raw = str(text or "")
+    token_matches = re.findall(r"(?<![A-Za-z0-9_])(AM|PM)(?![A-Za-z0-9_])", raw, flags=re.IGNORECASE)
+    hint = str(token_matches[-1]).upper() if token_matches else None
+    cleaned = re.sub(r"(?<![A-Za-z0-9_])(AM|PM)(?![A-Za-z0-9_])", " ", raw, flags=re.IGNORECASE)
+    cleaned = " ".join(cleaned.strip().split())
+    return cleaned, hint
+
+
+def _parse_dated_activity_entry(text: str) -> tuple[pd.Timestamp | None, str, str | None]:
+    raw = str(text or "").strip()
+    if not raw:
+        return None, "", "Input is empty. Use `[date]:[activity]`."
+    if ":" in raw:
+        date_text, activity_text = raw.split(":", 1)
+    else:
+        compact_match = re.match(r"^\s*([tT][+-]\d)(.+)$", raw)
+        if compact_match:
+            date_text = compact_match.group(1)
+            activity_text = compact_match.group(2)
+        else:
+            return None, "", "Missing `:` separator. Use `[date]:[activity]`."
+    date_text = date_text.strip()
+    activity_text = activity_text.strip()
+    date_text, date_hint = _strip_meridiem_tokens(date_text)
+    activity_text, activity_hint = _strip_meridiem_tokens(activity_text)
+    merged_hint = activity_hint or date_hint
+    if merged_hint:
+        activity_text = f"{activity_text} {merged_hint}".strip()
+    activity_text = _normalize_plan_text(activity_text)
+    if not date_text:
+        return None, "", "Missing date before `:`."
+    if not activity_text:
+        return None, "", "Missing activity after `:`."
+
+    date_value: pd.Timestamp | None = None
+    date_key = date_text.strip().lower()
+    if date_key in {"today", "tomorrow", "yesterday", "t"}:
+        base_local = pd.Timestamp(datetime.now().astimezone().date())
+        if date_key in {"today", "t"}:
+            date_value = base_local
+        elif date_key == "tomorrow":
+            date_value = base_local + pd.Timedelta(days=1)
+        else:
+            date_value = base_local - pd.Timedelta(days=1)
+    else:
+        t_offset_match = re.match(r"^t([+-]\d+)$", date_key)
+        if t_offset_match:
+            try:
+                offset_days = int(t_offset_match.group(1))
+            except Exception:
+                offset_days = 0
+            base_local = pd.Timestamp(datetime.now().astimezone().date())
+            date_value = base_local + pd.Timedelta(days=offset_days)
+
+    for fmt in ("%d%b%y", "%Y-%m-%d", "%d/%m/%Y"):
+        if date_value is not None:
+            break
+        try:
+            date_value = pd.Timestamp(datetime.strptime(date_text, fmt))
+            break
+        except Exception:
+            continue
+    if date_value is None:
+        return None, activity_text, (
+            "Invalid date format. Use one of: `today`, `tomorrow`, `yesterday`, `T`, `T+1`, `T-1`, "
+            "`3Mar26`, `2026-03-26`, `26/03/2026`."
+        )
+    return date_value, activity_text, None
+
+
+def _split_dated_activity_entries(text: str) -> list[str]:
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+    return [p.strip() for p in re.split(r"[\n;,]+", raw) if p.strip()]
+
+
+def _planned_row_signature(day_utc: str, workout_text: str) -> str:
+    day_key = str(day_utc or "").strip()
+    workout_key = _normalize_plan_text(str(workout_text or "")).lower()
+    return f"{day_key}::{workout_key}"
+
+
+def _expand_planned_segments(
+    line: str,
+    lthr_bpm: float | None = None,
+    threshold_pace_sec_per_km: float | None = None,
+) -> tuple[list[dict[str, float | str | None]], list[str]]:
+    segments: list[dict[str, float | str | None]] = []
+    warnings: list[str] = []
+    raw = _normalize_plan_text(line)
+    raw, line_time_hint = _strip_meridiem_tokens(raw)
+    if not raw:
+        return segments, warnings
+    lthr_value = float(lthr_bpm or 0.0)
+    threshold_pace_value = float(threshold_pace_sec_per_km or 0.0)
+
+    chunks = [c.strip() for c in re.split(r"\s*\+\s*", raw) if c.strip()]
+    last_kind: str | None = None
+    for chunk in chunks:
+        kind = _plan_activity_kind(chunk)
+        bpm = _parse_bpm_token(chunk)
+        pace = _parse_pace_token(chunk)
+        if_input = _parse_if_token(chunk)
+        if_input_source: str | None = "explicit" if if_input is not None else None
+        tss_input = _parse_tss_token(chunk)
+        if kind == "other" and pace is not None:
+            kind = "run"
+        if kind == "other" and last_kind is not None:
+            kind = last_kind
+        if kind == "other":
+            warnings.append(f"Missing/unknown activity in: `{chunk}` (include run/treadmill/elliptical/cycling)")
+            continue
+        is_running_like = kind in {"run", "treadmill"}
+        if (not is_running_like) and (pace is not None):
+            warnings.append(
+                f"Pace is only allowed for running/treadmill in: `{chunk}` (use `@140bpm` or `@70%` for non-running)."
+            )
+            continue
+        if bpm is None and pace is None and if_input is None and tss_input is None:
+            warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm`, `@70%`, `@4:50/km`, or `@40TSS`)")
+            continue
+
+        rep_match = re.search(
+            r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|min|mins|minute|minutes|s|sec|secs|second|seconds)\b",
+            chunk.lower(),
+        )
+        if rep_match:
+            reps = int(rep_match.group(1))
+            rep_value = float(rep_match.group(2))
+            rep_unit = rep_match.group(3)
+            rep_minutes = rep_value * 60.0 if rep_unit.startswith("h") else (rep_value / 60.0 if rep_unit.startswith("s") else rep_value)
+            if reps <= 0 or rep_minutes <= 0:
+                warnings.append(f"Invalid interval block in: `{chunk}`")
+                continue
+            if tss_input is not None and tss_input > 0 and bpm is None and pace is None and if_input is None:
+                seg_duration_h = rep_minutes / 60.0
+                per_rep_tss = float(tss_input) / float(max(reps, 1))
+                if seg_duration_h > 0:
+                    derived_if = (per_rep_tss / (seg_duration_h * 100.0)) ** 0.5
+                    if_input = max(float(derived_if), 0.0)
+                    if_input_source = "tss_derived"
+                    if is_running_like and pace is None and threshold_pace_value > 0 and if_input > 0:
+                        pace = threshold_pace_value / if_input
+                    elif (not is_running_like) and bpm is None and lthr_value > 0 and if_input > 0:
+                        bpm = lthr_value * if_input
+            for _ in range(max(reps, 0)):
+                segments.append(
+                    {
+                        "kind": kind,
+                        "duration_min": rep_minutes,
+                        "avg_hr_bpm": bpm,
+                        "pace_s_per_km": pace,
+                        "if_input": if_input,
+                        "if_input_source": if_input_source,
+                        "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
+                        "time_hint": line_time_hint,
+                        "source": chunk,
+                    }
+                )
+            last_kind = kind
+            continue
+
+        minutes = _parse_minutes_token(chunk)
+        if minutes is None:
+            distance_km = _parse_distance_km_token(chunk)
+            if distance_km is not None:
+                if not is_running_like:
+                    warnings.append(
+                        f"Distance-only segment requires running/treadmill with pace in: `{chunk}` (non-running should use minutes + bpm/%IF)."
+                    )
+                    continue
+                if pace is None and tss_input is not None and tss_input > 0 and threshold_pace_value > 0:
+                    pace = (distance_km * (threshold_pace_value**2) * 100.0) / (3600.0 * float(tss_input))
+                    if pace > 0:
+                        if_input = threshold_pace_value / pace
+                if pace is None or pace <= 0:
+                    warnings.append(f"Distance-based segment requires pace in: `{chunk}` (add `@4:50/km`)")
+                    continue
+                minutes = (distance_km * pace) / 60.0
+        if minutes is None:
+            warnings.append(f"Could not parse duration from: `{chunk}`")
+            continue
+        if minutes <= 0:
+            warnings.append(f"Duration must be > 0 in: `{chunk}`")
+            continue
+        if tss_input is not None and tss_input > 0 and bpm is None and pace is None and if_input is None:
+            duration_h = float(minutes) / 60.0
+            if duration_h <= 0:
+                warnings.append(f"TSS-based intensity requires positive duration in: `{chunk}`")
+                continue
+            derived_if = (float(tss_input) / (duration_h * 100.0)) ** 0.5
+            if_input = max(float(derived_if), 0.0)
+            if_input_source = "tss_derived"
+            if is_running_like:
+                if threshold_pace_value <= 0:
+                    warnings.append(f"Missing LT pace to convert TSS to pace in: `{chunk}`")
+                    continue
+                if if_input > 0:
+                    pace = threshold_pace_value / if_input
+            else:
+                if lthr_value <= 0:
+                    warnings.append(f"Missing LTHR to convert TSS to HR in: `{chunk}`")
+                    continue
+                bpm = lthr_value * if_input
+        segments.append(
+            {
+                "kind": kind,
+                "duration_min": minutes,
+                "avg_hr_bpm": bpm,
+                "pace_s_per_km": pace,
+                "if_input": if_input,
+                "if_input_source": if_input_source,
+                "tss_target": float(tss_input) if tss_input else None,
+                "time_hint": line_time_hint,
+                "source": chunk,
+            }
+        )
+        last_kind = kind
+    return segments, warnings
 
 
 def _planned_segment_metrics(
@@ -1580,6 +1952,170 @@ def planned_activity_delete(
     if deleted <= 0:
         raise HTTPException(status_code=404, detail="Planned activity not found")
     return {"deleted": int(deleted)}
+
+
+@app.post("/api/v1/planned-activities/ingest")
+def planned_activities_ingest(
+    payload: PlannedIngestRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    entry_text = str(payload.entry_text or "")
+
+    if len(entry_text) > int(MAX_PLANNED_ENTRY_CHARS):
+        raise HTTPException(status_code=400, detail=f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save.")
+
+    entries = _split_dated_activity_entries(entry_text)
+    if not entries:
+        raise HTTPException(status_code=400, detail="Input is empty. Use `[date]:[activity]`.")
+    if len(entries) > int(MAX_PLANNED_ENTRIES_PER_SAVE):
+        raise HTTPException(status_code=400, detail=f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}.")
+
+    today_local = pd.Timestamp(datetime.now().astimezone().date())
+    previous_sunday = today_local - pd.Timedelta(days=int(today_local.weekday()) + 1)
+
+    existing = get_planned_activities_df(db_path=db_path)
+    max_line_by_day = existing.groupby("day_utc")["line_no"].max().to_dict() if not existing.empty else {}
+    existing_signatures: set[str] = set()
+    if not existing.empty:
+        for _, er in existing.iterrows():
+            existing_signatures.add(_planned_row_signature(str(er.get("day_utc") or ""), str(er.get("workout_text") or "")))
+
+    lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
+    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+
+    rows_to_upsert: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for idx, raw_entry in enumerate(entries, start=1):
+        day_ts, normalized, parse_err = _parse_dated_activity_entry(raw_entry)
+        if parse_err:
+            errors.append(f"entry {idx}: {parse_err}")
+            continue
+        if day_ts is None:
+            errors.append(f"entry {idx}: could not parse date")
+            continue
+        if day_ts < previous_sunday:
+            errors.append(f"entry {idx}: date `{day_ts:%Y-%m-%d}` is before `{previous_sunday:%Y-%m-%d}`")
+            continue
+
+        lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
+        pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
+        segs, warns = _expand_planned_segments(
+            normalized,
+            lthr_bpm=lthr_for_day,
+            threshold_pace_sec_per_km=pace_for_day,
+        )
+        if warns or not segs:
+            details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
+            errors.append(f"entry {idx}: {details}")
+            continue
+
+        day_key = day_ts.date().isoformat()
+        sig = _planned_row_signature(day_key, normalized)
+        if sig in existing_signatures:
+            errors.append(f"entry {idx}: duplicate skipped for `{day_key}` (`{normalized}` already exists).")
+            continue
+
+        next_line_no = int(max_line_by_day.get(day_key, 0)) + 1
+        max_line_by_day[day_key] = next_line_no
+        rows_to_upsert.append(
+            {
+                "day_utc": day_key,
+                "line_no": next_line_no,
+                "workout_text": normalized,
+                "parsed_json": segs,
+                "manual_done": False,
+            }
+        )
+        existing_signatures.add(sig)
+
+    if rows_to_upsert:
+        upsert_planned_activities_rows(db_path=db_path, rows=rows_to_upsert)
+
+    return {
+        "saved_count": int(len(rows_to_upsert)),
+        "errors": errors[:20],
+    }
+
+
+@app.patch("/api/v1/planned-activities/workout")
+def planned_activity_workout_update(
+    payload: PlannedWorkoutUpdateRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+
+    day_utc = str(payload.day_utc or "").strip()
+    line_no = int(payload.line_no)
+    workout_text = _normalize_plan_text(str(payload.workout_text or ""))
+    if not day_utc or line_no <= 0:
+        raise HTTPException(status_code=400, detail="Invalid day_utc or line_no")
+    if not workout_text:
+        raise HTTPException(status_code=400, detail="Workout text cannot be empty")
+
+    existing = get_planned_activities_df(db_path=db_path, start_day_utc=day_utc, end_day_utc=day_utc)
+    if existing.empty:
+        raise HTTPException(status_code=404, detail="Planned activity not found")
+    existing = existing[pd.to_numeric(existing.get("line_no"), errors="coerce").fillna(0).astype(int) == line_no]
+    if existing.empty:
+        raise HTTPException(status_code=404, detail="Planned activity not found")
+    current_row = existing.iloc[0]
+
+    day_ts = pd.to_datetime(day_utc, errors="coerce")
+    if pd.isna(day_ts):
+        raise HTTPException(status_code=400, detail="Invalid day_utc")
+
+    lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
+    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
+    pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
+    segs, warns = _expand_planned_segments(
+        workout_text,
+        lthr_bpm=lthr_for_day,
+        threshold_pace_sec_per_km=pace_for_day,
+    )
+    if warns or not segs:
+        details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
+        raise HTTPException(status_code=400, detail=details)
+
+    manual_done = (
+        bool(payload.manual_done)
+        if payload.manual_done is not None
+        else bool(_safe_float(current_row.get("manual_done")) > 0)
+    )
+    upsert_planned_activities_rows(
+        db_path=db_path,
+        rows=[
+            {
+                "day_utc": day_utc,
+                "line_no": line_no,
+                "workout_text": workout_text,
+                "parsed_json": segs,
+                "manual_done": manual_done,
+            }
+        ],
+    )
+    return {"updated": True}
 
 
 @app.get("/api/v1/activities/{activity_id}")

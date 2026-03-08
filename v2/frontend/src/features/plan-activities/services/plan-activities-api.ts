@@ -66,3 +66,61 @@ export async function deletePlannedActivity({ token, dayUtc, lineNo, owner }: Pl
     token,
   });
 }
+
+interface PlannedIngestParams {
+  token: string;
+  entryText: string;
+  owner?: string;
+}
+
+interface PlannedIngestResponse {
+  saved_count: number;
+  errors: string[];
+}
+
+export async function ingestPlannedActivities({ token, entryText, owner }: PlannedIngestParams): Promise<PlannedIngestResponse> {
+  const search = new URLSearchParams();
+  if (owner) search.set('owner', owner);
+  return apiRequest<PlannedIngestResponse>(
+    `${API_CONFIG.endpoints.plannedIngest}${search.toString() ? `?${search.toString()}` : ''}`,
+    {
+      method: 'POST',
+      token,
+      body: { entry_text: entryText },
+    },
+  );
+}
+
+interface PlannedWorkoutUpdateParams {
+  token: string;
+  dayUtc: string;
+  lineNo: number;
+  workoutText: string;
+  manualDone?: boolean;
+  owner?: string;
+}
+
+export async function updatePlannedWorkout({
+  token,
+  dayUtc,
+  lineNo,
+  workoutText,
+  manualDone,
+  owner,
+}: PlannedWorkoutUpdateParams): Promise<void> {
+  const search = new URLSearchParams();
+  if (owner) search.set('owner', owner);
+  await apiRequest<{ updated: boolean }>(
+    `${API_CONFIG.endpoints.plannedWorkoutUpdate}${search.toString() ? `?${search.toString()}` : ''}`,
+    {
+      method: 'PATCH',
+      token,
+      body: {
+        day_utc: dayUtc,
+        line_no: lineNo,
+        workout_text: workoutText,
+        manual_done: manualDone,
+      },
+    },
+  );
+}

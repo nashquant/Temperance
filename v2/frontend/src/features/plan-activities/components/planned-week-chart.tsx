@@ -1,4 +1,4 @@
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { Card, CardContent } from '@/components/ui/card';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
@@ -27,6 +27,8 @@ function formatValue(value: number, metric: PlannedMetricView): string {
 }
 
 export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.Element {
+  const valueLabelFormatter = (value: number) => (value > 0 ? formatValue(value, metric) : '');
+
   return (
     <Card>
       <CardContent className="p-4">
@@ -37,7 +39,14 @@ export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.E
               <XAxis dataKey="dayLabel" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} label={{ value: metricLabel(metric), angle: -90, position: 'insideLeft' }} />
               <Tooltip formatter={(value: number) => formatValue(value, metric)} />
-              <Bar dataKey="value" fill="#34d399" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="value" fill="#34d399" radius={[6, 6, 0, 0]}>
+                <LabelList
+                  dataKey="value"
+                  position="top"
+                  formatter={valueLabelFormatter}
+                  style={{ fontSize: 13, fontWeight: 700, fill: '#e2e8f0' }}
+                />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>

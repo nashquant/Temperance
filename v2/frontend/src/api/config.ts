@@ -7,6 +7,8 @@ export const API_CONFIG = {
     weekOutlook: '/week-outlook',
     plannedActivities: '/planned-activities',
     plannedManualDone: '/planned-activities/manual-done',
+    plannedIngest: '/planned-activities/ingest',
+    plannedWorkoutUpdate: '/planned-activities/workout',
   },
 } as const;
 
