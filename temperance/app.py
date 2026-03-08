@@ -5,6 +5,9 @@ import os
 import re
 import shutil
 import tempfile
+import hmac
+import hashlib
+import base64
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import replace
 from pathlib import Path
@@ -86,6 +89,8 @@ LOGIN_FAIL_WINDOW_S = 15 * 60
 LOGIN_LOCK_BASE_S = 30
 LOGIN_LOCK_MAX_S = 15 * 60
 LOGIN_FAILS_BEFORE_LOCK = 5
+SESSION_COOKIE_NAME = "temperance_auth"
+SESSION_TTL_S = int(os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60))
 MAX_PLANNED_ENTRY_CHARS = 4000
 MAX_PLANNED_ENTRIES_PER_SAVE = 40
 USER_DB_QUOTA_BYTES = 1 * 1024 * 1024 * 1024
@@ -289,6 +294,102 @@ def _register_login_failure(guard_key: str) -> int:
 
 def _clear_login_guard(guard_key: str) -> None:
     _LOGIN_GUARD_STATE.pop(guard_key, None)
+
+
+def _auth_cookie_secret() -> str:
+    secret = str(os.getenv("TEMPERANCE_SESSION_SECRET", "") or "").strip()
+    if secret:
+        return secret
+    admin_hash = str(os.getenv("TEMPERANCE_ADMIN_PASSWORD_SHA256", "") or "").strip()
+    if admin_hash:
+        return f"sha256:{admin_hash}"
+    admin_pass = str(os.getenv("TEMPERANCE_ADMIN_PASSWORD", "") or "").strip()
+    if admin_pass:
+        return f"pass:{admin_pass}"
+    return "temperance-local-dev-secret"
+
+
+def _auth_cookie_sign(payload_b64: str) -> str:
+    secret = _auth_cookie_secret().encode("utf-8")
+    return hmac.new(secret, payload_b64.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _auth_cookie_build_value(user: str, role: str, ttl_s: int = SESSION_TTL_S) -> str:
+    exp_ts = int(time() + max(60, int(ttl_s)))
+    payload = json.dumps({"u": str(user), "r": str(role), "e": exp_ts}, separators=(",", ":"))
+    payload_b64 = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+    sig = _auth_cookie_sign(payload_b64)
+    return f"{payload_b64}.{sig}"
+
+
+def _auth_cookie_parse_value(cookie_value: str) -> tuple[str, str] | None:
+    token = str(cookie_value or "").strip()
+    if "." not in token:
+        return None
+    payload_b64, sig = token.split(".", 1)
+    if not payload_b64 or not sig:
+        return None
+    expected_sig = _auth_cookie_sign(payload_b64)
+    if not hmac.compare_digest(expected_sig, sig):
+        return None
+    padding = "=" * ((4 - (len(payload_b64) % 4)) % 4)
+    try:
+        payload_raw = base64.urlsafe_b64decode((payload_b64 + padding).encode("ascii")).decode("utf-8")
+        payload = json.loads(payload_raw)
+    except Exception:
+        return None
+    user = str(payload.get("u") or "").strip()
+    role = str(payload.get("r") or "").strip().lower()
+    exp_ts = int(pd.to_numeric(payload.get("e"), errors="coerce") or 0)
+    if not user or not role or exp_ts <= int(time()):
+        return None
+    return user, role
+
+
+def _auth_cookie_read() -> str:
+    try:
+        ctx = getattr(st, "context", None)
+        cookies = getattr(ctx, "cookies", None)
+        if cookies is None:
+            return ""
+        return str(dict(cookies).get(SESSION_COOKIE_NAME) or "")
+    except Exception:
+        return ""
+
+
+def _auth_cookie_set(user: str, role: str, ttl_s: int = SESSION_TTL_S) -> None:
+    token = _auth_cookie_build_value(user=user, role=role, ttl_s=ttl_s)
+    js = (
+        "<script>"
+        f"document.cookie='{SESSION_COOKIE_NAME}={token}; Path=/; Max-Age={max(60, int(ttl_s))}; SameSite=Lax';"
+        "</script>"
+    )
+    st.components.v1.html(js, height=0)
+
+
+def _auth_cookie_clear() -> None:
+    js = (
+        "<script>"
+        f"document.cookie='{SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax';"
+        "</script>"
+    )
+    st.components.v1.html(js, height=0)
+
+
+def _restore_auth_from_cookie(users: dict[str, dict[str, str]]) -> bool:
+    parsed = _auth_cookie_parse_value(_auth_cookie_read())
+    if not parsed:
+        return False
+    user, role = parsed
+    resolved_user, user_data = resolve_user(users, user)
+    if not user_data:
+        return False
+    expected_role = str(user_data.get("role") or "").strip().lower()
+    if expected_role != role:
+        return False
+    st.session_state["auth_user"] = resolved_user
+    st.session_state["auth_role"] = expected_role
+    return True
 
 
 def _get_garmin_credentials() -> tuple[str | None, str | None]:
@@ -2785,6 +2886,9 @@ if auth_on and not users:
     st.stop()
 
 if auth_on and not st.session_state.get("auth_user"):
+    _restore_auth_from_cookie(users)
+
+if auth_on and not st.session_state.get("auth_user"):
     st.markdown(
         """
         <style>
@@ -2838,18 +2942,20 @@ if auth_on and not st.session_state.get("auth_user"):
                         if user_data and password_matches(login_pass, user_data["password_hash"]):
                             st.session_state["auth_user"] = resolved_user
                             st.session_state["auth_role"] = user_data["role"]
+                            _auth_cookie_set(resolved_user, str(user_data["role"]), ttl_s=SESSION_TTL_S)
                             _clear_login_guard(guard_key)
-                            st.rerun()
+                            login_error = None
                         lock_s = _register_login_failure(guard_key)
                         if lock_s > 0:
                             login_error = f"Invalid credentials. Try again in {lock_s}s."
                         else:
                             login_error = "Invalid credentials."
-    if login_error:
-        st.error(login_error)
-    elif lock_remaining > 0:
-        st.warning(f"Too many attempts. Try again in {lock_remaining}s.")
-    st.stop()
+    if not st.session_state.get("auth_user"):
+        if login_error:
+            st.error(login_error)
+        elif lock_remaining > 0:
+            st.warning(f"Too many attempts. Try again in {lock_remaining}s.")
+        st.stop()
 
 with st.sidebar:
     st.header("Navigation")
@@ -2859,6 +2965,7 @@ with st.sidebar:
         if st.button("Logout", key="logout_btn"):
             st.session_state["auth_user"] = None
             st.session_state["auth_role"] = None
+            _auth_cookie_clear()
             st.rerun()
 
     if "garmin_email_input" not in st.session_state:
@@ -5103,15 +5210,24 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         font-size: 0.86rem !important;
                         line-height: 1.3 !important;
                     }
+                    div[data-testid="stHorizontalBlock"] {
+                        flex-wrap: nowrap !important;
+                        gap: 0.32rem !important;
+                    }
+                    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+                        min-width: 0 !important;
+                        width: auto !important;
+                        flex: 1 1 0 !important;
+                    }
                     div[class*="st-key-compact_prev_week"] button,
                     div[class*="st-key-compact_next_week"] button,
                     div[class*="st-key-compact_filters_toggle"] button {
-                        min-height: 34px !important;
-                        height: 34px !important;
+                        min-height: 30px !important;
+                        height: 30px !important;
                         min-width: 0 !important;
                         width: 100% !important;
-                        padding: 0.12rem 0.2rem !important;
-                        font-size: 0.84rem !important;
+                        padding: 0.08rem 0.16rem !important;
+                        font-size: 0.78rem !important;
                         line-height: 1.05 !important;
                     }
                     div[class*="st-key-compact_prev_week"],
@@ -5163,6 +5279,27 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     div[data-testid="stButton"] > button[kind="primary"]:active {
                         min-height: 70px;
                         padding: 8px 10px;
+                    }
+                    div[class*="st-key-compact_prev_week"] button,
+                    div[class*="st-key-compact_prev_week"] button:hover,
+                    div[class*="st-key-compact_prev_week"] button:focus,
+                    div[class*="st-key-compact_prev_week"] button:focus-visible,
+                    div[class*="st-key-compact_prev_week"] button:active,
+                    div[class*="st-key-compact_next_week"] button,
+                    div[class*="st-key-compact_next_week"] button:hover,
+                    div[class*="st-key-compact_next_week"] button:focus,
+                    div[class*="st-key-compact_next_week"] button:focus-visible,
+                    div[class*="st-key-compact_next_week"] button:active,
+                    div[class*="st-key-compact_filters_toggle"] button,
+                    div[class*="st-key-compact_filters_toggle"] button:hover,
+                    div[class*="st-key-compact_filters_toggle"] button:focus,
+                    div[class*="st-key-compact_filters_toggle"] button:focus-visible,
+                    div[class*="st-key-compact_filters_toggle"] button:active {
+                        min-height: 24px !important;
+                        height: 24px !important;
+                        padding: 0.04rem 0.14rem !important;
+                        font-size: 0.72rem !important;
+                        line-height: 1 !important;
                     }
                 }
                 </style>
@@ -5237,7 +5374,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 is_mobile_compact_ui = _is_probably_mobile_client()
 
                 if is_mobile_compact_ui:
-                    nav1, nav2, nav3 = st.columns([0.45, 0.45, 1.1], gap="small")
+                    nav1, nav2, nav3 = st.columns([0.36, 0.36, 0.78], gap="small")
                     with nav1:
                         if st.button("◀", key="compact_prev_week", use_container_width=True):
                             st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
