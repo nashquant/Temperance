@@ -41,6 +41,7 @@ The frontend proxies `/health` and `/api/*` to `http://127.0.0.1:8000`.
 - `GET /api/v1/overview`
 - `GET /api/v1/dashboard?days=42&owner=<owner>&sport=run&start_day=YYYY-MM-DD&end_day=YYYY-MM-DD`
 - `GET /api/v1/weekly-summary?days=84&owner=<owner>&sport=run&start_day=YYYY-MM-DD&end_day=YYYY-MM-DD`
+- `GET /api/v1/week-outlook?days=84&owner=<owner>&metric=tss&compare=planned&week_start=YYYY-MM-DD`
 - `GET /api/v1/activities/{activity_id}?owner=<owner>`
 
 `/api/v1/overview` reads from the existing Streamlit SQLite DB by default:
