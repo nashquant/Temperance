@@ -5080,6 +5080,12 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     line-height: 1.1;
                 }
                 @media (max-width: 768px) {
+                    .block-container {
+                        padding-top: 0.35rem !important;
+                        padding-left: 0.55rem !important;
+                        padding-right: 0.55rem !important;
+                        max-width: 100% !important;
+                    }
                     .compact-week-shell {
                         padding: 0;
                         border-radius: 0;
@@ -5115,15 +5121,15 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     }
                     div[class*="st-key-compact_prev_week"] button,
                     div[class*="st-key-compact_next_week"] button {
-                        min-height: 42px !important;
-                        padding: 0.35rem 0.55rem !important;
-                        font-size: 1.05rem !important;
+                        min-height: 38px !important;
+                        padding: 0.22rem 0.45rem !important;
+                        font-size: 0.98rem !important;
                     }
                     div[class*="st-key-calendar_compact_compare_choice"] [data-baseweb="select"] > div,
                     div[class*="st-key-calendar_activity_filter"] [data-baseweb="select"] > div,
                     div[class*="st-key-calendar_compact_metric"] [data-baseweb="select"] > div {
-                        min-height: 42px !important;
-                        font-size: 1.02rem !important;
+                        min-height: 38px !important;
+                        font-size: 0.95rem !important;
                     }
                     div[data-testid="stHorizontalBlock"]:has(.cal-week-summary) {
                         flex-direction: column !important;
@@ -5233,41 +5239,73 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     st.session_state["calendar_compact_metric"] = "tss"
                 if str(st.session_state.get("calendar_compact_metric")) not in compact_metric_keys:
                     st.session_state["calendar_compact_metric"] = "tss"
+                is_mobile_compact_ui = _is_probably_mobile_client()
 
-                nav1, nav2, nav3, nav4, nav5, _nav_spacer = st.columns([0.75, 0.75, 1.0, 1.0, 1.1, 0.55])
-                with nav1:
-                    if st.button("◀ Prev week", key="compact_prev_week", use_container_width=True):
-                        st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
-                        st.rerun()
-                with nav2:
-                    if st.button("Next week ▶", key="compact_next_week", use_container_width=True):
-                        st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
-                        st.rerun()
-                with nav3:
-                    st.selectbox(
-                        "Compare against",
-                        compare_options,
-                        key="calendar_compact_compare_choice",
-                        label_visibility="collapsed",
-                    )
-                with nav4:
-                    st.selectbox(
-                        "Activity filter",
-                        ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
-                        key="calendar_activity_filter",
-                        label_visibility="collapsed",
-                    )
-                with nav5:
-                    st.selectbox(
-                        "Metric",
-                        compact_metric_keys,
-                        key="calendar_compact_metric",
-                        label_visibility="collapsed",
-                        format_func=lambda k: (
-                            f"{compact_metric_labels.get(k, k)} - {int(round(metric_values_week.get(k, 0.0)))}"
-                            + (" km" if k == "distance_eqv_km" else "")
-                        ),
-                    )
+                if is_mobile_compact_ui:
+                    nav1, nav2 = st.columns(2)
+                    with nav1:
+                        if st.button("◀ Prev", key="compact_prev_week", use_container_width=True):
+                            st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
+                            st.rerun()
+                    with nav2:
+                        if st.button("Next ▶", key="compact_next_week", use_container_width=True):
+                            st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
+                            st.rerun()
+                    with st.expander("Filters", expanded=False):
+                        st.selectbox(
+                            "Compare against",
+                            compare_options,
+                            key="calendar_compact_compare_choice",
+                            label_visibility="collapsed",
+                        )
+                        st.selectbox(
+                            "Activity filter",
+                            ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
+                            key="calendar_activity_filter",
+                            label_visibility="collapsed",
+                        )
+                        st.selectbox(
+                            "Metric",
+                            compact_metric_keys,
+                            key="calendar_compact_metric",
+                            label_visibility="collapsed",
+                            format_func=lambda k: compact_metric_labels.get(k, k),
+                        )
+                else:
+                    nav1, nav2, nav3, nav4, nav5, _nav_spacer = st.columns([0.75, 0.75, 1.0, 1.0, 1.1, 0.55])
+                    with nav1:
+                        if st.button("◀ Prev week", key="compact_prev_week", use_container_width=True):
+                            st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
+                            st.rerun()
+                    with nav2:
+                        if st.button("Next week ▶", key="compact_next_week", use_container_width=True):
+                            st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
+                            st.rerun()
+                    with nav3:
+                        st.selectbox(
+                            "Compare against",
+                            compare_options,
+                            key="calendar_compact_compare_choice",
+                            label_visibility="collapsed",
+                        )
+                    with nav4:
+                        st.selectbox(
+                            "Activity filter",
+                            ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
+                            key="calendar_activity_filter",
+                            label_visibility="collapsed",
+                        )
+                    with nav5:
+                        st.selectbox(
+                            "Metric",
+                            compact_metric_keys,
+                            key="calendar_compact_metric",
+                            label_visibility="collapsed",
+                            format_func=lambda k: (
+                                f"{compact_metric_labels.get(k, k)} - {int(round(metric_values_week.get(k, 0.0)))}"
+                                + (" km" if k == "distance_eqv_km" else "")
+                            ),
+                        )
                 compare_choice = str(st.session_state.get("calendar_compact_compare_choice", compare_choice))
 
                 compact_days = pd.DataFrame({"day": pd.date_range(selected_week_start, selected_week_end, freq="D")})
@@ -5477,7 +5515,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     st.session_state["calendar_compact_metric"] = selected_metric
 
                 chart_df = compact_week.copy()
-                is_mobile_compact = _is_probably_mobile_client()
+                is_mobile_compact = bool(is_mobile_compact_ui)
                 chart_df["metric_value"] = pd.to_numeric(chart_df[selected_metric], errors="coerce").fillna(0.0)
                 if is_mobile_compact:
                     chart_df["day_display"] = chart_df["day"].dt.strftime("%a %d")
@@ -5678,16 +5716,25 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         else ""
                     )
                 )
-                st.markdown(
-                    (
-                        "<div class='compact-week-narrative' style='margin:0 0 2px 0;padding:10px 12px;border-radius:10px;"
-                        "border:1px solid rgba(52,211,153,0.35);background:rgba(16,185,129,0.08);"
-                        "color:rgba(226,232,240,0.96);font-size:0.9rem;line-height:1.35;'>"
-                        f"{narrative}"
-                        "</div>"
-                    ),
-                    unsafe_allow_html=True,
-                )
+                if is_mobile_compact:
+                    narrative_mobile = (
+                        f"WTD {_fmt_metric(selected_metric, realized_to_date)} · "
+                        f"Plan {_fmt_metric(selected_metric, compare_to_date)} · "
+                        f"Left {_fmt_metric(selected_metric, compare_remaining)} · "
+                        f"Proj {_fmt_metric(selected_metric, projected_finish)}"
+                    )
+                    st.caption(narrative_mobile)
+                else:
+                    st.markdown(
+                        (
+                            "<div class='compact-week-narrative' style='margin:0 0 2px 0;padding:10px 12px;border-radius:10px;"
+                            "border:1px solid rgba(52,211,153,0.35);background:rgba(16,185,129,0.08);"
+                            "color:rgba(226,232,240,0.96);font-size:0.9rem;line-height:1.35;'>"
+                            f"{narrative}"
+                            "</div>"
+                        ),
+                        unsafe_allow_html=True,
+                    )
                 compact_chart = alt.layer(bars, labels).properties(
                     height=(205 if is_mobile_compact else 250),
                     padding=(
@@ -5698,8 +5745,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 )
                 if is_mobile_compact:
                     compact_chart = bars.properties(
-                        height=205,
-                        padding={"left": 36, "right": 6, "top": 0, "bottom": 26},
+                        height=172,
+                        padding={"left": 30, "right": 4, "top": 0, "bottom": 20},
                     )
                 st.markdown("<div class='compact-week-shell'>", unsafe_allow_html=True)
                 st.altair_chart(compact_chart, use_container_width=True)
