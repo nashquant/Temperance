@@ -12,10 +12,12 @@ const intensityClasses: Record<string, string> = {
   red: 'border-rose-500/50 bg-rose-500/10',
 };
 
-function fmtOptional(value: number | null, suffix = ''): string {
-  if (value === null || Number.isNaN(value)) return '-';
-  return `${Math.round(value)}${suffix}`;
-}
+const plannedIntensityClasses: Record<string, string> = {
+  green: 'border-emerald-400/70 bg-emerald-500/5',
+  blue: 'border-sky-400/70 bg-sky-500/5',
+  orange: 'border-orange-400/70 bg-orange-500/5',
+  red: 'border-rose-400/70 bg-rose-500/5',
+};
 
 function fmtMeta(day: DashboardDayColumnType): string[] {
   const out: string[] = [];
@@ -49,8 +51,17 @@ export function DashboardDayColumn({ day }: DashboardDayColumnProps): JSX.Elemen
         ))}
 
         {day.planned_activities.map((activity) => (
-          <div key={`${activity.day_utc}-${activity.line_no}`} className={cn('rounded-lg border p-2 text-[11px] border-dashed', intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20')}>
-            <p className="font-semibold text-foreground">Planned · {activity.activity}</p>
+          <div
+            key={`${activity.day_utc}-${activity.line_no}`}
+            className={cn(
+              'rounded-lg border-2 border-dashed p-2 text-[11px]',
+              plannedIntensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
+            )}
+          >
+            <p className="mb-1 inline-flex rounded-full border border-border/70 bg-muted/30 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Planned
+            </p>
+            <p className="font-semibold text-foreground">{activity.activity}</p>
             <p className="text-muted-foreground">{activity.duration_label} · {Math.round(activity.distance_eqv_km)} km eqv.</p>
             <p className="text-muted-foreground">IF {Math.round(activity.if_pct)}%</p>
             <p className="font-semibold text-foreground">TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}</p>
