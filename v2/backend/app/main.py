@@ -229,10 +229,30 @@ def _user_slug(value: str) -> str:
 
 
 def _db_path_for_owner(owner: str) -> Path:
+    def _has_activity_rows(path: Path) -> bool:
+        if not path.exists():
+            return False
+        try:
+            with sqlite3.connect(path) as conn:
+                cur = conn.cursor()
+                exists = cur.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='activities' LIMIT 1"
+                ).fetchone()
+                if not exists:
+                    return False
+                count_row = cur.execute("SELECT COUNT(*) FROM activities").fetchone()
+                return bool(count_row and int(count_row[0] or 0) > 0)
+        except Exception:
+            return False
+
     users_root = DB_PATH.parent / "users"
     owner_slug = _user_slug(owner)
     scoped = users_root / f"{owner_slug}.db"
     if not scoped.exists() and DB_PATH.exists():
+        return DB_PATH
+    # If a scoped DB exists but is effectively empty, use the primary DB as fallback.
+    # This keeps legacy single-DB users (e.g. viewer accounts) functional.
+    if scoped.exists() and not _has_activity_rows(scoped) and _has_activity_rows(DB_PATH):
         return DB_PATH
     return scoped
 
@@ -2058,6 +2078,15 @@ def _build_week_outlook_payload(
         end_day=end_day,
         sport=sport,
     )
+    if metrics_df.empty and not start_day and not end_day:
+        # Fallback for athletes with only historical data outside the default lookback.
+        metrics_df = _metrics_for_filters(
+            db_path=db_path,
+            days=36500,
+            start_day=None,
+            end_day=None,
+            sport=sport,
+        )
     if metrics_df.empty:
         return {
             "metric": metric_key,
