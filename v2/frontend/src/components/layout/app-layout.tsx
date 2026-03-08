@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: BarChart3, disabled: false },
+  { to: '/app/athlete-progression', label: 'Athlete Progression', icon: BarChart3, disabled: false },
   { to: '/app/week-planner', label: 'Week Planner', icon: CalendarDays, disabled: false },
   { to: '/app/data-extract', label: 'Data Extract', icon: Database, disabled: false },
   { to: '/app/settings', label: 'Settings', icon: Settings, disabled: false },

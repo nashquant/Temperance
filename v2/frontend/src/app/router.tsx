@@ -6,6 +6,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { LoginPage } from '@/features/auth/pages/login-page';
 import { DataExtractPage } from '@/features/data-extract/pages/data-extract-page';
 import { DashboardPage } from '@/features/dashboard/pages/dashboard-page';
+import { AthleteProgressionPage } from '@/features/athlete-progression/pages/athlete-progression-page';
 import { SettingsPage } from '@/features/settings/pages/settings-page';
 import { WeekPlannerPage } from '@/features/week-planner/pages/week-planner-page';
 
@@ -40,6 +41,7 @@ export function AppRouter(): JSX.Element {
           <Route path="weekly-outlook" element={<Navigate to="/app/week-planner" replace />} />
           <Route path="plan-activities" element={<Navigate to="/app/week-planner" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="athlete-progression" element={<AthleteProgressionPage />} />
           <Route path="data-extract" element={<DataExtractPage />} />
           <Route path="activities" element={<Navigate to="/app/data-extract" replace />} />
           <Route path="settings" element={<SettingsPage />} />

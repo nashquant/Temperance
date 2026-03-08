@@ -1564,6 +1564,276 @@ def _metrics_for_filters(
     return metrics_df
 
 
+def _filter_metrics_by_activity(metrics_df: pd.DataFrame, activity_filter: str | None) -> pd.DataFrame:
+    if metrics_df.empty:
+        return metrics_df
+
+    key = str(activity_filter or "all").strip().lower()
+    if key in {"all", "all_activities"}:
+        return metrics_df
+
+    sport_lower = metrics_df.get("sport_type", pd.Series(index=metrics_df.index, dtype=object)).fillna("").astype(str).str.lower()
+    is_running = sport_lower.str.contains("run") & ~sport_lower.str.contains("treadmill")
+    is_treadmill = sport_lower.str.contains("treadmill")
+    is_running_like = is_running | is_treadmill
+    is_cycling = sport_lower.str.contains("cycl") | sport_lower.str.contains("bike")
+    is_elliptical = sport_lower.str.contains("ellipt")
+
+    if key in {"all_running", "running_all"}:
+        return metrics_df[is_running_like].copy()
+    if key == "running":
+        return metrics_df[is_running].copy()
+    if key == "treadmill":
+        return metrics_df[is_treadmill].copy()
+    if key == "cycling":
+        return metrics_df[is_cycling].copy()
+    if key == "elliptical":
+        return metrics_df[is_elliptical].copy()
+
+    return metrics_df
+
+
+def _build_athlete_progression_payload(
+    db_path: Path,
+    days: int,
+    activity_filter: str,
+    aggregation: str,
+    owner: str,
+) -> dict[str, Any]:
+    metrics_df = _metrics_for_filters(
+        db_path=db_path,
+        days=max(30, int(days)),
+        start_day=None,
+        end_day=None,
+        sport=None,
+    )
+    if metrics_df.empty:
+        return {
+            "owner": owner,
+            "days": max(30, int(days)),
+            "activity_filter": str(activity_filter or "all"),
+            "aggregation": "weekly" if str(aggregation).lower() == "weekly" else "daily",
+            "range": {"start_day": "", "end_day": ""},
+            "summary": {
+                "activities": 0,
+                "distance_km": 0.0,
+                "distance_eqv_km": 0.0,
+                "tss": 0.0,
+                "rtss": 0.0,
+            },
+            "points": [],
+        }
+
+    filtered = _filter_metrics_by_activity(metrics_df, activity_filter)
+    if filtered.empty:
+        return {
+            "owner": owner,
+            "days": max(30, int(days)),
+            "activity_filter": str(activity_filter or "all"),
+            "aggregation": "weekly" if str(aggregation).lower() == "weekly" else "daily",
+            "range": {"start_day": "", "end_day": ""},
+            "summary": {
+                "activities": 0,
+                "distance_km": 0.0,
+                "distance_eqv_km": 0.0,
+                "tss": 0.0,
+                "rtss": 0.0,
+            },
+            "points": [],
+        }
+
+    filtered = filtered.copy()
+    filtered["start_local"] = pd.to_datetime(filtered.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
+    filtered = filtered.dropna(subset=["start_local"]).copy()
+    filtered["day"] = filtered["start_local"].dt.normalize()
+
+    numeric_cols = [
+        "distance_m",
+        "distance_proxy_km",
+        "duration_s",
+        "tss",
+        "rtss",
+        "training_load_garmin",
+        "calories_total",
+        "hr_time_in_zone_1",
+        "hr_time_in_zone_2",
+        "hr_time_in_zone_3",
+        "hr_time_in_zone_4",
+        "hr_time_in_zone_5",
+    ]
+    for col in numeric_cols:
+        if col not in filtered.columns:
+            filtered[col] = 0.0
+        filtered[col] = pd.to_numeric(filtered[col], errors="coerce").fillna(0.0)
+
+    sport_lower = filtered["sport_type"].fillna("").astype(str).str.lower()
+    is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
+    filtered["distance_km_running"] = (filtered["distance_m"].where(is_running_like, 0.0) / 1000.0).fillna(0.0)
+
+    daily_agg = (
+        filtered.groupby("day", as_index=False)
+        .agg(
+            activities=("activity_id", "count"),
+            distance_km=("distance_km_running", "sum"),
+            distance_eqv_km=("distance_proxy_km", "sum"),
+            duration_s=("duration_s", "sum"),
+            tss=("tss", "sum"),
+            rtss=("rtss", "sum"),
+            training_load_garmin=("training_load_garmin", "sum"),
+            calories_total=("calories_total", "sum"),
+            hr_time_in_zone_1=("hr_time_in_zone_1", "sum"),
+            hr_time_in_zone_2=("hr_time_in_zone_2", "sum"),
+            hr_time_in_zone_3=("hr_time_in_zone_3", "sum"),
+            hr_time_in_zone_4=("hr_time_in_zone_4", "sum"),
+            hr_time_in_zone_5=("hr_time_in_zone_5", "sum"),
+        )
+        .sort_values("day")
+    )
+    for col in [c for c in daily_agg.columns if c != "day"]:
+        daily_agg[col] = pd.to_numeric(daily_agg[col], errors="coerce").fillna(0.0)
+
+    min_day = pd.to_datetime(daily_agg["day"], errors="coerce").min()
+    max_day = pd.to_datetime(daily_agg["day"], errors="coerce").max()
+    if pd.isna(min_day) or pd.isna(max_day):
+        return {
+            "owner": owner,
+            "days": max(30, int(days)),
+            "activity_filter": str(activity_filter or "all"),
+            "aggregation": "weekly" if str(aggregation).lower() == "weekly" else "daily",
+            "range": {"start_day": "", "end_day": ""},
+            "summary": {
+                "activities": int(len(filtered.index)),
+                "distance_km": 0.0,
+                "distance_eqv_km": 0.0,
+                "tss": 0.0,
+                "rtss": 0.0,
+            },
+            "points": [],
+        }
+
+    day_index = pd.date_range(start=min_day, end=max_day, freq="D")
+    model_df = pd.DataFrame({"day": day_index})
+    model_df = model_df.merge(daily_agg, on="day", how="left")
+    for col in [c for c in model_df.columns if c != "day"]:
+        model_df[col] = pd.to_numeric(model_df[col], errors="coerce").fillna(0.0)
+
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    latest_lt_pace = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    daily_tss_target = float(max(_weekly_tss_target_from_lt_pace(latest_lt_pace) / 7.0, 0.0))
+    daily_distance_target = float(max(_weekly_distance_target_from_lt_pace(latest_lt_pace) / 7.0, 0.0))
+
+    tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
+    rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
+    if float(rtss_series.abs().sum()) <= 1e-9:
+        rtss_series = tss_series.copy()
+
+    tss_emas = ema_multi(tss_series, [42, 7, 10])
+    rtss_emas = ema_multi(rtss_series, [100, 7, 10])
+    model_df["fitness"] = tss_emas[42]
+    model_df["fatigue"] = tss_emas[7]
+    model_df["overreach"] = (tss_emas[10] - daily_tss_target).clip(lower=0.0)
+    model_df["injury_risk"] = (rtss_emas[10] - daily_tss_target).clip(lower=0.0)
+    model_df["leg_elasticity"] = rtss_emas[100]
+    model_df["pounding"] = rtss_emas[7]
+
+    model_df["zone_low_aerobic_h"] = model_df["hr_time_in_zone_1"] / 3600.0
+    model_df["zone_moderate_aerobic_h"] = model_df["hr_time_in_zone_2"] / 3600.0
+    model_df["zone_high_aerobic_h"] = (model_df["hr_time_in_zone_3"] + model_df["hr_time_in_zone_4"]) / 3600.0
+    model_df["zone_total_h"] = model_df["duration_s"] / 3600.0
+
+    mode = "weekly" if str(aggregation).strip().lower() == "weekly" else "daily"
+    if mode == "weekly":
+        weekly_df = model_df.copy()
+        weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(_week_start_monday)
+        points_df = (
+            weekly_df.groupby("period_start", as_index=False)
+            .agg(
+                activities=("activities", "sum"),
+                distance_km=("distance_km", "sum"),
+                distance_eqv_km=("distance_eqv_km", "sum"),
+                duration_s=("duration_s", "sum"),
+                tss=("tss", "sum"),
+                rtss=("rtss", "sum"),
+                training_load_garmin=("training_load_garmin", "sum"),
+                calories_total=("calories_total", "sum"),
+                zone_low_aerobic_h=("zone_low_aerobic_h", "sum"),
+                zone_moderate_aerobic_h=("zone_moderate_aerobic_h", "sum"),
+                zone_high_aerobic_h=("zone_high_aerobic_h", "sum"),
+                zone_total_h=("zone_total_h", "sum"),
+                fitness=("fitness", "mean"),
+                fatigue=("fatigue", "mean"),
+                overreach=("overreach", "mean"),
+                injury_risk=("injury_risk", "mean"),
+                leg_elasticity=("leg_elasticity", "mean"),
+                pounding=("pounding", "mean"),
+            )
+            .sort_values("period_start")
+        )
+        points_df["target_tss"] = daily_tss_target * 7.0
+        points_df["target_distance_km"] = daily_distance_target * 7.0
+    else:
+        points_df = model_df.rename(columns={"day": "period_start"}).copy()
+        points_df["target_tss"] = daily_tss_target
+        points_df["target_distance_km"] = daily_distance_target
+
+    summary = {
+        "activities": int(len(filtered.index)),
+        "distance_km": round(float(pd.to_numeric(filtered.get("distance_km_running"), errors="coerce").fillna(0.0).sum()), 1),
+        "distance_eqv_km": round(float(pd.to_numeric(filtered.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()), 1),
+        "tss": round(float(pd.to_numeric(filtered.get("tss"), errors="coerce").fillna(0.0).sum()), 1),
+        "rtss": round(float(pd.to_numeric(filtered.get("rtss"), errors="coerce").fillna(0.0).sum()), 1),
+    }
+
+    points: list[dict[str, Any]] = []
+    for _, row in points_df.iterrows():
+        period_start = pd.to_datetime(row.get("period_start"), errors="coerce")
+        if pd.isna(period_start):
+            continue
+        points.append(
+            {
+                "period_start": period_start.date().isoformat(),
+                "activities": int(_safe_float(row.get("activities"))),
+                "distance_km": round(_safe_float(row.get("distance_km")), 2),
+                "distance_eqv_km": round(_safe_float(row.get("distance_eqv_km")), 2),
+                "duration_h": round(_safe_float(row.get("duration_s")) / 3600.0, 2),
+                "tss": round(_safe_float(row.get("tss")), 2),
+                "rtss": round(_safe_float(row.get("rtss")), 2),
+                "training_load_garmin": round(_safe_float(row.get("training_load_garmin")), 2),
+                "calories_total": round(_safe_float(row.get("calories_total")), 2),
+                "zone_low_aerobic_h": round(_safe_float(row.get("zone_low_aerobic_h")), 3),
+                "zone_moderate_aerobic_h": round(_safe_float(row.get("zone_moderate_aerobic_h")), 3),
+                "zone_high_aerobic_h": round(_safe_float(row.get("zone_high_aerobic_h")), 3),
+                "zone_total_h": round(_safe_float(row.get("zone_total_h")), 3),
+                "fitness": round(_safe_float(row.get("fitness")), 3),
+                "fatigue": round(_safe_float(row.get("fatigue")), 3),
+                "overreach": round(_safe_float(row.get("overreach")), 3),
+                "injury_risk": round(_safe_float(row.get("injury_risk")), 3),
+                "leg_elasticity": round(_safe_float(row.get("leg_elasticity")), 3),
+                "pounding": round(_safe_float(row.get("pounding")), 3),
+                "target_tss": round(_safe_float(row.get("target_tss")), 3),
+                "target_distance_km": round(_safe_float(row.get("target_distance_km")), 3),
+            }
+        )
+
+    return {
+        "owner": owner,
+        "days": max(30, int(days)),
+        "activity_filter": str(activity_filter or "all"),
+        "aggregation": mode,
+        "range": {
+            "start_day": pd.Timestamp(min_day).date().isoformat() if pd.notna(min_day) else "",
+            "end_day": pd.Timestamp(max_day).date().isoformat() if pd.notna(max_day) else "",
+        },
+        "summary": summary,
+        "points": points,
+    }
+
+
 def _build_activity_dashboard_payload(
     db_path: Path,
     visible_weeks: int,
@@ -2826,7 +3096,7 @@ def data_extract_comprehensive(
 
 @app.get("/api/v1/week-outlook")
 def week_outlook_view(
-    days: int = Query(default=84, ge=14, le=365),
+    days: int = Query(default=3000, ge=14, le=10000),
     metric: str = Query(default="tss"),
     compare: str = Query(default="planned"),
     week_start: str | None = Query(default=None),
@@ -2847,6 +3117,28 @@ def week_outlook_view(
         week_start=week_start,
     )
     payload["owner"] = resolved_owner
+    payload["db_path"] = str(db_path)
+    return payload
+
+
+@app.get("/api/v1/athlete-progression")
+def athlete_progression_view(
+    days: int = Query(default=3000, ge=30, le=10000),
+    activity_filter: str = Query(default="all"),
+    aggregation: str = Query(default="weekly"),
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    payload = _build_athlete_progression_payload(
+        db_path=db_path,
+        days=days,
+        activity_filter=activity_filter,
+        aggregation=aggregation,
+        owner=resolved_owner,
+    )
     payload["db_path"] = str(db_path)
     return payload
 

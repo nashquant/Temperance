@@ -5,6 +5,7 @@ export const API_CONFIG = {
     me: '/auth/me',
     owners: '/auth/owners',
     dashboard: '/dashboard',
+    athleteProgression: '/athlete-progression',
     settings: '/settings',
     dataExtractStatus: '/data-extract/status',
     dataExtractSync: '/data-extract/sync',
