@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -29,10 +29,15 @@ export function DataExtractPage(): JSX.Element {
 
   const [result, setResult] = useState<string | null>(null);
   const [customResult, setCustomResult] = useState<string | null>(null);
+  const [extractLogs, setExtractLogs] = useState<string[]>([]);
 
   const comprehensiveMutation = useMutation({
     mutationFn: async () => {
       if (!session?.token) throw new Error('Missing auth token');
+      setExtractLogs((previous) => [
+        ...previous,
+        `[${new Date().toLocaleTimeString()}] Started comprehensive extract`,
+      ]);
       return runComprehensiveExtract({
         token: session.token,
         owner: profile?.owner,
@@ -48,11 +53,31 @@ export function DataExtractPage(): JSX.Element {
     onSuccess: async (response) => {
       await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
       setResult(`Comprehensive extract complete: ${response.summary}`);
+      setExtractLogs((previous) => [
+        ...previous,
+        `[${new Date().toLocaleTimeString()}] Completed: ${response.summary}`,
+        ...response.errors.map((error) => `[${new Date().toLocaleTimeString()}] Warning: ${error}`),
+      ]);
     },
     onError: (error) => {
       setResult(error instanceof Error ? error.message : 'Comprehensive extract failed');
+      setExtractLogs((previous) => [
+        ...previous,
+        `[${new Date().toLocaleTimeString()}] Failed: ${error instanceof Error ? error.message : 'Comprehensive extract failed'}`,
+      ]);
     },
   });
+
+  useEffect(() => {
+    if (!comprehensiveMutation.isPending) return undefined;
+    const interval = window.setInterval(() => {
+      setExtractLogs((previous) => [
+        ...previous,
+        `[${new Date().toLocaleTimeString()}] Extract still running...`,
+      ]);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [comprehensiveMutation.isPending]);
 
   const customIngestMutation = useMutation({
     mutationFn: async () => {
@@ -133,6 +158,29 @@ export function DataExtractPage(): JSX.Element {
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={includeWellness} onChange={(event) => setIncludeWellness(event.target.checked)} /> Include sleep + wellness</label>
           </div>
           <Button onClick={() => comprehensiveMutation.mutate()} disabled={comprehensiveMutation.isPending}>{comprehensiveMutation.isPending ? 'Running extract...' : 'Run comprehensive extract'}</Button>
+          <div className="rounded-md border border-border/70 bg-muted/20 p-2">
+            <div className="mb-1 flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">Extraction logs</p>
+              <Button
+                variant="outline"
+                onClick={() => setExtractLogs([])}
+                disabled={comprehensiveMutation.isPending || extractLogs.length === 0}
+              >
+                Clear
+              </Button>
+            </div>
+            <div className="max-h-44 overflow-auto rounded border border-border/70 bg-background/30 p-2 font-mono text-xs">
+              {extractLogs.length === 0 ? (
+                <p className="text-muted-foreground">No logs yet. Run an extract to see progression.</p>
+              ) : (
+                extractLogs.map((line, index) => (
+                  <p key={`${line}-${index}`} className="whitespace-pre-wrap text-foreground/90">
+                    {line}
+                  </p>
+                ))
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
