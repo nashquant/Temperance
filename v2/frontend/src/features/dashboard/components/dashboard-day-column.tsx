@@ -25,18 +25,30 @@ const plannedIntensityClasses: Record<string, string> = {
 };
 
 function fmtMeta(day: DashboardDayColumnType): string[] {
-  const out: string[] = [];
-  out.push(`${Math.round(day.meta.distance_eqv_km || 0)} km`);
-  if ((day.meta.calories || 0) > 0) out.push(`${Math.round(day.meta.calories)} kcal`);
-  if (day.meta.fitness !== null) out.push(`Fit ${Math.round(day.meta.fitness)}`);
-  if (day.meta.fatigue !== null) out.push(`Fatigue ${Math.round(day.meta.fatigue)}`);
-  if (day.meta.resting_hr !== null && day.meta.resting_hr > 0) out.push(`RHR ${Math.round(day.meta.resting_hr)}`);
-  if (day.meta.stress_avg !== null && day.meta.stress_avg > 0) out.push(`Stress ${Math.round(day.meta.stress_avg)}`);
-  if ((day.meta.planned_duration_s || 0) > 0) {
-    out.push(`${Math.round(day.meta.planned_duration_s / 3600)}h`);
+  const primary: string[] = [];
+  const secondary: string[] = [];
+
+  primary.push(`${Math.round(day.meta.distance_eqv_km || 0)} km`);
+  if ((day.meta.calories || 0) > 0) primary.push(`${Math.round(day.meta.calories)} kcal`);
+
+  if (day.meta.fitness !== null) secondary.push(`Fit ${Math.round(day.meta.fitness)}`);
+  if (day.meta.fatigue !== null) secondary.push(`Fatigue ${Math.round(day.meta.fatigue)}`);
+
+  if (secondary.length < 2 && day.meta.resting_hr !== null && day.meta.resting_hr > 0) {
+    secondary.push(`RHR ${Math.round(day.meta.resting_hr)}`);
   }
-  if ((day.meta.planned_if_pct || 0) > 0) out.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
-  return out;
+  if (secondary.length < 2 && day.meta.stress_avg !== null && day.meta.stress_avg > 0) {
+    secondary.push(`Stress ${Math.round(day.meta.stress_avg)}`);
+  }
+
+  if (secondary.length === 0 && (day.meta.planned_duration_s || 0) > 0) {
+    secondary.push(`${Math.round(day.meta.planned_duration_s / 3600)}h`);
+  }
+  if (secondary.length < 2 && (day.meta.planned_if_pct || 0) > 0) {
+    secondary.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
+  }
+
+  return [primary.join(' · '), secondary.join(' · ')].filter(Boolean);
 }
 
 function formatActivityTitle(raw: string): string {
@@ -76,7 +88,13 @@ export function DashboardDayColumn({ day }: DashboardDayColumnProps): JSX.Elemen
               </Badge>
             ) : null}
           </div>
-          <p className="line-clamp-2 min-h-[34px] text-[12px] leading-[1.35] text-muted-foreground">{fmtMeta(day).join(' · ')}</p>
+          <div className="min-h-[34px] space-y-0.5 text-[12px] leading-[1.3] text-muted-foreground">
+            {fmtMeta(day).map((line) => (
+              <p key={line} className="truncate">
+                {line}
+              </p>
+            ))}
+          </div>
         </div>
 
         <Separator className="bg-border/70" />
