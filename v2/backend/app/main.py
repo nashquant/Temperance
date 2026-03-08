@@ -543,13 +543,80 @@ def _compute_planned_rows_metrics_df(
     return out
 
 
+def _planned_row_time_hint(row: pd.Series) -> str | None:
+    raw_segments = row.get("parsed_json")
+    segments: list[dict[str, object]] = []
+    if isinstance(raw_segments, list):
+        segments = [s for s in raw_segments if isinstance(s, dict)]
+    elif isinstance(raw_segments, str) and raw_segments.strip():
+        try:
+            parsed = json.loads(raw_segments)
+            if isinstance(parsed, list):
+                segments = [s for s in parsed if isinstance(s, dict)]
+        except Exception:
+            segments = []
+
+    for seg in segments:
+        hint = str(seg.get("time_hint") or "").strip().upper()
+        if hint in {"AM", "PM"}:
+            return hint
+
+    workout_text = str(row.get("workout_text") or "")
+    match = re.search(r"\b(AM|PM)\b", workout_text, flags=re.IGNORECASE)
+    if match:
+        return str(match.group(1)).upper()
+    return None
+
+
+def _planned_row_expiry_local(day_local: pd.Timestamp, time_hint: str | None) -> pd.Timestamp:
+    day_norm = pd.Timestamp(day_local).normalize()
+    hint = str(time_hint or "").strip().upper()
+    if hint == "AM":
+        return day_norm + pd.Timedelta(hours=12)
+    if hint == "PM":
+        return day_norm + pd.Timedelta(hours=21)
+    return day_norm + pd.Timedelta(days=1)
+
+
+def _filter_effective_planned_rows(
+    planned_df: pd.DataFrame,
+    today_local_day: pd.Timestamp,
+    now_local_ts: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    if planned_df.empty:
+        return planned_df.copy()
+
+    out = planned_df.copy()
+    day_col = pd.to_datetime(out.get("day_utc"), errors="coerce").dt.normalize()
+    manual_done_col = pd.to_numeric(out.get("manual_done"), errors="coerce").fillna(0.0) > 0
+    now_local = pd.Timestamp(now_local_ts) if now_local_ts is not None else pd.Timestamp(datetime.now().astimezone())
+    if now_local.tzinfo is not None:
+        now_local = now_local.tz_localize(None)
+
+    auto_done_flags: list[bool] = []
+    for row_idx, row in out.iterrows():
+        day_local = pd.to_datetime(day_col.loc[row_idx], errors="coerce")
+        if pd.isna(day_local):
+            auto_done_flags.append(False)
+            continue
+        hint = _planned_row_time_hint(row)
+        expiry_local = _planned_row_expiry_local(day_local, hint)
+        auto_done_flags.append(now_local >= expiry_local)
+
+    auto_done_col = pd.Series(auto_done_flags, index=out.index, dtype=bool)
+    done_col = manual_done_col | auto_done_col
+    keep_mask = ~done_col
+    return out.loc[keep_mask].copy()
+
+
 def _planned_daily_metric_map(
     db_path: Path,
     week_start: pd.Timestamp,
     week_end: pd.Timestamp,
     metric_key: str,
     sport_filter: str | None = None,
-) -> tuple[dict[pd.Timestamp, float], dict[pd.Timestamp, float]]:
+    today_local_day: pd.Timestamp | None = None,
+) -> tuple[dict[pd.Timestamp, float], dict[pd.Timestamp, float], float]:
     try:
         planned_rows = get_planned_activities_df(
             db_path=db_path,
@@ -557,15 +624,9 @@ def _planned_daily_metric_map(
             end_day_utc=week_end.date().isoformat(),
         )
     except Exception:
-        return {}, {}
+        return {}, {}, 0.0
     if planned_rows.empty:
-        return {}, {}
-
-    planned_rows = planned_rows.copy()
-    planned_rows["manual_done"] = pd.to_numeric(planned_rows.get("manual_done"), errors="coerce").fillna(0.0) > 0
-    planned_rows = planned_rows[~planned_rows["manual_done"]].copy()
-    if planned_rows.empty:
-        return {}, {}
+        return {}, {}, 0.0
 
     lthr_curve = _load_curve_points(
         db_path=db_path,
@@ -589,7 +650,7 @@ def _planned_daily_metric_map(
         specificity_profile=specificity_profile,
     )
     if metrics_rows.empty:
-        return {}, {}
+        return {}, {}, 0.0
 
     if sport_filter:
         sf = str(sport_filter).strip().lower()
@@ -600,7 +661,7 @@ def _planned_daily_metric_map(
     metrics_rows["day"] = pd.to_datetime(metrics_rows["day_utc"], errors="coerce").dt.normalize()
     metrics_rows = metrics_rows.dropna(subset=["day"])
     if metrics_rows.empty:
-        return {}, {}
+        return {}, {}, 0.0
 
     metric_col = "distance_proxy_km" if metric_key == "distance_eqv_km" else metric_key
     metric_by_day = (
@@ -615,7 +676,27 @@ def _planned_daily_metric_map(
         .set_index("day")["tss"]
         .to_dict()
     )
-    return {pd.Timestamp(k): float(v) for k, v in metric_by_day.items()}, {pd.Timestamp(k): float(v) for k, v in tss_by_day.items()}
+
+    today_local = pd.Timestamp(today_local_day if today_local_day is not None else datetime.now().astimezone().date()).normalize()
+    remaining_start_day = max(today_local, pd.Timestamp(week_start).normalize())
+    metrics_remaining = _filter_effective_planned_rows(metrics_rows, today_local_day=today_local)
+    remaining_metric_total = 0.0
+    if not metrics_remaining.empty:
+        metrics_remaining["day"] = pd.to_datetime(metrics_remaining.get("day"), errors="coerce").dt.normalize()
+        metrics_remaining = metrics_remaining.dropna(subset=["day"])
+        metrics_remaining = metrics_remaining[
+            (metrics_remaining["day"] >= remaining_start_day)
+            & (metrics_remaining["day"] <= week_end)
+        ].copy()
+        remaining_metric_total = float(
+            pd.to_numeric(metrics_remaining.get(metric_col), errors="coerce").fillna(0.0).sum()
+        )
+
+    return (
+        {pd.Timestamp(k): float(v) for k, v in metric_by_day.items()},
+        {pd.Timestamp(k): float(v) for k, v in tss_by_day.items()},
+        float(remaining_metric_total),
+    )
 
 
 def _empty_dashboard(days: int) -> dict[str, Any]:
@@ -941,19 +1022,21 @@ def _build_week_outlook_payload(
 
     planned_metric_map: dict[pd.Timestamp, float] = {}
     planned_tss_map: dict[pd.Timestamp, float] = {}
+    planned_remaining_metric_total = 0.0
+    today = pd.Timestamp(datetime.now().date()).normalize()
     if compare_key == "planned":
-        planned_metric_map, planned_tss_map = _planned_daily_metric_map(
+        planned_metric_map, planned_tss_map, planned_remaining_metric_total = _planned_daily_metric_map(
             db_path=db_path,
             week_start=ws,
             week_end=week_end,
             metric_key=metric_key,
             sport_filter=sport,
+            today_local_day=today,
         )
 
     day_rows: list[dict[str, Any]] = []
     week_total_current = 0.0
     week_total_compare = 0.0
-    today = pd.Timestamp(datetime.now().date()).normalize()
     cutoff_day = min(today, week_end)
     day_offset = int(max(min((cutoff_day - ws).days, 6), 0))
     compare_cutoff = compare_ws + pd.Timedelta(days=day_offset) if compare_key != "planned" else cutoff_day
@@ -984,10 +1067,8 @@ def _build_week_outlook_payload(
         if day <= cutoff_day:
             wtd_current += current_v
         if compare_key == "planned":
-            if day < today:
+            if day <= cutoff_day:
                 wtd_compare += compare_v
-            if day >= today and day <= week_end:
-                remaining_to_go += compare_v
         else:
             if cday <= compare_cutoff:
                 wtd_compare += compare_v
@@ -1001,6 +1082,9 @@ def _build_week_outlook_payload(
                 "is_future": bool(day > today),
             }
         )
+
+    if compare_key == "planned":
+        remaining_to_go = float(planned_remaining_metric_total)
 
     pace_curve = _load_curve_points(
         db_path=db_path,

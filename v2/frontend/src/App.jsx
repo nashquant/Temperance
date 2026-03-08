@@ -36,6 +36,35 @@ function metricLabel(metricKey) {
   }[metricKey] || "Metric";
 }
 
+function isIntegerMetric(metricKey) {
+  return metricKey === "tss" || metricKey === "rtss";
+}
+
+function formatMetricValue(value, metricKey) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return "-";
+  }
+  if (isIntegerMetric(metricKey)) {
+    return String(Math.round(n));
+  }
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(Math.trunc(rounded)) : rounded.toFixed(1);
+}
+
+function formatNumber(value, digits = 1) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return "-";
+  }
+  if (digits <= 0) {
+    return String(Math.round(n));
+  }
+  const factor = 10 ** digits;
+  const rounded = Math.round(n * factor) / factor;
+  return Number.isInteger(rounded) ? String(Math.trunc(rounded)) : rounded.toFixed(digits);
+}
+
 function WeekOutlookChart({ rows, metricKey, compareKey }) {
   if (!rows || rows.length === 0) {
     return <p>No chart data available.</p>;
@@ -50,28 +79,32 @@ function WeekOutlookChart({ rows, metricKey, compareKey }) {
         {rows.map((row) => {
           const cur = Number(row.current || 0);
           const comp = Number(row.compare || 0);
-          const curPct = Math.max(0, (cur / maxValue) * 100);
-          const compPct = Math.max(0, (comp / maxValue) * 100);
+          const curPct = cur > 0 ? Math.max(2, (cur / maxValue) * 100) : 0;
+          const compPct = comp > 0 ? Math.max(2, (comp / maxValue) * 100) : 0;
           const dayShort = String(row.day_label || "").split(" ").slice(-1)[0]?.replace(/[()]/g, "") || row.day_label;
           const currentBarClass = row.is_today ? "wk-bar wk-bar-current-today" : "wk-bar wk-bar-current";
           return (
             <div key={row.day} className="wk-col">
               <div className="wk-bars">
                 <div className="wk-bar-wrap">
-                  <span className="wk-bar-value">{comp > 0 ? comp.toFixed(0) : ""}</span>
-                  <div
-                    className="wk-bar wk-bar-compare"
-                    style={{ height: `${compPct}%` }}
-                    title={`${compareLabel(compareKey)}: ${comp}`}
-                  />
+                  <div className="wk-bar-shell">
+                    <div
+                      className="wk-bar wk-bar-compare"
+                      style={{ height: `${compPct}%` }}
+                      title={`${compareLabel(compareKey)}: ${formatMetricValue(comp, metricKey)}`}
+                    />
+                  </div>
+                  <span className="wk-bar-value">{comp > 0 ? formatMetricValue(comp, metricKey) : ""}</span>
                 </div>
                 <div className="wk-bar-wrap">
-                  <span className="wk-bar-value">{cur > 0 ? cur.toFixed(0) : ""}</span>
-                  <div
-                    className={currentBarClass}
-                    style={{ height: `${curPct}%` }}
-                    title={`Current: ${cur}`}
-                  />
+                  <div className="wk-bar-shell">
+                    <div
+                      className={currentBarClass}
+                      style={{ height: `${curPct}%` }}
+                      title={`Current: ${formatMetricValue(cur, metricKey)}`}
+                    />
+                  </div>
+                  <span className="wk-bar-value">{cur > 0 ? formatMetricValue(cur, metricKey) : ""}</span>
                 </div>
               </div>
               <div className="wk-day">{dayShort}</div>
@@ -443,52 +476,20 @@ export default function App() {
                     </span>
                   </div>
                   <div className="kpi-grid">
-                    <div className="kpi-item"><span className="kpi-label">WTD (Current)</span><strong>{weekOutlook.wtd_current}</strong></div>
-                    <div className="kpi-item"><span className="kpi-label">WTD ({compareLabel(weekOutlook.compare)})</span><strong>{weekOutlook.wtd_compare}</strong></div>
-                    <div className="kpi-item"><span className="kpi-label">Week Total</span><strong>{weekOutlook.week_total_current}</strong></div>
-                    <div className="kpi-item"><span className="kpi-label">Goal</span><strong>{weekOutlook.goal} ({weekOutlook.goal_progress_pct}%)</strong></div>
-                  </div>
-                  <div className="goal-progress-track"><div className="goal-progress-fill" style={{ width: `${Math.max(0, Math.min(weekOutlook.goal_progress_pct, 200))}%` }} /></div>
-                  <div className="wk-narrative">
+                    <div className="kpi-item"><span className="kpi-label">WTD (Current)</span><strong>{formatMetricValue(weekOutlook.wtd_current, weekOutlook.metric)}</strong></div>
+                    <div className="kpi-item"><span className="kpi-label">WTD ({compareLabel(weekOutlook.compare)})</span><strong>{formatMetricValue(weekOutlook.wtd_compare, weekOutlook.metric)}</strong></div>
                     {weekOutlook.compare === "planned" ? (
-                      <p>
-                        Today is{" "}
-                        <span className="wk-pill">
-                          {new Date(`${weekOutlook.today_day}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" })}
-                        </span>
-                        : WTD {metricLabel(weekOutlook.metric)} delivered{" "}
-                        <span className="wk-pill">{Math.round(Number(weekOutlook.wtd_current || 0))}</span> (vs. planned{" "}
-                        <span className="wk-pill">{Math.round(Number(weekOutlook.wtd_compare || 0))}</span>). Remaining{" "}
-                        {metricLabel(weekOutlook.metric)} to go{" "}
-                        <span className="wk-pill">{Math.round(Number(weekOutlook.remaining_to_go || 0))}</span>. Projected finish{" "}
-                        {metricLabel(weekOutlook.metric)}{" "}
-                        <span className="wk-pill">{Math.round(Number(weekOutlook.projected_finish || 0))}</span>.
-                        {weekOutlook.estimated_fatigue_eow !== null ? (
-                          <>
-                            {" "}Estimated fatigue EoW <span className="wk-pill">{Math.round(Number(weekOutlook.estimated_fatigue_eow || 0))}</span>.
-                          </>
-                        ) : null}
-                      </p>
+                      <>
+                        <div className="kpi-item"><span className="kpi-label">Remaining To Go</span><strong>{formatMetricValue(weekOutlook.remaining_to_go ?? 0, weekOutlook.metric)}</strong></div>
+                        <div className="kpi-item"><span className="kpi-label">Projected Finish</span><strong>{formatMetricValue(weekOutlook.projected_finish, weekOutlook.metric)}</strong></div>
+                        <div className="kpi-item"><span className="kpi-label">Estimated Fatigue EoW</span><strong>{formatNumber(weekOutlook.estimated_fatigue_eow, 1)}</strong></div>
+                      </>
                     ) : (
-                      <p>
-                        Today WTD {metricLabel(weekOutlook.metric)} delivered{" "}
-                        <span className="wk-pill">{Math.round(Number(weekOutlook.wtd_current || 0))}</span> (vs.{" "}
-                        {compareLabel(weekOutlook.compare).toLowerCase()}{" "}
-                        <span className="wk-pill">{Math.round(Number(weekOutlook.wtd_compare || 0))}</span>).
-                      </p>
+                      <div className="kpi-item"><span className="kpi-label">{compareLabel(weekOutlook.compare)} Total</span><strong>{formatMetricValue(weekOutlook.week_total_compare, weekOutlook.metric)}</strong></div>
                     )}
                   </div>
+                  <div className="goal-progress-track"><div className="goal-progress-fill" style={{ width: `${Math.max(0, Math.min(weekOutlook.goal_progress_pct, 200))}%` }} /></div>
                   <WeekOutlookChart rows={weekOutlook.rows} metricKey={weekOutlook.metric} compareKey={weekOutlook.compare} />
-                  <table>
-                    <thead>
-                      <tr><th>Day</th><th>Current week</th><th>{compareLabel(weekOutlook.compare)}</th></tr>
-                    </thead>
-                    <tbody>
-                      {weekOutlook.rows.map((row) => (
-                        <tr key={row.day}><td>{row.day_label}</td><td>{row.current}</td><td>{row.compare}</td></tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </>
               )}
             </section>
