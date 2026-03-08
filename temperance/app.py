@@ -5215,27 +5215,18 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     }
                     [class*="st-key-compact_mobile_nav_row"] {
                         width: 100% !important;
-                        overflow-x: hidden !important;
+                        overflow-x: auto !important;
+                        padding-bottom: 2px !important;
                     }
-                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] {
-                        display: grid !important;
-                        grid-template-columns: 30px 30px minmax(92px, 31%) minmax(0, 1fr) !important;
-                        column-gap: 0.18rem !important;
-                        row-gap: 0 !important;
+                    [class*="st-key-compact_mobile_nav_row"] [data-testid="stHorizontalBlock"] {
                         align-items: center !important;
-                        width: 100% !important;
-                        max-width: 100% !important;
-                        overflow-x: hidden !important;
+                        column-gap: 0.16rem !important;
                     }
-                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
-                        min-width: 0 !important;
-                        width: auto !important;
-                    }
-                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) button,
-                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) button {
-                        width: 30px !important;
-                        min-width: 30px !important;
-                        max-width: 30px !important;
+                    [class*="st-key-compact_prev_week"] button,
+                    [class*="st-key-compact_next_week"] button {
+                        width: 34px !important;
+                        min-width: 34px !important;
+                        max-width: 34px !important;
                         min-height: 28px !important;
                         height: 28px !important;
                         border-radius: 6px !important;
@@ -5245,16 +5236,20 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         font-size: 0.86rem !important;
                         line-height: 1 !important;
                     }
-                    [class*="st-key-compact_mobile_nav_row"] [data-baseweb="select"] {
+                    [class*="st-key-calendar_compact_compare_choice"],
+                    [class*="st-key-calendar_compact_metric"] {
                         min-width: 0 !important;
-                        width: 100% !important;
+                        width: auto !important;
                         max-width: 100% !important;
                     }
-                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3) [data-baseweb="select"] > div,
-                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(4) [data-baseweb="select"] > div {
+                    [class*="st-key-calendar_compact_compare_choice"] [data-baseweb="select"],
+                    [class*="st-key-calendar_compact_metric"] [data-baseweb="select"] {
                         min-width: 0 !important;
-                        width: 100% !important;
                         max-width: 100% !important;
+                    }
+                    [class*="st-key-calendar_compact_compare_choice"] [data-baseweb="select"] > div,
+                    [class*="st-key-calendar_compact_metric"] [data-baseweb="select"] > div {
+                        min-width: 0 !important;
                         min-height: 28px !important;
                         height: 28px !important;
                         border-radius: 6px !important;
@@ -5264,26 +5259,13 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         font-size: 0.82rem !important;
                         line-height: 1 !important;
                     }
-                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3) [data-baseweb="select"] > div > div,
-                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(4) [data-baseweb="select"] > div > div {
+                    [class*="st-key-calendar_compact_compare_choice"] [data-baseweb="select"] > div > div,
+                    [class*="st-key-calendar_compact_metric"] [data-baseweb="select"] > div > div {
                         min-width: 0 !important;
                         overflow: hidden !important;
                         text-overflow: ellipsis !important;
                         white-space: nowrap !important;
                         line-height: 1 !important;
-                    }
-                    /* Fallback sizing if Streamlit changes wrapper nesting for the mobile row. */
-                    [class*="st-key-compact_prev_week"],
-                    [class*="st-key-compact_next_week"] {
-                        min-width: 30px !important;
-                        max-width: 30px !important;
-                    }
-                    [class*="st-key-calendar_compact_compare_choice"] {
-                        min-width: 88px !important;
-                        max-width: 34% !important;
-                    }
-                    [class*="st-key-calendar_compact_metric"] {
-                        min-width: 0 !important;
                     }
                     div[data-testid="stHorizontalBlock"]:has(.cal-week-summary) {
                         flex-direction: column !important;
@@ -5312,14 +5294,12 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     }
                 }
                 @media (max-width: 768px) and (orientation: portrait) {
-                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] {
-                        grid-template-columns: 28px 28px minmax(88px, 30%) minmax(0, 1fr) !important;
-                        column-gap: 0.16rem !important;
+                    [class*="st-key-compact_mobile_nav_row"] [data-testid="stHorizontalBlock"] {
+                        column-gap: 0.14rem !important;
                     }
                 }
                 @media (max-width: 768px) and (orientation: landscape) {
-                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] {
-                        grid-template-columns: 32px 32px minmax(96px, 31%) minmax(0, 1fr) !important;
+                    [class*="st-key-compact_mobile_nav_row"] [data-testid="stHorizontalBlock"] {
                         column-gap: 0.20rem !important;
                     }
                 }
@@ -5460,37 +5440,39 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         st.session_state["calendar_compact_metric"] = current_metric
                     active_compare_choice = current_compare
                     active_metric_choice = current_metric
-                    with st.container(key="compact_mobile_nav_row"):
-                        nav1, nav2, nav3, nav4 = st.columns([0.08, 0.08, 0.34, 0.50], gap="small")
-                        with nav1:
-                            if st.button("◀", key="compact_prev_week", use_container_width=True):
-                                st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
-                                st.rerun()
-                        with nav2:
-                            if st.button("▶", key="compact_next_week", use_container_width=True):
-                                st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
-                                st.rerun()
-                        with nav3:
-                            selected_compare_mobile = st.selectbox(
-                                "Compare against",
-                                compare_options,
-                                key="calendar_compact_compare_choice",
-                                label_visibility="collapsed",
-                                format_func=lambda opt: compare_short.get(opt, opt),
-                            )
-                            active_compare_choice = str(selected_compare_mobile)
-                        with nav4:
-                            selected_metric_mobile = st.selectbox(
-                                "Metric",
-                                compact_metric_keys,
-                                key="calendar_compact_metric",
-                                label_visibility="collapsed",
-                                format_func=lambda mk: (
-                                    f"{metric_short.get(mk, mk)} - {int(round(metric_values_week.get(mk, 0.0)))}"
-                                    + (" km" if mk == "distance_eqv_km" else "")
-                                ),
-                            )
-                            active_metric_choice = str(selected_metric_mobile)
+                    with st.container(
+                        key="compact_mobile_nav_row",
+                        horizontal=True,
+                        horizontal_alignment="left",
+                        gap="small",
+                    ):
+                        if st.button("◀", key="compact_prev_week", width=34):
+                            st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
+                            st.rerun()
+                        if st.button("▶", key="compact_next_week", width=34):
+                            st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
+                            st.rerun()
+                        selected_compare_mobile = st.selectbox(
+                            "Compare against",
+                            compare_options,
+                            key="calendar_compact_compare_choice",
+                            label_visibility="collapsed",
+                            format_func=lambda opt: compare_short.get(opt, opt),
+                            width=96,
+                        )
+                        active_compare_choice = str(selected_compare_mobile)
+                        selected_metric_mobile = st.selectbox(
+                            "Metric",
+                            compact_metric_keys,
+                            key="calendar_compact_metric",
+                            label_visibility="collapsed",
+                            format_func=lambda mk: (
+                                f"{metric_short.get(mk, mk)} - {int(round(metric_values_week.get(mk, 0.0)))}"
+                                + (" km" if mk == "distance_eqv_km" else "")
+                            ),
+                            width=142,
+                        )
+                        active_metric_choice = str(selected_metric_mobile)
                 else:
                     nav1, nav2, nav3, nav4, _nav_spacer = st.columns([0.75, 0.75, 1.0, 1.2, 0.8])
                     with nav1:
