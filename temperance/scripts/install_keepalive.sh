@@ -27,16 +27,17 @@ V2_BACKEND_PORT="${V2_BACKEND_PORT:-8000}"
 V2_FRONTEND_PORT="${V2_FRONTEND_PORT:-5173}"
 V2_BACKEND_HOST="${V2_BACKEND_HOST:-127.0.0.1}"
 V2_FRONTEND_HOST="${V2_FRONTEND_HOST:-127.0.0.1}"
+V2_PYTHON_BIN="${V2_PYTHON_BIN:-$(cd "${ROOT_DIR}/.." && pwd)/v2/backend/.venv/bin/python}"
 TUNNEL_NAME="${CLOUDFLARE_TUNNEL:-temperance}"
 TUNNEL_HOSTNAME="${TUNNEL_HOSTNAME:-app.temperance-rtl.work}"
 if [[ -z "${CLOUDFLARED_BIN:-}" ]]; then
   CLOUDFLARED_BIN="$(command -v cloudflared || true)"
 fi
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-cloudflared}"
-if [[ -z "${NPM_BIN:-}" ]]; then
-  NPM_BIN="$(command -v npm || true)"
+if [[ -z "${NODE_BIN:-}" ]]; then
+  NODE_BIN="$(command -v node || true)"
 fi
-NPM_BIN="${NPM_BIN:-npm}"
+NODE_BIN="${NODE_BIN:-/opt/homebrew/bin/node}"
 
 mkdir -p "${LAUNCH_AGENTS_DIR}" "${LOG_DIR}"
 
@@ -51,10 +52,11 @@ Env overrides:
   V2_FRONTEND_PORT   v2 frontend port (default: 5173)
   V2_BACKEND_HOST    v2 backend host bind (default: 127.0.0.1)
   V2_FRONTEND_HOST   v2 frontend host bind (default: 127.0.0.1)
+  V2_PYTHON_BIN      v2 backend python (default: ../v2/backend/.venv/bin/python)
   CLOUDFLARE_TUNNEL  Named tunnel (default: temperance)
   TUNNEL_HOSTNAME    Hostname label (default: app.temperance-rtl.work)
   CLOUDFLARED_BIN    cloudflared binary (default: cloudflared)
-  NPM_BIN            npm binary (default: npm)
+  NODE_BIN           node binary (default: /opt/homebrew/bin/node)
 EOF
 }
 
@@ -114,6 +116,8 @@ write_v2_backend_plist() {
     <string>${V2_BACKEND_PORT}</string>
     <key>V2_BACKEND_HOST</key>
     <string>${V2_BACKEND_HOST}</string>
+    <key>V2_PYTHON_BIN</key>
+    <string>${V2_PYTHON_BIN}</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
@@ -150,8 +154,8 @@ write_v2_frontend_plist() {
     <string>${V2_FRONTEND_PORT}</string>
     <key>V2_FRONTEND_HOST</key>
     <string>${V2_FRONTEND_HOST}</string>
-    <key>NPM_BIN</key>
-    <string>${NPM_BIN}</string>
+    <key>NODE_BIN</key>
+    <string>${NODE_BIN}</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

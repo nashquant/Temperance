@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_DIR="$(cd "${ROOT_DIR}/.." && pwd)"
 
-PYTHON_BIN="${V2_PYTHON_BIN:-${REPO_DIR}/.venv/bin/python}"
+PYTHON_BIN="${V2_PYTHON_BIN:-${REPO_DIR}/v2/backend/.venv/bin/python}"
 V2_BACKEND_DIR="${V2_BACKEND_DIR:-${REPO_DIR}/v2/backend}"
 PORT="${V2_BACKEND_PORT:-8000}"
 HOST="${V2_BACKEND_HOST:-127.0.0.1}"

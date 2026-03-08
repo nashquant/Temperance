@@ -39,15 +39,32 @@ from analytics import build_daily_summary, compute_metrics, display_table, ema_m
 from auth import build_users, password_matches, resolve_user  # noqa: E402
 from db import (  # noqa: E402
     delete_planned_activities,
+    get_last_sync,
+    get_latest_activity_time,
+    get_latest_recovery_day,
     get_activity_detail_raw,
     get_activity_raw,
     get_activity_records_df,
     get_planned_activities_df,
     get_runs_df,
     get_setting,
+    get_table_counts,
     get_wellness_df,
+    log_sync,
+    save_setting,
+    upsert_activities,
+    upsert_activity_details,
+    upsert_activity_records,
+    upsert_activity_splits,
     set_planned_activity_manual_done,
+    upsert_sleep_daily,
+    upsert_wellness_daily,
     upsert_planned_activities_rows,
+)
+from garmin_client import (  # noqa: E402
+    fetch_garmin_comprehensive,
+    fetch_garmin_runs,
+    import_runs_from_folder,
 )
 
 DEFAULT_LTHR = 178.0
@@ -55,6 +72,9 @@ DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 SETTINGS_KEY_LTHR_CURVE = "lthr_curve_v1"
 SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
+SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
+SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
+SETTINGS_KEY_IF_ZONE_THRESHOLDS = "if_zone_thresholds_v1"
 TOKEN_TTL_S = int(os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60))
 MAX_PLANNED_ENTRY_CHARS = 4000
 MAX_PLANNED_ENTRIES_PER_SAVE = 40
@@ -91,6 +111,28 @@ class PlannedWorkoutUpdateRequest(BaseModel):
     line_no: int
     workout_text: str
     manual_done: bool | None = None
+
+
+class UpdateSettingsRequest(BaseModel):
+    if_zone_thresholds: dict[str, float] | None = None
+    specificity_profile: dict[str, float] | None = None
+    lthr_curve: list[dict[str, Any]] | None = None
+    lt_pace_curve: list[dict[str, Any]] | None = None
+    injury_windows: list[dict[str, Any]] | None = None
+
+
+class SyncRequest(BaseModel):
+    days_back: int = 180
+    source: str = "both"  # garmin_api | file_import | both
+    garmin_profile: str = "quick"  # quick | deep
+
+
+class ComprehensiveExtractRequest(BaseModel):
+    start_day: str
+    incremental_only: bool = True
+    include_details: bool = True
+    include_wellness: bool = False
+    verify_raw_integrity: bool = False
 
 
 app = FastAPI(title="Temperance v2 API", version="0.2.0")
@@ -278,6 +320,120 @@ def _safe_float(value: Any) -> float:
         return out
     except Exception:
         return 0.0
+
+
+def _settings_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _default_lthr_curve() -> list[dict[str, object]]:
+    return [{"date": "2025-01-01", "lthr_bpm": DEFAULT_LTHR}]
+
+
+def _default_lt_pace_curve() -> list[dict[str, object]]:
+    return [{"date": "2025-01-01", "lt_pace_sec_per_km": DEFAULT_THRESHOLD_PACE_SEC_PER_KM}]
+
+
+def _default_if_zone_thresholds() -> dict[str, float]:
+    return {"z1_max": 0.70, "z2_max": 0.80, "z3_max": 0.90, "z4_max": 1.00}
+
+
+def _normalize_if_zone_thresholds(payload: dict[str, object] | None) -> dict[str, float]:
+    defaults = _default_if_zone_thresholds()
+    if not isinstance(payload, dict):
+        return defaults
+    out = dict(defaults)
+    for key in ["z1_max", "z2_max", "z3_max", "z4_max"]:
+        try:
+            if key in payload and payload.get(key) is not None:
+                out[key] = float(payload.get(key))
+        except Exception:
+            continue
+    out["z1_max"] = float(min(max(out["z1_max"], 0.01), 3.0))
+    out["z2_max"] = float(min(max(out["z2_max"], out["z1_max"] + 0.01), 3.0))
+    out["z3_max"] = float(min(max(out["z3_max"], out["z2_max"] + 0.01), 3.0))
+    out["z4_max"] = float(min(max(out["z4_max"], out["z3_max"] + 0.01), 3.0))
+    return out
+
+
+def _normalize_lthr_curve(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    parsed: list[tuple[str, float]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        date_raw = str(row.get("date") or "").strip()
+        if not date_raw:
+            continue
+        try:
+            parsed_date = datetime.fromisoformat(date_raw).date().isoformat()
+            lthr = float(row.get("lthr_bpm"))
+        except Exception:
+            continue
+        if lthr <= 0:
+            continue
+        parsed.append((parsed_date, lthr))
+    if not parsed:
+        return _default_lthr_curve()
+    parsed = sorted(dict(parsed).items(), key=lambda item: item[0])
+    return [{"date": d, "lthr_bpm": round(v, 2)} for d, v in parsed]
+
+
+def _normalize_lt_pace_curve(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    parsed: list[tuple[str, float]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        date_raw = str(row.get("date") or "").strip()
+        if not date_raw:
+            continue
+        try:
+            parsed_date = datetime.fromisoformat(date_raw).date().isoformat()
+            v_raw = row.get("lt_pace_sec_per_km")
+            if v_raw is None and row.get("lt_pace") is not None:
+                v_raw = _pace_mmss_to_sec(str(row.get("lt_pace")))
+            pace_sec = float(v_raw)
+        except Exception:
+            continue
+        if pace_sec <= 0:
+            continue
+        parsed.append((parsed_date, pace_sec))
+    if not parsed:
+        return _default_lt_pace_curve()
+    parsed = sorted(dict(parsed).items(), key=lambda item: item[0])
+    return [{"date": d, "lt_pace_sec_per_km": round(v, 2)} for d, v in parsed]
+
+
+def _normalize_injury_windows(rows: list[dict[str, object]]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        label = str(row.get("label") or "").strip() or "injury"
+        sev = str(row.get("severity") or "injury").strip().lower()
+        if sev not in {"injury", "light_injury"}:
+            sev = "injury"
+        try:
+            start = datetime.fromisoformat(str(row.get("start") or "").strip()).date()
+            end = datetime.fromisoformat(str(row.get("end") or "").strip()).date()
+        except Exception:
+            continue
+        if end < start:
+            start, end = end, start
+        out.append(
+            {
+                "label": label,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "severity": sev,
+            }
+        )
+    return out
+
+
+def _garmin_credentials_from_env() -> tuple[str, str]:
+    email = str(os.getenv("GARMIN_EMAIL") or "").strip()
+    password = str(os.getenv("GARMIN_PASSWORD") or "").strip()
+    return email, password
 
 
 def _lt_target_from_regression(lt_pace_sec_per_km: float, value_index: int) -> float:
@@ -1193,13 +1349,39 @@ def _format_pace_short(pace_s_per_km: float | None) -> str:
 
 
 def _activity_intensity_token(if_proxy: float, tss: float) -> str:
-    if if_proxy >= 1.0 or tss >= 120:
-        return "red"
-    if if_proxy >= 0.9 or tss >= 95:
-        return "orange"
-    if if_proxy >= 0.8 or tss >= 70:
+    if if_proxy <= 0:
+        return "gray"
+    thresholds = _normalize_if_zone_thresholds(None)
+    if if_proxy < float(thresholds["z1_max"]):
+        return "gray"
+    if if_proxy < float(thresholds["z2_max"]):
         return "blue"
-    return "green"
+    if if_proxy < float(thresholds["z3_max"]):
+        return "orange"
+    if if_proxy < float(thresholds["z4_max"]):
+        return "red"
+    return "purple"
+
+
+def _activity_palette_token(
+    db_path: Path,
+    if_proxy: float | int | None,
+    tss_value: float | int | None,
+    rtss_value: float | int | None,
+    sport_type: str | None,
+    daily_tss_upper_bound: float,
+) -> str:
+    if_token = _activity_intensity_token(_safe_float(if_proxy), _safe_float(tss_value))
+    sport_lower = str(sport_type or "").lower()
+    is_running_like = ("run" in sport_lower) or ("treadmill" in sport_lower)
+    override_load = _safe_float(rtss_value) if is_running_like else _safe_float(tss_value)
+    daily_cap = float(max(_safe_float(daily_tss_upper_bound), 0.0))
+    if daily_cap > 0:
+        if override_load > (daily_cap * 1.5):
+            return "purple"
+        if override_load > daily_cap and if_token not in {"red", "purple"}:
+            return "orange"
+    return if_token
 
 
 def _day_lookup_with_daily_model(
@@ -1518,14 +1700,30 @@ def _build_activity_dashboard_payload(
                 "stress_avg": _safe_float(row.get("stress_avg")),
             }
 
-    week_starts = pd.date_range(
-        start=_week_start_monday(pd.Timestamp(min_day)),
-        end=_week_start_monday(pd.Timestamp(render_max_day)),
-        freq="7D",
-    ).sort_values(ascending=False)
-    weeks_total = int(len(week_starts))
+    latest_actual_day = pd.Timestamp(max_day).normalize()
+    display_anchor_day = pd.Timestamp(min(today_local, latest_actual_day)).normalize()
+    current_week_start = _week_start_monday(display_anchor_day)
+
+    actual_week_starts = {
+        _week_start_monday(pd.Timestamp(day))
+        for day in pd.to_datetime(metrics_df.get("day"), errors="coerce").dropna().tolist()
+    }
+    planned_week_starts = {
+        _week_start_monday(pd.Timestamp(day))
+        for day in list(planned_summary_lookup.keys())
+    }
+
+    all_week_starts = {pd.Timestamp(ws).normalize() for ws in actual_week_starts.union(planned_week_starts)}
+    all_week_starts.add(current_week_start)
+
+    # Priority: current week first, then recent historical weeks, then future planned weeks.
+    past_weeks = sorted([ws for ws in all_week_starts if ws < current_week_start], reverse=True)
+    future_weeks = sorted([ws for ws in all_week_starts if ws > current_week_start], reverse=False)
+    ordered_week_starts = [current_week_start] + past_weeks + future_weeks
+
+    weeks_total = int(len(ordered_week_starts))
     max_visible = max(1, min(int(visible_weeks), max(weeks_total, 1)))
-    selected_week_starts = week_starts[:max_visible]
+    selected_week_starts = ordered_week_starts[:max_visible]
 
     summary = {
         "activities": int(len(metrics_df.index)),
@@ -1551,6 +1749,13 @@ def _build_activity_dashboard_payload(
         ws = pd.Timestamp(ws).normalize()
         we = ws + pd.Timedelta(days=6)
         week_df = metrics_df[(metrics_df["day"] >= ws) & (metrics_df["day"] <= we)].copy()
+        has_planned_week = any(
+            ((ws + pd.Timedelta(days=offset)) in planned_summary_lookup)
+            or ((ws + pd.Timedelta(days=offset)) in planned_by_day)
+            for offset in range(7)
+        )
+        if week_df.empty and not has_planned_week and ws != current_week_start:
+            continue
 
         week_duration_s = float(pd.to_numeric(week_df.get("duration_s"), errors="coerce").fillna(0.0).sum())
         week_distance_km = float(pd.to_numeric(week_df.get("distance_km_running"), errors="coerce").fillna(0.0).sum())
@@ -2257,6 +2462,279 @@ def overview(
         "activities": int(activities),
         "activity_details": int(activity_details),
         "wellness_daily": int(wellness_daily),
+    }
+
+
+@app.get("/api/v1/settings")
+def settings_view(
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+
+    if_raw = get_setting(db_path, SETTINGS_KEY_IF_ZONE_THRESHOLDS)
+    try:
+        if_payload = json.loads(if_raw) if if_raw else None
+    except Exception:
+        if_payload = None
+    if_thresholds = _normalize_if_zone_thresholds(if_payload)
+
+    spec_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+
+    lthr_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=DEFAULT_LTHR,
+    )
+    lt_pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    lthr_rows = [
+        {"date": d.astimezone(timezone.utc).date().isoformat(), "lthr_bpm": round(float(v), 2)}
+        for d, v in lthr_curve
+    ]
+    pace_rows = [
+        {"date": d.astimezone(timezone.utc).date().isoformat(), "lt_pace_sec_per_km": round(float(v), 2)}
+        for d, v in lt_pace_curve
+    ]
+
+    injury_rows: list[dict[str, str]] = []
+    raw_injury = get_setting(db_path, SETTINGS_KEY_INJURY_WINDOWS)
+    if raw_injury:
+        try:
+            payload = json.loads(raw_injury)
+            if isinstance(payload, list):
+                injury_rows = _normalize_injury_windows(payload)
+        except Exception:
+            injury_rows = []
+
+    return {
+        "owner": resolved_owner,
+        "db_path": str(db_path),
+        "if_zone_thresholds": if_thresholds,
+        "specificity_profile": spec_profile,
+        "lthr_curve": lthr_rows,
+        "lt_pace_curve": pace_rows,
+        "injury_windows": injury_rows,
+    }
+
+
+@app.put("/api/v1/settings")
+def settings_update(
+    payload: UpdateSettingsRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+
+    updated: list[str] = []
+
+    if payload.if_zone_thresholds is not None:
+        normalized = _normalize_if_zone_thresholds(payload.if_zone_thresholds)
+        save_setting(db_path, SETTINGS_KEY_IF_ZONE_THRESHOLDS, _settings_json(normalized))
+        updated.append("if_zone_thresholds")
+
+    if payload.specificity_profile is not None:
+        fallback = _safe_float(payload.specificity_profile.get("non_running")) if isinstance(payload.specificity_profile, dict) else 0.8
+        normalized = _normalize_specificity_profile(payload.specificity_profile, fallback_default=max(fallback, 0.1))
+        save_setting(db_path, SETTINGS_KEY_ACTIVITY_SPECIFICITY, _settings_json(normalized))
+        save_setting(db_path, SETTINGS_KEY_NON_RUNNING_FACTOR, f"{float(normalized['non_running']):.4f}")
+        updated.append("specificity_profile")
+
+    if payload.lthr_curve is not None:
+        normalized = _normalize_lthr_curve(payload.lthr_curve)
+        save_setting(db_path, SETTINGS_KEY_LTHR_CURVE, _settings_json(normalized))
+        updated.append("lthr_curve")
+
+    if payload.lt_pace_curve is not None:
+        normalized = _normalize_lt_pace_curve(payload.lt_pace_curve)
+        save_setting(db_path, SETTINGS_KEY_LT_PACE_CURVE, _settings_json(normalized))
+        updated.append("lt_pace_curve")
+
+    if payload.injury_windows is not None:
+        normalized = _normalize_injury_windows(payload.injury_windows)
+        save_setting(db_path, SETTINGS_KEY_INJURY_WINDOWS, _settings_json(normalized))
+        updated.append("injury_windows")
+
+    return {"updated": updated}
+
+
+@app.get("/api/v1/data-extract/status")
+def data_extract_status(
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    last_sync = get_last_sync(db_path)
+    counts = get_table_counts(db_path)
+    garmin_email, garmin_password = _garmin_credentials_from_env()
+    return {
+        "owner": resolved_owner,
+        "db_path": str(db_path),
+        "counts": counts,
+        "last_sync": last_sync,
+        "garmin_credentials_available": bool(garmin_email and garmin_password),
+        "import_dir": str((Path(load_config().import_dir) if hasattr(load_config(), "import_dir") else (TEMPERANCE_SRC / "data" / "import"))),
+    }
+
+
+@app.post("/api/v1/data-extract/sync")
+def data_extract_sync(
+    payload: SyncRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+
+    source = str(payload.source or "both").strip().lower()
+    if source not in {"garmin_api", "file_import", "both"}:
+        source = "both"
+    profile = str(payload.garmin_profile or "quick").strip().lower()
+    if profile not in {"quick", "deep"}:
+        profile = "quick"
+    days_back = max(7, min(int(payload.days_back), 3650))
+
+    messages: list[str] = []
+    details: dict[str, Any] = {}
+    total_rows = 0
+    garmin_email, garmin_password = _garmin_credentials_from_env()
+    latest = get_latest_activity_time(db_path)
+
+    if source in {"garmin_api", "both"}:
+        if not (garmin_email and garmin_password):
+            messages.append("Garmin credentials missing (GARMIN_EMAIL/GARMIN_PASSWORD).")
+            details["garmin"] = {"skipped": True, "reason": "credentials_missing"}
+        else:
+            if profile == "quick":
+                rows = fetch_garmin_runs(
+                    email=garmin_email,
+                    password=garmin_password,
+                    days_back=days_back,
+                    since_utc=latest,
+                )
+                changed = upsert_activities(db_path, rows)
+                total_rows += len(rows)
+                details["garmin"] = {"profile": "quick", "rows": len(rows), "db_changes": int(changed)}
+            else:
+                deep_start = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
+                extract = fetch_garmin_comprehensive(
+                    email=garmin_email,
+                    password=garmin_password,
+                    start_day=deep_start,
+                    end_day=datetime.now(timezone.utc).date(),
+                    include_activity_details=True,
+                    include_splits=True,
+                    include_wellness=True,
+                    raw_export_dir=None,
+                    progress_cb=None,
+                )
+                n_a = upsert_activities(db_path, extract.activities)
+                n_d = upsert_activity_details(db_path, extract.activity_details)
+                n_r = upsert_activity_records(db_path, extract.activity_records)
+                n_sp = upsert_activity_splits(db_path, extract.activity_splits)
+                n_s = upsert_sleep_daily(db_path, extract.sleep_daily)
+                n_w = upsert_wellness_daily(db_path, extract.wellness_daily)
+                total_rows += len(extract.activities)
+                details["garmin"] = {
+                    "profile": "deep",
+                    "activities": len(extract.activities),
+                    "details": len(extract.activity_details),
+                    "records": len(extract.activity_records),
+                    "splits": len(extract.activity_splits),
+                    "sleep": len(extract.sleep_daily),
+                    "wellness": len(extract.wellness_daily),
+                    "errors": extract.errors[:20],
+                    "db_changes": {
+                        "activities": int(n_a),
+                        "details": int(n_d),
+                        "records": int(n_r),
+                        "splits": int(n_sp),
+                        "sleep": int(n_s),
+                        "wellness": int(n_w),
+                    },
+                }
+
+    if source in {"file_import", "both"}:
+        import_dir = Path(load_config().import_dir) if hasattr(load_config(), "import_dir") else (TEMPERANCE_SRC / "data" / "import")
+        rows = import_runs_from_folder(import_dir=import_dir, days_back=days_back)
+        changed = upsert_activities(db_path, rows)
+        total_rows += len(rows)
+        details["file_import"] = {"rows": len(rows), "db_changes": int(changed), "import_dir": str(import_dir)}
+
+    success = total_rows > 0 or any("missing" in m.lower() for m in messages)
+    msg = " | ".join(messages) if messages else f"total_rows={total_rows}"
+    log_sync(db_path, source=f"v2_sync_{source}_{profile}", success=success, message=msg)
+    return {"success": success, "messages": messages, "total_rows": total_rows, "details": details}
+
+
+@app.post("/api/v1/data-extract/comprehensive")
+def data_extract_comprehensive(
+    payload: ComprehensiveExtractRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    garmin_email, garmin_password = _garmin_credentials_from_env()
+    if not (garmin_email and garmin_password):
+        raise HTTPException(status_code=400, detail="Garmin credentials missing (GARMIN_EMAIL/GARMIN_PASSWORD).")
+
+    try:
+        start_day = datetime.fromisoformat(str(payload.start_day)).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid start_day. Use YYYY-MM-DD.")
+    end_day = datetime.now(timezone.utc).date()
+
+    if bool(payload.incremental_only):
+        latest = get_latest_activity_time(db_path)
+        latest_recovery = get_latest_recovery_day(db_path) if bool(payload.include_wellness) else None
+        anchors = [a for a in [latest, latest_recovery] if a is not None]
+        if anchors:
+            anchor = min(anchors)
+            start_day = max(start_day, (anchor - timedelta(days=2)).date())
+
+    extract = fetch_garmin_comprehensive(
+        email=garmin_email,
+        password=garmin_password,
+        start_day=start_day,
+        end_day=end_day,
+        include_activity_details=bool(payload.include_details),
+        include_splits=bool(payload.include_details),
+        include_wellness=bool(payload.include_wellness),
+        raw_export_dir=None,
+        progress_cb=None,
+    )
+    n_a = upsert_activities(db_path, extract.activities)
+    n_d = upsert_activity_details(db_path, extract.activity_details)
+    n_r = upsert_activity_records(db_path, extract.activity_records)
+    n_sp = upsert_activity_splits(db_path, extract.activity_splits)
+    n_s = upsert_sleep_daily(db_path, extract.sleep_daily)
+    n_w = upsert_wellness_daily(db_path, extract.wellness_daily)
+    msg = (
+        f"activities={len(extract.activities)}({n_a}), details={len(extract.activity_details)}({n_d}), "
+        f"records={len(extract.activity_records)}({n_r}), splits={len(extract.activity_splits)}({n_sp}), "
+        f"sleep={len(extract.sleep_daily)}({n_s}), wellness={len(extract.wellness_daily)}({n_w}), errors={len(extract.errors)}"
+    )
+    log_sync(db_path, source="v2_garmin_comprehensive", success=True, message=msg)
+    return {
+        "success": True,
+        "start_day": start_day.isoformat(),
+        "end_day": end_day.isoformat(),
+        "summary": msg,
+        "errors": extract.errors[:40],
     }
 
 

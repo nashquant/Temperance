@@ -1,4 +1,4 @@
-import { BarChart3, CalendarDays, LogOut, Moon, Settings, Sun } from 'lucide-react';
+import { BarChart3, CalendarDays, Database, LogOut, Moon, Settings, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 
@@ -10,8 +10,8 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: BarChart3, disabled: false },
   { to: '/app/week-planner', label: 'Week Planner', icon: CalendarDays, disabled: false },
-  { to: '/app/activities', label: 'Activities', icon: CalendarDays, disabled: true },
-  { to: '/app/settings', label: 'Settings', icon: Settings, disabled: true },
+  { to: '/app/data-extract', label: 'Data Extract', icon: Database, disabled: false },
+  { to: '/app/settings', label: 'Settings', icon: Settings, disabled: false },
 ];
 
 export function AppLayout(): JSX.Element {
