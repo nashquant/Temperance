@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from dataclasses import replace
 from pathlib import Path
 from time import perf_counter, time
+from urllib.parse import urlencode
 
 import altair as alt
 import numpy as np
@@ -5210,6 +5211,69 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         font-size: 0.86rem !important;
                         line-height: 1.3 !important;
                     }
+                    .compact-mobile-nav {
+                        display: flex !important;
+                        flex-wrap: nowrap !important;
+                        align-items: center !important;
+                        gap: 0.34rem !important;
+                        margin: 2px 0 6px 0 !important;
+                    }
+                    .compact-mobile-nav a {
+                        display: inline-flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        min-width: 0 !important;
+                        height: 24px !important;
+                        min-height: 24px !important;
+                        border-radius: 8px !important;
+                        border: 1px solid rgba(71,85,105,0.78) !important;
+                        background: rgba(15,23,42,0.42) !important;
+                        color: rgba(226,232,240,0.96) !important;
+                        font-size: 0.74rem !important;
+                        line-height: 1 !important;
+                        text-decoration: none !important;
+                        white-space: nowrap !important;
+                        padding: 0.04rem 0.12rem !important;
+                    }
+                    .compact-mobile-nav a:visited,
+                    .compact-mobile-nav a:hover,
+                    .compact-mobile-nav a:focus,
+                    .compact-mobile-nav a:focus-visible,
+                    .compact-mobile-nav a:active {
+                        color: rgba(241,245,249,0.98) !important;
+                        text-decoration: none !important;
+                    }
+                    .compact-mobile-nav a.prev,
+                    .compact-mobile-nav a.next {
+                        flex: 0 0 20% !important;
+                        max-width: 20% !important;
+                    }
+                    .compact-mobile-nav a.filters {
+                        flex: 0 0 60% !important;
+                        max-width: 60% !important;
+                    }
+                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) {
+                        display: flex !important;
+                        flex-wrap: nowrap !important;
+                        gap: 0.3rem !important;
+                        align-items: center !important;
+                    }
+                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"] {
+                        min-width: 0 !important;
+                        width: auto !important;
+                    }
+                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:nth-child(1) {
+                        flex: 0 0 20% !important;
+                        max-width: 20% !important;
+                    }
+                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:nth-child(2) {
+                        flex: 0 0 20% !important;
+                        max-width: 20% !important;
+                    }
+                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:nth-child(3) {
+                        flex: 0 0 60% !important;
+                        max-width: 60% !important;
+                    }
                     div[class*="st-key-compact_prev_week"] button,
                     div[class*="st-key-compact_next_week"] button,
                     div[class*="st-key-compact_filters_toggle"] button {
@@ -5366,24 +5430,47 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 is_mobile_compact_ui = _is_probably_mobile_client()
 
                 if is_mobile_compact_ui:
-                    nav1, nav2, nav3, _nav_spacer = st.columns([0.24, 0.24, 0.52, 1.2], gap="small")
-                    with nav1:
-                        if st.button("◀", key="compact_prev_week", use_container_width=True):
-                            st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
-                            st.rerun()
-                    with nav2:
-                        if st.button("▶", key="compact_next_week", use_container_width=True):
-                            st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
-                            st.rerun()
-                    with nav3:
-                        filters_open = bool(st.session_state.get("calendar_compact_filters_open", False))
-                        if st.button(
-                            ("Filters" if not filters_open else "Hide"),
-                            key="compact_filters_toggle",
-                            use_container_width=True,
-                        ):
-                            st.session_state["calendar_compact_filters_open"] = not filters_open
-                            st.rerun()
+                    nav_action = str(st.query_params.get("compact_nav") or "").strip().lower()
+                    if nav_action == "prev":
+                        st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
+                    elif nav_action == "next":
+                        st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
+                    elif nav_action == "filters":
+                        st.session_state["calendar_compact_filters_open"] = not bool(
+                            st.session_state.get("calendar_compact_filters_open", False)
+                        )
+                    if nav_action in {"prev", "next", "filters"}:
+                        try:
+                            del st.query_params["compact_nav"]
+                        except Exception:
+                            pass
+                        st.rerun()
+
+                    _qp_base: dict[str, list[str] | str] = {}
+                    try:
+                        for _k, _v in st.query_params.items():
+                            if str(_k) == "compact_nav":
+                                continue
+                            if isinstance(_v, (list, tuple)):
+                                _qp_base[str(_k)] = [str(x) for x in _v]
+                            else:
+                                _qp_base[str(_k)] = str(_v)
+                    except Exception:
+                        _qp_base = {}
+                    _nav_prev_href = "?" + urlencode({**_qp_base, "compact_nav": "prev"}, doseq=True)
+                    _nav_next_href = "?" + urlencode({**_qp_base, "compact_nav": "next"}, doseq=True)
+                    _nav_filters_href = "?" + urlencode({**_qp_base, "compact_nav": "filters"}, doseq=True)
+                    _filters_label = "Hide" if bool(st.session_state.get("calendar_compact_filters_open", False)) else "Filters"
+                    st.markdown(
+                        (
+                            "<div class='compact-mobile-nav'>"
+                            f"<a class='prev' href='{_nav_prev_href}'>◀</a>"
+                            f"<a class='next' href='{_nav_next_href}'>▶</a>"
+                            f"<a class='filters' href='{_nav_filters_href}'>{_filters_label}</a>"
+                            "</div>"
+                        ),
+                        unsafe_allow_html=True,
+                    )
                     if bool(st.session_state.get("calendar_compact_filters_open", False)):
                         st.selectbox(
                             "Compare against",
