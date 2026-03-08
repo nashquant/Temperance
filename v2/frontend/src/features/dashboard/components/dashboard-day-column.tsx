@@ -27,6 +27,14 @@ function fmtMeta(day: DashboardDayColumnType): string[] {
   const line1: string[] = [];
   const line2: string[] = [];
   const line3: string[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const dayDate = new Date(`${day.day_utc}T00:00:00`);
+  dayDate.setHours(0, 0, 0, 0);
+  const isTodayOrTomorrow = dayDate.getTime() === today.getTime() || dayDate.getTime() === tomorrow.getTime();
+  const hasUndonePlanned = day.planned_activities.length > 0;
 
   line1.push(`${Math.round(day.meta.distance_eqv_km || 0)} km`);
   if ((day.meta.calories || 0) > 0) line1.push(`${Math.round(day.meta.calories)} kcal`);
@@ -47,7 +55,7 @@ function fmtMeta(day: DashboardDayColumnType): string[] {
   if (line2.length < 2 && (day.meta.planned_if_pct || 0) > 0) {
     line2.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
   }
-  if (line3.length === 0 && day.meta.fatigue_expected !== null) {
+  if (line3.length === 0 && isTodayOrTomorrow && hasUndonePlanned && day.meta.fatigue_expected !== null) {
     line3.push(`Fatigue exp ${Math.round(day.meta.fatigue_expected)}`);
   }
 
@@ -144,10 +152,7 @@ export function DashboardDayColumn({ day }: DashboardDayColumnProps): JSX.Elemen
                 {compactLine([activity.duration_label, `${Math.round(activity.distance_eqv_km)} kmeq`])}
               </p>
               <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">
-                {compactLine([
-                  activity.pace_label && activity.pace_label !== '-' ? activity.pace_label : null,
-                  day.meta.fatigue_expected !== null ? `Fatigue exp ${Math.round(day.meta.fatigue_expected)}` : 'Fatigue exp -',
-                ])}
+                {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
               </p>
               <p className="mt-auto truncate text-[12px] font-semibold leading-4 text-foreground">
                 TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
