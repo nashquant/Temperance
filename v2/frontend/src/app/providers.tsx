@@ -6,10 +6,13 @@ import { AuthProvider } from '@/features/auth/hooks/use-auth';
 import { queryClient } from '@/lib/query-client';
 
 export function AppProviders({ children }: { children: React.ReactNode }): JSX.Element {
+  const rawBase = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+  const routerBase = rawBase === '' ? '/' : rawBase;
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>{children}</BrowserRouter>
+        <BrowserRouter basename={routerBase}>{children}</BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
   );
