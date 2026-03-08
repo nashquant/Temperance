@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,18 @@ import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-quer
 export function DashboardPage(): JSX.Element {
   const [visibleWeeks, setVisibleWeeks] = useState(6);
   const query = useDashboardQuery(visibleWeeks, 'all');
+  const sortedWeeks = useMemo(() => {
+    if (!query.data?.weeks) return [];
+
+    return [...query.data.weeks].sort((a, b) => {
+      const aTs = Date.parse(a.week_start);
+      const bTs = Date.parse(b.week_start);
+      if (Number.isNaN(aTs) && Number.isNaN(bTs)) return 0;
+      if (Number.isNaN(aTs)) return 1;
+      if (Number.isNaN(bTs)) return -1;
+      return bTs - aTs;
+    });
+  }, [query.data?.weeks]);
 
   return (
     <section className="space-y-6">
@@ -35,7 +47,7 @@ export function DashboardPage(): JSX.Element {
             </div>
           ) : (
             <div className="space-y-4">
-              {query.data.weeks.map((week) => (
+              {sortedWeeks.map((week) => (
                 <DashboardWeekCard key={week.week_start} week={week} />
               ))}
               {query.data.has_more_weeks ? (

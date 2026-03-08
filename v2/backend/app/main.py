@@ -1715,11 +1715,8 @@ def _build_activity_dashboard_payload(
 
     all_week_starts = {pd.Timestamp(ws).normalize() for ws in actual_week_starts.union(planned_week_starts)}
     all_week_starts.add(current_week_start)
-
-    # Priority: current week first, then recent historical weeks, then future planned weeks.
-    past_weeks = sorted([ws for ws in all_week_starts if ws < current_week_start], reverse=True)
-    future_weeks = sorted([ws for ws in all_week_starts if ws > current_week_start], reverse=False)
-    ordered_week_starts = [current_week_start] + past_weeks + future_weeks
+    # Strict chronological order: latest week first.
+    ordered_week_starts = sorted(all_week_starts, reverse=True)
 
     weeks_total = int(len(ordered_week_starts))
     max_visible = max(1, min(int(visible_weeks), max(weeks_total, 1)))
@@ -1904,6 +1901,14 @@ def _build_activity_dashboard_payload(
                 "days": day_cards,
             }
         )
+
+    weeks_out = sorted(
+        weeks_out,
+        key=lambda week: pd.Timestamp(pd.to_datetime(week.get("week_start"), errors="coerce")).timestamp()
+        if pd.notna(pd.to_datetime(week.get("week_start"), errors="coerce"))
+        else float("-inf"),
+        reverse=True,
+    )
 
     return {
         "weeks_total": weeks_total,

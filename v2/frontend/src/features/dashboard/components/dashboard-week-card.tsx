@@ -1,3 +1,4 @@
+import { Card, CardContent } from '@/components/ui/card';
 import { DashboardDayColumn } from '@/features/dashboard/components/dashboard-day-column';
 import { DashboardWeekSummaryCard } from '@/features/dashboard/components/dashboard-week-summary-card';
 import type { DashboardWeekRow } from '@/features/dashboard/types/dashboard';
@@ -12,18 +13,22 @@ function shortDay(iso: string): string {
 
 export function DashboardWeekCard({ week }: DashboardWeekCardProps): JSX.Element {
   return (
-    <section className="rounded-2xl border border-border/70 bg-card/40 p-3">
-      <div className="grid gap-2 lg:grid-cols-[1.2fr_repeat(7,minmax(0,1fr))]">
-        <DashboardWeekSummaryCard
-          weekNumber={week.week_number}
-          weekStart={shortDay(week.week_start)}
-          weekEnd={shortDay(week.week_end)}
-          summary={week.summary}
-        />
-        {week.days.map((day) => (
-          <DashboardDayColumn key={day.day_utc} day={day} />
-        ))}
-      </div>
-    </section>
+    <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(56,189,248,0.45),rgba(168,85,247,0.26),rgba(245,158,11,0.3))] p-[1px] shadow-[0_10px_30px_rgba(2,6,23,0.5)]">
+      <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_8%_10%,rgba(56,189,248,0.1),transparent_40%),radial-gradient(circle_at_88%_90%,rgba(168,85,247,0.11),transparent_45%)] shadow-inner">
+        <CardContent className="p-1.5">
+          <div className="grid gap-1.5 lg:grid-cols-[156px_repeat(7,minmax(0,1fr))] lg:items-start">
+          <DashboardWeekSummaryCard
+            weekNumber={week.week_number}
+            weekStart={shortDay(week.week_start)}
+            weekEnd={shortDay(week.week_end)}
+            summary={week.summary}
+          />
+          {week.days.map((day) => (
+            <DashboardDayColumn key={day.day_utc} day={day} />
+          ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
