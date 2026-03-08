@@ -144,6 +144,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 title="Leg Elasticity vs Pounding"
                 data={chartData}
                 yLabel="Load"
+                targetKey="target_tss"
+                targetLabel="Target"
                 series={[
                   { key: 'leg_elasticity', label: 'Leg Elasticity', color: '#22c55e' },
                   { key: 'pounding', label: 'Pounding', color: '#ef4444' },

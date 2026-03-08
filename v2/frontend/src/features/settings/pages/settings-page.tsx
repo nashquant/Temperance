@@ -33,6 +33,13 @@ interface InjuryDraftRow {
   severity: 'injury' | 'light_injury';
 }
 
+interface IfZoneGuideRow {
+  zone: 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5';
+  ifRange: string;
+  hrRange: string;
+  paceRange: string;
+}
+
 function rowId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -66,6 +73,34 @@ function parsePaceInputToSeconds(raw: string): number | null {
   }
 
   return null;
+}
+
+function pickLatestEffective<T extends { date: string }>(
+  rows: T[],
+  pickValue: (row: T) => number,
+  fallback: number,
+): { date: string; value: number } {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const sorted = [...rows]
+    .filter((row) => row.date)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const effective = [...sorted].reverse().find((row) => row.date <= todayIso) ?? sorted.at(-1);
+  if (!effective) return { date: todayIso, value: fallback };
+  const value = Number(pickValue(effective));
+  return { date: effective.date, value: Number.isFinite(value) && value > 0 ? value : fallback };
+}
+
+function formatPaceFromSeconds(secPerKm: number): string {
+  const value = Number(secPerKm);
+  if (!Number.isFinite(value) || value <= 0) return '-';
+  const mm = Math.floor(value / 60);
+  const ss = Math.round(value % 60);
+  return `${mm}:${String(ss).padStart(2, '0')}/km`;
+}
+
+function roundInt(value: number): number {
+  return Math.round(Number(value) || 0);
 }
 
 export function SettingsPage(): JSX.Element {
@@ -160,6 +195,48 @@ export function SettingsPage(): JSX.Element {
     return { lthr, pace, injury, paceError };
   }, [injuryRows, lthrRows, paceRows]);
 
+  const ifZoneGuide = useMemo(() => {
+    const latestLthr = pickLatestEffective(parsedCurves.lthr, (row) => row.lthr_bpm, 178);
+    const latestPace = pickLatestEffective(parsedCurves.pace, (row) => row.lt_pace_sec_per_km, 300);
+    const z1 = Number(ifZones.z1_max) || 0.75;
+    const z2 = Number(ifZones.z2_max) || 0.85;
+    const z3 = Number(ifZones.z3_max) || 0.95;
+    const z4 = Number(ifZones.z4_max) || 1.03;
+    const hrAt = (intensity: number) => roundInt(latestLthr.value * intensity);
+    const paceAt = (intensity: number) => formatPaceFromSeconds(latestPace.value / intensity);
+
+    const rows: IfZoneGuideRow[] = [
+      { zone: 'Z1', ifRange: `< ${roundInt(z1 * 100)}%`, hrRange: `< ${hrAt(z1)}`, paceRange: `> ${paceAt(z1)}` },
+      {
+        zone: 'Z2',
+        ifRange: `${roundInt(z1 * 100)}% - <${roundInt(z2 * 100)}%`,
+        hrRange: `${hrAt(z1)}-${hrAt(z2)}`,
+        paceRange: `${paceAt(z2)} - ${paceAt(z1)}`,
+      },
+      {
+        zone: 'Z3',
+        ifRange: `${roundInt(z2 * 100)}% - <${roundInt(z3 * 100)}%`,
+        hrRange: `${hrAt(z2)}-${hrAt(z3)}`,
+        paceRange: `${paceAt(z3)} - ${paceAt(z2)}`,
+      },
+      {
+        zone: 'Z4',
+        ifRange: `${roundInt(z3 * 100)}% - <${roundInt(z4 * 100)}%`,
+        hrRange: `${hrAt(z3)}-${hrAt(z4)}`,
+        paceRange: `${paceAt(z4)} - ${paceAt(z3)}`,
+      },
+      { zone: 'Z5', ifRange: `>= ${roundInt(z4 * 100)}%`, hrRange: `> ${hrAt(z4)}`, paceRange: `< ${paceAt(z4)}` },
+    ];
+
+    return {
+      rows,
+      latestDate: latestLthr.date > latestPace.date ? latestLthr.date : latestPace.date,
+      latestLthr: roundInt(latestLthr.value),
+      latestPaceText: formatPaceFromSeconds(latestPace.value),
+      thresholdsText: `Z1 <${roundInt(z1 * 100)}%, Z2 <${roundInt(z2 * 100)}%, Z3 <${roundInt(z3 * 100)}%, Z4 <${roundInt(z4 * 100)}%, Z5 >=${roundInt(z4 * 100)}%`,
+    };
+  }, [ifZones, parsedCurves.lthr, parsedCurves.pace]);
+
   if (query.isLoading) {
     return (
       <section className="space-y-4">
@@ -181,11 +258,38 @@ export function SettingsPage(): JSX.Element {
 
   return (
     <section className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      </div>
-
       {saveMsg ? <p className="text-sm text-muted-foreground">{saveMsg}</p> : null}
+
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <p className="text-sm font-medium">IF Zones</p>
+          <p className="text-xs text-muted-foreground">
+            Using latest values as of {ifZoneGuide.latestDate} (LTHR {ifZoneGuide.latestLthr} bpm, LT pace {ifZoneGuide.latestPaceText}). Current thresholds: {ifZoneGuide.thresholdsText}.
+          </p>
+          <div className="overflow-x-auto rounded border border-border/70">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-left text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">Zone</th>
+                  <th className="px-3 py-2">IF Range</th>
+                  <th className="px-3 py-2">Suggested HR (bpm)</th>
+                  <th className="px-3 py-2">Suggested Pace</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ifZoneGuide.rows.map((row) => (
+                  <tr key={row.zone} className="border-t border-border/70">
+                    <td className="px-3 py-2 font-semibold">{row.zone}</td>
+                    <td className="px-3 py-2">{row.ifRange}</td>
+                    <td className="px-3 py-2">{row.hrRange}</td>
+                    <td className="px-3 py-2">{row.paceRange}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="space-y-4 p-4">
