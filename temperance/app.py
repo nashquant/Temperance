@@ -3063,6 +3063,9 @@ owner_scoped_keys = [
     "_planned_metrics_df_local_cache_value",
     "_weekly_planned_metrics_cache_key",
     "_weekly_planned_metrics_cache_value",
+    "_calendar_views_cache_key",
+    "_calendar_views_cache_metrics",
+    "_calendar_views_cache_daily",
     "dashboard_metric_select",
     "dashboard_ema_windows",
     "dashboard_compare_mode",
@@ -4614,12 +4617,33 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 st.session_state.get("user_specificity_profile", {}),
                 fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
             )
-            cal_metrics, cal_daily = cached_filtered_views(
-                calendar_metrics_df,
-                activity_filter=cal_activity_filter,
-                specificity_profile=calendar_specificity_profile,
-                daily_tss_target=float(derived_daily_tss_target),
+            calendar_views_cache_key = (
+                "calendar_views_v1",
+                str(active_owner),
+                str(activities_cache_key),
+                str(custom_activities_cache_key),
+                str(cal_activity_filter),
+                tuple(sorted((str(k), float(v)) for k, v in calendar_specificity_profile.items())),
+                float(derived_daily_tss_target),
+                int(len(calendar_metrics_df)),
             )
+            if (
+                st.session_state.get("_calendar_views_cache_key") == calendar_views_cache_key
+                and isinstance(st.session_state.get("_calendar_views_cache_metrics"), pd.DataFrame)
+                and isinstance(st.session_state.get("_calendar_views_cache_daily"), pd.DataFrame)
+            ):
+                cal_metrics = st.session_state["_calendar_views_cache_metrics"].copy()
+                cal_daily = st.session_state["_calendar_views_cache_daily"].copy()
+            else:
+                cal_metrics, cal_daily = cached_filtered_views(
+                    calendar_metrics_df,
+                    activity_filter=cal_activity_filter,
+                    specificity_profile=calendar_specificity_profile,
+                    daily_tss_target=float(derived_daily_tss_target),
+                )
+                st.session_state["_calendar_views_cache_key"] = calendar_views_cache_key
+                st.session_state["_calendar_views_cache_metrics"] = cal_metrics.copy()
+                st.session_state["_calendar_views_cache_daily"] = cal_daily.copy()
             cal_metrics = cal_metrics.copy()
             cal_metrics["start_local"] = _to_local_naive(cal_metrics["start_time_utc"])
             cal_metrics = cal_metrics.dropna(subset=["start_local"]).copy()
