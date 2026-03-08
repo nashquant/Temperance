@@ -180,6 +180,21 @@ ingress:
     path: "^/v2(?:/.*)?$"
     service: http://127.0.0.1:${V2_FRONTEND_PORT}
   - hostname: ${TUNNEL_HOSTNAME}
+    path: "^/@vite(?:/.*)?$"
+    service: http://127.0.0.1:${V2_FRONTEND_PORT}
+  - hostname: ${TUNNEL_HOSTNAME}
+    path: "^/@react-refresh$"
+    service: http://127.0.0.1:${V2_FRONTEND_PORT}
+  - hostname: ${TUNNEL_HOSTNAME}
+    path: "^/__vite_ping$"
+    service: http://127.0.0.1:${V2_FRONTEND_PORT}
+  - hostname: ${TUNNEL_HOSTNAME}
+    path: "^/src(?:/.*)?$"
+    service: http://127.0.0.1:${V2_FRONTEND_PORT}
+  - hostname: ${TUNNEL_HOSTNAME}
+    path: "^/node_modules(?:/.*)?$"
+    service: http://127.0.0.1:${V2_FRONTEND_PORT}
+  - hostname: ${TUNNEL_HOSTNAME}
     path: "^/api(?:/.*)?$"
     service: http://127.0.0.1:${V2_BACKEND_PORT}
   - hostname: ${TUNNEL_HOSTNAME}
