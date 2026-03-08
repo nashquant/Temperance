@@ -1336,62 +1336,9 @@ def overview(
     }
 
 
-@app.get("/api/v1/dashboard")
-def dashboard(
-    days: int = Query(default=42, ge=7, le=365),
-    start_day: str | None = Query(default=None),
-    end_day: str | None = Query(default=None),
-    sport: str | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    payload = _build_dashboard_payload(
-        db_path=db_path,
-        days=days,
-        start_day=start_day,
-        end_day=end_day,
-        sport=sport,
-        limit=limit,
-    )
-    payload["owner"] = resolved_owner
-    payload["db_path"] = str(db_path)
-    return payload
-
-
-@app.get("/api/v1/weekly-summary")
-def weekly_summary_view(
-    days: int = Query(default=84, ge=14, le=365),
-    start_day: str | None = Query(default=None),
-    end_day: str | None = Query(default=None),
-    sport: str | None = Query(default=None),
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    payload = _build_weekly_payload(
-        db_path=db_path,
-        days=days,
-        start_day=start_day,
-        end_day=end_day,
-        sport=sport,
-    )
-    payload["owner"] = resolved_owner
-    payload["db_path"] = str(db_path)
-    return payload
-
-
 @app.get("/api/v1/week-outlook")
 def week_outlook_view(
     days: int = Query(default=84, ge=14, le=365),
-    start_day: str | None = Query(default=None),
-    end_day: str | None = Query(default=None),
-    sport: str | None = Query(default=None),
     metric: str = Query(default="tss"),
     compare: str = Query(default="planned"),
     week_start: str | None = Query(default=None),
@@ -1404,9 +1351,9 @@ def week_outlook_view(
     payload = _build_week_outlook_payload(
         db_path=db_path,
         days=days,
-        start_day=start_day,
-        end_day=end_day,
-        sport=sport,
+        start_day=None,
+        end_day=None,
+        sport=None,
         metric=metric,
         compare=compare,
         week_start=week_start,
