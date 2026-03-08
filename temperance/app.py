@@ -1785,7 +1785,8 @@ def apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, fl
     is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
 
     # Distance equivalent is computed at ingest time with base non-running specificity 0.8.
-    # Re-scale it at view time so UI specificity changes are reflected without full recompute.
+    # Re-scale proxy distance/pace at view time so UI specificity changes are reflected
+    # without full recompute. Keep IF proxy unchanged (raw intensity signal).
     if "distance_proxy_km" in out.columns:
         base_proxy_factor = 0.8
         proxy_mask = ~is_running_like
@@ -1804,11 +1805,6 @@ def apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, fl
                 out.loc[proxy_mask, "pace_proxy_sec_per_km"] = (
                     pd.to_numeric(out.loc[proxy_mask, "pace_proxy_sec_per_km"], errors="coerce").fillna(0.0).values
                     * pd.to_numeric(pace_scale, errors="coerce").fillna(0.0).values
-                )
-            if "if_proxy" in out.columns:
-                out.loc[proxy_mask, "if_proxy"] = (
-                    pd.to_numeric(out.loc[proxy_mask, "if_proxy"], errors="coerce").fillna(0.0).values
-                    * proxy_scale.values
                 )
 
     factor_cols = [
