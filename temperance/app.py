@@ -240,6 +240,21 @@ def _login_client_fingerprint() -> str:
     return f"session:{session_stub}"
 
 
+def _is_probably_mobile_client() -> bool:
+    try:
+        ctx = getattr(st, "context", None)
+        headers = getattr(ctx, "headers", None)
+        if not headers:
+            return False
+        header_map = {str(k).lower(): str(v) for k, v in dict(headers).items()}
+        ua = str(header_map.get("user-agent") or "").lower()
+        if not ua:
+            return False
+        return any(token in ua for token in ["iphone", "android", "mobile", "ipad"])
+    except Exception:
+        return False
+
+
 def _login_guard_key(username: str) -> str:
     user_key = str(username or "").strip().casefold() or "<blank>"
     return f"{_login_client_fingerprint()}|{user_key}"
@@ -5069,6 +5084,47 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         padding: 0;
                         border-radius: 0;
                     }
+                    .compact-week-title {
+                        margin: -6px 0 6px 0 !important;
+                        font-size: 1.15rem !important;
+                        line-height: 1.15 !important;
+                    }
+                    .compact-week-narrative {
+                        margin: 0 0 2px 0 !important;
+                        padding: 8px 10px !important;
+                        border-radius: 8px !important;
+                        font-size: 0.86rem !important;
+                        line-height: 1.3 !important;
+                    }
+                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) {
+                        display: flex !important;
+                        flex-wrap: wrap !important;
+                        gap: 0.4rem !important;
+                    }
+                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"] {
+                        flex: 1 1 calc(50% - 0.4rem) !important;
+                        min-width: calc(50% - 0.4rem) !important;
+                        width: calc(50% - 0.4rem) !important;
+                    }
+                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:has(div[class*="st-key-calendar_compact_compare_choice"]),
+                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:has(div[class*="st-key-calendar_activity_filter"]),
+                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:has(div[class*="st-key-calendar_compact_metric"]) {
+                        flex-basis: 100% !important;
+                        min-width: 100% !important;
+                        width: 100% !important;
+                    }
+                    div[class*="st-key-compact_prev_week"] button,
+                    div[class*="st-key-compact_next_week"] button {
+                        min-height: 42px !important;
+                        padding: 0.35rem 0.55rem !important;
+                        font-size: 1.05rem !important;
+                    }
+                    div[class*="st-key-calendar_compact_compare_choice"] [data-baseweb="select"] > div,
+                    div[class*="st-key-calendar_activity_filter"] [data-baseweb="select"] > div,
+                    div[class*="st-key-calendar_compact_metric"] [data-baseweb="select"] > div {
+                        min-height: 42px !important;
+                        font-size: 1.02rem !important;
+                    }
                     div[data-testid="stHorizontalBlock"]:has(.cal-week-summary) {
                         flex-direction: column !important;
                         align-items: stretch !important;
@@ -5151,7 +5207,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
 
                 st.markdown(
                     (
-                        "<div style='margin:-10px 0 8px 0;font-size:2rem;font-weight:700;"
+                        "<div class='compact-week-title' style='margin:-10px 0 8px 0;font-size:2rem;font-weight:700;"
                         "line-height:1.2;color:rgba(248,250,252,0.98);'>"
                         f"{selected_week_start:%B %-d} - {selected_week_end:%-d}"
                         "</div>"
@@ -5421,25 +5477,32 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     st.session_state["calendar_compact_metric"] = selected_metric
 
                 chart_df = compact_week.copy()
+                is_mobile_compact = _is_probably_mobile_client()
                 chart_df["metric_value"] = pd.to_numeric(chart_df[selected_metric], errors="coerce").fillna(0.0)
-                chart_df["day_display"] = (
-                    chart_df["day"].dt.strftime("%d %b")
-                    + "\n("
-                    + chart_df["day"].dt.strftime("%a")
-                    + ")"
-                )
+                if is_mobile_compact:
+                    chart_df["day_display"] = chart_df["day"].dt.strftime("%a %d")
+                else:
+                    chart_df["day_display"] = (
+                        chart_df["day"].dt.strftime("%d %b")
+                        + "\n("
+                        + chart_df["day"].dt.strftime("%a")
+                        + ")"
+                    )
                 chart_df["series"] = "Current"
                 chart_df["opacity"] = 0.95
                 compare_chart_df = compare_week.copy()
                 compare_chart_df["metric_value"] = pd.to_numeric(
                     compare_chart_df[selected_metric], errors="coerce"
                 ).fillna(0.0)
-                compare_chart_df["day_display"] = (
-                    compare_chart_df["day"].dt.strftime("%d %b")
-                    + "\n("
-                    + compare_chart_df["day"].dt.strftime("%a")
-                    + ")"
-                )
+                if is_mobile_compact:
+                    compare_chart_df["day_display"] = compare_chart_df["day"].dt.strftime("%a %d")
+                else:
+                    compare_chart_df["day_display"] = (
+                        compare_chart_df["day"].dt.strftime("%d %b")
+                        + "\n("
+                        + compare_chart_df["day"].dt.strftime("%a")
+                        + ")"
+                    )
                 compare_chart_df["series"] = "Compare"
                 compare_chart_df["opacity"] = 0.35
                 y_title = next(label for key, label, _, _, _ in metric_defs if key == selected_metric)
@@ -5481,7 +5544,12 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 bar_df = pd.concat([compare_chart_df, chart_df], ignore_index=True)
                 bars = (
                     alt.Chart(bar_df)
-                    .mark_bar(cornerRadiusTopLeft=10, cornerRadiusTopRight=10, size=24, opacity=0.95)
+                    .mark_bar(
+                        cornerRadiusTopLeft=10,
+                        cornerRadiusTopRight=10,
+                        size=(16 if is_mobile_compact else 24),
+                        opacity=0.95,
+                    )
                     .encode(
                         x=alt.X(
                             "day_display:N",
@@ -5489,7 +5557,9 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             title=None,
                             axis=alt.Axis(
                                 labelAngle=0,
-                                labelLineHeight=14,
+                                labelLineHeight=(11 if is_mobile_compact else 14),
+                                labelFontSize=(10 if is_mobile_compact else 12),
+                                labelPadding=(6 if is_mobile_compact else 10),
                             ),
                         ),
                         xOffset=alt.XOffset(
@@ -5610,7 +5680,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 )
                 st.markdown(
                     (
-                        "<div style='margin:0 0 2px 0;padding:10px 12px;border-radius:10px;"
+                        "<div class='compact-week-narrative' style='margin:0 0 2px 0;padding:10px 12px;border-radius:10px;"
                         "border:1px solid rgba(52,211,153,0.35);background:rgba(16,185,129,0.08);"
                         "color:rgba(226,232,240,0.96);font-size:0.9rem;line-height:1.35;'>"
                         f"{narrative}"
@@ -5619,9 +5689,18 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     unsafe_allow_html=True,
                 )
                 compact_chart = alt.layer(bars, labels).properties(
-                    height=250,
-                    padding={"left": 52, "right": 10, "top": 0, "bottom": 42},
+                    height=(205 if is_mobile_compact else 250),
+                    padding=(
+                        {"left": 36, "right": 6, "top": 0, "bottom": 26}
+                        if is_mobile_compact
+                        else {"left": 52, "right": 10, "top": 0, "bottom": 42}
+                    ),
                 )
+                if is_mobile_compact:
+                    compact_chart = bars.properties(
+                        height=205,
+                        padding={"left": 36, "right": 6, "top": 0, "bottom": 26},
+                    )
                 st.markdown("<div class='compact-week-shell'>", unsafe_allow_html=True)
                 st.altair_chart(compact_chart, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
