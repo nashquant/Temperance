@@ -5278,13 +5278,6 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 st.markdown("</div>", unsafe_allow_html=True)
 
             if not compact_mode:
-                header_cols = st.columns([1.2, 1, 1, 1, 1, 1, 1, 1])
-                with header_cols[0]:
-                    st.markdown("**Week**")
-                for i, day_name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
-                    with header_cols[i + 1]:
-                        st.markdown(f"**{day_name}**")
-
                 week_starts = pd.date_range(start=grid_start, end=grid_end, freq="7D")
                 week_starts = week_starts.sort_values(ascending=False)
                 week_count = int(len(week_starts))
