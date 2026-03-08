@@ -5788,14 +5788,25 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         ],
                     )
                 )
-                current_labels = (
-                    alt.Chart(chart_df.assign(series="Current"))
-                    .transform_filter("datum.metric_value > 0")
+                labels_df = chart_df.assign(series="Current").copy()
+                labels_df["label_color"] = "#e2e8f0"
+                labels_df["label_opacity"] = 1.0
+                if compare_choice != "Planned" and not compare_chart_df.empty:
+                    compare_labels_df = compare_chart_df.assign(series="Compare").copy()
+                    compare_labels_df["label_color"] = "#cbd5e1"
+                    compare_labels_df["label_opacity"] = 0.82
+                    labels_df = pd.concat([compare_labels_df, labels_df], ignore_index=True)
+                labels_df["metric_label"] = pd.to_numeric(
+                    labels_df.get("metric_value"),
+                    errors="coerce",
+                ).fillna(0.0).map(lambda v: f"{float(v):.0f}" if float(v) > 0 else "")
+                labels_df = labels_df[labels_df["metric_label"] != ""].copy()
+                labels_layer = (
+                    alt.Chart(labels_df)
                     .mark_text(
                         dy=-4,
                         baseline="bottom",
-                        color="#e2e8f0",
-                        fontSize=12,
+                        fontSize=11,
                         fontWeight=700,
                         clip=False,
                     )
@@ -5807,33 +5818,10 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         ),
                         y=alt.Y("metric_value:Q"),
                         text=alt.Text("metric_label:N"),
+                        color=alt.Color("label_color:N", scale=None, legend=None),
+                        opacity=alt.Opacity("label_opacity:Q", legend=None),
                     )
                 )
-                labels_layer = current_labels
-                if compare_choice != "Planned":
-                    compare_labels = (
-                        alt.Chart(compare_chart_df.assign(series="Compare"))
-                        .transform_filter("datum.metric_value > 0")
-                        .mark_text(
-                            dy=-4,
-                            baseline="bottom",
-                            color="#cbd5e1",
-                            fontSize=11,
-                            fontWeight=700,
-                            opacity=0.8,
-                            clip=False,
-                        )
-                        .encode(
-                            x=alt.X("day_display:N", sort=day_order, scale=alt.Scale(domain=day_order)),
-                            xOffset=alt.XOffset(
-                                "series:N",
-                                sort=["Compare", "Current"],
-                            ),
-                            y=alt.Y("metric_value:Q"),
-                            text=alt.Text("metric_label:N"),
-                        )
-                    )
-                    labels_layer = alt.layer(compare_labels, current_labels)
                 today_local = pd.Timestamp(datetime.now().astimezone().date())
                 cutoff_day = min(today_local, selected_week_end)
                 day_offset = int((cutoff_day - selected_week_start).days)
