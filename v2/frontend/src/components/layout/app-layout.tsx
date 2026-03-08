@@ -1,4 +1,5 @@
-import { Activity, BarChart3, CalendarDays, LogOut, Settings } from 'lucide-react';
+import { Activity, BarChart3, CalendarDays, LogOut, Moon, Settings, Sun } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,24 @@ const navItems = [
 
 export function AppLayout(): JSX.Element {
   const { logout, profile } = useAuth();
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('temperance.theme');
+    const preferredDark =
+      saved === 'dark' || (!saved && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    setIsDark(preferredDark);
+    document.documentElement.classList.toggle('dark', preferredDark);
+  }, []);
+
+  const toggleTheme = () => {
+    setIsDark((previous) => {
+      const next = !previous;
+      document.documentElement.classList.toggle('dark', next);
+      localStorage.setItem('temperance.theme', next ? 'dark' : 'light');
+      return next;
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -72,6 +91,10 @@ export function AppLayout(): JSX.Element {
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">Performance</p>
                 <h2 className="text-xl font-semibold">Weekly planning</h2>
               </div>
+              <Button variant="outline" size="sm" onClick={toggleTheme} className="gap-2">
+                {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {isDark ? 'Light' : 'Dark'}
+              </Button>
             </div>
           </header>
           <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-6">

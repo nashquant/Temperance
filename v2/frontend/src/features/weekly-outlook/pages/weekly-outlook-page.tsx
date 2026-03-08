@@ -6,16 +6,18 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CompareSelector } from '@/features/weekly-outlook/components/compare-selector';
 import { MetricSelector } from '@/features/weekly-outlook/components/metric-selector';
 import { WeeklyOutlookChartCard } from '@/features/weekly-outlook/components/weekly-outlook-chart-card';
 import { WeeklySummaryCards } from '@/features/weekly-outlook/components/weekly-summary-cards';
 import { useWeeklyOutlookQuery } from '@/features/weekly-outlook/hooks/use-weekly-outlook-query';
-import type { WeeklyMetric } from '@/features/weekly-outlook/types/weekly-outlook';
+import type { WeeklyCompare, WeeklyMetric } from '@/features/weekly-outlook/types/weekly-outlook';
 import { formatRange } from '@/features/weekly-outlook/utils/formatters';
 
 export function WeeklyOutlookPage(): JSX.Element {
   const [metric, setMetric] = useState<WeeklyMetric>('tss');
-  const query = useWeeklyOutlookQuery(metric);
+  const [compare, setCompare] = useState<WeeklyCompare>('planned');
+  const query = useWeeklyOutlookQuery(metric, compare);
 
   const isEmpty = query.data !== undefined && query.data.chartRows.length === 0;
 
@@ -29,7 +31,8 @@ export function WeeklyOutlookPage(): JSX.Element {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <CompareSelector value={compare} onValueChange={setCompare} />
           <MetricSelector value={metric} onValueChange={setMetric} />
           <Button variant="outline" onClick={() => void query.refetch()} disabled={query.isFetching}>
             <RefreshCcw className="mr-2 h-4 w-4" />

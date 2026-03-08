@@ -1,4 +1,5 @@
-export type WeeklyMetric = 'tss' | 'distance';
+export type WeeklyMetric = 'tss' | 'rtss' | 'distance';
+export type WeeklyCompare = 'planned' | 'previous_week' | 'two_weeks_ago' | 'three_weeks_ago' | 'four_weeks_ago';
 
 export interface WeeklyOutlookRowRaw {
   day: string;
@@ -11,7 +12,7 @@ export interface WeeklyOutlookRowRaw {
 
 export interface WeeklyOutlookResponseRaw {
   metric: 'tss' | 'rtss' | 'distance_eqv_km';
-  compare: 'planned' | 'previous_week' | 'two_weeks_ago' | 'three_weeks_ago' | 'four_weeks_ago';
+  compare: WeeklyCompare;
   week_start: string;
   week_end: string;
   compare_week_start: string;
@@ -40,6 +41,7 @@ export interface WeeklyChartRow {
 
 export interface WeeklyOutlookViewModel {
   metric: WeeklyMetric;
+  compare: WeeklyCompare;
   compareLabel: string;
   chartRows: WeeklyChartRow[];
   weekStart: string;
@@ -50,5 +52,6 @@ export interface WeeklyOutlookViewModel {
     remainingToGo: number;
     progressPct: number;
     projectedFinish: number | null;
+    estimatedFatigueEow: number | null;
   };
 }

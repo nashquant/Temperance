@@ -1207,12 +1207,17 @@ def _build_week_outlook_payload(
                 .set_index("day")["tss"]
                 .to_dict()
             )
+            # Match v1 behavior: use planned projection after the last day with actual activity.
+            # This allows "today" to use planned TSS when no actual activity exists yet.
+            actual_days = pd.to_datetime(list(tss_map.keys()), errors="coerce")
+            actual_days = actual_days[pd.notna(actual_days)]
+            last_actual_day = pd.Timestamp(actual_days.max()).normalize() if len(actual_days) else pd.NaT
             hist_start = ws - pd.Timedelta(days=42)
             full_days = pd.date_range(start=hist_start, end=week_end, freq="D")
             vals: list[float] = []
             for d in full_days:
                 dd = pd.Timestamp(d).normalize()
-                if dd <= today:
+                if pd.notna(last_actual_day) and dd <= last_actual_day:
                     vals.append(float(tss_map.get(dd, 0.0)))
                 else:
                     vals.append(float(planned_tss_map.get(dd, 0.0)))

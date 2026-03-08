@@ -16,6 +16,7 @@ export function MetricSelector({ value, onValueChange }: MetricSelectorProps): J
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="tss">TSS</SelectItem>
+          <SelectItem value="rtss">rTSS</SelectItem>
           <SelectItem value="distance">Distance</SelectItem>
         </SelectContent>
       </Select>

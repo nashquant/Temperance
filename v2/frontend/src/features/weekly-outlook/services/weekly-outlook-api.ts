@@ -1,16 +1,18 @@
 import { API_CONFIG } from '@/api/config';
 import { apiRequest } from '@/api/http-client';
-import type { WeeklyMetric, WeeklyOutlookResponseRaw } from '@/features/weekly-outlook/types/weekly-outlook';
+import type { WeeklyCompare, WeeklyMetric, WeeklyOutlookResponseRaw } from '@/features/weekly-outlook/types/weekly-outlook';
 
 interface WeeklyOutlookParams {
   token: string;
   owner?: string;
   metric: WeeklyMetric;
-  compare?: 'planned' | 'previous_week';
+  compare?: WeeklyCompare;
 }
 
-function metricToApi(metric: WeeklyMetric): 'tss' | 'distance_eqv_km' {
-  return metric === 'distance' ? 'distance_eqv_km' : 'tss';
+function metricToApi(metric: WeeklyMetric): 'tss' | 'rtss' | 'distance_eqv_km' {
+  if (metric === 'distance') return 'distance_eqv_km';
+  if (metric === 'rtss') return 'rtss';
+  return 'tss';
 }
 
 export async function getWeeklyOutlook({

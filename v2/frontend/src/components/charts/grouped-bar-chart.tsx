@@ -11,7 +11,7 @@ interface GroupedBarChartRow {
 
 interface GroupedBarChartProps {
   data: GroupedBarChartRow[];
-  metric: 'tss' | 'distance';
+  metric: 'tss' | 'rtss' | 'distance';
   currentLabel: string;
   compareLabel: string;
 }
@@ -22,7 +22,7 @@ function GroupedBarChartComponent({
   currentLabel,
   compareLabel,
 }: GroupedBarChartProps): JSX.Element {
-  const axisLabel = metric === 'distance' ? 'Distance (km)' : 'TSS';
+  const axisLabel = metric === 'distance' ? 'Distance (km)' : metric === 'rtss' ? 'rTSS' : 'TSS';
 
   const series = useMemo(
     () => [

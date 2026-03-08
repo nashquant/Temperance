@@ -1,9 +1,9 @@
-export function formatMetricValue(value: number, metric: 'tss' | 'distance'): string {
+export function formatMetricValue(value: number, metric: 'tss' | 'rtss' | 'distance'): string {
   if (metric === 'distance') {
     return `${value.toFixed(1)} km`;
   }
 
-  return `${Math.round(value)} TSS`;
+  return `${Math.round(value)} ${metric === 'rtss' ? 'rTSS' : 'TSS'}`;
 }
 
 export function formatDayLabel(dayIso: string): string {

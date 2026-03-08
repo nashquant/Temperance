@@ -6,6 +6,7 @@ import {
 import { formatDayLabel } from '@/features/weekly-outlook/utils/formatters';
 
 function toMetric(rawMetric: WeeklyOutlookResponseRaw['metric']): WeeklyMetric {
+  if (rawMetric === 'rtss') return 'rtss';
   return rawMetric === 'distance_eqv_km' ? 'distance' : 'tss';
 }
 
@@ -22,6 +23,7 @@ export function mapWeeklyOutlookResponse(raw: WeeklyOutlookResponseRaw): WeeklyO
 
   return {
     metric,
+    compare: raw.compare,
     compareLabel: toCompareLabel(raw.compare),
     weekStart: raw.week_start,
     weekEnd: raw.week_end,
@@ -31,6 +33,7 @@ export function mapWeeklyOutlookResponse(raw: WeeklyOutlookResponseRaw): WeeklyO
       remainingToGo: raw.remaining_to_go,
       progressPct: raw.goal_progress_pct,
       projectedFinish: raw.projected_finish,
+      estimatedFatigueEow: raw.estimated_fatigue_eow,
     },
     chartRows: raw.rows.map((row) => ({
       day: row.day,
