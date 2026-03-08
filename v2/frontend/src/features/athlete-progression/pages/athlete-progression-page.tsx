@@ -14,10 +14,18 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProgressionLineChartCard } from '@/features/athlete-progression/components/progression-line-chart-card';
 import { useAthleteProgressionQuery } from '@/features/athlete-progression/hooks/use-athlete-progression-query';
+import { useSettingsQuery } from '@/features/settings/hooks/use-settings-query';
 import type {
   ProgressionActivityFilter,
   ProgressionAggregation,
 } from '@/features/athlete-progression/types/athlete-progression';
+
+interface InjuryOverlay {
+  start: string;
+  end: string;
+  severity: 'injury' | 'light_injury';
+  label?: string;
+}
 
 function formatDay(iso: string, aggregation: ProgressionAggregation): string {
   const d = new Date(`${iso}T00:00:00`);
@@ -35,6 +43,7 @@ export function AthleteProgressionPage(): JSX.Element {
   const [activityFilter, setActivityFilter] = useState<ProgressionActivityFilter>('all');
 
   const query = useAthleteProgressionQuery(days, aggregation, activityFilter);
+  const settingsQuery = useSettingsQuery();
 
   const chartData = useMemo(() => {
     return (query.data?.points ?? []).map((row) => ({
@@ -42,6 +51,40 @@ export function AthleteProgressionPage(): JSX.Element {
       label: formatDay(row.period_start, aggregation),
     }));
   }, [aggregation, query.data?.points]);
+
+  const normalizedChartData = useMemo(() => {
+    return chartData.map((row) => {
+      const rawTarget = Number(row.target_tss ?? 0);
+      const normalizedDailyTarget = aggregation === 'weekly' ? rawTarget / 7 : rawTarget;
+      return {
+        ...row,
+        daily_target_tss: normalizedDailyTarget,
+      };
+    });
+  }, [aggregation, chartData]);
+
+  const injuryOverlays = useMemo(() => {
+    const windows = settingsQuery.data?.injury_windows ?? [];
+    if (windows.length === 0 || normalizedChartData.length === 0) return [];
+    const points = normalizedChartData
+      .map((row) => row.period_start)
+      .filter(Boolean)
+      .sort((a, b) => String(a).localeCompare(String(b)));
+    if (points.length === 0) return [];
+
+    const first = String(points[0]);
+    const last = String(points[points.length - 1]);
+    return windows
+      .map((window): InjuryOverlay | null => {
+        const start = String(window.start);
+        const end = String(window.end);
+        const x1 = start < first ? first : start;
+        const x2 = end > last ? last : end;
+        if (x1 > x2) return null;
+        return { start: x1, end: x2, severity: window.severity, label: window.label };
+      })
+      .filter((item): item is InjuryOverlay => item !== null);
+  }, [normalizedChartData, settingsQuery.data?.injury_windows]);
 
   return (
     <section className="space-y-6">
@@ -102,16 +145,30 @@ export function AthleteProgressionPage(): JSX.Element {
 
       {!query.isLoading && !query.isError && query.data ? (
         <>
-          {chartData.length === 0 ? (
+          {normalizedChartData.length === 0 ? (
             <Card><CardContent className="p-8 text-sm text-muted-foreground">No progression data available for this selection.</CardContent></Card>
           ) : (
             <div className="grid gap-4">
               <ProgressionLineChartCard
+                title="Leg Elasticity vs Pounding"
+                data={normalizedChartData}
+                yLabel="Load"
+                targetKey="daily_target_tss"
+                targetLabel="Daily Target"
+                injuryOverlays={injuryOverlays}
+                series={[
+                  { key: 'leg_elasticity', label: 'Leg Elasticity', color: '#22c55e' },
+                  { key: 'pounding', label: 'Pounding', color: '#ef4444' },
+                ]}
+              />
+
+              <ProgressionLineChartCard
                 title="Stress Score: TSS vs rTSS"
-                data={chartData}
+                data={normalizedChartData}
                 yLabel={aggregation === 'weekly' ? 'Weekly Stress' : 'Daily Stress'}
-                targetKey="target_tss"
-                targetLabel="Target"
+                targetKey="daily_target_tss"
+                targetLabel="Daily Target"
+                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'tss', label: 'TSS', color: '#60a5fa' },
                   { key: 'rtss', label: 'rTSS', color: '#f59e0b' },
@@ -120,10 +177,11 @@ export function AthleteProgressionPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Distance vs Distance Eqv"
-                data={chartData}
+                data={normalizedChartData}
                 yLabel="km"
                 targetKey="target_distance_km"
                 targetLabel="Distance Target"
+                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'distance_km', label: 'Distance', color: '#38bdf8' },
                   { key: 'distance_eqv_km', label: 'Distance Eqv', color: '#22c55e' },
@@ -132,8 +190,9 @@ export function AthleteProgressionPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Fitness vs Fatigue"
-                data={chartData}
+                data={normalizedChartData}
                 yLabel="Load"
+                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'fitness', label: 'Fitness', color: '#22c55e' },
                   { key: 'fatigue', label: 'Fatigue', color: '#ef4444' },
@@ -141,21 +200,10 @@ export function AthleteProgressionPage(): JSX.Element {
               />
 
               <ProgressionLineChartCard
-                title="Leg Elasticity vs Pounding"
-                data={chartData}
-                yLabel="Load"
-                targetKey="target_tss"
-                targetLabel="Target"
-                series={[
-                  { key: 'leg_elasticity', label: 'Leg Elasticity', color: '#22c55e' },
-                  { key: 'pounding', label: 'Pounding', color: '#ef4444' },
-                ]}
-              />
-
-              <ProgressionLineChartCard
                 title="Overreach vs Injury Risk"
-                data={chartData}
+                data={normalizedChartData}
                 yLabel="Risk"
+                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'overreach', label: 'Overreach', color: '#60a5fa' },
                   { key: 'injury_risk', label: 'Injury Risk', color: '#ef4444' },
@@ -164,9 +212,10 @@ export function AthleteProgressionPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Garmin Training Load vs Total Calories"
-                data={chartData}
+                data={normalizedChartData}
                 yLabel="Training Load"
                 rightAxisLabel="Calories"
+                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'training_load_garmin', label: 'Garmin Training Load', color: '#60a5fa', yAxisId: 'left' },
                   { key: 'calories_total', label: 'Total Calories', color: '#f59e0b', yAxisId: 'right' },
@@ -175,8 +224,9 @@ export function AthleteProgressionPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="HR Zone Time (hours)"
-                data={chartData}
+                data={normalizedChartData}
                 yLabel="Hours"
+                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'zone_low_aerobic_h', label: 'Low Aerobic', color: '#60a5fa' },
                   { key: 'zone_moderate_aerobic_h', label: 'Moderate Aerobic', color: '#facc15' },

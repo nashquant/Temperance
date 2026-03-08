@@ -294,15 +294,20 @@ export function SettingsPage(): JSX.Element {
       <Card>
         <CardContent className="space-y-4 p-4">
           <p className="text-sm font-medium">IF Zones (fractions)</p>
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {(['z1_max', 'z2_max', 'z3_max', 'z4_max'] as const).map((key) => (
-              <div key={key}>
-                <p className="mb-1 text-xs text-muted-foreground">{key}</p>
+              <div key={key} className="min-w-0">
+                <p className="mb-1 text-xs text-muted-foreground">{key} (%)</p>
                 <Input
                   type="number"
-                  step="0.01"
-                  value={ifZones[key]}
-                  onChange={(event) => setIfZones((previous) => ({ ...previous, [key]: Number(event.target.value) }))}
+                  step="0.1"
+                  value={Number.isFinite(ifZones[key]) ? (ifZones[key] * 100).toFixed(1).replace(/\.0$/, '') : ''}
+                  onChange={(event) =>
+                    setIfZones((previous) => ({
+                      ...previous,
+                      [key]: Number(event.target.value) / 100,
+                    }))
+                  }
                 />
               </div>
             ))}
@@ -314,15 +319,20 @@ export function SettingsPage(): JSX.Element {
       <Card>
         <CardContent className="space-y-4 p-4">
           <p className="text-sm font-medium">Specificity Factors</p>
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {(['non_running', 'treadmill', 'elliptical', 'cycling'] as const).map((key) => (
-              <div key={key}>
-                <p className="mb-1 text-xs text-muted-foreground">{key.replace('_', ' ')}</p>
+              <div key={key} className="min-w-0">
+                <p className="mb-1 text-xs text-muted-foreground">{key.replace('_', ' ')} (%)</p>
                 <Input
                   type="number"
-                  step="0.01"
-                  value={specificity[key]}
-                  onChange={(event) => setSpecificity((previous) => ({ ...previous, [key]: Number(event.target.value) }))}
+                  step="0.1"
+                  value={Number.isFinite(specificity[key]) ? (specificity[key] * 100).toFixed(1).replace(/\.0$/, '') : ''}
+                  onChange={(event) =>
+                    setSpecificity((previous) => ({
+                      ...previous,
+                      [key]: Number(event.target.value) / 100,
+                    }))
+                  }
                 />
               </div>
             ))}

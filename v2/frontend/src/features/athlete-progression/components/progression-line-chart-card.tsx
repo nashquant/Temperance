@@ -4,6 +4,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -29,6 +30,12 @@ interface Props {
   targetKey?: string;
   targetLabel?: string;
   rightAxisLabel?: string;
+  injuryOverlays?: Array<{
+    start: string;
+    end: string;
+    severity: 'injury' | 'light_injury';
+    label?: string;
+  }>;
 }
 
 export function ProgressionLineChartCard({
@@ -39,6 +46,7 @@ export function ProgressionLineChartCard({
   targetKey,
   targetLabel,
   rightAxisLabel,
+  injuryOverlays = [],
 }: Props): JSX.Element {
   return (
     <Card>
@@ -50,13 +58,38 @@ export function ProgressionLineChartCard({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 14, right: 14, bottom: 6, left: 2 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.25} />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+              <XAxis
+                dataKey="period_start"
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value) => {
+                  const d = new Date(`${String(value)}T00:00:00`);
+                  if (Number.isNaN(d.getTime())) return String(value);
+                  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(d);
+                }}
+              />
               <YAxis yAxisId="left" tick={{ fontSize: 12 }}>
                 <Label value={yLabel} angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} />
               </YAxis>
               {rightAxisLabel ? <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} /> : null}
-              <Tooltip />
+              <Tooltip
+                labelFormatter={(value) => {
+                  const d = new Date(`${String(value)}T00:00:00`);
+                  if (Number.isNaN(d.getTime())) return String(value);
+                  return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(d);
+                }}
+              />
               <Legend />
+              {injuryOverlays.map((overlay, index) => (
+                <ReferenceArea
+                  key={`${overlay.start}-${overlay.end}-${overlay.severity}-${index}`}
+                  x1={overlay.start}
+                  x2={overlay.end}
+                  yAxisId="left"
+                  fill={overlay.severity === 'light_injury' ? '#facc15' : '#ef4444'}
+                  fillOpacity={0.12}
+                  strokeOpacity={0}
+                />
+              ))}
               {targetKey ? (
                 <ReferenceLine yAxisId="left" y={Number(data.at(-1)?.[targetKey] ?? 0)} stroke="#f59e0b" strokeDasharray="5 5" label={targetLabel} />
               ) : null}
