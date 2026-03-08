@@ -36,6 +36,7 @@ from db import (
     get_setting,
     get_activity_splits_cache_key,
     get_custom_activities_cache_key,
+    get_planned_activities_cache_key,
     get_activity_splits_df,
     get_activity_records_df,
     get_activity_detail_raw,
@@ -3060,6 +3061,8 @@ owner_scoped_keys = [
     "_metrics_df_local_cache_value",
     "_custom_metrics_df_local_cache_key",
     "_custom_metrics_df_local_cache_value",
+    "_planned_metrics_df_local_cache_key",
+    "_planned_metrics_df_local_cache_value",
     "dashboard_metric_select",
     "dashboard_ema_windows",
     "dashboard_compare_mode",
@@ -3383,6 +3386,7 @@ if view == "User Inputs":
 activities_cache_key = get_activities_cache_key(cfg.db_path)
 activity_splits_cache_key = get_activity_splits_cache_key(cfg.db_path)
 custom_activities_cache_key = get_custom_activities_cache_key(cfg.db_path)
+planned_activities_cache_key = get_planned_activities_cache_key(cfg.db_path)
 metrics_df = _get_metrics_df_local_cached(
     db_path=cfg.db_path,
     activities_cache_key=activities_cache_key,
@@ -5250,6 +5254,14 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         flex: 0 0 32px !important;
                         max-width: 32px !important;
                     }
+                    .compact-mobile-controls a.compare {
+                        flex: 0 0 31% !important;
+                        max-width: 31% !important;
+                    }
+                    .compact-mobile-controls a.metric {
+                        flex: 0 0 calc(100% - 32px - 32px - 31% - 0.24rem) !important;
+                        max-width: calc(100% - 32px - 32px - 31% - 0.24rem) !important;
+                    }
                     .compact-mobile-controls select {
                         min-width: 0 !important;
                         height: 24px !important;
@@ -5491,36 +5503,89 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         except Exception:
                             pass
                         st.rerun()
-                    nav1, nav2, nav3, nav4 = st.columns([0.08, 0.08, 0.36, 0.48])
-                    with nav1:
-                        if st.button("◀", key="compact_prev_week", use_container_width=True):
-                            st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
-                            st.rerun()
-                    with nav2:
-                        if st.button("▶", key="compact_next_week", use_container_width=True):
-                            st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
-                            st.rerun()
-                    with nav3:
-                        selected_compare_mobile = st.selectbox(
-                            "Compare against",
-                            compare_options,
-                            key="calendar_compact_compare_choice",
-                            label_visibility="collapsed",
-                            format_func=lambda opt: compare_short.get(opt, opt),
-                        )
-                        active_compare_choice = str(selected_compare_mobile)
-                    with nav4:
-                        selected_metric_mobile = st.selectbox(
-                            "Metric",
-                            compact_metric_keys,
-                            key="calendar_compact_metric",
-                            label_visibility="collapsed",
-                            format_func=lambda mk: (
-                                f"{metric_short.get(mk, mk)} - {int(round(metric_values_week.get(mk, 0.0)))}"
-                                + (" km" if mk == "distance_eqv_km" else "")
-                            ),
-                        )
-                        active_metric_choice = str(selected_metric_mobile)
+                    _mobile_compare_raw = st.query_params.get("compact_compare_idx")
+                    if isinstance(_mobile_compare_raw, (list, tuple)):
+                        _mobile_compare_raw = _mobile_compare_raw[0] if _mobile_compare_raw else ""
+                    _mobile_compare_num = pd.to_numeric(_mobile_compare_raw, errors="coerce")
+                    _mobile_compare_idx = int(_mobile_compare_num) if pd.notna(_mobile_compare_num) else -1
+                    if 0 <= _mobile_compare_idx < len(compare_options):
+                        st.session_state["calendar_compact_compare_choice"] = compare_options[_mobile_compare_idx]
+                        try:
+                            del st.query_params["compact_compare_idx"]
+                        except Exception:
+                            pass
+                        st.rerun()
+
+                    _mobile_metric_raw = st.query_params.get("compact_metric_key")
+                    if isinstance(_mobile_metric_raw, (list, tuple)):
+                        _mobile_metric_raw = _mobile_metric_raw[0] if _mobile_metric_raw else ""
+                    _mobile_metric_key = str(_mobile_metric_raw or "").strip()
+                    if _mobile_metric_key in compact_metric_keys:
+                        st.session_state["calendar_compact_metric"] = _mobile_metric_key
+                        try:
+                            del st.query_params["compact_metric_key"]
+                        except Exception:
+                            pass
+                        st.rerun()
+
+                    current_compare = str(st.session_state.get("calendar_compact_compare_choice", compare_options[0]))
+                    if current_compare not in compare_options:
+                        current_compare = compare_options[0]
+                        st.session_state["calendar_compact_compare_choice"] = current_compare
+                    current_metric = str(st.session_state.get("calendar_compact_metric", compact_metric_keys[0]))
+                    if current_metric not in compact_metric_keys:
+                        current_metric = compact_metric_keys[0]
+                        st.session_state["calendar_compact_metric"] = current_metric
+                    active_compare_choice = current_compare
+                    active_metric_choice = current_metric
+
+                    _qp_base: dict[str, list[str] | str] = {}
+                    try:
+                        for _k, _v in st.query_params.items():
+                            if str(_k) in {"compact_ctl", "compact_compare_idx", "compact_metric_key"}:
+                                continue
+                            if isinstance(_v, (list, tuple)):
+                                _qp_base[str(_k)] = [str(x) for x in _v]
+                            else:
+                                _qp_base[str(_k)] = str(_v)
+                    except Exception:
+                        _qp_base = {}
+                    _href_prev = "?" + urlencode({**_qp_base, "compact_ctl": "prev"}, doseq=True)
+                    _href_next = "?" + urlencode({**_qp_base, "compact_ctl": "next"}, doseq=True)
+                    compare_options_html = "".join(
+                        [
+                            f"<option value='{idx}'{' selected' if opt == current_compare else ''}>"
+                            f"{html.escape(compare_short.get(opt, opt))}</option>"
+                            for idx, opt in enumerate(compare_options)
+                        ]
+                    )
+                    metric_options_html = "".join(
+                        [
+                            (
+                                f"<option value='{html.escape(mk)}'{' selected' if mk == current_metric else ''}>"
+                                f"{html.escape(metric_short.get(mk, mk))} - "
+                                f"{int(round(metric_values_week.get(mk, 0.0)))}"
+                                f"{' km' if mk == 'distance_eqv_km' else ''}"
+                                "</option>"
+                            )
+                            for mk in compact_metric_keys
+                        ]
+                    )
+                    st.markdown(
+                        (
+                            "<div class='compact-mobile-controls'>"
+                            f"<a class='prev' href='{_href_prev}'>◀</a>"
+                            f"<a class='next' href='{_href_next}'>▶</a>"
+                            "<select class='compare' "
+                            "onchange=\"(function(v){const u=new URL(window.location.href);u.searchParams.set('compact_compare_idx',v);u.searchParams.delete('compact_ctl');u.searchParams.delete('compact_metric_key');window.location.href=u.toString();})(this.value)\">"
+                            f"{compare_options_html}</select>"
+                            "<select class='metric' "
+                            "onchange=\"(function(v){const u=new URL(window.location.href);u.searchParams.set('compact_metric_key',v);u.searchParams.delete('compact_ctl');u.searchParams.delete('compact_compare_idx');window.location.href=u.toString();})(this.value)\">"
+                            f"{metric_options_html}</select>"
+                            "</div>"
+                        ),
+                        unsafe_allow_html=True,
+                    )
                 else:
                     nav1, nav2, nav3, nav4, _nav_spacer = st.columns([0.75, 0.75, 1.0, 1.2, 0.8])
                     with nav1:
@@ -6627,84 +6692,41 @@ if view in {"Week Planner", "Weekly Summary"}:
             st.session_state.get("user_specificity_profile", {}),
             fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
         )
-        plan_tss_vals: list[float] = []
-        plan_rtss_vals: list[float] = []
-        plan_dist_eqv_vals: list[float] = []
-        plan_if_vals: list[float] = []
-        plan_duration_s_vals: list[float] = []
-        plan_activity_vals: list[str] = []
-        for _, plan_row in planned_raw.iterrows():
-            raw_segments = plan_row.get("parsed_json")
-            segments: list[dict[str, float | str | None]] = []
-            if isinstance(raw_segments, list):
-                segments = [s for s in raw_segments if isinstance(s, dict)]
-            elif isinstance(raw_segments, str) and raw_segments.strip():
-                try:
-                    parsed = json.loads(raw_segments)
-                    if isinstance(parsed, list):
-                        segments = [s for s in parsed if isinstance(s, dict)]
-                except Exception:
-                    segments = []
-
-            day_for_curve = pd.to_datetime(plan_row.get("day_utc"), utc=True, errors="coerce")
-            lthr_for_day = float(
-                _curve_value_at(
-                    lthr_curve_points,
-                    float(derived_lthr_bpm),
-                    day_for_curve,
-                )
+        planner_profile_key = tuple(
+            sorted(
+                (str(k), float(v))
+                for k, v in planner_specificity_profile.items()
             )
-            lt_pace_for_day = float(
-                _curve_value_at(
-                    lt_pace_curve_points,
-                    float(derived_threshold_pace_sec),
-                    day_for_curve,
-                )
+        )
+        planned_metrics_cache_key = (
+            "planned_metrics_v1",
+            str(planned_activities_cache_key),
+            _curve_points_cache_key(lthr_curve_points),
+            float(derived_lthr_bpm),
+            _curve_points_cache_key(lt_pace_curve_points),
+            float(derived_threshold_pace_sec),
+            planner_profile_key,
+        )
+        if (
+            st.session_state.get("_planned_metrics_df_local_cache_key") == planned_metrics_cache_key
+            and isinstance(st.session_state.get("_planned_metrics_df_local_cache_value"), pd.DataFrame)
+        ):
+            planned_raw = st.session_state["_planned_metrics_df_local_cache_value"].copy()
+        else:
+            planned_raw = _compute_planned_rows_metrics_df(
+                planned_rows=planned_raw,
+                lthr_curve_points=lthr_curve_points,
+                lthr_default_bpm=float(derived_lthr_bpm),
+                lt_pace_curve_points=lt_pace_curve_points,
+                lt_pace_default_sec=float(derived_threshold_pace_sec),
+                specificity_profile=planner_specificity_profile,
             )
-
-            total_tss = 0.0
-            total_rtss = 0.0
-            total_dist_eqv = 0.0
-            if_weighted_sum = 0.0
-            if_weight_seconds = 0.0
-            kinds_seen: list[str] = []
-            for seg in segments:
-                seg_kind = str(seg.get("kind") or "").strip().lower()
-                seg_spec = _specificity_factor_for_plan_kind(seg_kind, planner_specificity_profile)
-                seg_for_metrics = _segment_with_effective_intensity_for_metrics(
-                    seg,
-                    seg_kind=seg_kind,
-                    seg_spec=seg_spec,
-                )
-                m = _planned_segment_metrics(
-                    seg_for_metrics,
-                    lthr_bpm=lthr_for_day,
-                    threshold_pace_sec_per_km=lt_pace_for_day,
-                    non_running_factor=seg_spec,
-                )
-                seg_duration = float(m.get("duration_s") or 0.0)
-                seg_if = float(m.get("if_proxy") or 0.0)
-                total_tss += float(m.get("tss") or 0.0) * float(seg_spec)
-                total_rtss += float(m.get("rtss") or 0.0) * float(seg_spec)
-                total_dist_eqv += float(m.get("distance_eqv_km") or 0.0)
-                if seg_duration > 0:
-                    if_weighted_sum += seg_if * seg_duration
-                    if_weight_seconds += seg_duration
-                if seg_kind and seg_kind not in kinds_seen:
-                    kinds_seen.append(seg_kind)
-            plan_tss_vals.append(total_tss)
-            plan_rtss_vals.append(total_rtss)
-            plan_dist_eqv_vals.append(total_dist_eqv)
-            plan_if_vals.append(if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0)
-            plan_duration_s_vals.append(if_weight_seconds)
-            plan_activity_vals.append(", ".join([k.replace("_", " ").title() for k in kinds_seen]) if kinds_seen else "-")
-
-        planned_raw["activity"] = plan_activity_vals
-        planned_raw["tss"] = plan_tss_vals
-        planned_raw["rtss"] = plan_rtss_vals
-        planned_raw["distance_eqv_km"] = plan_dist_eqv_vals
-        planned_raw["if_proxy"] = plan_if_vals
-        planned_raw["duration_s"] = plan_duration_s_vals
+            st.session_state["_planned_metrics_df_local_cache_key"] = planned_metrics_cache_key
+            st.session_state["_planned_metrics_df_local_cache_value"] = planned_raw.copy()
+        planned_raw["distance_eqv_km"] = pd.to_numeric(
+            planned_raw.get("distance_proxy_km"),
+            errors="coerce",
+        ).fillna(0.0)
 
         tss_goal_week = float(derived_weekly_tss_target) * 1.10
         rtss_goal_week = float(derived_weekly_tss_target) * 0.90
