@@ -9,6 +9,7 @@ import os
 import re
 import sqlite3
 import sys
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -352,6 +353,185 @@ def _safe_float(value: Any) -> float:
 
 def _settings_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+_EXTRACT_PROGRESS_LOCK = threading.Lock()
+_EXTRACT_PROGRESS_BY_OWNER: dict[str, dict[str, Any]] = {}
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _extract_progress_get(owner: str) -> dict[str, Any]:
+    with _EXTRACT_PROGRESS_LOCK:
+        state = _EXTRACT_PROGRESS_BY_OWNER.get(owner)
+        if not state:
+            return {
+                "running": False,
+                "phase": None,
+                "message": None,
+                "started_at": None,
+                "finished_at": None,
+                "updated_at": None,
+                "logs": [],
+                "log_count": 0,
+                "activities": {"processed": 0, "total": 0, "day": None},
+                "wellness": {"current": 0, "total": 0, "day": None},
+            }
+        return {
+            "running": bool(state.get("running")),
+            "phase": state.get("phase"),
+            "message": state.get("message"),
+            "started_at": state.get("started_at"),
+            "finished_at": state.get("finished_at"),
+            "updated_at": state.get("updated_at"),
+            "logs": list(state.get("logs") or []),
+            "log_count": int(state.get("log_count") or 0),
+            "activities": dict(state.get("activities") or {"processed": 0, "total": 0, "day": None}),
+            "wellness": dict(state.get("wellness") or {"current": 0, "total": 0, "day": None}),
+        }
+
+
+def _extract_progress_start(owner: str, start_day: str, end_day: str) -> None:
+    now = _utc_now_iso()
+    with _EXTRACT_PROGRESS_LOCK:
+        _EXTRACT_PROGRESS_BY_OWNER[owner] = {
+            "running": True,
+            "phase": "starting",
+            "message": "Starting comprehensive extract",
+            "started_at": now,
+            "finished_at": None,
+            "updated_at": now,
+            "logs": [f"[start] start_day={start_day} end_day={end_day}"],
+            "log_count": 1,
+            "activities": {"processed": 0, "total": 0, "day": None},
+            "wellness": {"current": 0, "total": 0, "day": None},
+            "last_activity_processed_logged": -1,
+            "last_wellness_current_logged": -1,
+        }
+
+
+def _extract_progress_append(owner: str, line: str) -> None:
+    if not line:
+        return
+    with _EXTRACT_PROGRESS_LOCK:
+        state = _EXTRACT_PROGRESS_BY_OWNER.get(owner)
+        if not state:
+            return
+        logs = list(state.get("logs") or [])
+        logs.append(str(line))
+        if len(logs) > 300:
+            logs = logs[-300:]
+        state["logs"] = logs
+        state["log_count"] = int(state.get("log_count") or 0) + 1
+        state["updated_at"] = _utc_now_iso()
+
+
+def _extract_progress_event(owner: str, payload: dict[str, Any]) -> None:
+    phase = str(payload.get("phase") or "").strip().lower()
+    if not phase:
+        return
+    with _EXTRACT_PROGRESS_LOCK:
+        state = _EXTRACT_PROGRESS_BY_OWNER.get(owner)
+        if not state:
+            return
+        state["phase"] = phase
+        state["message"] = str(payload.get("message") or state.get("message") or "")
+        state["updated_at"] = _utc_now_iso()
+
+        if phase == "activities":
+            processed = int(payload.get("processed") or 0)
+            total = int(payload.get("total") or 0)
+            day = payload.get("day")
+            state["activities"] = {"processed": processed, "total": total, "day": day}
+            last_logged = int(state.get("last_activity_processed_logged") or -1)
+            if processed > 0 and processed != last_logged:
+                state["last_activity_processed_logged"] = processed
+                logs = list(state.get("logs") or [])
+                logs.append(
+                    f"[progress] activities {processed}/{total if total > 0 else '?'}"
+                    + (f" | day={day}" if day else "")
+                )
+                if len(logs) > 300:
+                    logs = logs[-300:]
+                state["logs"] = logs
+                state["log_count"] = int(state.get("log_count") or 0) + 1
+        elif phase == "wellness":
+            current = int(payload.get("current") or 0)
+            total = int(payload.get("total") or 0)
+            day = payload.get("day")
+            state["wellness"] = {"current": current, "total": total, "day": day}
+            last_logged = int(state.get("last_wellness_current_logged") or -1)
+            if current > 0 and current != last_logged:
+                state["last_wellness_current_logged"] = current
+                logs = list(state.get("logs") or [])
+                logs.append(
+                    f"[progress] wellness {current}/{total if total > 0 else '?'}"
+                    + (f" | day={day}" if day else "")
+                )
+                if len(logs) > 300:
+                    logs = logs[-300:]
+                state["logs"] = logs
+                state["log_count"] = int(state.get("log_count") or 0) + 1
+        elif phase == "complete":
+            logs = list(state.get("logs") or [])
+            logs.append("[done] Fetch completed")
+            if len(logs) > 300:
+                logs = logs[-300:]
+            state["logs"] = logs
+            state["log_count"] = int(state.get("log_count") or 0) + 1
+
+
+def _extract_progress_finish(owner: str, summary: str, errors: list[str]) -> None:
+    with _EXTRACT_PROGRESS_LOCK:
+        state = _EXTRACT_PROGRESS_BY_OWNER.get(owner)
+        if not state:
+            return
+        state["running"] = False
+        state["phase"] = "finished"
+        state["message"] = "Comprehensive extract completed"
+        state["finished_at"] = _utc_now_iso()
+        state["updated_at"] = state["finished_at"]
+        logs = list(state.get("logs") or [])
+        logs.append(f"[done] {summary}")
+        for err in (errors or [])[:20]:
+            logs.append(f"[error] {err}")
+        if len(logs) > 300:
+            logs = logs[-300:]
+        state["logs"] = logs
+        state["log_count"] = int(state.get("log_count") or 0) + 1 + min(len(errors or []), 20)
+
+
+def _extract_progress_fail(owner: str, message: str) -> None:
+    with _EXTRACT_PROGRESS_LOCK:
+        state = _EXTRACT_PROGRESS_BY_OWNER.get(owner)
+        if not state:
+            state = {
+                "running": False,
+                "phase": "failed",
+                "message": message,
+                "started_at": None,
+                "finished_at": _utc_now_iso(),
+                "updated_at": _utc_now_iso(),
+                "logs": [f"[fatal] {message}"],
+                "log_count": 1,
+                "activities": {"processed": 0, "total": 0, "day": None},
+                "wellness": {"current": 0, "total": 0, "day": None},
+            }
+            _EXTRACT_PROGRESS_BY_OWNER[owner] = state
+            return
+        state["running"] = False
+        state["phase"] = "failed"
+        state["message"] = message
+        state["finished_at"] = _utc_now_iso()
+        state["updated_at"] = state["finished_at"]
+        logs = list(state.get("logs") or [])
+        logs.append(f"[fatal] {message}")
+        if len(logs) > 300:
+            logs = logs[-300:]
+        state["logs"] = logs
+        state["log_count"] = int(state.get("log_count") or 0) + 1
 
 
 def _default_lthr_curve() -> list[dict[str, object]]:
@@ -2941,6 +3121,7 @@ def data_extract_status(
         "last_sync": last_sync,
         "garmin_credentials_available": bool(garmin_email and garmin_password),
         "import_dir": str((Path(load_config().import_dir) if hasattr(load_config(), "import_dir") else (TEMPERANCE_SRC / "data" / "import"))),
+        "extract_progress": _extract_progress_get(resolved_owner),
     }
 
 
@@ -3062,36 +3243,63 @@ def data_extract_comprehensive(
             anchor = min(anchors)
             start_day = max(start_day, (anchor - timedelta(days=2)).date())
 
-    extract = fetch_garmin_comprehensive(
-        email=garmin_email,
-        password=garmin_password,
-        start_day=start_day,
-        end_day=end_day,
-        include_activity_details=bool(payload.include_details),
-        include_splits=bool(payload.include_details),
-        include_wellness=bool(payload.include_wellness),
-        raw_export_dir=None,
-        progress_cb=None,
+    _extract_progress_start(resolved_owner, start_day.isoformat(), end_day.isoformat())
+    _extract_progress_append(
+        resolved_owner,
+        f"[config] include_details={bool(payload.include_details)} include_wellness={bool(payload.include_wellness)} incremental_only={bool(payload.incremental_only)}",
     )
-    n_a = upsert_activities(db_path, extract.activities)
-    n_d = upsert_activity_details(db_path, extract.activity_details)
-    n_r = upsert_activity_records(db_path, extract.activity_records)
-    n_sp = upsert_activity_splits(db_path, extract.activity_splits)
-    n_s = upsert_sleep_daily(db_path, extract.sleep_daily)
-    n_w = upsert_wellness_daily(db_path, extract.wellness_daily)
-    msg = (
-        f"activities={len(extract.activities)}({n_a}), details={len(extract.activity_details)}({n_d}), "
-        f"records={len(extract.activity_records)}({n_r}), splits={len(extract.activity_splits)}({n_sp}), "
-        f"sleep={len(extract.sleep_daily)}({n_s}), wellness={len(extract.wellness_daily)}({n_w}), errors={len(extract.errors)}"
-    )
-    log_sync(db_path, source="v2_garmin_comprehensive", success=True, message=msg)
-    return {
-        "success": True,
-        "start_day": start_day.isoformat(),
-        "end_day": end_day.isoformat(),
-        "summary": msg,
-        "errors": extract.errors[:40],
-    }
+    try:
+        extract = fetch_garmin_comprehensive(
+            email=garmin_email,
+            password=garmin_password,
+            start_day=start_day,
+            end_day=end_day,
+            include_activity_details=bool(payload.include_details),
+            include_splits=bool(payload.include_details),
+            include_wellness=bool(payload.include_wellness),
+            raw_export_dir=None,
+            progress_cb=lambda evt: _extract_progress_event(resolved_owner, evt),
+        )
+        _extract_progress_append(
+            resolved_owner,
+            (
+                f"[fetch:done] activities={len(extract.activities)} details={len(extract.activity_details)} "
+                f"records={len(extract.activity_records)} splits={len(extract.activity_splits)} "
+                f"sleep={len(extract.sleep_daily)} wellness={len(extract.wellness_daily)} errors={len(extract.errors)}"
+            ),
+        )
+        _extract_progress_append(resolved_owner, "[db] upserting activities/details/records/splits/sleep/wellness")
+        n_a = upsert_activities(db_path, extract.activities)
+        n_d = upsert_activity_details(db_path, extract.activity_details)
+        n_r = upsert_activity_records(db_path, extract.activity_records)
+        n_sp = upsert_activity_splits(db_path, extract.activity_splits)
+        n_s = upsert_sleep_daily(db_path, extract.sleep_daily)
+        n_w = upsert_wellness_daily(db_path, extract.wellness_daily)
+        _extract_progress_append(
+            resolved_owner,
+            (
+                f"[db:done] activities={n_a} details={n_d} records={n_r} "
+                f"splits={n_sp} sleep={n_s} wellness={n_w}"
+            ),
+        )
+        msg = (
+            f"activities={len(extract.activities)}({n_a}), details={len(extract.activity_details)}({n_d}), "
+            f"records={len(extract.activity_records)}({n_r}), splits={len(extract.activity_splits)}({n_sp}), "
+            f"sleep={len(extract.sleep_daily)}({n_s}), wellness={len(extract.wellness_daily)}({n_w}), errors={len(extract.errors)}"
+        )
+        log_sync(db_path, source="v2_garmin_comprehensive", success=True, message=msg)
+        _extract_progress_finish(resolved_owner, msg, extract.errors[:40])
+        return {
+            "success": True,
+            "start_day": start_day.isoformat(),
+            "end_day": end_day.isoformat(),
+            "summary": msg,
+            "errors": extract.errors[:40],
+        }
+    except Exception as exc:
+        _extract_progress_fail(resolved_owner, str(exc))
+        log_sync(db_path, source="v2_garmin_comprehensive", success=False, message=str(exc))
+        raise
 
 
 @app.get("/api/v1/week-outlook")

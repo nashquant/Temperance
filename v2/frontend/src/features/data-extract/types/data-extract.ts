@@ -10,6 +10,26 @@ export interface DataExtractStatusResponse {
   } | null;
   garmin_credentials_available: boolean;
   import_dir: string;
+  extract_progress?: {
+    running: boolean;
+    phase: string | null;
+    message: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+    updated_at: string | null;
+    logs: string[];
+    log_count: number;
+    activities: {
+      processed: number;
+      total: number;
+      day: string | null;
+    };
+    wellness: {
+      current: number;
+      total: number;
+      day: string | null;
+    };
+  };
 }
 
 export interface SyncRequest {
