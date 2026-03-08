@@ -5103,21 +5103,22 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         font-size: 0.86rem !important;
                         line-height: 1.3 !important;
                     }
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) {
-                        display: flex !important;
-                        flex-wrap: nowrap !important;
-                        gap: 0.4rem !important;
-                    }
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"] {
-                        flex: 1 1 0 !important;
-                        min-width: 0 !important;
-                        width: auto !important;
-                    }
                     div[class*="st-key-compact_prev_week"] button,
-                    div[class*="st-key-compact_next_week"] button {
-                        min-height: 38px !important;
-                        padding: 0.22rem 0.45rem !important;
-                        font-size: 0.98rem !important;
+                    div[class*="st-key-compact_next_week"] button,
+                    div[class*="st-key-compact_filters_toggle"] button {
+                        min-height: 34px !important;
+                        height: 34px !important;
+                        min-width: 0 !important;
+                        width: 100% !important;
+                        padding: 0.12rem 0.2rem !important;
+                        font-size: 0.84rem !important;
+                        line-height: 1.05 !important;
+                    }
+                    div[class*="st-key-compact_prev_week"],
+                    div[class*="st-key-compact_next_week"],
+                    div[class*="st-key-compact_filters_toggle"] {
+                        min-width: 0 !important;
+                        width: 100% !important;
                     }
                     div[class*="st-key-calendar_compact_compare_choice"] [data-baseweb="select"] > div,
                     div[class*="st-key-calendar_activity_filter"] [data-baseweb="select"] > div,
@@ -5236,13 +5237,13 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 is_mobile_compact_ui = _is_probably_mobile_client()
 
                 if is_mobile_compact_ui:
-                    nav1, nav2, nav3 = st.columns([1, 1, 1])
+                    nav1, nav2, nav3 = st.columns([0.45, 0.45, 1.1], gap="small")
                     with nav1:
-                        if st.button("◀ Prev", key="compact_prev_week", use_container_width=True):
+                        if st.button("◀", key="compact_prev_week", use_container_width=True):
                             st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
                             st.rerun()
                     with nav2:
-                        if st.button("Next ▶", key="compact_next_week", use_container_width=True):
+                        if st.button("▶", key="compact_next_week", use_container_width=True):
                             st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
                             st.rerun()
                     with nav3:
