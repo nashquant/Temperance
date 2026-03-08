@@ -75,6 +75,7 @@ DEFAULT_RESTING_HR = 45.0
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 CUSTOM_ACTIVITIES_LIMIT = 5000
+METRICS_LOCAL_CACHE_VERSION = 2
 OWNER_SCOPED_STATE_RESET_VERSION = 2
 # LT pace (sec/km) -> upper-bound weekly targets derived from user-defined table.
 # Points correspond to:
@@ -2185,6 +2186,7 @@ def _get_metrics_df_local_cached(
     if_zone_thresholds_key: tuple[float, float, float, float] | None = None,
 ) -> pd.DataFrame:
     cache_key = (
+        int(METRICS_LOCAL_CACHE_VERSION),
         str(db_path),
         str(activities_cache_key),
         str(activity_splits_cache_key),
