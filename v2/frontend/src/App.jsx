@@ -457,8 +457,8 @@ export default function App() {
                     })}
                   </h3>
                   <div className="wk-controls">
-                    <button type="button" onClick={() => shiftOutlookWeek(-7)} disabled={loading}>◀</button>
-                    <button type="button" onClick={() => shiftOutlookWeek(7)} disabled={loading}>▶</button>
+                    <button className="wk-nav-btn" type="button" onClick={() => shiftOutlookWeek(-7)} disabled={loading}>◀</button>
+                    <button className="wk-nav-btn" type="button" onClick={() => shiftOutlookWeek(7)} disabled={loading}>▶</button>
                     <select value={weekCompare} onChange={(e) => setWeekCompare(e.target.value)}>
                       <option value="planned">Plan</option>
                       <option value="previous_week">Previous week</option>

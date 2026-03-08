@@ -331,6 +331,72 @@ def _specificity_factor_for_plan_kind(kind: str | None, profile: dict[str, float
     return float(profile.get("non_running", 0.8))
 
 
+def _specificity_factor_for_sport(sport_type: str | None, profile: dict[str, float]) -> float:
+    sport = str(sport_type or "").strip().lower()
+    if ("run" in sport) and ("treadmill" not in sport):
+        return 1.0
+    if "treadmill" in sport:
+        return float(profile.get("treadmill", 1.0))
+    if "elliptical" in sport:
+        return float(profile.get("elliptical", profile.get("non_running", 0.8)))
+    if ("cycl" in sport) or ("bike" in sport):
+        return float(profile.get("cycling", profile.get("non_running", 0.8)))
+    return float(profile.get("non_running", 0.8))
+
+
+def _apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, float]) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    out = df.copy()
+    sport = out["sport_type"].fillna("").astype(str).str.lower()
+    out["specificity_factor"] = out["sport_type"].apply(
+        lambda s: _specificity_factor_for_sport(s, specificity_profile)
+    )
+    is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
+
+    if "distance_proxy_km" in out.columns:
+        base_proxy_factor = 0.8
+        proxy_mask = ~is_running_like
+        if "distance_proxy_method" in out.columns:
+            proxy_mask = proxy_mask & out["distance_proxy_method"].fillna("").astype(str).eq("tss_parity_root_solve")
+        if proxy_mask.any():
+            proxy_factor = pd.to_numeric(out.loc[proxy_mask, "specificity_factor"], errors="coerce").fillna(0.0)
+            ratio = proxy_factor / float(base_proxy_factor) if base_proxy_factor > 0 else 1.0
+            proxy_scale = ratio.pow(0.5)
+            out.loc[proxy_mask, "distance_proxy_km"] = (
+                pd.to_numeric(out.loc[proxy_mask, "distance_proxy_km"], errors="coerce").fillna(0.0).values
+                * proxy_scale.values
+            )
+            if "pace_proxy_sec_per_km" in out.columns:
+                pace_scale = 1.0 / proxy_scale.replace(0.0, pd.NA)
+                out.loc[proxy_mask, "pace_proxy_sec_per_km"] = (
+                    pd.to_numeric(out.loc[proxy_mask, "pace_proxy_sec_per_km"], errors="coerce").fillna(0.0).values
+                    * pd.to_numeric(pace_scale, errors="coerce").fillna(0.0).values
+                )
+
+    factor_cols = [
+        "distance_m",
+        "rtss",
+        "tss",
+        "mechanical_load",
+        "training_load_garmin",
+        "calories_active",
+        "calories_total",
+        "intensity_minutes_vigorous",
+        "intensity_minutes_moderate",
+        "hr_time_in_zone_1",
+        "hr_time_in_zone_2",
+        "hr_time_in_zone_3",
+        "hr_time_in_zone_4",
+        "hr_time_in_zone_5",
+    ]
+    for col in factor_cols:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0.0) * out["specificity_factor"]
+    return out
+
+
 def _curve_value_at(
     points: list[tuple[datetime, float]],
     default_value: float,
@@ -663,15 +729,30 @@ def _planned_daily_metric_map(
     if metrics_rows.empty:
         return {}, {}, 0.0
 
+    # Day rule for compare bars: if a day has at least one open planned row,
+    # ignore done rows for that day; otherwise keep all rows.
+    metrics_for_compare = metrics_rows.copy()
+    metrics_for_compare["manual_done"] = pd.to_numeric(
+        metrics_for_compare.get("manual_done"),
+        errors="coerce",
+    ).fillna(0.0) > 0
+    day_has_open = metrics_for_compare.groupby("day")["manual_done"].transform(
+        lambda s: bool((~s).any())
+    )
+    keep_compare = (~metrics_for_compare["manual_done"]) | (~day_has_open)
+    metrics_for_compare = metrics_for_compare.loc[keep_compare].copy()
+    if metrics_for_compare.empty:
+        metrics_for_compare = metrics_rows.copy()
+
     metric_col = "distance_proxy_km" if metric_key == "distance_eqv_km" else metric_key
     metric_by_day = (
-        metrics_rows.groupby("day", as_index=False)[metric_col]
+        metrics_for_compare.groupby("day", as_index=False)[metric_col]
         .sum()
         .set_index("day")[metric_col]
         .to_dict()
     )
     tss_by_day = (
-        metrics_rows.groupby("day", as_index=False)["tss"]
+        metrics_for_compare.groupby("day", as_index=False)["tss"]
         .sum()
         .set_index("day")["tss"]
         .to_dict()
@@ -750,6 +831,9 @@ def _metrics_for_filters(
     )
     if metrics_df.empty:
         return metrics_df
+
+    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    metrics_df = _apply_specificity_factor(metrics_df, specificity_profile=specificity_profile)
 
     metrics_df["start_time_utc"] = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce")
     metrics_df = metrics_df.dropna(subset=["start_time_utc"]).copy()
@@ -1004,7 +1088,7 @@ def _build_week_outlook_payload(
         ws = pd.to_datetime(week_start, errors="coerce")
         ws = _week_start_monday(ws) if pd.notna(ws) else pd.NaT
     else:
-        ws = _week_start_monday(pd.Timestamp(datetime.now().date()))
+        ws = _week_start_monday(pd.Timestamp(datetime.now().astimezone().date()))
     if pd.isna(ws):
         ws = max_week_start
     if pd.notna(min_week_start) and ws < min_week_start:
@@ -1023,7 +1107,7 @@ def _build_week_outlook_payload(
     planned_metric_map: dict[pd.Timestamp, float] = {}
     planned_tss_map: dict[pd.Timestamp, float] = {}
     planned_remaining_metric_total = 0.0
-    today = pd.Timestamp(datetime.now().date()).normalize()
+    today = pd.Timestamp(datetime.now().astimezone().date()).normalize()
     if compare_key == "planned":
         planned_metric_map, planned_tss_map, planned_remaining_metric_total = _planned_daily_metric_map(
             db_path=db_path,
