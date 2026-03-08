@@ -1891,7 +1891,10 @@ def _build_activity_dashboard_payload(
                             "duration_label": _format_duration_short(_safe_float(row.get("duration_s"))),
                             "distance_eqv_km": round(_safe_float(row.get("distance_eqv_km")), 1),
                             "if_pct": round(_safe_float(row.get("if_proxy")) * 100.0, 1),
-                            "pace_label": _format_pace_short(_safe_float(row.get("pace_proxy_sec_per_km"))),
+                            "pace_label": str(
+                                row.get("pace_label")
+                                or _format_pace_short(_safe_float(row.get("pace_proxy_sec_per_km")))
+                            ),
                             "tss": round(_safe_float(row.get("tss")), 1),
                             "rtss": round(_safe_float(row.get("rtss")), 1),
                             "manual_done": bool(row.get("manual_done")),

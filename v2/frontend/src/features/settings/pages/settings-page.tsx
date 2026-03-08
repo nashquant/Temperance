@@ -22,7 +22,7 @@ interface LthrDraftRow {
 interface LtPaceDraftRow {
   id: string;
   date: string;
-  lt_pace_sec_per_km: number;
+  pace_input: string;
 }
 
 interface InjuryDraftRow {
@@ -35,6 +35,37 @@ interface InjuryDraftRow {
 
 function rowId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function secondsToPaceInput(seconds: number): string {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  const mm = Math.floor(value / 60);
+  const ss = Math.round(value % 60);
+  return `${mm}:${String(ss).padStart(2, '0')}`;
+}
+
+function parsePaceInputToSeconds(raw: string): number | null {
+  const value = String(raw || '').trim().toLowerCase();
+  if (!value) return null;
+
+  const normalized = value.replace('/km', '').replace(/\s+/g, '');
+  if (/^\d{1,2}:\d{2}$/.test(normalized)) {
+    const [mStr, sStr] = normalized.split(':');
+    const minutes = Number(mStr);
+    const seconds = Number(sStr);
+    if (!Number.isFinite(minutes) || !Number.isFinite(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) {
+      return null;
+    }
+    return minutes * 60 + seconds;
+  }
+
+  if (/^\d+(\.\d+)?$/.test(normalized)) {
+    const asNumber = Number(normalized);
+    return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : null;
+  }
+
+  return null;
 }
 
 export function SettingsPage(): JSX.Element {
@@ -56,7 +87,11 @@ export function SettingsPage(): JSX.Element {
       query.data.lthr_curve.map((row) => ({ id: rowId(), date: row.date, lthr_bpm: Number(row.lthr_bpm) || 0 })),
     );
     setPaceRows(
-      query.data.lt_pace_curve.map((row) => ({ id: rowId(), date: row.date, lt_pace_sec_per_km: Number(row.lt_pace_sec_per_km) || 0 })),
+      query.data.lt_pace_curve.map((row) => ({
+        id: rowId(),
+        date: row.date,
+        pace_input: secondsToPaceInput(Number(row.lt_pace_sec_per_km) || 0),
+      })),
     );
     setInjuryRows(
       query.data.injury_windows.map((row) => ({
@@ -93,10 +128,24 @@ export function SettingsPage(): JSX.Element {
       .map((row) => ({ date: row.date, lthr_bpm: Number(row.lthr_bpm) || 0 }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    const pace: LtPaceCurvePoint[] = paceRows
-      .filter((row) => row.date)
-      .map((row) => ({ date: row.date, lt_pace_sec_per_km: Number(row.lt_pace_sec_per_km) || 0 }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    let paceError: string | null = null;
+    const pace: LtPaceCurvePoint[] = [];
+    for (const row of paceRows) {
+      const hasDate = Boolean(row.date);
+      const hasPace = Boolean(String(row.pace_input || '').trim());
+      if (!hasDate && !hasPace) continue;
+      if (!hasDate || !hasPace) {
+        paceError = 'Each LT Pace row must have both date and pace.';
+        break;
+      }
+      const paceSeconds = parsePaceInputToSeconds(row.pace_input);
+      if (paceSeconds === null) {
+        paceError = `Invalid LT pace "${row.pace_input}". Use formats like 3:30, 3:30/km, or 210.`;
+        break;
+      }
+      pace.push({ date: row.date, lt_pace_sec_per_km: paceSeconds });
+    }
+    pace.sort((a, b) => a.date.localeCompare(b.date));
 
     const injury: InjuryWindow[] = injuryRows
       .filter((row) => row.label.trim() && row.start && row.end)
@@ -108,7 +157,7 @@ export function SettingsPage(): JSX.Element {
       }))
       .sort((a, b) => a.start.localeCompare(b.start));
 
-    return { lthr, pace, injury };
+    return { lthr, pace, injury, paceError };
   }, [injuryRows, lthrRows, paceRows]);
 
   if (query.isLoading) {
@@ -134,7 +183,6 @@ export function SettingsPage(): JSX.Element {
     <section className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Mirrors v1 User Inputs for training model controls.</p>
       </div>
 
       {saveMsg ? <p className="text-sm text-muted-foreground">{saveMsg}</p> : null}
@@ -231,7 +279,7 @@ export function SettingsPage(): JSX.Element {
             <p className="text-sm font-medium">LT Pace Curve</p>
             <Button
               variant="outline"
-              onClick={() => setPaceRows((previous) => [...previous, { id: rowId(), date: '', lt_pace_sec_per_km: 0 }])}
+              onClick={() => setPaceRows((previous) => [...previous, { id: rowId(), date: '', pace_input: '' }])}
               disabled={saveMutation.isPending}
             >
               Add row
@@ -248,16 +296,14 @@ export function SettingsPage(): JSX.Element {
                   }
                 />
                 <Input
-                  type="number"
-                  step="1"
-                  min={0}
-                  value={row.lt_pace_sec_per_km}
+                  type="text"
+                  value={row.pace_input}
                   onChange={(event) =>
                     setPaceRows((previous) =>
-                      previous.map((item) => (item.id === row.id ? { ...item, lt_pace_sec_per_km: Number(event.target.value) } : item)),
+                      previous.map((item) => (item.id === row.id ? { ...item, pace_input: event.target.value } : item)),
                     )
                   }
-                  placeholder="LT pace sec/km"
+                  placeholder="e.g. 3:30 or 210"
                 />
                 <Button
                   variant="outline"
@@ -269,7 +315,19 @@ export function SettingsPage(): JSX.Element {
               </div>
             ))}
           </div>
-          <Button onClick={() => saveMutation.mutate({ lt_pace_curve: parsedCurves.pace })} disabled={saveMutation.isPending}>Save LT Pace Curve</Button>
+          {parsedCurves.paceError ? <p className="text-xs text-red-400">{parsedCurves.paceError}</p> : null}
+          <Button
+            onClick={() => {
+              if (parsedCurves.paceError) {
+                setSaveMsg(parsedCurves.paceError);
+                return;
+              }
+              saveMutation.mutate({ lt_pace_curve: parsedCurves.pace });
+            }}
+            disabled={saveMutation.isPending}
+          >
+            Save LT Pace Curve
+          </Button>
         </CardContent>
       </Card>
 

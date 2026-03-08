@@ -160,7 +160,6 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         ) : (
           <h1 className="text-2xl font-semibold tracking-tight">Plan Activities</h1>
         )}
-        <p className="mt-1 text-sm text-muted-foreground">Use `[date]:[activity]` and `+` for intervals (same parser behavior as v1).</p>
       </div>
 
       <Card>
