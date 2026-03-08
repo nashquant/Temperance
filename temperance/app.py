@@ -5449,29 +5449,89 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         "4 weeks ago": "Prev-4w",
                     }
                     metric_short = {"rtss": "rTSS", "tss": "TSS", "distance_eqv_km": "Dist"}
-                    mobile_ctl = str(st.query_params.get("compact_ctl") or "").strip().lower()
+                    _mobile_ctl_raw = st.query_params.get("compact_ctl")
+                    if isinstance(_mobile_ctl_raw, (list, tuple)):
+                        _mobile_ctl_raw = _mobile_ctl_raw[0] if _mobile_ctl_raw else ""
+                    mobile_ctl = str(_mobile_ctl_raw or "").strip().lower()
                     if mobile_ctl == "prev":
                         st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
                     elif mobile_ctl == "next":
                         st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
-                    elif mobile_ctl == "compare":
-                        current_compare = str(st.session_state.get("calendar_compact_compare_choice", compare_options[0]))
-                        if current_compare not in compare_options:
-                            current_compare = compare_options[0]
-                        idx = compare_options.index(current_compare)
-                        st.session_state["calendar_compact_compare_choice"] = compare_options[(idx + 1) % len(compare_options)]
-                    elif mobile_ctl == "metric":
-                        current_metric = str(st.session_state.get("calendar_compact_metric", compact_metric_keys[0]))
-                        if current_metric not in compact_metric_keys:
-                            current_metric = compact_metric_keys[0]
-                        midx = compact_metric_keys.index(current_metric)
-                        st.session_state["calendar_compact_metric"] = compact_metric_keys[(midx + 1) % len(compact_metric_keys)]
-                    if mobile_ctl in {"prev", "next", "compare", "metric"}:
+                    if mobile_ctl in {"prev", "next"}:
                         try:
                             del st.query_params["compact_ctl"]
                         except Exception:
                             pass
                         st.rerun()
+
+                    if mobile_ctl == "compare":
+                        @st.dialog("Compare", width="small")
+                        def _compact_compare_dialog() -> None:
+                            current_compare_dialog = str(
+                                st.session_state.get("calendar_compact_compare_choice", compare_options[0])
+                            )
+                            if current_compare_dialog not in compare_options:
+                                current_compare_dialog = compare_options[0]
+                            selected_compare_dialog = st.selectbox(
+                                "Compare against",
+                                compare_options,
+                                index=compare_options.index(current_compare_dialog),
+                                key="compact_compare_dialog_select",
+                                label_visibility="collapsed",
+                            )
+                            d1, d2 = st.columns(2)
+                            with d1:
+                                if st.button("Apply", key="compact_compare_dialog_apply", use_container_width=True):
+                                    st.session_state["calendar_compact_compare_choice"] = selected_compare_dialog
+                                    try:
+                                        del st.query_params["compact_ctl"]
+                                    except Exception:
+                                        pass
+                                    st.rerun()
+                            with d2:
+                                if st.button("Cancel", key="compact_compare_dialog_cancel", use_container_width=True):
+                                    try:
+                                        del st.query_params["compact_ctl"]
+                                    except Exception:
+                                        pass
+                                    st.rerun()
+
+                        _compact_compare_dialog()
+
+                    if mobile_ctl == "metric":
+                        @st.dialog("Metric", width="small")
+                        def _compact_metric_dialog() -> None:
+                            current_metric_dialog = str(
+                                st.session_state.get("calendar_compact_metric", compact_metric_keys[0])
+                            )
+                            if current_metric_dialog not in compact_metric_keys:
+                                current_metric_dialog = compact_metric_keys[0]
+                            selected_metric_dialog = st.selectbox(
+                                "Metric",
+                                compact_metric_keys,
+                                index=compact_metric_keys.index(current_metric_dialog),
+                                key="compact_metric_dialog_select",
+                                label_visibility="collapsed",
+                                format_func=lambda v: metric_short.get(str(v), str(v)),
+                            )
+                            d1, d2 = st.columns(2)
+                            with d1:
+                                if st.button("Apply", key="compact_metric_dialog_apply", use_container_width=True):
+                                    st.session_state["calendar_compact_metric"] = selected_metric_dialog
+                                    try:
+                                        del st.query_params["compact_ctl"]
+                                    except Exception:
+                                        pass
+                                    st.rerun()
+                            with d2:
+                                if st.button("Cancel", key="compact_metric_dialog_cancel", use_container_width=True):
+                                    try:
+                                        del st.query_params["compact_ctl"]
+                                    except Exception:
+                                        pass
+                                    st.rerun()
+
+                        _compact_metric_dialog()
 
                     current_compare = str(st.session_state.get("calendar_compact_compare_choice", compare_options[0]))
                     if current_compare not in compare_options:
