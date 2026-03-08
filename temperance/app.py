@@ -261,6 +261,71 @@ def _is_probably_mobile_client() -> bool:
         return False
 
 
+def _enable_calendar_scroll_autoload() -> None:
+    """Auto-trigger week lazy-loading when the load-more button enters viewport."""
+    js = """
+    <script>
+    (function () {
+      try {
+        const parentWin = window.parent;
+        const parentDoc = parentWin && parentWin.document;
+        if (!parentWin || !parentDoc) return;
+        const stateKey = "__temperanceCalendarAutoLoadV1";
+        if (!parentWin[stateKey]) {
+          parentWin[stateKey] = {
+            bound: false,
+            lastClickTs: 0,
+            lastClickY: -1
+          };
+        }
+        const state = parentWin[stateKey];
+        const findLoadButton = () => {
+          const buttons = Array.from(parentDoc.querySelectorAll("button"));
+          return buttons.find((btn) => {
+            const txt = String(btn.textContent || "").trim();
+            return txt.startsWith("Load older weeks");
+          }) || null;
+        };
+        const maybeLoad = () => {
+          const btn = findLoadButton();
+          if (!btn) return;
+          const rect = btn.getBoundingClientRect();
+          const viewportH = parentWin.innerHeight || parentDoc.documentElement.clientHeight || 0;
+          const inView = rect.top <= (viewportH - 10) && rect.bottom >= 0;
+          if (!inView) return;
+          const scrollY = Number(
+            parentWin.scrollY || parentDoc.documentElement.scrollTop || parentDoc.body.scrollTop || 0
+          );
+          if (!Number.isFinite(scrollY) || scrollY < 80) return;
+          if (state.lastClickY >= 0 && scrollY < (state.lastClickY + 96)) return;
+          const now = Date.now();
+          if ((now - Number(state.lastClickTs || 0)) < 1200) return;
+          state.lastClickTs = now;
+          state.lastClickY = scrollY;
+          btn.click();
+        };
+        if (!state.bound) {
+          const onViewportChange = () => {
+            try {
+              parentWin.requestAnimationFrame(maybeLoad);
+            } catch (err) {
+              maybeLoad();
+            }
+          };
+          parentWin.addEventListener("scroll", onViewportChange, { passive: true });
+          parentWin.addEventListener("resize", onViewportChange, { passive: true });
+          state.bound = true;
+        }
+        parentWin.requestAnimationFrame(maybeLoad);
+      } catch (err) {
+        // no-op
+      }
+    })();
+    </script>
+    """
+    st.components.v1.html(js, height=0)
+
+
 def _login_guard_key(username: str) -> str:
     user_key = str(username or "").strip().casefold() or "<blank>"
     return f"{_login_client_fingerprint()}|{user_key}"
@@ -6318,6 +6383,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 week_count, visible_weeks + week_chunk
                             )
                             st.rerun()
+                    _enable_calendar_scroll_autoload()
                 elif week_count > week_chunk:
                     st.caption(f"Showing all {week_count} weeks.")
 
