@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { RefreshCcw } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -31,7 +30,7 @@ function formatDay(iso: string, aggregation: ProgressionAggregation): string {
 }
 
 export function AthleteProgressionPage(): JSX.Element {
-  const [days, setDays] = useState(3000);
+  const [days, setDays] = useState(365);
   const [aggregation, setAggregation] = useState<ProgressionAggregation>('weekly');
   const [activityFilter, setActivityFilter] = useState<ProgressionActivityFilter>('all');
 
@@ -49,7 +48,6 @@ export function AthleteProgressionPage(): JSX.Element {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Athlete Progression</h1>
-          <p className="mt-1 text-sm text-muted-foreground">v1 Analytics Plot replicated with v2 UI components.</p>
         </div>
         <div className="flex items-center gap-2">
           <Select value={String(days)} onValueChange={(value) => setDays(Number(value))}>
@@ -59,7 +57,7 @@ export function AthleteProgressionPage(): JSX.Element {
               <SelectItem value="180">180 days</SelectItem>
               <SelectItem value="365">1 year</SelectItem>
               <SelectItem value="730">2 years</SelectItem>
-              <SelectItem value="3000">3000 days</SelectItem>
+              <SelectItem value="3000">ALL</SelectItem>
             </SelectContent>
           </Select>
           <Select value={aggregation} onValueChange={(value) => setAggregation(value as ProgressionAggregation)}>
@@ -104,14 +102,6 @@ export function AthleteProgressionPage(): JSX.Element {
 
       {!query.isLoading && !query.isError && query.data ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Activities: {query.data.summary.activities}</Badge>
-            <Badge variant="outline">TSS: {Math.round(query.data.summary.tss)}</Badge>
-            <Badge variant="outline">rTSS: {Math.round(query.data.summary.rtss)}</Badge>
-            <Badge variant="outline">Distance Eqv: {Math.round(query.data.summary.distance_eqv_km)} km</Badge>
-            <Badge variant="secondary">{query.data.range.start_day} - {query.data.range.end_day}</Badge>
-          </div>
-
           {chartData.length === 0 ? (
             <Card><CardContent className="p-8 text-sm text-muted-foreground">No progression data available for this selection.</CardContent></Card>
           ) : (

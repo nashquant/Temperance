@@ -68,7 +68,8 @@ export function ProgressionLineChartCard({
                   name={item.label}
                   stroke={item.color}
                   strokeWidth={2}
-                  dot={false}
+                  dot={{ r: 2.5, strokeWidth: 1, fill: item.color }}
+                  activeDot={{ r: 4 }}
                   yAxisId={item.yAxisId ?? 'left'}
                   strokeDasharray={item.dashed ? '5 5' : undefined}
                 />
