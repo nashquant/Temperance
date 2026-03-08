@@ -1,4 +1,3 @@
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -25,30 +24,34 @@ const plannedIntensityClasses: Record<string, string> = {
 };
 
 function fmtMeta(day: DashboardDayColumnType): string[] {
-  const primary: string[] = [];
-  const secondary: string[] = [];
+  const line1: string[] = [];
+  const line2: string[] = [];
+  const line3: string[] = [];
 
-  primary.push(`${Math.round(day.meta.distance_eqv_km || 0)} km`);
-  if ((day.meta.calories || 0) > 0) primary.push(`${Math.round(day.meta.calories)} kcal`);
+  line1.push(`${Math.round(day.meta.distance_eqv_km || 0)} km`);
+  if ((day.meta.calories || 0) > 0) line1.push(`${Math.round(day.meta.calories)} kcal`);
 
-  if (day.meta.fitness !== null) secondary.push(`Fit ${Math.round(day.meta.fitness)}`);
-  if (day.meta.fatigue !== null) secondary.push(`Fatigue ${Math.round(day.meta.fatigue)}`);
+  if (day.meta.fitness !== null) line2.push(`Fit ${Math.round(day.meta.fitness)}`);
+  if (day.meta.fatigue !== null) line2.push(`Fatigue ${Math.round(day.meta.fatigue)}`);
 
-  if (secondary.length < 2 && day.meta.resting_hr !== null && day.meta.resting_hr > 0) {
-    secondary.push(`RHR ${Math.round(day.meta.resting_hr)}`);
+  if (day.meta.resting_hr !== null && day.meta.resting_hr > 0) {
+    line3.push(`RHR ${Math.round(day.meta.resting_hr)}`);
   }
-  if (secondary.length < 2 && day.meta.stress_avg !== null && day.meta.stress_avg > 0) {
-    secondary.push(`Stress ${Math.round(day.meta.stress_avg)}`);
-  }
-
-  if (secondary.length === 0 && (day.meta.planned_duration_s || 0) > 0) {
-    secondary.push(`${Math.round(day.meta.planned_duration_s / 3600)}h`);
-  }
-  if (secondary.length < 2 && (day.meta.planned_if_pct || 0) > 0) {
-    secondary.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
+  if (day.meta.stress_avg !== null && day.meta.stress_avg > 0) {
+    line3.push(`Stress ${Math.round(day.meta.stress_avg)}`);
   }
 
-  return [primary.join(' · '), secondary.join(' · ')].filter(Boolean);
+  if (line2.length === 0 && (day.meta.planned_duration_s || 0) > 0) {
+    line2.push(`${Math.round(day.meta.planned_duration_s / 3600)}h`);
+  }
+  if (line2.length < 2 && (day.meta.planned_if_pct || 0) > 0) {
+    line2.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
+  }
+  if (line3.length === 0 && day.meta.stress_avg === null && day.meta.resting_hr === null && (day.meta.planned_if_pct || 0) > 0) {
+    line3.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
+  }
+
+  return [line1.join(' · '), line2.join(' · '), line3.join(' · ')].filter(Boolean);
 }
 
 function formatActivityTitle(raw: string): string {
@@ -68,6 +71,14 @@ function formatActivityTitle(raw: string): string {
     .join(' ');
 }
 
+function compactLine(parts: Array<string | null | undefined>): string {
+  return parts
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .map((part) => part.replace(/km\s*eqv\.?/gi, 'kmeq'))
+    .join(' · ');
+}
+
 export function DashboardDayColumn({ day }: DashboardDayColumnProps): JSX.Element {
   return (
     <Card
@@ -78,17 +89,12 @@ export function DashboardDayColumn({ day }: DashboardDayColumnProps): JSX.Elemen
     >
       <CardContent className="space-y-2 p-2.5">
         <div className="space-y-1">
-          <div className="flex min-h-[24px] items-center justify-between gap-1.5">
-            <p className={cn('truncate text-[13px] font-semibold leading-5', day.is_today ? 'text-primary' : 'text-foreground')}>
+          <div className="flex min-h-[24px] items-center">
+            <p className={cn('text-[13px] font-semibold leading-5', day.is_today ? 'text-primary' : 'text-foreground')}>
               {day.day_label}
             </p>
-            {day.is_today ? (
-              <Badge variant="outline" className="h-5 shrink-0 rounded-full px-2 text-[10px] font-semibold text-primary">
-                Today
-              </Badge>
-            ) : null}
           </div>
-          <div className="min-h-[34px] space-y-0.5 text-[12px] leading-[1.3] text-muted-foreground">
+          <div className="min-h-[50px] space-y-0.5 text-[12px] leading-[1.3] text-muted-foreground">
             {fmtMeta(day).map((line) => (
               <p key={line} className="truncate">
                 {line}
@@ -104,18 +110,20 @@ export function DashboardDayColumn({ day }: DashboardDayColumnProps): JSX.Elemen
             <div
               key={activity.activity_id}
               className={cn(
-                'rounded-lg border p-2 text-[12px] leading-[1.35]',
+                'flex h-[102px] flex-col overflow-hidden rounded-lg border p-2 text-[12px]',
                 intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
               )}
             >
-              <p className="truncate font-semibold text-foreground">{formatActivityTitle(activity.sport)}</p>
-              <p className="text-muted-foreground">
-                {activity.duration_label} · {activity.distance_label}
+              <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
+                {formatActivityTitle(activity.sport)}
               </p>
-              <p className="text-muted-foreground">
-                {activity.hr_label} · {activity.pace_label} · IF {Math.round(activity.if_pct)}%
+              <p className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-muted-foreground">
+                {compactLine([activity.duration_label, activity.distance_label])}
               </p>
-              <p className="font-semibold text-foreground">
+              <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">
+                {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
+              </p>
+              <p className="mt-auto truncate text-[12px] font-semibold leading-4 text-foreground">
                 TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
               </p>
             </div>
@@ -125,19 +133,20 @@ export function DashboardDayColumn({ day }: DashboardDayColumnProps): JSX.Elemen
             <div
               key={`${activity.day_utc}-${activity.line_no}`}
               className={cn(
-                'rounded-lg border-2 border-dashed p-2 text-[12px] leading-[1.35]',
+                'flex h-[102px] flex-col overflow-hidden rounded-lg border-2 border-dashed p-2 text-[12px]',
                 plannedIntensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
               )}
             >
-              <Badge variant="outline" className="mb-1 h-5 rounded-full px-2 text-[10px] font-semibold uppercase tracking-wide">
-                Planned
-              </Badge>
-              <p className="truncate font-semibold text-foreground">{formatActivityTitle(activity.activity)}</p>
-              <p className="text-muted-foreground">
-                {activity.duration_label} · {Math.round(activity.distance_eqv_km)} km eqv.
+              <p className="text-[13px] font-semibold leading-5 text-foreground">
+                {formatActivityTitle(activity.activity)} <span className="text-muted-foreground">(P)</span>
               </p>
-              <p className="text-muted-foreground">IF {Math.round(activity.if_pct)}%</p>
-              <p className="font-semibold text-foreground">
+              <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">
+                {compactLine([activity.duration_label, `${Math.round(activity.distance_eqv_km)} kmeq`])}
+              </p>
+              <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">
+                {compactLine([day.meta.fatigue !== null ? `Fatigue exp ${Math.round(day.meta.fatigue)}` : 'Fatigue exp -'])}
+              </p>
+              <p className="mt-auto truncate text-[12px] font-semibold leading-4 text-foreground">
                 TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
               </p>
             </div>
