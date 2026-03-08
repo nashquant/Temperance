@@ -1,3 +1,6 @@
+import { X } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -5,6 +8,8 @@ import type { DashboardDayColumn as DashboardDayColumnType } from '@/features/da
 
 interface DashboardDayColumnProps {
   day: DashboardDayColumnType;
+  onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
+  markingPlannedDone?: boolean;
 }
 
 const intensityClasses: Record<string, string> = {
@@ -87,7 +92,7 @@ function compactLine(parts: Array<string | null | undefined>): string {
     .join(' · ');
 }
 
-export function DashboardDayColumn({ day }: DashboardDayColumnProps): JSX.Element {
+export function DashboardDayColumn({ day, onMarkPlannedDone, markingPlannedDone }: DashboardDayColumnProps): JSX.Element {
   return (
     <Card
       className={cn(
@@ -141,10 +146,20 @@ export function DashboardDayColumn({ day }: DashboardDayColumnProps): JSX.Elemen
             <div
               key={`${activity.day_utc}-${activity.line_no}`}
               className={cn(
-                'flex h-[102px] flex-col overflow-hidden rounded-lg border-2 border-dashed p-2 text-[12px]',
+                'relative flex h-[102px] flex-col overflow-hidden rounded-lg border-2 border-dashed p-2 text-[12px]',
                 plannedIntensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
               )}
             >
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1 h-5 w-5 rounded-full text-muted-foreground hover:text-foreground"
+                onClick={() => onMarkPlannedDone?.(activity.day_utc, activity.line_no)}
+                disabled={markingPlannedDone}
+                aria-label="Mark planned activity as done"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
               <p className="text-[13px] font-semibold leading-5 text-foreground">
                 {formatActivityTitle(activity.activity)} <span className="text-muted-foreground">(P)</span>
               </p>

@@ -4,6 +4,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -26,6 +27,12 @@ interface Props {
   data: Array<Record<string, number | string>>;
   yLabel: string;
   series: SeriesConfig[];
+  injuryOverlays?: Array<{
+    start: string;
+    end: string;
+    severity: 'injury' | 'light_injury';
+    label?: string;
+  }>;
   targetKey?: string;
   targetLabel?: string;
   rightAxisLabel?: string;
@@ -36,10 +43,15 @@ export function ProgressionLineChartCard({
   data,
   yLabel,
   series,
+  injuryOverlays,
   targetKey,
   targetLabel,
   rightAxisLabel,
 }: Props): JSX.Element {
+  const labelMap = new Map(
+    data.map((row) => [String(row.period_start ?? row.label ?? ''), String(row.label ?? row.period_start ?? '')]),
+  );
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -50,13 +62,27 @@ export function ProgressionLineChartCard({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 14, right: 14, bottom: 6, left: 2 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.25} />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+              <XAxis
+                dataKey="period_start"
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
+              />
               <YAxis yAxisId="left" tick={{ fontSize: 12 }}>
                 <Label value={yLabel} angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} />
               </YAxis>
               {rightAxisLabel ? <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} /> : null}
-              <Tooltip />
+              <Tooltip labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)} />
               <Legend />
+              {(injuryOverlays ?? []).map((overlay, index) => (
+                <ReferenceArea
+                  key={`${overlay.start}-${overlay.end}-${index}`}
+                  x1={overlay.start}
+                  x2={overlay.end}
+                  strokeOpacity={0}
+                  fill={overlay.severity === 'injury' ? '#7f1d1d' : '#854d0e'}
+                  fillOpacity={0.22}
+                />
+              ))}
               {targetKey ? (
                 <ReferenceLine yAxisId="left" y={Number(data.at(-1)?.[targetKey] ?? 0)} stroke="#f59e0b" strokeDasharray="5 5" label={targetLabel} />
               ) : null}

@@ -1,14 +1,38 @@
+import { useMutation } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/features/auth/hooks/use-auth';
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
+import { setPlannedManualDone } from '@/features/plan-activities/services/plan-activities-api';
+import { queryClient } from '@/lib/query-client';
 
 export function DashboardPage(): JSX.Element {
+  const { session, profile } = useAuth();
   const [visibleWeeks, setVisibleWeeks] = useState(6);
   const query = useDashboardQuery(visibleWeeks, 'all');
+  const plannedDoneMutation = useMutation({
+    mutationFn: async ({ dayUtc, lineNo }: { dayUtc: string; lineNo: number }) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      await setPlannedManualDone({
+        token: session.token,
+        owner: profile?.owner,
+        dayUtc,
+        lineNo,
+        manualDone: true,
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['planned-activities'] }),
+        queryClient.invalidateQueries({ queryKey: ['week-outlook'] }),
+      ]);
+    },
+  });
   const sortedWeeks = useMemo(() => {
     if (!query.data?.weeks) return [];
 
@@ -48,7 +72,12 @@ export function DashboardPage(): JSX.Element {
           ) : (
             <div className="space-y-4">
               {sortedWeeks.map((week) => (
-                <DashboardWeekCard key={week.week_start} week={week} />
+                <DashboardWeekCard
+                  key={week.week_start}
+                  week={week}
+                  onMarkPlannedDone={(dayUtc, lineNo) => plannedDoneMutation.mutate({ dayUtc, lineNo })}
+                  markingPlannedDone={plannedDoneMutation.isPending}
+                />
               ))}
               {query.data.has_more_weeks ? (
                 <div className="flex justify-center">
