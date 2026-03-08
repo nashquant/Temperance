@@ -117,7 +117,7 @@ DEFAULT_IF_ZONE_THRESHOLDS = {
 }
 
 IF_ZONE_VISUALS = {
-    "Z1": {"token": "green", "accent": "rgba(52,211,153,0.96)", "bar": "#34d399", "description": "Recovery"},
+    "Z1": {"token": "green", "accent": "rgba(156,163,175,0.96)", "bar": "#9ca3af", "description": "Recovery"},
     "Z2": {"token": "blue", "accent": "rgba(56,189,248,0.96)", "bar": "#38bdf8", "description": "Easy"},
     "Z3": {"token": "yellow", "accent": "rgba(251,191,36,0.96)", "bar": "#fbbf24", "description": "Steady"},
     "Z4": {"token": "red", "accent": "rgba(251,113,133,0.96)", "bar": "#fb7185", "description": "Interval"},
@@ -796,7 +796,7 @@ def _split_description_from_if_proxy(if_proxy: float | int | None) -> str:
 def _if_palette_from_if_proxy(if_proxy: float | int | None) -> tuple[str, str]:
     zone = _if_zone_from_if_proxy(if_proxy)
     style = IF_ZONE_VISUALS.get(str(zone or ""), IF_ZONE_VISUALS["Z1"])
-    return str(style.get("token") or "green"), str(style.get("accent") or "rgba(52,211,153,0.96)")
+    return str(style.get("token") or "green"), str(style.get("accent") or "rgba(156,163,175,0.96)")
 
 
 def _sport_label(sport_type: str | None) -> str:
@@ -4459,11 +4459,11 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 div[class*="st-key-calendar_split_title_if_green_"] button[kind="tertiary"]:focus,
                 div[class*="st-key-calendar_split_title_if_green_"] button[kind="tertiary"]:focus-visible,
                 div[class*="st-key-calendar_split_title_if_green_"] button[kind="tertiary"]:active {
-                    border: 2px solid rgba(52,211,153,0.96) !important;
+                    border: 2px solid rgba(156,163,175,0.96) !important;
                     background: rgba(15,23,42,0.78) !important;
                 }
                 div[class*="st-key-calendar_split_title_if_green_"] button[kind="tertiary"] strong {
-                    color: rgba(52,211,153,0.96) !important;
+                    color: rgba(156,163,175,0.96) !important;
                     font-weight: 700 !important;
                 }
                 div[class*="st-key-calendar_split_title_if_blue_"] button[kind="tertiary"],
@@ -4617,7 +4617,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 div[data-testid="stButton"] > button[kind="primary"]:focus-visible,
                 div[data-testid="stButton"] > button[kind="primary"]:active {
                     background: rgba(15,23,42,0.50);
-                    border: 1px dashed rgba(52,211,153,0.42);
+                    border: 1px dashed rgba(156,163,175,0.42);
                     border-radius: 10px;
                     color: rgba(226,232,240,0.90);
                     text-align: left;
@@ -4640,7 +4640,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     font-weight: 400 !important;
                 }
                 div[data-testid="stButton"] > button[kind="primary"] strong {
-                    color: rgba(167,243,208,0.95) !important;
+                    color: rgba(203,213,225,0.95) !important;
                     font-weight: 700 !important;
                 }
                 div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"],
@@ -4648,10 +4648,10 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"]:focus,
                 div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"]:focus-visible,
                 div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"]:active {
-                    border: 1px dashed rgba(52,211,153,0.96) !important;
+                    border: 1px dashed rgba(156,163,175,0.96) !important;
                 }
                 div[class*="st-key-calendar_planned_done_if_green_"] button[kind="primary"] strong {
-                    color: rgba(52,211,153,0.96) !important;
+                    color: rgba(156,163,175,0.96) !important;
                 }
                 div[class*="st-key-calendar_planned_done_if_blue_"] button[kind="primary"],
                 div[class*="st-key-calendar_planned_done_if_blue_"] button[kind="primary"]:hover,
