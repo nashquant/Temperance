@@ -76,19 +76,27 @@ export function AthleteProgressionPage(): JSX.Element {
 
     const overlays: InjuryOverlay[] = [];
     windows.forEach((window) => {
-        const start = String(window.start || '');
-        const end = String(window.end || '');
-        if (!start || !end) return;
-        const x1 = start < first ? first : start;
-        const x2 = end > last ? last : end;
-        if (x1 > x2) return;
-        overlays.push({
-          start: x1,
-          end: x2,
-          severity: window.severity,
-          label: window.label,
-        });
+      const start = String(window.start || '');
+      const end = String(window.end || '');
+      if (!start || !end) return;
+
+      const clippedStart = start < first ? first : start;
+      const clippedEnd = end > last ? last : end;
+      if (clippedStart > clippedEnd) return;
+
+      // The chart uses categorical x values (period_start); snap windows to existing buckets.
+      const snappedStart = points.find((p) => p >= clippedStart);
+      const reversed = [...points].reverse();
+      const snappedEnd = reversed.find((p) => p <= clippedEnd);
+      if (!snappedStart || !snappedEnd || snappedStart > snappedEnd) return;
+
+      overlays.push({
+        start: snappedStart,
+        end: snappedEnd,
+        severity: window.severity,
+        label: window.label,
       });
+    });
     return overlays;
   }, [normalizedChartData, settingsQuery.data?.injury_windows]);
 
