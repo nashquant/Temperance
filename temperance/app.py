@@ -1502,6 +1502,16 @@ def _segment_with_effective_intensity_for_metrics(
         return seg_for_metrics
     if_input_source = str(seg_for_metrics.get("if_input_source") or "").strip().lower()
     if if_input_source != "tss_derived":
+        source_text = str(seg_for_metrics.get("source") or "").lower()
+        has_tss = bool(re.search(r"@\s*\d+(?:\.\d+)?\s*tss\b", source_text))
+        has_bpm = bool(re.search(r"@\s*\d+(?:\.\d+)?\s*bpm\b", source_text))
+        has_if_pct = bool(re.search(r"@\s*\d+(?:\.\d+)?\s*%", source_text))
+        has_pace = bool(re.search(r"@\s*\d{1,2}:\d{2}\s*/?\s*km\b", source_text))
+        if not (has_tss and (not has_bpm) and (not has_if_pct) and (not has_pace)):
+            return seg_for_metrics
+    else:
+        has_tss = True
+    if not has_tss:
         return seg_for_metrics
     tss_target = pd.to_numeric(pd.Series([seg_for_metrics.get("tss_target")]), errors="coerce").fillna(0.0).iloc[0]
     duration_min = pd.to_numeric(pd.Series([seg_for_metrics.get("duration_min")]), errors="coerce").fillna(0.0).iloc[0]
@@ -5078,12 +5088,18 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     except Exception:
                                         segments = []
                                 for seg in segments:
+                                    seg_kind = str(seg.get("kind") or "").strip().lower()
                                     seg_spec = _specificity_factor_for_plan_kind(
-                                        str(seg.get("kind")),
+                                        seg_kind,
                                         planner_specificity_profile,
                                     )
-                                    m = _planned_segment_metrics(
+                                    seg_for_metrics = _segment_with_effective_intensity_for_metrics(
                                         seg,
+                                        seg_kind=seg_kind,
+                                        seg_spec=seg_spec,
+                                    )
+                                    m = _planned_segment_metrics(
+                                        seg_for_metrics,
                                         lthr_bpm=lthr_for_day,
                                         threshold_pace_sec_per_km=lt_pace_for_day,
                                         non_running_factor=seg_spec,
@@ -6054,8 +6070,13 @@ if view in {"Week Planner", "Weekly Summary"}:
             for seg in segments:
                 seg_kind = str(seg.get("kind") or "").strip().lower()
                 seg_spec = _specificity_factor_for_plan_kind(seg_kind, planner_specificity_profile)
-                m = _planned_segment_metrics(
+                seg_for_metrics = _segment_with_effective_intensity_for_metrics(
                     seg,
+                    seg_kind=seg_kind,
+                    seg_spec=seg_spec,
+                )
+                m = _planned_segment_metrics(
+                    seg_for_metrics,
                     lthr_bpm=lthr_for_day,
                     threshold_pace_sec_per_km=lt_pace_for_day,
                     non_running_factor=seg_spec,
