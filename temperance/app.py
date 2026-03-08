@@ -5458,6 +5458,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 if str(st.session_state.get("calendar_compact_metric")) not in compact_metric_keys:
                     st.session_state["calendar_compact_metric"] = "tss"
                 is_mobile_compact_ui = _is_probably_mobile_client()
+                active_compare_choice = str(st.session_state.get("calendar_compact_compare_choice", compare_choice))
+                active_metric_choice = str(st.session_state.get("calendar_compact_metric", "tss"))
 
                 if is_mobile_compact_ui:
                     compare_short = {
@@ -5513,6 +5515,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     current_metric = str(st.session_state.get("calendar_compact_metric", compact_metric_keys[0]))
                     if current_metric not in compact_metric_keys:
                         current_metric = compact_metric_keys[0]
+                    active_compare_choice = current_compare
+                    active_metric_choice = current_metric
                     _qp_base: dict[str, list[str] | str] = {}
                     try:
                         for _k, _v in st.query_params.items():
@@ -5574,14 +5578,15 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
                             st.rerun()
                     with nav3:
-                        st.selectbox(
+                        selected_compare_desktop = st.selectbox(
                             "Compare against",
                             compare_options,
                             key="calendar_compact_compare_choice",
                             label_visibility="collapsed",
                         )
+                        active_compare_choice = str(selected_compare_desktop)
                     with nav4:
-                        st.selectbox(
+                        selected_metric_desktop = st.selectbox(
                             "Metric",
                             compact_metric_keys,
                             key="calendar_compact_metric",
@@ -5591,7 +5596,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 + (" km" if k == "distance_eqv_km" else "")
                             ),
                         )
-                compare_choice = str(st.session_state.get("calendar_compact_compare_choice", compare_choice))
+                        active_metric_choice = str(selected_metric_desktop)
+                compare_choice = str(active_compare_choice or st.session_state.get("calendar_compact_compare_choice", compare_choice))
 
                 compact_days = pd.DataFrame({"day": pd.date_range(selected_week_start, selected_week_end, freq="D")})
                 compact_agg = (
@@ -5794,7 +5800,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     ("tss", "TSS", ".0f", "", "sum"),
                     ("distance_eqv_km", "Distance Eqv", ".0f", " km", "sum"),
                 ]
-                selected_metric = str(st.session_state.get("calendar_compact_metric") or "tss")
+                selected_metric = str(active_metric_choice or st.session_state.get("calendar_compact_metric") or "tss")
                 if selected_metric not in {k for k, _, _, _, _ in metric_defs}:
                     selected_metric = "tss"
                     st.session_state["calendar_compact_metric"] = selected_metric
@@ -5813,6 +5819,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     )
                 chart_df["series"] = "Current"
                 chart_df["opacity"] = 0.95
+                chart_df = chart_df.sort_values("day").reset_index(drop=True)
+                chart_df["slot_idx"] = chart_df.index.astype(int)
                 compare_chart_df = compare_week.copy()
                 compare_chart_df["metric_value"] = pd.to_numeric(
                     compare_chart_df[selected_metric], errors="coerce"
@@ -5828,6 +5836,18 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     )
                 compare_chart_df["series"] = "Compare"
                 compare_chart_df["opacity"] = 0.35
+                compare_chart_df = compare_chart_df.sort_values("day").reset_index(drop=True)
+                compare_chart_df["slot_idx"] = compare_chart_df.index.astype(int)
+                # Always align compare bars to current-week slots (Mon..Sun of selected week),
+                # so historical weeks overlay by day-of-week instead of creating extra x categories.
+                slot_to_display = {
+                    int(slot): str(label)
+                    for slot, label in zip(chart_df["slot_idx"], chart_df["day_display"])
+                }
+                compare_chart_df["day_display"] = compare_chart_df["slot_idx"].map(slot_to_display).fillna(
+                    compare_chart_df["day_display"]
+                )
+                compare_chart_df = compare_chart_df[compare_chart_df["slot_idx"].isin(slot_to_display.keys())].copy()
                 y_title = next(label for key, label, _, _, _ in metric_defs if key == selected_metric)
                 if selected_metric == "distance_eqv_km":
                     chart_df["metric_label"] = chart_df["metric_value"].map(
@@ -5946,9 +5966,10 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 compare_week_total = _agg_metric(compare_week, compare_week["day"].notna(), selected_metric)
                 if compare_choice == "Planned":
                     compare_remaining = float(planned_remaining_metric_totals.get(selected_metric, 0.0))
+                    projected_finish = realized_to_date + compare_remaining
                 else:
-                    compare_remaining = compare_week_total - compare_to_date
-                projected_finish = realized_to_date + compare_remaining
+                    compare_remaining = 0.0
+                    projected_finish = float("nan")
                 projected_fatigue = float("nan")
                 try:
                     fatigue_anchor = float("nan")
@@ -5967,15 +5988,12 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         remaining_today_tss = float(planned_remaining_tss_by_day.get(pd.Timestamp(cutoff_day), 0.0))
                         if remaining_today_tss > 0:
                             projected_fatigue = projected_fatigue + (alpha_fatigue * remaining_today_tss)
-                    for day_ts in pd.date_range(cutoff_day + pd.Timedelta(days=1), selected_week_end, freq="D"):
-                        if compare_choice == "Planned":
+                    if compare_choice == "Planned":
+                        for day_ts in pd.date_range(cutoff_day + pd.Timedelta(days=1), selected_week_end, freq="D"):
                             day_target_tss = float(planned_remaining_tss_by_day.get(pd.Timestamp(day_ts), 0.0))
-                        else:
-                            day_offset = int((day_ts - selected_week_start).days)
-                            day_offset = min(max(day_offset, 0), 6)
-                            cmp_day = compare_week_start + pd.Timedelta(days=day_offset)
-                            day_target_tss = _agg_metric(compare_week, compare_week["day"] == cmp_day, "tss")
-                        projected_fatigue = alpha_fatigue * float(day_target_tss) + (1.0 - alpha_fatigue) * projected_fatigue
+                            projected_fatigue = alpha_fatigue * float(day_target_tss) + (1.0 - alpha_fatigue) * projected_fatigue
+                    else:
+                        projected_fatigue = float("nan")
                 except Exception:
                     projected_fatigue = float("nan")
 
@@ -5987,27 +6005,40 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         f"{value_text}</span>"
                     )
 
-                narrative = (
-                    f"Today is {today_local:%A}: "
-                    f"WTD {metric_label_map.get(selected_metric, 'Metric')} delivered: {_emph(_fmt_metric(selected_metric, realized_to_date))} "
-                    f"(vs. {compare_label} {_emph(_fmt_metric(selected_metric, compare_to_date))}). "
-                    f"Remaining {metric_label_map.get(selected_metric, 'Metric')} to go "
-                    f"{_emph(_fmt_metric(selected_metric, compare_remaining))}. "
-                    f"Projected finish {metric_label_map.get(selected_metric, 'Metric')} "
-                    f"{_emph(_fmt_metric(selected_metric, projected_finish))}."
-                    + (
-                        f" Estimated fatigue EoW {_emph(f'{projected_fatigue:.0f}')}."
-                        if pd.notna(projected_fatigue)
-                        else ""
+                if compare_choice == "Planned":
+                    narrative = (
+                        f"Today is {today_local:%A}: "
+                        f"WTD {metric_label_map.get(selected_metric, 'Metric')} delivered: {_emph(_fmt_metric(selected_metric, realized_to_date))} "
+                        f"(vs. {compare_label} {_emph(_fmt_metric(selected_metric, compare_to_date))}). "
+                        f"Remaining {metric_label_map.get(selected_metric, 'Metric')} to go "
+                        f"{_emph(_fmt_metric(selected_metric, compare_remaining))}. "
+                        f"Projected finish {metric_label_map.get(selected_metric, 'Metric')} "
+                        f"{_emph(_fmt_metric(selected_metric, projected_finish))}."
+                        + (
+                            f" Estimated fatigue EoW {_emph(f'{projected_fatigue:.0f}')}."
+                            if pd.notna(projected_fatigue)
+                            else ""
+                        )
                     )
-                )
+                else:
+                    narrative = (
+                        f"Today is {today_local:%A}: "
+                        f"WTD {metric_label_map.get(selected_metric, 'Metric')} delivered: {_emph(_fmt_metric(selected_metric, realized_to_date))} "
+                        f"(vs. {compare_label} {_emph(_fmt_metric(selected_metric, compare_to_date))})."
+                    )
                 if is_mobile_compact:
-                    narrative_mobile = (
-                        f"WTD {_fmt_metric(selected_metric, realized_to_date)} · "
-                        f"Plan {_fmt_metric(selected_metric, compare_to_date)} · "
-                        f"Left {_fmt_metric(selected_metric, compare_remaining)} · "
-                        f"Proj {_fmt_metric(selected_metric, projected_finish)}"
-                    )
+                    if compare_choice == "Planned":
+                        narrative_mobile = (
+                            f"WTD {_fmt_metric(selected_metric, realized_to_date)} · "
+                            f"Plan {_fmt_metric(selected_metric, compare_to_date)} · "
+                            f"Left {_fmt_metric(selected_metric, compare_remaining)} · "
+                            f"Proj {_fmt_metric(selected_metric, projected_finish)}"
+                        )
+                    else:
+                        narrative_mobile = (
+                            f"WTD {_fmt_metric(selected_metric, realized_to_date)} · "
+                            f"{compare_label.title()} {_fmt_metric(selected_metric, compare_to_date)}"
+                        )
                     st.caption(narrative_mobile)
                 else:
                     st.markdown(
