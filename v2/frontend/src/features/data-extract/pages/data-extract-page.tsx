@@ -96,30 +96,7 @@ export function DataExtractPage(): JSX.Element {
     <section className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Data Extract</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Mirrors v1 Data Extract & Sync for Garmin and file imports.</p>
       </div>
-
-      <Card>
-        <CardContent className="space-y-2 p-4 text-sm">
-          <p><span className="text-muted-foreground">DB:</span> {status?.db_path}</p>
-          <p><span className="text-muted-foreground">Import dir:</span> {status?.import_dir}</p>
-          <p><span className="text-muted-foreground">Garmin creds:</span> {status?.garmin_credentials_available ? 'available' : 'missing'}</p>
-          {status?.last_sync ? (
-            <p><span className="text-muted-foreground">Last sync:</span> {status.last_sync.sync_time_utc} | {status.last_sync.source} | {status.last_sync.success ? 'success' : 'failed'}</p>
-          ) : (
-            <p className="text-muted-foreground">No sync has been run yet.</p>
-          )}
-          <p className="text-muted-foreground">Local records:</p>
-          <div className="grid gap-2 md:grid-cols-3">
-            {Object.entries(status?.counts ?? {}).map(([key, value]) => (
-              <div key={key} className="rounded border p-2 text-xs">
-                <p className="text-muted-foreground">{key}</p>
-                <p className="font-semibold text-foreground">{value}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardContent className="space-y-3 p-4">
@@ -179,6 +156,28 @@ export function DataExtractPage(): JSX.Element {
       </Card>
 
       {result ? <p className="text-sm text-muted-foreground">{result}</p> : null}
+
+      <Card>
+        <CardContent className="space-y-2 p-4 text-sm">
+          <p><span className="text-muted-foreground">DB:</span> {status?.db_path}</p>
+          <p><span className="text-muted-foreground">Import dir:</span> {status?.import_dir}</p>
+          <p><span className="text-muted-foreground">Garmin creds:</span> {status?.garmin_credentials_available ? 'available' : 'missing'}</p>
+          {status?.last_sync ? (
+            <p><span className="text-muted-foreground">Last sync:</span> {status.last_sync.sync_time_utc} | {status.last_sync.source} | {status.last_sync.success ? 'success' : 'failed'}</p>
+          ) : (
+            <p className="text-muted-foreground">No sync has been run yet.</p>
+          )}
+          <p className="text-muted-foreground">Local records:</p>
+          <div className="grid gap-2 md:grid-cols-3">
+            {Object.entries(status?.counts ?? {}).map(([key, value]) => (
+              <div key={key} className="rounded border p-2 text-xs">
+                <p className="text-muted-foreground">{key}</p>
+                <p className="font-semibold text-foreground">{value}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </section>
   );
 }

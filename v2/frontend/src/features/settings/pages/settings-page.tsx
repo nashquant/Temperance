@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useSettingsQuery } from '@/features/settings/hooks/use-settings-query';
@@ -12,17 +13,28 @@ import { updateSettings } from '@/features/settings/services/settings-api';
 import type { InjuryWindow, LthrCurvePoint, LtPaceCurvePoint, SpecificityProfile } from '@/features/settings/types/settings';
 import { queryClient } from '@/lib/query-client';
 
-function toPrettyJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
+interface LthrDraftRow {
+  id: string;
+  date: string;
+  lthr_bpm: number;
 }
 
-function parseJsonArray<T>(raw: string, fallback: T[]): T[] {
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as T[]) : fallback;
-  } catch {
-    return fallback;
-  }
+interface LtPaceDraftRow {
+  id: string;
+  date: string;
+  lt_pace_sec_per_km: number;
+}
+
+interface InjuryDraftRow {
+  id: string;
+  label: string;
+  start: string;
+  end: string;
+  severity: 'injury' | 'light_injury';
+}
+
+function rowId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export function SettingsPage(): JSX.Element {
@@ -31,18 +43,30 @@ export function SettingsPage(): JSX.Element {
 
   const [ifZones, setIfZones] = useState({ z1_max: 0.7, z2_max: 0.8, z3_max: 0.9, z4_max: 1.0 });
   const [specificity, setSpecificity] = useState<SpecificityProfile>({ non_running: 0.8, treadmill: 1.0, elliptical: 0.8, cycling: 0.8 });
-  const [lthrRaw, setLthrRaw] = useState('[]');
-  const [paceRaw, setPaceRaw] = useState('[]');
-  const [injuryRaw, setInjuryRaw] = useState('[]');
+  const [lthrRows, setLthrRows] = useState<LthrDraftRow[]>([]);
+  const [paceRows, setPaceRows] = useState<LtPaceDraftRow[]>([]);
+  const [injuryRows, setInjuryRows] = useState<InjuryDraftRow[]>([]);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!query.data) return;
     setIfZones(query.data.if_zone_thresholds);
     setSpecificity(query.data.specificity_profile);
-    setLthrRaw(toPrettyJson(query.data.lthr_curve));
-    setPaceRaw(toPrettyJson(query.data.lt_pace_curve));
-    setInjuryRaw(toPrettyJson(query.data.injury_windows));
+    setLthrRows(
+      query.data.lthr_curve.map((row) => ({ id: rowId(), date: row.date, lthr_bpm: Number(row.lthr_bpm) || 0 })),
+    );
+    setPaceRows(
+      query.data.lt_pace_curve.map((row) => ({ id: rowId(), date: row.date, lt_pace_sec_per_km: Number(row.lt_pace_sec_per_km) || 0 })),
+    );
+    setInjuryRows(
+      query.data.injury_windows.map((row) => ({
+        id: rowId(),
+        label: row.label,
+        start: row.start,
+        end: row.end,
+        severity: row.severity,
+      })),
+    );
   }, [query.data]);
 
   const saveMutation = useMutation({
@@ -64,11 +88,28 @@ export function SettingsPage(): JSX.Element {
   });
 
   const parsedCurves = useMemo(() => {
-    const lthr = parseJsonArray<LthrCurvePoint>(lthrRaw, []);
-    const pace = parseJsonArray<LtPaceCurvePoint>(paceRaw, []);
-    const injury = parseJsonArray<InjuryWindow>(injuryRaw, []);
+    const lthr: LthrCurvePoint[] = lthrRows
+      .filter((row) => row.date)
+      .map((row) => ({ date: row.date, lthr_bpm: Number(row.lthr_bpm) || 0 }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const pace: LtPaceCurvePoint[] = paceRows
+      .filter((row) => row.date)
+      .map((row) => ({ date: row.date, lt_pace_sec_per_km: Number(row.lt_pace_sec_per_km) || 0 }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const injury: InjuryWindow[] = injuryRows
+      .filter((row) => row.label.trim() && row.start && row.end)
+      .map((row) => ({
+        label: row.label.trim(),
+        start: row.start,
+        end: row.end,
+        severity: row.severity,
+      }))
+      .sort((a, b) => a.start.localeCompare(b.start));
+
     return { lthr, pace, injury };
-  }, [injuryRaw, lthrRaw, paceRaw]);
+  }, [injuryRows, lthrRows, paceRows]);
 
   if (query.isLoading) {
     return (
@@ -140,24 +181,167 @@ export function SettingsPage(): JSX.Element {
 
       <Card>
         <CardContent className="space-y-3 p-4">
-          <p className="text-sm font-medium">LTHR Curve (JSON array)</p>
-          <textarea className="min-h-[120px] w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs" value={lthrRaw} onChange={(event) => setLthrRaw(event.target.value)} />
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">LTHR Curve</p>
+            <Button
+              variant="outline"
+              onClick={() => setLthrRows((previous) => [...previous, { id: rowId(), date: '', lthr_bpm: 0 }])}
+              disabled={saveMutation.isPending}
+            >
+              Add row
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {lthrRows.map((row) => (
+              <div key={row.id} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                <Input
+                  type="date"
+                  value={row.date}
+                  onChange={(event) =>
+                    setLthrRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, date: event.target.value } : item)))
+                  }
+                />
+                <Input
+                  type="number"
+                  step="1"
+                  min={0}
+                  value={row.lthr_bpm}
+                  onChange={(event) =>
+                    setLthrRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, lthr_bpm: Number(event.target.value) } : item)))
+                  }
+                  placeholder="LTHR bpm"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => setLthrRows((previous) => previous.filter((item) => item.id !== row.id))}
+                  disabled={saveMutation.isPending}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
           <Button onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save LTHR Curve</Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardContent className="space-y-3 p-4">
-          <p className="text-sm font-medium">LT Pace Curve (JSON array)</p>
-          <textarea className="min-h-[120px] w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs" value={paceRaw} onChange={(event) => setPaceRaw(event.target.value)} />
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">LT Pace Curve</p>
+            <Button
+              variant="outline"
+              onClick={() => setPaceRows((previous) => [...previous, { id: rowId(), date: '', lt_pace_sec_per_km: 0 }])}
+              disabled={saveMutation.isPending}
+            >
+              Add row
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {paceRows.map((row) => (
+              <div key={row.id} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                <Input
+                  type="date"
+                  value={row.date}
+                  onChange={(event) =>
+                    setPaceRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, date: event.target.value } : item)))
+                  }
+                />
+                <Input
+                  type="number"
+                  step="1"
+                  min={0}
+                  value={row.lt_pace_sec_per_km}
+                  onChange={(event) =>
+                    setPaceRows((previous) =>
+                      previous.map((item) => (item.id === row.id ? { ...item, lt_pace_sec_per_km: Number(event.target.value) } : item)),
+                    )
+                  }
+                  placeholder="LT pace sec/km"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => setPaceRows((previous) => previous.filter((item) => item.id !== row.id))}
+                  disabled={saveMutation.isPending}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
           <Button onClick={() => saveMutation.mutate({ lt_pace_curve: parsedCurves.pace })} disabled={saveMutation.isPending}>Save LT Pace Curve</Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardContent className="space-y-3 p-4">
-          <p className="text-sm font-medium">Injury Overlays (JSON array)</p>
-          <textarea className="min-h-[120px] w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs" value={injuryRaw} onChange={(event) => setInjuryRaw(event.target.value)} />
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Injury Overlays</p>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setInjuryRows((previous) => [
+                  ...previous,
+                  { id: rowId(), label: '', start: '', end: '', severity: 'light_injury' },
+                ])
+              }
+              disabled={saveMutation.isPending}
+            >
+              Add row
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {injuryRows.map((row) => (
+              <div key={row.id} className="grid gap-2 md:grid-cols-[1.2fr_1fr_1fr_1fr_auto]">
+                <Input
+                  value={row.label}
+                  onChange={(event) =>
+                    setInjuryRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, label: event.target.value } : item)))
+                  }
+                  placeholder="Label"
+                />
+                <Input
+                  type="date"
+                  value={row.start}
+                  onChange={(event) =>
+                    setInjuryRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, start: event.target.value } : item)))
+                  }
+                />
+                <Input
+                  type="date"
+                  value={row.end}
+                  onChange={(event) =>
+                    setInjuryRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, end: event.target.value } : item)))
+                  }
+                />
+                <Select
+                  value={row.severity}
+                  onValueChange={(value) =>
+                    setInjuryRows((previous) =>
+                      previous.map((item) =>
+                        item.id === row.id ? { ...item, severity: value as 'injury' | 'light_injury' } : item,
+                      ),
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light_injury">Light injury</SelectItem>
+                    <SelectItem value="injury">Injury</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  onClick={() => setInjuryRows((previous) => previous.filter((item) => item.id !== row.id))}
+                  disabled={saveMutation.isPending}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
           <Button onClick={() => saveMutation.mutate({ injury_windows: parsedCurves.injury })} disabled={saveMutation.isPending}>Save Injury Overlays</Button>
         </CardContent>
       </Card>
