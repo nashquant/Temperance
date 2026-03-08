@@ -5215,17 +5215,19 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         display: flex !important;
                         flex-wrap: nowrap !important;
                         align-items: center !important;
-                        gap: 0.34rem !important;
-                        margin: 2px 0 6px 0 !important;
+                        justify-content: flex-start !important;
+                        width: min(68vw, 240px) !important;
+                        gap: 0.18rem !important;
+                        margin: 1px 0 4px 0 !important;
                     }
                     .compact-mobile-nav a {
                         display: inline-flex !important;
                         align-items: center !important;
                         justify-content: center !important;
                         min-width: 0 !important;
-                        height: 24px !important;
-                        min-height: 24px !important;
-                        border-radius: 8px !important;
+                        height: 18px !important;
+                        min-height: 18px !important;
+                        border-radius: 6px !important;
                         border: 1px solid rgba(71,85,105,0.78) !important;
                         background: rgba(15,23,42,0.42) !important;
                         color: rgba(226,232,240,0.96) !important;
@@ -5233,7 +5235,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         line-height: 1 !important;
                         text-decoration: none !important;
                         white-space: nowrap !important;
-                        padding: 0.04rem 0.12rem !important;
+                        padding: 0.03rem 0.08rem !important;
                     }
                     .compact-mobile-nav a:visited,
                     .compact-mobile-nav a:hover,
@@ -5294,8 +5296,11 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     div[class*="st-key-calendar_compact_compare_choice"] [data-baseweb="select"] > div,
                     div[class*="st-key-calendar_activity_filter"] [data-baseweb="select"] > div,
                     div[class*="st-key-calendar_compact_metric"] [data-baseweb="select"] > div {
-                        min-height: 38px !important;
-                        font-size: 0.95rem !important;
+                        min-height: 30px !important;
+                        height: 30px !important;
+                        padding-top: 0 !important;
+                        padding-bottom: 0 !important;
+                        font-size: 0.86rem !important;
                     }
                     div[data-testid="stHorizontalBlock"]:has(.cal-week-summary) {
                         flex-direction: column !important;
