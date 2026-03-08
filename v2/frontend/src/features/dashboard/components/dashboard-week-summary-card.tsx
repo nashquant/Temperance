@@ -51,10 +51,13 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
       <div className="mt-3 space-y-1.5 border-t border-border/70 pt-2">
         <p className="text-xs font-medium text-foreground">Zones</p>
         {summary.zones.map((zone) => (
-          <div key={zone.zone} className="grid grid-cols-[24px_1fr_58px_42px] items-center gap-1.5 text-[11px] text-muted-foreground">
+          <div key={zone.zone} className="grid grid-cols-[24px_minmax(70px,1fr)_58px_42px] items-center gap-1.5 text-[11px] text-muted-foreground">
             <span>{zone.zone}</span>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div className={`h-full rounded-full ${zoneColors[zone.zone] ?? 'bg-slate-500'}`} style={{ width: `${Math.max(0, Math.min(100, zone.pct))}%` }} />
+            <div className="h-2.5 w-full overflow-hidden rounded-full border border-border/60 bg-muted/70">
+              <div
+                className={`h-full rounded-full ${zoneColors[zone.zone] ?? 'bg-slate-500'}`}
+                style={{ width: `${zone.pct > 0 ? Math.max(3, Math.min(100, zone.pct)) : 0}%` }}
+              />
             </div>
             <span className="text-right">{fmtSeconds(zone.seconds)}</span>
             <span className="text-right">{zone.pct.toFixed(0)}%</span>

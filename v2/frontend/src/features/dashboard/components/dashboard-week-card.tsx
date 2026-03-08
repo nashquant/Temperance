@@ -13,7 +13,7 @@ function shortDay(iso: string): string {
 export function DashboardWeekCard({ week }: DashboardWeekCardProps): JSX.Element {
   return (
     <section className="rounded-2xl border border-border/70 bg-card/40 p-3">
-      <div className="grid gap-2 lg:grid-cols-8">
+      <div className="grid gap-2 lg:grid-cols-[1.2fr_repeat(7,minmax(0,1fr))]">
         <DashboardWeekSummaryCard
           weekNumber={week.week_number}
           weekStart={shortDay(week.week_start)}

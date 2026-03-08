@@ -1439,14 +1439,16 @@ def _build_activity_dashboard_payload(
             "rtss": _safe_float(row.get("rtss")),
         }
 
+    today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
+    render_max_day = max(pd.Timestamp(max_day).normalize(), today_local + pd.Timedelta(days=28))
+
     planned_rows = get_planned_activities_df(
         db_path=db_path,
         start_day_utc=min_day.date().isoformat(),
-        end_day_utc=max_day.date().isoformat(),
+        end_day_utc=render_max_day.date().isoformat(),
     )
     planned_by_day: dict[pd.Timestamp, list[dict[str, Any]]] = {}
     planned_summary_lookup: dict[pd.Timestamp, dict[str, float]] = {}
-    today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
     if not planned_rows.empty:
         lthr_curve = _load_curve_points(
             db_path=db_path,
@@ -1469,27 +1471,26 @@ def _build_activity_dashboard_payload(
             planned_metrics["manual_done"] = pd.to_numeric(planned_metrics.get("manual_done"), errors="coerce").fillna(0.0) > 0
             for day, grp in planned_metrics.groupby("day"):
                 day_key = pd.Timestamp(day).normalize()
-                if day_key >= today_local:
-                    cards: list[dict[str, Any]] = []
-                    for _, row in grp.iterrows():
-                        if bool(row.get("manual_done")):
-                            continue
-                        cards.append(
-                            {
-                                "day_utc": day_key.date().isoformat(),
-                                "line_no": int(_safe_float(row.get("line_no"))),
-                                "activity": _planned_activity_label(row.get("parsed_json")),
-                                "workout_text": str(row.get("workout_text") or ""),
-                                "duration_s": _safe_float(row.get("duration_s")),
-                                "distance_eqv_km": _safe_float(row.get("distance_proxy_km")),
-                                "if_proxy": _safe_float(row.get("if_proxy")),
-                                "tss": _safe_float(row.get("tss")),
-                                "rtss": _safe_float(row.get("rtss")),
-                                "manual_done": bool(row.get("manual_done")),
-                            }
-                        )
-                    if cards:
-                        planned_by_day[day_key] = cards
+                cards: list[dict[str, Any]] = []
+                for _, row in grp.iterrows():
+                    if bool(row.get("manual_done")):
+                        continue
+                    cards.append(
+                        {
+                            "day_utc": day_key.date().isoformat(),
+                            "line_no": int(_safe_float(row.get("line_no"))),
+                            "activity": _planned_activity_label(row.get("parsed_json")),
+                            "workout_text": str(row.get("workout_text") or ""),
+                            "duration_s": _safe_float(row.get("duration_s")),
+                            "distance_eqv_km": _safe_float(row.get("distance_proxy_km")),
+                            "if_proxy": _safe_float(row.get("if_proxy")),
+                            "tss": _safe_float(row.get("tss")),
+                            "rtss": _safe_float(row.get("rtss")),
+                            "manual_done": bool(row.get("manual_done")),
+                        }
+                    )
+                if cards:
+                    planned_by_day[day_key] = cards
                 planned_summary_lookup[day_key] = {
                     "duration_s": float(pd.to_numeric(grp.get("duration_s"), errors="coerce").fillna(0.0).sum()),
                     "distance_eqv_km": float(pd.to_numeric(grp.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()),
@@ -1519,7 +1520,7 @@ def _build_activity_dashboard_payload(
 
     week_starts = pd.date_range(
         start=_week_start_monday(pd.Timestamp(min_day)),
-        end=_week_start_monday(pd.Timestamp(max_day)),
+        end=_week_start_monday(pd.Timestamp(render_max_day)),
         freq="7D",
     ).sort_values(ascending=False)
     weeks_total = int(len(week_starts))
@@ -1534,13 +1535,22 @@ def _build_activity_dashboard_payload(
         "rtss": round(float(pd.to_numeric(metrics_df.get("rtss"), errors="coerce").fillna(0.0).sum()), 1),
     }
 
+    sorted_model_days = sorted(model_lookup.keys())
+
+    def _model_on_or_before(day: pd.Timestamp) -> dict[str, float] | None:
+        if not sorted_model_days:
+            return None
+        lookup_day = pd.Timestamp(day).normalize()
+        for d in reversed(sorted_model_days):
+            if d <= lookup_day:
+                return model_lookup.get(d)
+        return None
+
     weeks_out: list[dict[str, Any]] = []
     for ws in selected_week_starts:
         ws = pd.Timestamp(ws).normalize()
         we = ws + pd.Timedelta(days=6)
         week_df = metrics_df[(metrics_df["day"] >= ws) & (metrics_df["day"] <= we)].copy()
-        if week_df.empty:
-            continue
 
         week_duration_s = float(pd.to_numeric(week_df.get("duration_s"), errors="coerce").fillna(0.0).sum())
         week_distance_km = float(pd.to_numeric(week_df.get("distance_km_running"), errors="coerce").fillna(0.0).sum())
@@ -1548,7 +1558,7 @@ def _build_activity_dashboard_payload(
         week_calories = float(pd.to_numeric(week_df.get("calories_total"), errors="coerce").fillna(0.0).sum())
         week_tss = float(pd.to_numeric(week_df.get("tss"), errors="coerce").fillna(0.0).sum())
         week_rtss = float(pd.to_numeric(week_df.get("rtss"), errors="coerce").fillna(0.0).sum())
-        week_daily_model = model_lookup.get(we)
+        week_daily_model = _model_on_or_before(we)
         week_zones_seconds = {
             "Z1": float(pd.to_numeric(week_df.get("hr_time_in_zone_1"), errors="coerce").fillna(0.0).sum()),
             "Z2": float(pd.to_numeric(week_df.get("hr_time_in_zone_2"), errors="coerce").fillna(0.0).sum()),
