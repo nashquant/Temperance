@@ -5105,20 +5105,13 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     }
                     div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) {
                         display: flex !important;
-                        flex-wrap: wrap !important;
+                        flex-wrap: nowrap !important;
                         gap: 0.4rem !important;
                     }
                     div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"] {
-                        flex: 1 1 calc(50% - 0.4rem) !important;
-                        min-width: calc(50% - 0.4rem) !important;
-                        width: calc(50% - 0.4rem) !important;
-                    }
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:has(div[class*="st-key-calendar_compact_compare_choice"]),
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:has(div[class*="st-key-calendar_activity_filter"]),
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:has(div[class*="st-key-calendar_compact_metric"]) {
-                        flex-basis: 100% !important;
-                        min-width: 100% !important;
-                        width: 100% !important;
+                        flex: 1 1 0 !important;
+                        min-width: 0 !important;
+                        width: auto !important;
                     }
                     div[class*="st-key-compact_prev_week"] button,
                     div[class*="st-key-compact_next_week"] button {
