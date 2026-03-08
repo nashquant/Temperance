@@ -35,7 +35,7 @@ def _default_db_path() -> Path:
 
 DB_PATH = Path(str(os.getenv("TEMPERANCE_DB_PATH") or _default_db_path()))
 
-from analytics import build_daily_summary, compute_metrics, display_table, weekly_summary  # noqa: E402
+from analytics import build_daily_summary, compute_metrics, display_table, ema_multi, weekly_summary  # noqa: E402
 from auth import build_users, password_matches, resolve_user  # noqa: E402
 from db import (  # noqa: E402
     delete_planned_activities,
@@ -45,6 +45,7 @@ from db import (  # noqa: E402
     get_planned_activities_df,
     get_runs_df,
     get_setting,
+    get_wellness_df,
     set_planned_activity_manual_done,
     upsert_planned_activities_rows,
 )
@@ -1168,19 +1169,118 @@ def _planned_daily_metric_map(
     )
 
 
-def _empty_dashboard(days: int) -> dict[str, Any]:
-    return {
-        "range_days": int(days),
-        "kpis": {
-            "distance_km": 0.0,
-            "distance_proxy_km": 0.0,
-            "tss_total": 0.0,
-            "activities": 0,
-            "days_with_training": 0,
-        },
-        "daily": [],
-        "activities": [],
-    }
+def _format_duration_short(duration_s: float) -> str:
+    total_minutes = max(int(round(float(duration_s) / 60.0)), 0)
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    if hours > 0:
+        return f"{hours}h {minutes}m" if minutes > 0 else f"{hours}h"
+    return f"{minutes}m"
+
+
+def _format_pace_short(pace_s_per_km: float | None) -> str:
+    if pace_s_per_km is None:
+        return "-"
+    pace_v = _safe_float(pace_s_per_km)
+    if pace_v <= 0:
+        return "-"
+    mm = int(pace_v // 60)
+    ss = int(round(pace_v - mm * 60))
+    if ss == 60:
+        mm += 1
+        ss = 0
+    return f"{mm}:{ss:02d}/km"
+
+
+def _activity_intensity_token(if_proxy: float, tss: float) -> str:
+    if if_proxy >= 1.0 or tss >= 120:
+        return "red"
+    if if_proxy >= 0.9 or tss >= 95:
+        return "orange"
+    if if_proxy >= 0.8 or tss >= 70:
+        return "blue"
+    return "green"
+
+
+def _day_lookup_with_daily_model(
+    metrics_df: pd.DataFrame,
+    daily_tss_target: float,
+) -> tuple[pd.DataFrame, dict[pd.Timestamp, dict[str, float]], dict[pd.Timestamp, dict[str, float]]]:
+    if metrics_df.empty:
+        return (
+            pd.DataFrame(columns=["day", "distance_eqv_km", "calories", "duration_s", "tss", "rtss"]),
+            {},
+            {},
+        )
+
+    daily_df = metrics_df.copy()
+    daily_df["day"] = pd.to_datetime(daily_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+    daily_df = daily_df.dropna(subset=["day"]).copy()
+    if daily_df.empty:
+        return (
+            pd.DataFrame(columns=["day", "distance_eqv_km", "calories", "duration_s", "tss", "rtss"]),
+            {},
+            {},
+        )
+
+    daily_agg = (
+        daily_df.groupby("day", as_index=False)
+        .agg(
+            distance_eqv_km=("distance_proxy_km", "sum"),
+            calories=("calories_total", "sum"),
+            duration_s=("duration_s", "sum"),
+            tss=("tss", "sum"),
+            rtss=("rtss", "sum"),
+        )
+        .sort_values("day")
+    )
+    daily_agg["distance_eqv_km"] = pd.to_numeric(daily_agg["distance_eqv_km"], errors="coerce").fillna(0.0)
+    daily_agg["calories"] = pd.to_numeric(daily_agg["calories"], errors="coerce").fillna(0.0)
+    daily_agg["duration_s"] = pd.to_numeric(daily_agg["duration_s"], errors="coerce").fillna(0.0)
+    daily_agg["tss"] = pd.to_numeric(daily_agg["tss"], errors="coerce").fillna(0.0)
+    daily_agg["rtss"] = pd.to_numeric(daily_agg["rtss"], errors="coerce").fillna(0.0)
+
+    min_day = pd.to_datetime(daily_agg["day"], errors="coerce").min()
+    max_day = pd.to_datetime(daily_agg["day"], errors="coerce").max()
+    if pd.isna(min_day) or pd.isna(max_day):
+        return daily_agg, {}, {}
+
+    day_index = pd.date_range(start=min_day, end=max_day, freq="D")
+    model_df = pd.DataFrame({"day": day_index})
+    model_df = model_df.merge(daily_agg, on="day", how="left")
+    for col in ["distance_eqv_km", "calories", "duration_s", "tss", "rtss"]:
+        model_df[col] = pd.to_numeric(model_df.get(col), errors="coerce").fillna(0.0)
+
+    tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
+    rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
+    if float(rtss_series.abs().sum()) <= 1e-9:
+        rtss_series = tss_series.copy()
+
+    tss_emas = ema_multi(tss_series, [42, 7, 10])
+    rtss_emas = ema_multi(rtss_series, [100, 10])
+    target = float(max(daily_tss_target, 0.0))
+
+    model_df["fitness"] = tss_emas[42]
+    model_df["fatigue"] = tss_emas[7]
+    model_df["overreach"] = (tss_emas[10] - target).clip(lower=0.0)
+    model_df["injury_risk"] = (rtss_emas[10] - target).clip(lower=0.0)
+
+    fitfat_lookup: dict[pd.Timestamp, dict[str, float]] = {}
+    model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
+    for _, row in model_df.iterrows():
+        day = pd.Timestamp(row["day"]).normalize()
+        fitfat_lookup[day] = {
+            "fitness": _safe_float(row.get("fitness")),
+            "fatigue": _safe_float(row.get("fatigue")),
+        }
+        model_lookup[day] = {
+            "fitness": _safe_float(row.get("fitness")),
+            "fatigue": _safe_float(row.get("fatigue")),
+            "overreach": _safe_float(row.get("overreach")),
+            "injury_risk": _safe_float(row.get("injury_risk")),
+        }
+
+    return daily_agg, fitfat_lookup, model_lookup
 
 
 def _metrics_for_filters(
@@ -1247,75 +1347,355 @@ def _metrics_for_filters(
     return metrics_df
 
 
-def _build_dashboard_payload(
+def _build_activity_dashboard_payload(
     db_path: Path,
-    days: int,
-    start_day: str | None,
-    end_day: str | None,
+    visible_weeks: int,
     sport: str | None,
-    limit: int,
 ) -> dict[str, Any]:
     metrics_df = _metrics_for_filters(
         db_path=db_path,
-        days=days,
-        start_day=start_day,
-        end_day=end_day,
+        days=3650,
+        start_day=None,
+        end_day=None,
         sport=sport,
     )
-
     if metrics_df.empty:
-        return _empty_dashboard(days)
+        return {
+            "weeks_total": 0,
+            "weeks_visible": 0,
+            "has_more_weeks": False,
+            "summary": {
+                "activities": 0,
+                "distance_km": 0.0,
+                "distance_eqv_km": 0.0,
+                "tss": 0.0,
+                "rtss": 0.0,
+            },
+            "weeks": [],
+        }
 
-    daily_df = build_daily_summary(metrics_df).sort_values("day_utc")
-    table_df = display_table(metrics_df).copy()
+    metrics_df = metrics_df.copy()
+    metrics_df["start_local"] = pd.to_datetime(metrics_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
+    metrics_df = metrics_df.dropna(subset=["start_local"]).copy()
+    metrics_df["day"] = metrics_df["start_local"].dt.normalize()
+    sport_lower = metrics_df["sport_type"].fillna("").astype(str).str.lower()
+    is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
+    metrics_df["distance_km_running"] = (
+        pd.to_numeric(metrics_df.get("distance_m"), errors="coerce").fillna(0.0).where(is_running_like, 0.0) / 1000.0
+    )
+    if metrics_df.empty:
+        return {
+            "weeks_total": 0,
+            "weeks_visible": 0,
+            "has_more_weeks": False,
+            "summary": {
+                "activities": 0,
+                "distance_km": 0.0,
+                "distance_eqv_km": 0.0,
+                "tss": 0.0,
+                "rtss": 0.0,
+            },
+            "weeks": [],
+        }
 
-    kpi_distance_km = _safe_float(pd.to_numeric(daily_df.get("distance_km"), errors="coerce").fillna(0.0).sum())
-    kpi_proxy_km = _safe_float(pd.to_numeric(daily_df.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum())
-    kpi_tss_total = _safe_float(pd.to_numeric(daily_df.get("tss_total"), errors="coerce").fillna(0.0).sum())
+    min_day = pd.to_datetime(metrics_df["day"], errors="coerce").min()
+    max_day = pd.to_datetime(metrics_df["day"], errors="coerce").max()
+    if pd.isna(min_day) or pd.isna(max_day):
+        return {
+            "weeks_total": 0,
+            "weeks_visible": 0,
+            "has_more_weeks": False,
+            "summary": {
+                "activities": 0,
+                "distance_km": 0.0,
+                "distance_eqv_km": 0.0,
+                "tss": 0.0,
+                "rtss": 0.0,
+            },
+            "weeks": [],
+        }
 
-    daily_rows: list[dict[str, Any]] = []
-    for _, row in daily_df.iterrows():
-        daily_rows.append(
-            {
-                "day_utc": str(row.get("day_utc") or ""),
-                "distance_km": round(_safe_float(row.get("distance_km")), 2),
-                "distance_proxy_km": round(_safe_float(row.get("distance_proxy_km")), 2),
-                "tss_total": round(_safe_float(row.get("tss_total")), 1),
-                "rtss_total": round(_safe_float(row.get("rtss_total")), 1),
-                "duration_s_total": round(_safe_float(row.get("duration_s_total")), 1),
-            }
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    latest_lt_pace = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    daily_tss_target = max(_weekly_tss_target_from_lt_pace(latest_lt_pace) / 7.0, 0.0)
+    day_agg, fitfat_lookup, model_lookup = _day_lookup_with_daily_model(
+        metrics_df=metrics_df,
+        daily_tss_target=daily_tss_target,
+    )
+
+    day_stats_lookup: dict[pd.Timestamp, dict[str, float]] = {}
+    for _, row in day_agg.iterrows():
+        d = pd.Timestamp(row["day"]).normalize()
+        day_stats_lookup[d] = {
+            "distance_eqv_km": _safe_float(row.get("distance_eqv_km")),
+            "calories": _safe_float(row.get("calories")),
+            "duration_s": _safe_float(row.get("duration_s")),
+            "tss": _safe_float(row.get("tss")),
+            "rtss": _safe_float(row.get("rtss")),
+        }
+
+    planned_rows = get_planned_activities_df(
+        db_path=db_path,
+        start_day_utc=min_day.date().isoformat(),
+        end_day_utc=max_day.date().isoformat(),
+    )
+    planned_by_day: dict[pd.Timestamp, list[dict[str, Any]]] = {}
+    planned_summary_lookup: dict[pd.Timestamp, dict[str, float]] = {}
+    today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
+    if not planned_rows.empty:
+        lthr_curve = _load_curve_points(
+            db_path=db_path,
+            key=SETTINGS_KEY_LTHR_CURVE,
+            value_key="lthr_bpm",
+            fallback_value=DEFAULT_LTHR,
         )
+        specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+        planned_metrics = _compute_planned_rows_metrics_df(
+            planned_rows=planned_rows,
+            lthr_curve_points=lthr_curve,
+            lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+            lt_pace_curve_points=pace_curve,
+            lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+            specificity_profile=specificity_profile,
+        )
+        if not planned_metrics.empty:
+            planned_metrics["day"] = pd.to_datetime(planned_metrics.get("day_utc"), errors="coerce").dt.normalize()
+            planned_metrics = planned_metrics.dropna(subset=["day"]).copy()
+            planned_metrics["manual_done"] = pd.to_numeric(planned_metrics.get("manual_done"), errors="coerce").fillna(0.0) > 0
+            for day, grp in planned_metrics.groupby("day"):
+                day_key = pd.Timestamp(day).normalize()
+                if day_key >= today_local:
+                    cards: list[dict[str, Any]] = []
+                    for _, row in grp.iterrows():
+                        if bool(row.get("manual_done")):
+                            continue
+                        cards.append(
+                            {
+                                "day_utc": day_key.date().isoformat(),
+                                "line_no": int(_safe_float(row.get("line_no"))),
+                                "activity": _planned_activity_label(row.get("parsed_json")),
+                                "workout_text": str(row.get("workout_text") or ""),
+                                "duration_s": _safe_float(row.get("duration_s")),
+                                "distance_eqv_km": _safe_float(row.get("distance_proxy_km")),
+                                "if_proxy": _safe_float(row.get("if_proxy")),
+                                "tss": _safe_float(row.get("tss")),
+                                "rtss": _safe_float(row.get("rtss")),
+                                "manual_done": bool(row.get("manual_done")),
+                            }
+                        )
+                    if cards:
+                        planned_by_day[day_key] = cards
+                planned_summary_lookup[day_key] = {
+                    "duration_s": float(pd.to_numeric(grp.get("duration_s"), errors="coerce").fillna(0.0).sum()),
+                    "distance_eqv_km": float(pd.to_numeric(grp.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()),
+                    "if_proxy": (
+                        float(
+                            (pd.to_numeric(grp.get("if_proxy"), errors="coerce").fillna(0.0)
+                             * pd.to_numeric(grp.get("duration_s"), errors="coerce").fillna(0.0)).sum()
+                        )
+                        / float(pd.to_numeric(grp.get("duration_s"), errors="coerce").fillna(0.0).sum())
+                        if float(pd.to_numeric(grp.get("duration_s"), errors="coerce").fillna(0.0).sum()) > 0
+                        else 0.0
+                    ),
+                }
 
-    activity_rows: list[dict[str, Any]] = []
-    for _, row in table_df.head(max(1, int(limit))).iterrows():
-        start_time = pd.to_datetime(row.get("start_time_utc"), utc=True, errors="coerce")
-        activity_rows.append(
+    wellness_lookup: dict[pd.Timestamp, dict[str, float]] = {}
+    wellness_df = get_wellness_df(db_path=db_path)
+    if not wellness_df.empty:
+        wellness_df = wellness_df.copy()
+        wellness_df["day"] = pd.to_datetime(wellness_df.get("day_utc"), errors="coerce").dt.normalize()
+        wellness_df = wellness_df.dropna(subset=["day"]).sort_values("day").drop_duplicates(subset=["day"], keep="last")
+        for _, row in wellness_df.iterrows():
+            d = pd.Timestamp(row["day"]).normalize()
+            wellness_lookup[d] = {
+                "resting_hr": _safe_float(row.get("resting_hr")),
+                "stress_avg": _safe_float(row.get("stress_avg")),
+            }
+
+    week_starts = pd.date_range(
+        start=_week_start_monday(pd.Timestamp(min_day)),
+        end=_week_start_monday(pd.Timestamp(max_day)),
+        freq="7D",
+    ).sort_values(ascending=False)
+    weeks_total = int(len(week_starts))
+    max_visible = max(1, min(int(visible_weeks), max(weeks_total, 1)))
+    selected_week_starts = week_starts[:max_visible]
+
+    summary = {
+        "activities": int(len(metrics_df.index)),
+        "distance_km": round(float(pd.to_numeric(metrics_df.get("distance_km_running"), errors="coerce").fillna(0.0).sum()), 1),
+        "distance_eqv_km": round(float(pd.to_numeric(metrics_df.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()), 1),
+        "tss": round(float(pd.to_numeric(metrics_df.get("tss"), errors="coerce").fillna(0.0).sum()), 1),
+        "rtss": round(float(pd.to_numeric(metrics_df.get("rtss"), errors="coerce").fillna(0.0).sum()), 1),
+    }
+
+    weeks_out: list[dict[str, Any]] = []
+    for ws in selected_week_starts:
+        ws = pd.Timestamp(ws).normalize()
+        we = ws + pd.Timedelta(days=6)
+        week_df = metrics_df[(metrics_df["day"] >= ws) & (metrics_df["day"] <= we)].copy()
+        if week_df.empty:
+            continue
+
+        week_duration_s = float(pd.to_numeric(week_df.get("duration_s"), errors="coerce").fillna(0.0).sum())
+        week_distance_km = float(pd.to_numeric(week_df.get("distance_km_running"), errors="coerce").fillna(0.0).sum())
+        week_distance_eqv = float(pd.to_numeric(week_df.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum())
+        week_calories = float(pd.to_numeric(week_df.get("calories_total"), errors="coerce").fillna(0.0).sum())
+        week_tss = float(pd.to_numeric(week_df.get("tss"), errors="coerce").fillna(0.0).sum())
+        week_rtss = float(pd.to_numeric(week_df.get("rtss"), errors="coerce").fillna(0.0).sum())
+        week_daily_model = model_lookup.get(we)
+        week_zones_seconds = {
+            "Z1": float(pd.to_numeric(week_df.get("hr_time_in_zone_1"), errors="coerce").fillna(0.0).sum()),
+            "Z2": float(pd.to_numeric(week_df.get("hr_time_in_zone_2"), errors="coerce").fillna(0.0).sum()),
+            "Z3": float(pd.to_numeric(week_df.get("hr_time_in_zone_3"), errors="coerce").fillna(0.0).sum()),
+            "Z4": float(pd.to_numeric(week_df.get("hr_time_in_zone_4"), errors="coerce").fillna(0.0).sum()),
+            "Z5": float(pd.to_numeric(week_df.get("hr_time_in_zone_5"), errors="coerce").fillna(0.0).sum()),
+        }
+        week_zone_total = max(float(sum(week_zones_seconds.values())), 0.0)
+        zones_out: list[dict[str, Any]] = []
+        for zone in ["Z1", "Z2", "Z3", "Z4", "Z5"]:
+            sec = week_zones_seconds.get(zone, 0.0)
+            pct = (sec / week_zone_total * 100.0) if week_zone_total > 0 else 0.0
+            zones_out.append({"zone": zone, "seconds": round(sec, 1), "pct": round(pct, 1)})
+
+        day_cards: list[dict[str, Any]] = []
+        for offset in range(7):
+            day = ws + pd.Timedelta(days=offset)
+            day_df = week_df[week_df["day"] == day].sort_values("start_local", ascending=False)
+            day_stats = day_stats_lookup.get(day, {})
+            fitfat = fitfat_lookup.get(day, {})
+            wellness = wellness_lookup.get(day, {})
+            planned_summary = planned_summary_lookup.get(day, {})
+            show_planned_meta = (
+                day_df.empty
+                and _safe_float(day_stats.get("distance_eqv_km")) <= 0
+                and _safe_float(day_stats.get("calories")) <= 0
+            )
+            actual_cards: list[dict[str, Any]] = []
+            for _, act in day_df.iterrows():
+                sport_raw = str(act.get("sport_type") or "").strip()
+                sport_lower = sport_raw.lower()
+                is_running = ("run" in sport_lower) or ("treadmill" in sport_lower)
+                dist_km = _safe_float(act.get("distance_m")) / 1000.0
+                dist_eqv = _safe_float(act.get("distance_proxy_km"))
+                if_proxy = _safe_float(act.get("if_proxy"))
+                tss = _safe_float(act.get("tss"))
+                rtss = _safe_float(act.get("rtss"))
+                hr = _safe_float(act.get("avg_hr"))
+                avg_pace = _safe_float(act.get("avg_pace_s_per_km"))
+                eqv_pace = _safe_float(act.get("pace_proxy_sec_per_km"))
+                actual_cards.append(
+                    {
+                        "activity_id": str(act.get("activity_id") or ""),
+                        "sport": sport_raw or "Activity",
+                        "duration_label": _format_duration_short(_safe_float(act.get("duration_s"))),
+                        "distance_label": (
+                            f"{dist_km:.0f} km"
+                            if is_running and dist_km > 0
+                            else (f"{dist_eqv:.0f} km eqv." if dist_eqv > 0 else "0 km")
+                        ),
+                        "hr_label": f"{hr:.0f} bpm" if hr > 0 else "-",
+                        "pace_label": (
+                            _format_pace_short(avg_pace if avg_pace > 0 else None)
+                            if is_running
+                            else _format_pace_short(eqv_pace if eqv_pace > 0 else None)
+                        ),
+                        "if_pct": round(if_proxy * 100.0, 1),
+                        "tss": round(tss, 1),
+                        "rtss": round(rtss, 1),
+                        "intensity": _activity_intensity_token(if_proxy=if_proxy, tss=tss),
+                    }
+                )
+
+            planned_cards = planned_by_day.get(day, [])
+            day_cards.append(
+                {
+                    "day_utc": day.date().isoformat(),
+                    "day_label": day.strftime("%d %b (%a)"),
+                    "is_today": bool(day == today_local),
+                    "is_past": bool(day < today_local),
+                    "meta": {
+                        "distance_eqv_km": round(_safe_float(day_stats.get("distance_eqv_km")), 1),
+                        "calories": round(_safe_float(day_stats.get("calories")), 0),
+                        "fitness": round(_safe_float(fitfat.get("fitness")), 1) if fitfat else None,
+                        "fatigue": round(_safe_float(fitfat.get("fatigue")), 1) if fitfat else None,
+                        "resting_hr": round(_safe_float(wellness.get("resting_hr")), 1) if wellness else None,
+                        "stress_avg": round(_safe_float(wellness.get("stress_avg")), 1) if wellness else None,
+                        "planned_duration_s": round(_safe_float(planned_summary.get("duration_s")), 1) if show_planned_meta else 0.0,
+                        "planned_if_pct": round(_safe_float(planned_summary.get("if_proxy")) * 100.0, 1) if show_planned_meta else 0.0,
+                    },
+                    "actual_activities": actual_cards,
+                    "planned_activities": [
+                        {
+                            "day_utc": str(row.get("day_utc") or ""),
+                            "line_no": int(_safe_float(row.get("line_no"))),
+                            "activity": str(row.get("activity") or "Planned"),
+                            "workout_text": str(row.get("workout_text") or ""),
+                            "duration_label": _format_duration_short(_safe_float(row.get("duration_s"))),
+                            "distance_eqv_km": round(_safe_float(row.get("distance_eqv_km")), 1),
+                            "if_pct": round(_safe_float(row.get("if_proxy")) * 100.0, 1),
+                            "tss": round(_safe_float(row.get("tss")), 1),
+                            "rtss": round(_safe_float(row.get("rtss")), 1),
+                            "manual_done": bool(row.get("manual_done")),
+                            "intensity": _activity_intensity_token(
+                                if_proxy=_safe_float(row.get("if_proxy")),
+                                tss=_safe_float(row.get("tss")),
+                            ),
+                        }
+                        for row in planned_cards
+                    ],
+                }
+            )
+
+        weeks_out.append(
             {
-                "activity_id": str(row.get("activity_id") or ""),
-                "start_time_utc": start_time.isoformat() if pd.notna(start_time) else "",
-                "date": str(row.get("date") or ""),
-                "sport_type": str(row.get("sport_type") or ""),
-                "distance_km": round(_safe_float(row.get("distance_km")), 2),
-                "duration_min": round(_safe_float(row.get("duration_min")), 1),
-                "avg_pace_display": str(row.get("avg_pace_display") or "-"),
-                "tss": round(_safe_float(row.get("tss")), 1),
-                "rtss": round(_safe_float(row.get("rtss")), 1),
-                "avg_hr": round(_safe_float(row.get("avg_hr")), 1),
-                "max_hr": round(_safe_float(row.get("max_hr")), 1),
+                "week_start": ws.date().isoformat(),
+                "week_end": we.date().isoformat(),
+                "week_number": int(ws.isocalendar().week),
+                "summary": {
+                    "duration_h": round(week_duration_s / 3600.0, 1),
+                    "distance_km": round(week_distance_km, 1),
+                    "distance_eqv_km": round(week_distance_eqv, 1),
+                    "calories": round(week_calories, 0),
+                    "tss": round(week_tss, 1),
+                    "rtss": round(week_rtss, 1),
+                    "fitness": (
+                        round(_safe_float(week_daily_model.get("fitness")), 1)
+                        if isinstance(week_daily_model, dict)
+                        else None
+                    ),
+                    "fatigue": (
+                        round(_safe_float(week_daily_model.get("fatigue")), 1)
+                        if isinstance(week_daily_model, dict)
+                        else None
+                    ),
+                    "overreach": (
+                        round(_safe_float(week_daily_model.get("overreach")), 1)
+                        if isinstance(week_daily_model, dict)
+                        else None
+                    ),
+                    "injury_risk": (
+                        round(_safe_float(week_daily_model.get("injury_risk")), 1)
+                        if isinstance(week_daily_model, dict)
+                        else None
+                    ),
+                    "zones": zones_out,
+                },
+                "days": day_cards,
             }
         )
 
     return {
-        "range_days": int(days),
-        "kpis": {
-            "distance_km": round(kpi_distance_km, 2),
-            "distance_proxy_km": round(kpi_proxy_km, 2),
-            "tss_total": round(kpi_tss_total, 1),
-            "activities": int(len(table_df.index)),
-            "days_with_training": int(len(daily_rows)),
-        },
-        "daily": daily_rows,
-        "activities": activity_rows,
+        "weeks_total": weeks_total,
+        "weeks_visible": int(len(weeks_out)),
+        "has_more_weeks": bool(max_visible < weeks_total),
+        "summary": summary,
+        "weeks": weeks_out,
     }
 
 
@@ -1891,6 +2271,26 @@ def week_outlook_view(
         metric=metric,
         compare=compare,
         week_start=week_start,
+    )
+    payload["owner"] = resolved_owner
+    payload["db_path"] = str(db_path)
+    return payload
+
+
+@app.get("/api/v1/dashboard")
+def activity_dashboard(
+    weeks: int = Query(default=6, ge=1, le=52),
+    sport: str | None = Query(default=None),
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    payload = _build_activity_dashboard_payload(
+        db_path=db_path,
+        visible_weeks=weeks,
+        sport=sport,
     )
     payload["owner"] = resolved_owner
     payload["db_path"] = str(db_path)

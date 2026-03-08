@@ -8,7 +8,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { to: '/app/dashboard', label: 'Dashboard', icon: BarChart3, disabled: true },
+  { to: '/app/dashboard', label: 'Dashboard', icon: BarChart3, disabled: false },
   { to: '/app/week-planner', label: 'Week Planner', icon: CalendarDays, disabled: false },
   { to: '/app/activities', label: 'Activities', icon: CalendarDays, disabled: true },
   { to: '/app/settings', label: 'Settings', icon: Settings, disabled: true },

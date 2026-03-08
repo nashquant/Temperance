@@ -4,6 +4,7 @@ export const API_CONFIG = {
     login: '/auth/login',
     me: '/auth/me',
     owners: '/auth/owners',
+    dashboard: '/dashboard',
     weekOutlook: '/week-outlook',
     plannedActivities: '/planned-activities',
     plannedManualDone: '/planned-activities/manual-done',
