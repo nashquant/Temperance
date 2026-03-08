@@ -2942,6 +2942,7 @@ owner_scoped_keys = [
     "calendar_compact_week_start",
     "calendar_compact_compare_choice",
     "calendar_compact_metric",
+    "calendar_compact_filters_open",
     "calendar_activity_filter",
     "calendar_quick_range",
     "calendar_split_activity_id",
@@ -5242,7 +5243,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 is_mobile_compact_ui = _is_probably_mobile_client()
 
                 if is_mobile_compact_ui:
-                    nav1, nav2 = st.columns(2)
+                    nav1, nav2, nav3 = st.columns([1, 1, 1])
                     with nav1:
                         if st.button("◀ Prev", key="compact_prev_week", use_container_width=True):
                             st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
@@ -5251,7 +5252,16 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         if st.button("Next ▶", key="compact_next_week", use_container_width=True):
                             st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
                             st.rerun()
-                    with st.expander("Filters", expanded=False):
+                    with nav3:
+                        filters_open = bool(st.session_state.get("calendar_compact_filters_open", False))
+                        if st.button(
+                            ("Hide" if filters_open else "Filters"),
+                            key="compact_filters_toggle",
+                            use_container_width=True,
+                        ):
+                            st.session_state["calendar_compact_filters_open"] = not filters_open
+                            st.rerun()
+                    if bool(st.session_state.get("calendar_compact_filters_open", False)):
                         st.selectbox(
                             "Compare against",
                             compare_options,
