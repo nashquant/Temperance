@@ -4658,22 +4658,19 @@ if view in {"Weekly Summary", "Activity Summary"}:
             planned_day_lookup = pd.DataFrame(
                 columns=["day", "planned_distance_eqv_km", "planned_tss", "planned_rtss", "planned_duration_s", "planned_if"]
             )
+            planned_rows_metrics_all = pd.DataFrame()
             planned_rows_for_calendar = get_planned_activities_df(
                 cfg.db_path,
                 start_day_utc=grid_start.date().isoformat(),
                 end_day_utc=grid_end.date().isoformat(),
             )
             today_local_day = pd.Timestamp(datetime.now().astimezone().date()).normalize()
-            planned_rows_for_calendar = _filter_effective_planned_rows(
-                planned_rows_for_calendar,
-                today_local_day=today_local_day,
-            )
             planned_rows_for_calendar = _apply_planned_actual_matching(
                 planned_rows_for_calendar,
                 metrics_df,
             )
             if not planned_rows_for_calendar.empty:
-                planned_rows_for_calendar = _compute_planned_rows_metrics_df(
+                planned_rows_metrics_all = _compute_planned_rows_metrics_df(
                     planned_rows=planned_rows_for_calendar,
                     lthr_curve_points=lthr_curve_points,
                     lthr_default_bpm=float(derived_lthr_bpm),
@@ -4683,6 +4680,10 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         st.session_state.get("user_specificity_profile", {}),
                         fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
                     ),
+                )
+                planned_rows_for_calendar = _filter_effective_planned_rows(
+                    planned_rows_metrics_all,
+                    today_local_day=today_local_day,
                 )
                 planned_rows_for_calendar = filter_by_activity_type(
                     planned_rows_for_calendar,
@@ -5630,31 +5631,21 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 compare_days = pd.DataFrame({"day": pd.date_range(compare_week_start, compare_week_end, freq="D")})
                 planned_remaining_metric_totals = {"rtss": 0.0, "tss": 0.0, "distance_eqv_km": 0.0}
                 planned_remaining_tss_by_day: dict[pd.Timestamp, float] = {}
+                planned_rows_compare_source = pd.DataFrame()
                 if compare_choice == "Planned":
-                    planned_rows = get_planned_activities_df(
-                        cfg.db_path,
-                        start_day_utc=selected_week_start.date().isoformat(),
-                        end_day_utc=selected_week_end.date().isoformat(),
-                    )
-                    planned_rows = _apply_planned_actual_matching(planned_rows, metrics_df)
+                    # Use full precomputed planned metrics (not "effective" filtered rows),
+                    # so planned-vs-actual compares against the full plan for the week.
+                    planned_rows = planned_rows_metrics_all.copy() if "planned_rows_metrics_all" in locals() else pd.DataFrame()
                     today_local_now = pd.Timestamp(datetime.now().astimezone().date()).normalize()
-                    planner_specificity_profile = _normalize_specificity_profile(
-                        st.session_state.get("user_specificity_profile", {}),
-                        fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
-                    )
-                    planned_rows_metrics = _compute_planned_rows_metrics_df(
-                        planned_rows=planned_rows,
-                        lthr_curve_points=lthr_curve_points,
-                        lthr_default_bpm=float(derived_lthr_bpm),
-                        lt_pace_curve_points=lt_pace_curve_points,
-                        lt_pace_default_sec=float(derived_threshold_pace_sec),
-                        specificity_profile=planner_specificity_profile,
-                    )
-                    if not planned_rows_metrics.empty:
-                        planned_rows_metrics["day"] = pd.to_datetime(
-                            planned_rows_metrics.get("day_utc"), errors="coerce"
-                        ).dt.floor("D")
-                        planned_daily = _build_planned_daily_summary_df(planned_rows_metrics)
+                    if not planned_rows.empty:
+                        planned_rows["day"] = pd.to_datetime(planned_rows.get("day_utc"), errors="coerce").dt.floor("D")
+                        planned_rows = planned_rows.dropna(subset=["day"]).copy()
+                        planned_rows = planned_rows[
+                            (planned_rows["day"] >= selected_week_start) & (planned_rows["day"] <= selected_week_end)
+                        ].copy()
+                    planned_rows_compare_source = planned_rows.copy()
+                    if not planned_rows.empty:
+                        planned_daily = _build_planned_daily_summary_df(planned_rows)
                         planned_daily["day"] = pd.to_datetime(planned_daily.get("day_utc"), errors="coerce").dt.floor("D")
                         compare_agg = planned_daily.rename(
                             columns={
@@ -5673,10 +5664,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             for _, r in _planned_remaining_tss.iterrows()
                         }
 
-                        planned_rows_remaining = _filter_effective_planned_rows(
-                            planned_rows_metrics,
-                            today_local_day=today_local_now,
-                        )
+                        planned_rows_remaining = _filter_effective_planned_rows(planned_rows, today_local_day=today_local_now)
                         remaining_start_day = max(today_local_now, selected_week_start)
                         planned_rows_remaining = planned_rows_remaining[
                             (planned_rows_remaining["day"] >= remaining_start_day)
@@ -5842,7 +5830,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             "series:N",
                             sort=["Compare", "Current"],
                         ),
-                        y=alt.Y("metric_value:Q", title=None, scale=alt.Scale(zero=True)),
+                        y=alt.Y("metric_value:Q", title=None, scale=alt.Scale(zero=True), stack=None),
                         color=alt.Color("bar_color:N", scale=None, legend=None),
                         opacity=alt.Opacity("opacity:Q", legend=None),
                         tooltip=[
@@ -5897,6 +5885,22 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 realized_week_total = _agg_metric(compact_week, compact_week["day"].notna(), selected_metric)
                 compare_to_date = _agg_metric(compare_week, compare_to_date_mask, selected_metric)
                 compare_week_total = _agg_metric(compare_week, compare_week["day"].notna(), selected_metric)
+                if compare_choice == "Planned" and not planned_rows_compare_source.empty:
+                    _planned_mask_to_date = (
+                        planned_rows_compare_source["day"] <= cutoff_day
+                    )
+                    compare_to_date = float(
+                        pd.to_numeric(
+                            planned_rows_compare_source.loc[_planned_mask_to_date, selected_metric],
+                            errors="coerce",
+                        ).fillna(0.0).sum()
+                    )
+                    compare_week_total = float(
+                        pd.to_numeric(
+                            planned_rows_compare_source.get(selected_metric),
+                            errors="coerce",
+                        ).fillna(0.0).sum()
+                    )
                 if compare_choice == "Planned":
                     compare_remaining = float(planned_remaining_metric_totals.get(selected_metric, 0.0))
                     projected_finish = realized_to_date + compare_remaining
