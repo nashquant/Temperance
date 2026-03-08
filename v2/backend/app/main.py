@@ -122,6 +122,12 @@ class CustomIngestRequest(BaseModel):
     entry_text: str
 
 
+class CustomActivityUpdateRequest(BaseModel):
+    day_utc: str
+    line_no: int
+    activity_text: str
+
+
 class UpdateSettingsRequest(BaseModel):
     if_zone_thresholds: dict[str, float] | None = None
     specificity_profile: dict[str, float] | None = None
@@ -3768,6 +3774,75 @@ def custom_activities_ingest(
             raise HTTPException(status_code=400, detail=str(exc))
 
     return {"saved_count": int(len(rows_to_upsert)), "errors": errors[:20]}
+
+
+@app.patch("/api/v1/custom-activities/workout")
+def custom_activity_workout_update(
+    payload: CustomActivityUpdateRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+
+    day_utc = str(payload.day_utc or "").strip()
+    line_no = int(payload.line_no)
+    activity_text = _normalize_plan_text(str(payload.activity_text or ""))
+    if not day_utc or line_no <= 0:
+        raise HTTPException(status_code=400, detail="Invalid day_utc or line_no")
+    if not activity_text:
+        raise HTTPException(status_code=400, detail="Activity text cannot be empty")
+
+    existing = get_custom_activities_df(db_path=db_path)
+    if existing.empty:
+        raise HTTPException(status_code=404, detail="Custom activity not found")
+    existing = existing[
+        (existing.get("day_utc").astype(str) == day_utc)
+        & (pd.to_numeric(existing.get("line_no"), errors="coerce").fillna(0).astype(int) == line_no)
+    ]
+    if existing.empty:
+        raise HTTPException(status_code=404, detail="Custom activity not found")
+    current_row = existing.iloc[0]
+
+    day_ts = pd.to_datetime(day_utc, errors="coerce")
+    if pd.isna(day_ts):
+        raise HTTPException(status_code=400, detail="Invalid day_utc")
+
+    lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
+    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
+    pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
+    segs, warns = _expand_planned_segments(
+        activity_text,
+        lthr_bpm=lthr_for_day,
+        threshold_pace_sec_per_km=pace_for_day,
+    )
+    if warns or not segs:
+        details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
+        raise HTTPException(status_code=400, detail=details)
+
+    upsert_custom_activities_rows(
+        db_path=db_path,
+        rows=[
+            {
+                "day_utc": day_utc,
+                "line_no": line_no,
+                "activity_text": activity_text,
+                "parsed_json": segs,
+                "source": str(current_row.get("source") or "manual"),
+            }
+        ],
+        max_rows=CUSTOM_ACTIVITIES_LIMIT,
+    )
+    return {"updated": True}
 
 
 @app.delete("/api/v1/custom-activities")

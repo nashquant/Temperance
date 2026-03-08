@@ -12,6 +12,7 @@ export const API_CONFIG = {
     dataExtractComprehensive: '/data-extract/comprehensive',
     customActivities: '/custom-activities',
     customActivitiesIngest: '/custom-activities/ingest',
+    customActivitiesWorkoutUpdate: '/custom-activities/workout',
     weekOutlook: '/week-outlook',
     plannedActivities: '/planned-activities',
     plannedManualDone: '/planned-activities/manual-done',

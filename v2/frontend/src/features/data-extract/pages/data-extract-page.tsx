@@ -7,7 +7,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomActivitiesQuery } from '@/features/custom-activities/hooks/use-custom-activities-query';
-import { deleteCustomActivity, ingestCustomActivities } from '@/features/custom-activities/services/custom-activities-api';
+import {
+  deleteCustomActivity,
+  ingestCustomActivities,
+  updateCustomActivityWorkout,
+} from '@/features/custom-activities/services/custom-activities-api';
 import { useDataExtractStatusQuery } from '@/features/data-extract/hooks/use-data-extract-status';
 import { runComprehensiveExtract } from '@/features/data-extract/services/data-extract-api';
 import { PlannedMetricSelector } from '@/features/plan-activities/components/planned-metric-selector';
@@ -35,6 +39,8 @@ export function DataExtractPage(): JSX.Element {
 
   const [result, setResult] = useState<string | null>(null);
   const [customResult, setCustomResult] = useState<string | null>(null);
+  const [editingCustomKey, setEditingCustomKey] = useState<string | null>(null);
+  const [editingCustomText, setEditingCustomText] = useState('');
   const [extractLogs, setExtractLogs] = useState<string[]>([]);
   const lastProgressLogCountRef = useRef(0);
 
@@ -143,6 +149,28 @@ export function DataExtractPage(): JSX.Element {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['custom-activities'] });
       await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
+    },
+  });
+
+  const customUpdateMutation = useMutation({
+    mutationFn: async ({ dayUtc, lineNo, activityText }: { dayUtc: string; lineNo: number; activityText: string }) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return updateCustomActivityWorkout({
+        token: session.token,
+        owner: profile?.owner,
+        dayUtc,
+        lineNo,
+        activityText,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['custom-activities'] });
+      await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
+      setEditingCustomKey(null);
+      setEditingCustomText('');
+    },
+    onError: (error) => {
+      setCustomResult(error instanceof Error ? error.message : 'Unable to update custom activity.');
     },
   });
 
@@ -320,17 +348,66 @@ export function DataExtractPage(): JSX.Element {
                   <tr key={`${row.day_utc}-${row.line_no}`} className="border-t">
                     <td className="px-2 py-2">{row.day_utc}</td>
                     <td className="px-2 py-2">{row.activity}</td>
-                    <td className="px-2 py-2">{row.activity_text}</td>
+                    <td className="px-2 py-2">
+                      {editingCustomKey === `${row.day_utc}-${row.line_no}` ? (
+                        <textarea
+                          className="min-h-[68px] w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs"
+                          value={editingCustomText}
+                          onChange={(event) => setEditingCustomText(event.target.value)}
+                        />
+                      ) : (
+                        row.activity_text
+                      )}
+                    </td>
                     <td className="px-2 py-2">{row.pace_label} · IF {Math.round(row.if_proxy_pct)}%</td>
                     <td className="px-2 py-2">TSS {Math.round(row.tss)} · rTSS {Math.round(row.rtss)}</td>
-                    <td className="px-2 py-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => customDeleteMutation.mutate({ dayUtc: row.day_utc, lineNo: row.line_no })}
-                        disabled={customDeleteMutation.isPending}
-                      >
-                        Delete
-                      </Button>
+                    <td className="space-x-2 px-2 py-2">
+                      {editingCustomKey === `${row.day_utc}-${row.line_no}` ? (
+                        <>
+                          <Button
+                            onClick={() =>
+                              customUpdateMutation.mutate({
+                                dayUtc: row.day_utc,
+                                lineNo: row.line_no,
+                                activityText: editingCustomText,
+                              })
+                            }
+                            disabled={customUpdateMutation.isPending || !editingCustomText.trim()}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setEditingCustomKey(null);
+                              setEditingCustomText('');
+                            }}
+                            disabled={customUpdateMutation.isPending}
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setEditingCustomKey(`${row.day_utc}-${row.line_no}`);
+                              setEditingCustomText(row.activity_text);
+                            }}
+                            disabled={customDeleteMutation.isPending || customUpdateMutation.isPending}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => customDeleteMutation.mutate({ dayUtc: row.day_utc, lineNo: row.line_no })}
+                            disabled={customDeleteMutation.isPending || customUpdateMutation.isPending}
+                          >
+                            Delete
+                          </Button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -348,21 +425,24 @@ export function DataExtractPage(): JSX.Element {
       </Card>
 
       <Card>
-        <CardContent className="space-y-2 p-4 text-sm">
-          <p><span className="text-muted-foreground">DB:</span> {status?.db_path}</p>
-          <p><span className="text-muted-foreground">Import dir:</span> {status?.import_dir}</p>
-          <p><span className="text-muted-foreground">Garmin creds:</span> {status?.garmin_credentials_available ? 'available' : 'missing'}</p>
-          {status?.last_sync ? (
-            <p><span className="text-muted-foreground">Last sync:</span> {status.last_sync.sync_time_utc} | {status.last_sync.source} | {status.last_sync.success ? 'success' : 'failed'}</p>
-          ) : (
-            <p className="text-muted-foreground">No sync has been run yet.</p>
-          )}
-          <p className="text-muted-foreground">Local records:</p>
-          <div className="grid gap-2 md:grid-cols-3">
+        <CardContent className="space-y-3 p-3 text-sm">
+          <div className="grid gap-x-3 gap-y-1 text-xs md:grid-cols-2">
+            <p className="truncate"><span className="text-muted-foreground">DB:</span> {status?.db_path}</p>
+            <p><span className="text-muted-foreground">Garmin creds:</span> {status?.garmin_credentials_available ? 'available' : 'missing'}</p>
+            <p className="truncate"><span className="text-muted-foreground">Import dir:</span> {status?.import_dir}</p>
+            {status?.last_sync ? (
+              <p className="truncate">
+                <span className="text-muted-foreground">Last sync:</span> {status.last_sync.sync_time_utc} | {status.last_sync.source} | {status.last_sync.success ? 'success' : 'failed'}
+              </p>
+            ) : (
+              <p className="text-muted-foreground">No sync has been run yet.</p>
+            )}
+          </div>
+          <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {Object.entries(status?.counts ?? {}).map(([key, value]) => (
-              <div key={key} className="rounded border p-2 text-xs">
-                <p className="text-muted-foreground">{key}</p>
-                <p className="font-semibold text-foreground">{value}</p>
+              <div key={key} className="rounded border border-border/70 bg-muted/20 px-2 py-1.5 text-xs">
+                <p className="truncate text-muted-foreground">{key}</p>
+                <p className="text-sm font-semibold leading-5 text-foreground">{value}</p>
               </div>
             ))}
           </div>

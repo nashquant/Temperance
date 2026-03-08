@@ -31,6 +31,26 @@ export async function ingestCustomActivities({ token, owner, entryText }: BasePa
   });
 }
 
+export async function updateCustomActivityWorkout(
+  {
+    token,
+    owner,
+    dayUtc,
+    lineNo,
+    activityText,
+  }: BaseParams & { dayUtc: string; lineNo: number; activityText: string },
+): Promise<{ updated: boolean }> {
+  return apiRequest<{ updated: boolean }>(withOwner(API_CONFIG.endpoints.customActivitiesWorkoutUpdate, owner), {
+    method: 'PATCH',
+    token,
+    body: {
+      day_utc: dayUtc,
+      line_no: lineNo,
+      activity_text: activityText,
+    },
+  });
+}
+
 export async function deleteCustomActivity({ token, owner, dayUtc, lineNo }: BaseParams & { dayUtc: string; lineNo: number }): Promise<void> {
   const url = new URL(`${API_CONFIG.basePath}${API_CONFIG.endpoints.customActivities}`, window.location.origin);
   if (owner) url.searchParams.set('owner', owner);
