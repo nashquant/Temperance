@@ -5427,8 +5427,13 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     "4 weeks ago": 4,
                     "Planned": 1,
                 }.get(compare_choice, 1)
-                compare_week_start = selected_week_start - pd.Timedelta(days=7 * compare_weeks)
-                compare_week_end = compare_week_start + pd.Timedelta(days=6)
+                if compare_choice == "Planned":
+                    # Planned compare is same selected week (actual vs plan in-week).
+                    compare_week_start = selected_week_start
+                    compare_week_end = selected_week_end
+                else:
+                    compare_week_start = selected_week_start - pd.Timedelta(days=7 * compare_weeks)
+                    compare_week_end = compare_week_start + pd.Timedelta(days=6)
 
                 st.markdown(
                     (
