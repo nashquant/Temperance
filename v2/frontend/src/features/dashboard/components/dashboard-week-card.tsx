@@ -16,8 +16,8 @@ export function DashboardWeekCard({ week }: DashboardWeekCardProps): JSX.Element
     <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(56,189,248,0.45),rgba(168,85,247,0.26),rgba(245,158,11,0.3))] p-[1px] shadow-[0_10px_30px_rgba(2,6,23,0.5)]">
       <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_8%_10%,rgba(56,189,248,0.1),transparent_40%),radial-gradient(circle_at_88%_90%,rgba(168,85,247,0.11),transparent_45%)] shadow-inner">
         <CardContent className="p-1.5">
-          <div className="grid gap-1.5 lg:grid-cols-8 lg:items-start">
-            <div className="lg:col-span-1">
+          <div className="flex items-start gap-1.5">
+            <div className="w-[170px] shrink-0">
               <DashboardWeekSummaryCard
                 weekNumber={week.week_number}
                 weekStart={shortDay(week.week_start)}
@@ -26,7 +26,7 @@ export function DashboardWeekCard({ week }: DashboardWeekCardProps): JSX.Element
               />
             </div>
             {week.days.map((day) => (
-              <div key={day.day_utc} className="lg:col-span-1">
+              <div key={day.day_utc} className="min-w-0 flex-1">
                 <DashboardDayColumn day={day} />
               </div>
             ))}

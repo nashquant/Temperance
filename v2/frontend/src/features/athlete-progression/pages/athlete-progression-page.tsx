@@ -55,13 +55,13 @@ export function AthleteProgressionPage(): JSX.Element {
   const normalizedChartData = useMemo(() => {
     return chartData.map((row) => {
       const rawTarget = Number(row.target_tss ?? 0);
-      const normalizedDailyTarget = aggregation === 'weekly' ? rawTarget / 7 : rawTarget;
       return {
         ...row,
-        daily_target_tss: normalizedDailyTarget,
+        stress_target_tss: rawTarget,
+        pounding_target_tss: rawTarget / 7,
       };
     });
-  }, [aggregation, chartData]);
+  }, [chartData]);
 
   const injuryOverlays = useMemo(() => {
     const windows = settingsQuery.data?.injury_windows ?? [];
@@ -150,28 +150,28 @@ export function AthleteProgressionPage(): JSX.Element {
           ) : (
             <div className="grid gap-4">
               <ProgressionLineChartCard
+                title="Stress Score: TSS vs rTSS"
+                data={normalizedChartData}
+                yLabel={aggregation === 'weekly' ? 'Weekly Stress' : 'Daily Stress'}
+                targetKey="stress_target_tss"
+                targetLabel={aggregation === 'weekly' ? 'Weekly Target' : 'Daily Target'}
+                injuryOverlays={injuryOverlays}
+                series={[
+                  { key: 'tss', label: 'TSS', color: '#60a5fa' },
+                  { key: 'rtss', label: 'rTSS', color: '#f59e0b' },
+                ]}
+              />
+
+              <ProgressionLineChartCard
                 title="Leg Elasticity vs Pounding"
                 data={normalizedChartData}
                 yLabel="Load"
-                targetKey="daily_target_tss"
+                targetKey="pounding_target_tss"
                 targetLabel="Daily Target"
                 injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'leg_elasticity', label: 'Leg Elasticity', color: '#22c55e' },
                   { key: 'pounding', label: 'Pounding', color: '#ef4444' },
-                ]}
-              />
-
-              <ProgressionLineChartCard
-                title="Stress Score: TSS vs rTSS"
-                data={normalizedChartData}
-                yLabel={aggregation === 'weekly' ? 'Weekly Stress' : 'Daily Stress'}
-                targetKey="daily_target_tss"
-                targetLabel="Daily Target"
-                injuryOverlays={injuryOverlays}
-                series={[
-                  { key: 'tss', label: 'TSS', color: '#60a5fa' },
-                  { key: 'rtss', label: 'rTSS', color: '#f59e0b' },
                 ]}
               />
 

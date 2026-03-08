@@ -54,7 +54,7 @@ export function ProgressionLineChartCard({
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-4 pt-0">
-        <div className="h-[280px] w-full">
+        <div style={{ height: 280, width: '100%' }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 14, right: 14, bottom: 6, left: 2 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.25} />
