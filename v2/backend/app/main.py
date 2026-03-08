@@ -232,7 +232,7 @@ def _db_path_for_owner(owner: str) -> Path:
     users_root = DB_PATH.parent / "users"
     owner_slug = _user_slug(owner)
     scoped = users_root / f"{owner_slug}.db"
-    if owner_slug == "default" and not scoped.exists() and DB_PATH.exists():
+    if not scoped.exists() and DB_PATH.exists():
         return DB_PATH
     return scoped
 
