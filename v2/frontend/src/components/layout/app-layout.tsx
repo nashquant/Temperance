@@ -1,6 +1,6 @@
 import { BarChart3, CalendarDays, Database, LogOut, Moon, Settings, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -17,6 +17,7 @@ const navItems = [
 
 export function AppLayout(): JSX.Element {
   const { logout, profile } = useAuth();
+  const location = useLocation();
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
@@ -35,6 +36,16 @@ export function AppLayout(): JSX.Element {
       return next;
     });
   };
+
+  const headerMeta = (() => {
+    const path = location.pathname;
+    if (path.startsWith('/app/dashboard')) return { section: 'Performance', title: 'Dashboard' };
+    if (path.startsWith('/app/athlete-progression')) return { section: 'Analytics', title: 'Athlete Progression' };
+    if (path.startsWith('/app/week-planner')) return { section: 'Performance', title: 'Week Planner' };
+    if (path.startsWith('/app/data-extract')) return { section: 'Data', title: 'Data Extract' };
+    if (path.startsWith('/app/settings')) return { section: 'Configuration', title: 'Settings' };
+    return { section: 'Performance', title: 'Temperance' };
+  })();
 
   return (
     <div className="min-h-screen bg-background">
@@ -89,8 +100,8 @@ export function AppLayout(): JSX.Element {
           <header className="border-b px-6 py-4">
             <div className="mx-auto flex w-full max-w-7xl items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">Performance</p>
-                <h2 className="text-xl font-semibold">Weekly planning</h2>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">{headerMeta.section}</p>
+                <h2 className="text-xl font-semibold">{headerMeta.title}</h2>
               </div>
               <Button variant="outline" size="sm" onClick={toggleTheme} className="gap-2">
                 {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
