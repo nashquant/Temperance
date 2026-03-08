@@ -316,6 +316,12 @@ pytest -q
 - SQL injection posture:
   - App DB operations use SQLite parameterized queries (`?` placeholders) for user-provided values.
   - Dynamic SQL usage is limited to internal trusted table/column names.
+- Storage safeguards:
+  - Per-user SQLite DB quota is capped at `1GB` (`TEMPERANCE_DB_MAX_BYTES`, default `1073741824`).
+  - Write operations are blocked in UI when quota is reached.
+  - Garmin raw artifacts are not persisted after ingestion:
+    - raw archive folders are removed
+    - extract snapshots are disabled by policy
 
 For public internet exposure, also add infrastructure controls:
 - Reverse proxy / WAF rate limits (Cloudflare/Nginx) on login and app requests.

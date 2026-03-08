@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
@@ -10,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 UTC_NOW = lambda: datetime.now(timezone.utc).isoformat()
+DB_FILE_MAX_BYTES = int(os.getenv("TEMPERANCE_DB_MAX_BYTES", str(1 * 1024 * 1024 * 1024)))
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS activities (
@@ -205,6 +207,15 @@ CREATE INDEX IF NOT EXISTS idx_custom_activities_day ON custom_activities(day_ut
 def get_conn(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    try:
+        page_size_row = conn.execute("PRAGMA page_size").fetchone()
+        page_size = int(page_size_row[0]) if page_size_row and page_size_row[0] else 4096
+        page_size = max(page_size, 1024)
+        max_pages = max(int(DB_FILE_MAX_BYTES) // page_size, 1)
+        conn.execute(f"PRAGMA max_page_count = {int(max_pages)}")
+    except Exception:
+        # If pragma is unsupported/fails, continue with default SQLite behavior.
+        pass
     return conn
 
 

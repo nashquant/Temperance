@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import tempfile
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import replace
 from pathlib import Path
@@ -62,7 +64,6 @@ from db import (
     upsert_wellness_daily,
 )
 from garmin_client import (
-    dump_extract_to_json,
     fetch_garmin_comprehensive,
     fetch_garmin_runs,
     import_runs_from_folder,
@@ -86,6 +87,7 @@ LOGIN_LOCK_MAX_S = 15 * 60
 LOGIN_FAILS_BEFORE_LOCK = 5
 MAX_PLANNED_ENTRY_CHARS = 4000
 MAX_PLANNED_ENTRIES_PER_SAVE = 40
+USER_DB_QUOTA_BYTES = 1 * 1024 * 1024 * 1024
 # LT pace (sec/km) -> upper-bound weekly targets derived from user-defined table.
 # Points correspond to:
 # 5:00, 4:30, 4:00, 3:45, 3:30, 3:20, 3:15, 3:10, 3:00
@@ -302,6 +304,64 @@ def _get_garmin_credential_source() -> str:
 def _clear_garmin_session_credentials() -> None:
     st.session_state["garmin_email_input"] = ""
     st.session_state["garmin_password_input"] = ""
+
+
+def _db_file_size_bytes(db_path: Path) -> int:
+    try:
+        return int(db_path.stat().st_size)
+    except Exception:
+        return 0
+
+
+def _db_usage_text(db_path: Path) -> str:
+    used = _db_file_size_bytes(db_path)
+    quota = int(USER_DB_QUOTA_BYTES)
+    used_mb = used / (1024.0 * 1024.0)
+    quota_mb = quota / (1024.0 * 1024.0)
+    return f"{used_mb:.1f}MB / {quota_mb:.0f}MB"
+
+
+def _db_quota_exceeded(db_path: Path) -> bool:
+    return _db_file_size_bytes(db_path) >= int(USER_DB_QUOTA_BYTES)
+
+
+def _ensure_db_writable_or_warn(db_path: Path, action_label: str = "write") -> bool:
+    if _db_quota_exceeded(db_path):
+        st.error(
+            f"Database quota reached ({_db_usage_text(db_path)}). "
+            f"Cannot {action_label}. Delete data or increase quota."
+        )
+        return False
+    return True
+
+
+def _cleanup_raw_garmin_artifacts(export_root: Path) -> tuple[int, int]:
+    removed_files = 0
+    removed_bytes = 0
+    targets: list[Path] = []
+    raw_dir = export_root / "raw"
+    if raw_dir.exists():
+        targets.append(raw_dir)
+    targets.extend(export_root.glob("garmin_extract_*.json"))
+    for target in targets:
+        try:
+            if target.is_file():
+                removed_bytes += int(target.stat().st_size)
+                target.unlink(missing_ok=True)
+                removed_files += 1
+                continue
+            if target.is_dir():
+                for p in target.rglob("*"):
+                    if p.is_file():
+                        try:
+                            removed_bytes += int(p.stat().st_size)
+                            removed_files += 1
+                        except Exception:
+                            continue
+                shutil.rmtree(target, ignore_errors=True)
+        except Exception:
+            continue
+    return removed_files, removed_bytes
 
 
 def _settings_json(value: object) -> str:
@@ -2704,78 +2764,63 @@ if auth_on and not st.session_state.get("auth_user"):
     st.markdown(
         """
         <style>
-        .auth-login-shell {
-            max-width: 440px;
-            margin: 6vh auto 0 auto;
-            padding: 18px 16px 14px 16px;
-            border: 1px solid rgba(148,163,184,0.28);
-            border-radius: 14px;
-            background: rgba(15,23,42,0.70);
-        }
         .auth-login-title {
-            font-size: 1.55rem;
+            font-size: 1.35rem;
             font-weight: 700;
             line-height: 1.2;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
         .auth-login-subtitle {
             color: rgba(148,163,184,0.95);
-            font-size: 0.9rem;
-            margin-bottom: 10px;
-        }
-        @media (max-width: 768px) {
-            .auth-login-shell {
-                margin-top: 2vh;
-                max-width: 100%;
-                padding: 14px 12px 12px 12px;
-                border-radius: 10px;
-            }
+            font-size: 0.88rem;
+            margin-bottom: 8px;
         }
         </style>
-        <div class="auth-login-shell">
-            <div class="auth-login-title">Sign in</div>
-            <div class="auth-login-subtitle">Access your Temperance dashboard</div>
-        </div>
         """,
         unsafe_allow_html=True,
     )
     login_error = None
     login_user_default = str(st.session_state.get("login_user_main") or "")
     lock_remaining = _login_lock_remaining_s(_login_guard_key(login_user_default))
-    with st.form("main_login_form", clear_on_submit=False):
-        login_user = st.text_input("User", key="login_user_main")
-        login_pass = st.text_input("Password", type="password", key="login_pass_main")
-        lock_remaining = _login_lock_remaining_s(_login_guard_key(login_user))
-        login_submit = st.form_submit_button(
-            "Sign in",
-            use_container_width=True,
-            disabled=lock_remaining > 0,
-        )
-        if login_submit:
-            guard_key = _login_guard_key(login_user)
-            current_remaining = _login_lock_remaining_s(guard_key)
-            if current_remaining > 0:
-                login_error = f"Too many attempts. Try again in {current_remaining}s."
-            elif len(str(login_user or "").strip()) > int(LOGIN_MAX_USER_LEN) or len(str(login_pass or "")) > int(
-                LOGIN_MAX_PASSWORD_LEN
-            ):
-                lock_s = _register_login_failure(guard_key)
-                if lock_s > 0:
-                    login_error = f"Invalid credentials. Try again in {lock_s}s."
-                else:
-                    login_error = "Invalid credentials."
-            else:
-                resolved_user, user_data = resolve_user(users, login_user)
-                if user_data and password_matches(login_pass, user_data["password_hash"]):
-                    st.session_state["auth_user"] = resolved_user
-                    st.session_state["auth_role"] = user_data["role"]
-                    _clear_login_guard(guard_key)
-                    st.rerun()
-                lock_s = _register_login_failure(guard_key)
-                if lock_s > 0:
-                    login_error = f"Invalid credentials. Try again in {lock_s}s."
-                else:
-                    login_error = "Invalid credentials."
+    left_col, center_col, right_col = st.columns([1.45, 1.1, 1.45])
+    with center_col:
+        with st.container(border=True):
+            st.markdown("<div class='auth-login-title'>Sign in</div>", unsafe_allow_html=True)
+            st.markdown("<div class='auth-login-subtitle'>Access your Temperance dashboard</div>", unsafe_allow_html=True)
+            with st.form("main_login_form", clear_on_submit=False):
+                login_user = st.text_input("User", key="login_user_main")
+                login_pass = st.text_input("Password", type="password", key="login_pass_main")
+                lock_remaining = _login_lock_remaining_s(_login_guard_key(login_user))
+                login_submit = st.form_submit_button(
+                    "Sign in",
+                    use_container_width=True,
+                    disabled=lock_remaining > 0,
+                )
+                if login_submit:
+                    guard_key = _login_guard_key(login_user)
+                    current_remaining = _login_lock_remaining_s(guard_key)
+                    if current_remaining > 0:
+                        login_error = f"Too many attempts. Try again in {current_remaining}s."
+                    elif len(str(login_user or "").strip()) > int(LOGIN_MAX_USER_LEN) or len(str(login_pass or "")) > int(
+                        LOGIN_MAX_PASSWORD_LEN
+                    ):
+                        lock_s = _register_login_failure(guard_key)
+                        if lock_s > 0:
+                            login_error = f"Invalid credentials. Try again in {lock_s}s."
+                        else:
+                            login_error = "Invalid credentials."
+                    else:
+                        resolved_user, user_data = resolve_user(users, login_user)
+                        if user_data and password_matches(login_pass, user_data["password_hash"]):
+                            st.session_state["auth_user"] = resolved_user
+                            st.session_state["auth_role"] = user_data["role"]
+                            _clear_login_guard(guard_key)
+                            st.rerun()
+                        lock_s = _register_login_failure(guard_key)
+                        if lock_s > 0:
+                            login_error = f"Invalid credentials. Try again in {lock_s}s."
+                        else:
+                            login_error = "Invalid credentials."
     if login_error:
         st.error(login_error)
     elif lock_remaining > 0:
@@ -5925,6 +5970,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         yes_col, no_col = st.columns(2)
                         with yes_col:
                             if st.button("Yes", key="planned_done_confirm_yes", use_container_width=True):
+                                if not _ensure_db_writable_or_warn(cfg.db_path, action_label="mark planned activity as done"):
+                                    return
                                 pending_day_ts = pd.to_datetime(pending_day_utc, errors="coerce")
                                 today_local_day = pd.Timestamp(datetime.now().astimezone().date()).normalize()
                                 if pd.isna(pending_day_ts):
@@ -6151,6 +6198,8 @@ if view in {"Week Planner", "Weekly Summary"}:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         save_clicked = st.button("Save", key="planner_single_save_btn", use_container_width=True)
 
+    if save_clicked and not _ensure_db_writable_or_warn(cfg.db_path, action_label="save planned activities"):
+        save_clicked = False
     if save_clicked:
         if len(str(plan_entry or "")) > int(MAX_PLANNED_ENTRY_CHARS):
             st.error(f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save.")
@@ -6634,6 +6683,8 @@ if view in {"Week Planner", "Weekly Summary"}:
                     st.rerun()
         with cedit:
             if st.button("Save edits (selected rows)", key="planner_save_selected_edits_btn", use_container_width=True):
+                if not _ensure_db_writable_or_warn(cfg.db_path, action_label="save planned edits"):
+                    st.stop()
                 if selected_rows.empty:
                     st.info("Select at least one row to edit.")
                 else:
@@ -6755,6 +6806,8 @@ if view == "Custom Activities":
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         custom_save_clicked = st.button("Save custom", key="custom_single_save_btn", use_container_width=True)
 
+    if custom_save_clicked and not _ensure_db_writable_or_warn(cfg.db_path, action_label="save custom activities"):
+        custom_save_clicked = False
     if custom_save_clicked:
         if len(str(custom_entry or "")) > int(MAX_PLANNED_ENTRY_CHARS):
             st.error(f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save.")
@@ -7223,6 +7276,8 @@ if view == "Custom Activities":
                     st.rerun()
         with cd2:
             if st.button("Save custom edits (selected)", key="custom_save_selected_edits_btn", use_container_width=True):
+                if not _ensure_db_writable_or_warn(cfg.db_path, action_label="save custom edits"):
+                    st.stop()
                 if selected_custom.empty:
                     st.info("Select at least one row to edit.")
                 else:
@@ -7574,6 +7629,7 @@ if view == "Data Extract":
         f"daily_summary={counts['daily_summary']}"
     )
     st.caption(f"Private DB: {cfg.db_path}")
+    st.caption(f"DB usage (quota): {_db_usage_text(cfg.db_path)}")
     st.caption(f"Private exports: {cfg.private_export_dir}")
     garmin_email, garmin_password = _get_garmin_credentials()
     garmin_credential_source = _get_garmin_credential_source()
@@ -7606,6 +7662,9 @@ if view == "Data Extract":
     sync_triggered = False
 
     if run_sync:
+        if not _ensure_db_writable_or_warn(cfg.db_path, action_label="run sync"):
+            st.stop()
+        _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
         total_rows = 0
         messages: list[str] = []
         sync_logs: list[str] = []
@@ -7690,17 +7749,18 @@ if view == "Data Extract":
                             elif phase == "complete":
                                 sync_progress.progress(92, text="Deep sync: upserting database...")
 
-                        extract = fetch_garmin_comprehensive(
-                            email=garmin_email,
-                            password=garmin_password,
-                            start_day=deep_start_day,
-                            end_day=datetime.now(timezone.utc).date(),
-                            include_activity_details=True,
-                            include_splits=True,
-                            include_wellness=True,
-                            raw_export_dir=cfg.private_export_dir / "raw",
-                            progress_cb=_on_deep_progress,
-                        )
+                        with tempfile.TemporaryDirectory(prefix="temperance_raw_ingest_") as _tmp_raw:
+                            extract = fetch_garmin_comprehensive(
+                                email=garmin_email,
+                                password=garmin_password,
+                                start_day=deep_start_day,
+                                end_day=datetime.now(timezone.utc).date(),
+                                include_activity_details=True,
+                                include_splits=True,
+                                include_wellness=True,
+                                raw_export_dir=Path(_tmp_raw),
+                                progress_cb=_on_deep_progress,
+                            )
                         owner_ok, owner_msg = _enforce_garmin_owner_scope(extract.activities)
                         if not owner_ok:
                             raise RuntimeError(owner_msg)
@@ -7746,22 +7806,30 @@ if view == "Data Extract":
             messages.append(f"File import: found {len(rows)} runs ({changed} DB row changes).")
             _sync_log(f"[fetch:done] file_rows={len(rows)} | db_changes={changed}")
 
-        sync_progress.progress(94, text="Sync: updating splits from raw cache...")
-        _sync_log("[splits] syncing splits from raw activity cache")
-        split_rows, split_errors = _sync_splits_from_raw_activity_cache(cfg.private_export_dir / "raw")
-        split_changes = upsert_activity_splits(cfg.db_path, split_rows)
-        messages.append(f"Splits: synced {len(split_rows)} rows ({split_changes} DB row changes).")
-        _sync_log(f"[splits:done] rows={len(split_rows)} | db_changes={split_changes} | errors={len(split_errors)}")
-        if split_errors:
-            st.warning("Some split files failed to parse during sync. First 20 shown in logs.")
-            for err in split_errors[:20]:
-                _sync_log(f"[splits:error] {err}")
+        raw_cache_dir = cfg.private_export_dir / "raw"
+        if raw_cache_dir.exists():
+            sync_progress.progress(94, text="Sync: updating splits from raw cache...")
+            _sync_log("[splits] syncing splits from raw activity cache")
+            split_rows, split_errors = _sync_splits_from_raw_activity_cache(raw_cache_dir)
+            split_changes = upsert_activity_splits(cfg.db_path, split_rows)
+            messages.append(f"Splits: synced {len(split_rows)} rows ({split_changes} DB row changes).")
+            _sync_log(f"[splits:done] rows={len(split_rows)} | db_changes={split_changes} | errors={len(split_errors)}")
+            if split_errors:
+                st.warning("Some split files failed to parse during sync. First 20 shown in logs.")
+                for err in split_errors[:20]:
+                    _sync_log(f"[splits:error] {err}")
+        else:
+            _sync_log("[splits] no raw cache found; skipped raw split sync.")
 
         success = total_rows > 0 or any("Skipped" in m for m in messages)
         log_sync(cfg.db_path, source=source.lower().replace(" ", "_"), success=success, message=" | ".join(messages))
         sync_finished_at = datetime.now(timezone.utc)
         sync_duration_s = (sync_finished_at - sync_started_at).total_seconds()
         _sync_log(f"[done] {sync_finished_at.isoformat()} | duration_s={sync_duration_s:.1f}")
+        removed_files, removed_bytes = _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
+        _sync_log(
+            f"[cleanup] removed raw artifacts: files={removed_files} bytes={removed_bytes}"
+        )
         sync_progress.progress(100, text="Unified sync completed.")
 
         if total_rows > 0:
@@ -7804,6 +7872,9 @@ if view == "Data Extract":
         st.write("")
 
     if run_extract:
+        if not _ensure_db_writable_or_warn(cfg.db_path, action_label="run comprehensive extract"):
+            st.stop()
+        _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
         if not (garmin_email and garmin_password):
             st.error("Garmin credentials missing. Add them in sidebar or GARMIN_EMAIL / GARMIN_PASSWORD.")
         else:
@@ -7987,17 +8058,18 @@ if view == "Data Extract":
                         progress.progress(90, text="Fetch completed. Upserting DB...")
 
                 with st.spinner("Extracting Garmin data. This can take a few minutes..."):
-                    extract = fetch_garmin_comprehensive(
-                        email=garmin_email,
-                        password=garmin_password,
-                        start_day=start_day,
-                        end_day=end_day,
-                        include_activity_details=include_details,
-                        include_splits=include_details,
-                        include_wellness=include_wellness,
-                        raw_export_dir=cfg.private_export_dir / "raw",
-                        progress_cb=_on_fetch_progress,
-                    )
+                    with tempfile.TemporaryDirectory(prefix="temperance_raw_ingest_") as _tmp_raw:
+                        extract = fetch_garmin_comprehensive(
+                            email=garmin_email,
+                            password=garmin_password,
+                            start_day=start_day,
+                            end_day=end_day,
+                            include_activity_details=include_details,
+                            include_splits=include_details,
+                            include_wellness=include_wellness,
+                            raw_export_dir=Path(_tmp_raw),
+                            progress_cb=_on_fetch_progress,
+                        )
                 owner_ok, owner_msg = _enforce_garmin_owner_scope(extract.activities)
                 if not owner_ok:
                     raise RuntimeError(owner_msg)
@@ -8022,10 +8094,8 @@ if view == "Data Extract":
                     f"sleep_changes={n_s} wellness_changes={n_w}"
                 )
 
-                snapshot_file = cfg.private_export_dir / f"garmin_extract_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
-                dump_extract_to_json(snapshot_file, extract)
-                _log(f"[snapshot] {snapshot_file}")
-                progress.progress(80, text="Writing snapshot and finalizing...")
+                _log("[snapshot] disabled (raw artifacts are not persisted by policy).")
+                progress.progress(80, text="Finalizing...")
 
                 msg = (
                     f"activities={len(extract.activities)} (db_changes={n_a}), "
@@ -8038,7 +8108,6 @@ if view == "Data Extract":
                 )
                 log_sync(cfg.db_path, source="garmin_comprehensive", success=True, message=msg)
                 st.success("Comprehensive extract complete. " + msg)
-                st.info(f"Snapshot saved locally at: {snapshot_file}")
                 if extract.errors:
                     st.warning("Some endpoints failed for specific days/activities. First 20 errors:")
                     st.code("\n".join(extract.errors[:20]))
@@ -8052,25 +8121,19 @@ if view == "Data Extract":
                         _log(f"[error] {err}")
 
                 if verify_raw_integrity:
-                    progress.progress(95, text="Running raw archive integrity check...")
-                    _log("[verify] checking raw activities/wellness/FIT cache integrity...")
-                    integrity = _check_raw_archive_integrity(
-                        cfg.private_export_dir / "raw",
-                        start_day=start_day,
-                        end_day=datetime.now(timezone.utc).date(),
-                    )
-                    _log(
-                        f"[verify:done] checked_json={integrity['checked_json']} checked_fit={integrity['checked_fit']} "
-                        f"errors={len(integrity['errors'])}"
-                    )
-                    for err in list(integrity["errors"])[:40]:
-                        _log(f"[verify:error] {err}")
+                    _log("[verify] skipped: raw archive persistence is disabled by policy.")
+                removed_files, removed_bytes = _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
+                _log(
+                    f"[cleanup] removed raw artifacts: files={removed_files} bytes={removed_bytes}"
+                )
                 progress.progress(100, text="Comprehensive extract completed.")
                 with st.expander("Comprehensive Extract Logs", expanded=True):
                     _render_logs()
                 sync_triggered = True
             except Exception as exc:
                 _log(f"[fatal] {exc}")
+                removed_files, removed_bytes = _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
+                _log(f"[cleanup] removed raw artifacts: files={removed_files} bytes={removed_bytes}")
                 progress.progress(100, text="Comprehensive extract failed.")
                 log_sync(cfg.db_path, source="garmin_comprehensive", success=False, message=str(exc))
                 st.error(f"Comprehensive extract failed: {exc}")
