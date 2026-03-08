@@ -64,6 +64,7 @@ from db import (
     upsert_wellness_daily,
 )
 from garmin_client import (
+    dump_extract_to_json,
     fetch_garmin_comprehensive,
     fetch_garmin_runs,
     import_runs_from_folder,
@@ -304,6 +305,14 @@ def _get_garmin_credential_source() -> str:
 def _clear_garmin_session_credentials() -> None:
     st.session_state["garmin_email_input"] = ""
     st.session_state["garmin_password_input"] = ""
+
+
+def _allow_raw_persistence_for_current_user() -> bool:
+    role = str(st.session_state.get("auth_role") or "").strip().lower()
+    if _auth_enabled():
+        return role == "admin"
+    # If auth is disabled, preserve legacy single-user local behavior.
+    return True
 
 
 def _db_file_size_bytes(db_path: Path) -> int:
@@ -7610,6 +7619,9 @@ if view == "Recovery Data":
 
 if view == "Data Extract":
     st.header("Data Extract & Sync")
+    raw_persistence_allowed = _allow_raw_persistence_for_current_user()
+    if not raw_persistence_allowed:
+        _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
 
     last_sync = get_last_sync(cfg.db_path)
     if last_sync:
@@ -7631,6 +7643,10 @@ if view == "Data Extract":
     st.caption(f"Private DB: {cfg.db_path}")
     st.caption(f"DB usage (quota): {_db_usage_text(cfg.db_path)}")
     st.caption(f"Private exports: {cfg.private_export_dir}")
+    if raw_persistence_allowed:
+        st.caption("Raw Garmin artifacts: enabled for admin.")
+    else:
+        st.caption("Raw Garmin artifacts: disabled for non-admin users (temp ingestion + cleanup).")
     garmin_email, garmin_password = _get_garmin_credentials()
     garmin_credential_source = _get_garmin_credential_source()
     if garmin_email and garmin_password:
@@ -7664,7 +7680,8 @@ if view == "Data Extract":
     if run_sync:
         if not _ensure_db_writable_or_warn(cfg.db_path, action_label="run sync"):
             st.stop()
-        _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
+        if not raw_persistence_allowed:
+            _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
         total_rows = 0
         messages: list[str] = []
         sync_logs: list[str] = []
@@ -7749,7 +7766,7 @@ if view == "Data Extract":
                             elif phase == "complete":
                                 sync_progress.progress(92, text="Deep sync: upserting database...")
 
-                        with tempfile.TemporaryDirectory(prefix="temperance_raw_ingest_") as _tmp_raw:
+                        if raw_persistence_allowed:
                             extract = fetch_garmin_comprehensive(
                                 email=garmin_email,
                                 password=garmin_password,
@@ -7758,9 +7775,22 @@ if view == "Data Extract":
                                 include_activity_details=True,
                                 include_splits=True,
                                 include_wellness=True,
-                                raw_export_dir=Path(_tmp_raw),
+                                raw_export_dir=cfg.private_export_dir / "raw",
                                 progress_cb=_on_deep_progress,
                             )
+                        else:
+                            with tempfile.TemporaryDirectory(prefix="temperance_raw_ingest_") as _tmp_raw:
+                                extract = fetch_garmin_comprehensive(
+                                    email=garmin_email,
+                                    password=garmin_password,
+                                    start_day=deep_start_day,
+                                    end_day=datetime.now(timezone.utc).date(),
+                                    include_activity_details=True,
+                                    include_splits=True,
+                                    include_wellness=True,
+                                    raw_export_dir=Path(_tmp_raw),
+                                    progress_cb=_on_deep_progress,
+                                )
                         owner_ok, owner_msg = _enforce_garmin_owner_scope(extract.activities)
                         if not owner_ok:
                             raise RuntimeError(owner_msg)
@@ -7807,7 +7837,7 @@ if view == "Data Extract":
             _sync_log(f"[fetch:done] file_rows={len(rows)} | db_changes={changed}")
 
         raw_cache_dir = cfg.private_export_dir / "raw"
-        if raw_cache_dir.exists():
+        if raw_persistence_allowed and raw_cache_dir.exists():
             sync_progress.progress(94, text="Sync: updating splits from raw cache...")
             _sync_log("[splits] syncing splits from raw activity cache")
             split_rows, split_errors = _sync_splits_from_raw_activity_cache(raw_cache_dir)
@@ -7826,10 +7856,11 @@ if view == "Data Extract":
         sync_finished_at = datetime.now(timezone.utc)
         sync_duration_s = (sync_finished_at - sync_started_at).total_seconds()
         _sync_log(f"[done] {sync_finished_at.isoformat()} | duration_s={sync_duration_s:.1f}")
-        removed_files, removed_bytes = _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
-        _sync_log(
-            f"[cleanup] removed raw artifacts: files={removed_files} bytes={removed_bytes}"
-        )
+        if not raw_persistence_allowed:
+            removed_files, removed_bytes = _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
+            _sync_log(
+                f"[cleanup] removed raw artifacts: files={removed_files} bytes={removed_bytes}"
+            )
         sync_progress.progress(100, text="Unified sync completed.")
 
         if total_rows > 0:
@@ -7874,7 +7905,8 @@ if view == "Data Extract":
     if run_extract:
         if not _ensure_db_writable_or_warn(cfg.db_path, action_label="run comprehensive extract"):
             st.stop()
-        _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
+        if not raw_persistence_allowed:
+            _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
         if not (garmin_email and garmin_password):
             st.error("Garmin credentials missing. Add them in sidebar or GARMIN_EMAIL / GARMIN_PASSWORD.")
         else:
@@ -8058,7 +8090,7 @@ if view == "Data Extract":
                         progress.progress(90, text="Fetch completed. Upserting DB...")
 
                 with st.spinner("Extracting Garmin data. This can take a few minutes..."):
-                    with tempfile.TemporaryDirectory(prefix="temperance_raw_ingest_") as _tmp_raw:
+                    if raw_persistence_allowed:
                         extract = fetch_garmin_comprehensive(
                             email=garmin_email,
                             password=garmin_password,
@@ -8067,9 +8099,22 @@ if view == "Data Extract":
                             include_activity_details=include_details,
                             include_splits=include_details,
                             include_wellness=include_wellness,
-                            raw_export_dir=Path(_tmp_raw),
+                            raw_export_dir=cfg.private_export_dir / "raw",
                             progress_cb=_on_fetch_progress,
                         )
+                    else:
+                        with tempfile.TemporaryDirectory(prefix="temperance_raw_ingest_") as _tmp_raw:
+                            extract = fetch_garmin_comprehensive(
+                                email=garmin_email,
+                                password=garmin_password,
+                                start_day=start_day,
+                                end_day=end_day,
+                                include_activity_details=include_details,
+                                include_splits=include_details,
+                                include_wellness=include_wellness,
+                                raw_export_dir=Path(_tmp_raw),
+                                progress_cb=_on_fetch_progress,
+                            )
                 owner_ok, owner_msg = _enforce_garmin_owner_scope(extract.activities)
                 if not owner_ok:
                     raise RuntimeError(owner_msg)
@@ -8094,7 +8139,13 @@ if view == "Data Extract":
                     f"sleep_changes={n_s} wellness_changes={n_w}"
                 )
 
-                _log("[snapshot] disabled (raw artifacts are not persisted by policy).")
+                if raw_persistence_allowed:
+                    snapshot_file = cfg.private_export_dir / f"garmin_extract_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+                    dump_extract_to_json(snapshot_file, extract)
+                    _log(f"[snapshot] {snapshot_file}")
+                    st.info(f"Snapshot saved locally at: {snapshot_file}")
+                else:
+                    _log("[snapshot] disabled (raw artifacts are not persisted for non-admin).")
                 progress.progress(80, text="Finalizing...")
 
                 msg = (
@@ -8121,19 +8172,36 @@ if view == "Data Extract":
                         _log(f"[error] {err}")
 
                 if verify_raw_integrity:
-                    _log("[verify] skipped: raw archive persistence is disabled by policy.")
-                removed_files, removed_bytes = _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
-                _log(
-                    f"[cleanup] removed raw artifacts: files={removed_files} bytes={removed_bytes}"
-                )
+                    if raw_persistence_allowed:
+                        progress.progress(95, text="Running raw archive integrity check...")
+                        _log("[verify] checking raw activities/wellness/FIT cache integrity...")
+                        integrity = _check_raw_archive_integrity(
+                            cfg.private_export_dir / "raw",
+                            start_day=start_day,
+                            end_day=datetime.now(timezone.utc).date(),
+                        )
+                        _log(
+                            f"[verify:done] checked_json={integrity['checked_json']} checked_fit={integrity['checked_fit']} "
+                            f"errors={len(integrity['errors'])}"
+                        )
+                        for err in list(integrity["errors"])[:40]:
+                            _log(f"[verify:error] {err}")
+                    else:
+                        _log("[verify] skipped: raw archive persistence is disabled for non-admin.")
+                if not raw_persistence_allowed:
+                    removed_files, removed_bytes = _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
+                    _log(
+                        f"[cleanup] removed raw artifacts: files={removed_files} bytes={removed_bytes}"
+                    )
                 progress.progress(100, text="Comprehensive extract completed.")
                 with st.expander("Comprehensive Extract Logs", expanded=True):
                     _render_logs()
                 sync_triggered = True
             except Exception as exc:
                 _log(f"[fatal] {exc}")
-                removed_files, removed_bytes = _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
-                _log(f"[cleanup] removed raw artifacts: files={removed_files} bytes={removed_bytes}")
+                if not raw_persistence_allowed:
+                    removed_files, removed_bytes = _cleanup_raw_garmin_artifacts(cfg.private_export_dir)
+                    _log(f"[cleanup] removed raw artifacts: files={removed_files} bytes={removed_bytes}")
                 progress.progress(100, text="Comprehensive extract failed.")
                 log_sync(cfg.db_path, source="garmin_comprehensive", success=False, message=str(exc))
                 st.error(f"Comprehensive extract failed: {exc}")
