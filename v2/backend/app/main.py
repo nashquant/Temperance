@@ -38,7 +38,9 @@ DB_PATH = Path(str(os.getenv("TEMPERANCE_DB_PATH") or _default_db_path()))
 from analytics import build_daily_summary, compute_metrics, display_table, ema_multi, weekly_summary  # noqa: E402
 from auth import build_users, password_matches, resolve_user  # noqa: E402
 from db import (  # noqa: E402
+    delete_custom_activities,
     delete_planned_activities,
+    get_custom_activities_df,
     get_last_sync,
     get_latest_activity_time,
     get_latest_recovery_day,
@@ -60,6 +62,7 @@ from db import (  # noqa: E402
     upsert_sleep_daily,
     upsert_wellness_daily,
     upsert_planned_activities_rows,
+    upsert_custom_activities_rows,
 )
 from garmin_client import (  # noqa: E402
     fetch_garmin_comprehensive,
@@ -78,6 +81,7 @@ SETTINGS_KEY_IF_ZONE_THRESHOLDS = "if_zone_thresholds_v1"
 TOKEN_TTL_S = int(os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60))
 MAX_PLANNED_ENTRY_CHARS = 4000
 MAX_PLANNED_ENTRIES_PER_SAVE = 40
+CUSTOM_ACTIVITIES_LIMIT = 5000
 LT_PACE_TO_WEEKLY_TARGET_POINTS = [
     (300.0, 67.0, 364.0),
     (270.0, 81.0, 396.0),
@@ -111,6 +115,10 @@ class PlannedWorkoutUpdateRequest(BaseModel):
     line_no: int
     workout_text: str
     manual_done: bool | None = None
+
+
+class CustomIngestRequest(BaseModel):
+    entry_text: str
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -3053,6 +3061,203 @@ def planned_activity_workout_update(
         ],
     )
     return {"updated": True}
+
+
+@app.get("/api/v1/custom-activities")
+def custom_activities_view(
+    weeks: int = Query(default=8, ge=1, le=52),
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+
+    raw = get_custom_activities_df(db_path=db_path)
+    if raw.empty:
+        return {"owner": resolved_owner, "rows": [], "weeks": []}
+
+    lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    custom_rows = raw.rename(columns={"activity_text": "workout_text"}).copy()
+    custom_rows["manual_done"] = False
+    metrics = _compute_planned_rows_metrics_df(
+        planned_rows=custom_rows,
+        lthr_curve_points=lthr_curve,
+        lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+        lt_pace_curve_points=pace_curve,
+        lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        specificity_profile=specificity_profile,
+    )
+    merged = custom_rows.merge(
+        metrics[["day_utc", "line_no", "tss", "rtss", "distance_proxy_km", "duration_s", "if_proxy", "pace_proxy_sec_per_km"]],
+        on=["day_utc", "line_no"],
+        how="left",
+        suffixes=("", "_metric"),
+    )
+    merged["day"] = pd.to_datetime(merged.get("day_utc"), errors="coerce")
+    merged = merged.dropna(subset=["day"]).copy()
+    merged["week_start"] = (merged["day"] - pd.to_timedelta(merged["day"].dt.weekday, unit="D")).dt.normalize()
+    merged = merged.sort_values(["day_utc", "line_no"], ascending=[False, False]).copy()
+
+    rows_out: list[dict[str, Any]] = []
+    for _, row in merged.iterrows():
+        rows_out.append(
+            {
+                "day_utc": str(row.get("day_utc") or ""),
+                "line_no": int(_safe_float(row.get("line_no"))),
+                "activity": _planned_activity_label(row.get("parsed_json")),
+                "activity_text": str(row.get("workout_text") or ""),
+                "duration_h": round(_safe_float(row.get("duration_s")) / 3600.0, 2),
+                "tss": round(_safe_float(row.get("tss")), 1),
+                "rtss": round(_safe_float(row.get("rtss")), 1),
+                "distance_eqv_km": round(_safe_float(row.get("distance_proxy_km")), 1),
+                "if_proxy_pct": round(_safe_float(row.get("if_proxy")) * 100.0, 1),
+                "pace_label": _format_pace_short(_safe_float(row.get("pace_proxy_sec_per_km"))),
+                "source": str(row.get("source") or "manual"),
+            }
+        )
+
+    weekly = (
+        merged.groupby("week_start", as_index=False)
+        .agg(
+            custom_activities=("line_no", "count"),
+            duration_s=("duration_s", "sum"),
+            tss=("tss", "sum"),
+            rtss=("rtss", "sum"),
+            distance_eqv_km=("distance_proxy_km", "sum"),
+            if_weighted=("if_proxy", lambda v: float((pd.to_numeric(v, errors="coerce").fillna(0.0)).sum())),
+        )
+        .sort_values("week_start", ascending=False)
+        .head(max(1, int(weeks)))
+    )
+    weeks_out: list[dict[str, Any]] = []
+    for _, row in weekly.iterrows():
+        ws = pd.Timestamp(row.get("week_start")).normalize()
+        we = ws + pd.Timedelta(days=6)
+        dur_s = _safe_float(row.get("duration_s"))
+        avg_if = _safe_float(row.get("if_weighted")) / max(float(_safe_float(row.get("custom_activities"))), 1.0)
+        weeks_out.append(
+            {
+                "week_start": ws.date().isoformat(),
+                "week_end": we.date().isoformat(),
+                "custom_activities": int(_safe_float(row.get("custom_activities"))),
+                "duration_h": round(dur_s / 3600.0, 1),
+                "tss": round(_safe_float(row.get("tss")), 1),
+                "rtss": round(_safe_float(row.get("rtss")), 1),
+                "distance_eqv_km": round(_safe_float(row.get("distance_eqv_km")), 1),
+                "if_proxy_pct": round(avg_if * 100.0, 1),
+            }
+        )
+
+    return {"owner": resolved_owner, "rows": rows_out, "weeks": weeks_out}
+
+
+@app.post("/api/v1/custom-activities/ingest")
+def custom_activities_ingest(
+    payload: CustomIngestRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    entry_text = str(payload.entry_text or "")
+
+    if len(entry_text) > int(MAX_PLANNED_ENTRY_CHARS):
+        raise HTTPException(status_code=400, detail=f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save.")
+
+    entries = _split_dated_activity_entries(entry_text)
+    if not entries:
+        raise HTTPException(status_code=400, detail="Input is empty. Use `[date]:[activity]`.")
+    if len(entries) > int(MAX_PLANNED_ENTRIES_PER_SAVE):
+        raise HTTPException(status_code=400, detail=f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}.")
+
+    existing = get_custom_activities_df(db_path=db_path)
+    max_line_by_day = existing.groupby("day_utc")["line_no"].max().to_dict() if not existing.empty else {}
+
+    lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
+    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+
+    rows_to_upsert: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for idx, raw_entry in enumerate(entries, start=1):
+        day_ts, normalized, parse_err = _parse_dated_activity_entry(raw_entry)
+        if parse_err:
+            errors.append(f"entry {idx}: {parse_err}")
+            continue
+        if day_ts is None:
+            errors.append(f"entry {idx}: could not parse date")
+            continue
+
+        lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
+        pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
+        segs, warns = _expand_planned_segments(
+            normalized,
+            lthr_bpm=lthr_for_day,
+            threshold_pace_sec_per_km=pace_for_day,
+        )
+        if warns or not segs:
+            details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
+            errors.append(f"entry {idx}: {details}")
+            continue
+
+        day_key = day_ts.date().isoformat()
+        next_line_no = int(max_line_by_day.get(day_key, 0)) + 1
+        max_line_by_day[day_key] = next_line_no
+        rows_to_upsert.append(
+            {
+                "day_utc": day_key,
+                "line_no": next_line_no,
+                "activity_text": normalized,
+                "parsed_json": segs,
+                "source": "manual",
+            }
+        )
+
+    if rows_to_upsert:
+        try:
+            upsert_custom_activities_rows(
+                db_path=db_path,
+                rows=rows_to_upsert,
+                max_rows=CUSTOM_ACTIVITIES_LIMIT,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    return {"saved_count": int(len(rows_to_upsert)), "errors": errors[:20]}
+
+
+@app.delete("/api/v1/custom-activities")
+def custom_activity_delete(
+    day_utc: str = Query(...),
+    line_no: int = Query(..., ge=1),
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    deleted = delete_custom_activities(
+        db_path=db_path,
+        keys=[(str(day_utc), int(line_no))],
+    )
+    if deleted <= 0:
+        raise HTTPException(status_code=404, detail="Custom activity not found")
+    return {"deleted": int(deleted)}
 
 
 @app.get("/api/v1/activities/{activity_id}")

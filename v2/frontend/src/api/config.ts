@@ -9,6 +9,8 @@ export const API_CONFIG = {
     dataExtractStatus: '/data-extract/status',
     dataExtractSync: '/data-extract/sync',
     dataExtractComprehensive: '/data-extract/comprehensive',
+    customActivities: '/custom-activities',
+    customActivitiesIngest: '/custom-activities/ingest',
     weekOutlook: '/week-outlook',
     plannedActivities: '/planned-activities',
     plannedManualDone: '/planned-activities/manual-done',
