@@ -1103,6 +1103,15 @@ def _normalize_plan_text(text: str) -> str:
     return t
 
 
+def _strip_meridiem_tokens(text: str) -> tuple[str, str | None]:
+    raw = str(text or "")
+    token_matches = re.findall(r"(?<![A-Za-z0-9_])(AM|PM)(?![A-Za-z0-9_])", raw, flags=re.IGNORECASE)
+    hint = str(token_matches[-1]).upper() if token_matches else None
+    cleaned = re.sub(r"(?<![A-Za-z0-9_])(AM|PM)(?![A-Za-z0-9_])", " ", raw, flags=re.IGNORECASE)
+    cleaned = " ".join(cleaned.strip().split())
+    return cleaned, hint
+
+
 def _parse_dated_activity_entry(text: str) -> tuple[pd.Timestamp | None, str, str | None]:
     raw = str(text or "").strip()
     if not raw:
@@ -1119,6 +1128,12 @@ def _parse_dated_activity_entry(text: str) -> tuple[pd.Timestamp | None, str, st
         else:
             return None, "", "Missing `:` separator. Use `[date]:[activity]`."
     date_text = date_text.strip()
+    activity_text = activity_text.strip()
+    date_text, date_hint = _strip_meridiem_tokens(date_text)
+    activity_text, activity_hint = _strip_meridiem_tokens(activity_text)
+    merged_hint = activity_hint or date_hint
+    if merged_hint:
+        activity_text = f"{activity_text} {merged_hint}".strip()
     activity_text = _normalize_plan_text(activity_text)
     if not date_text:
         return None, "", "Missing date before `:`."
@@ -1172,15 +1187,62 @@ def _planned_row_signature(day_utc: str, workout_text: str) -> str:
     return f"{day_key}::{workout_key}"
 
 
-def _filter_effective_planned_rows(planned_df: pd.DataFrame, today_local_day: pd.Timestamp) -> pd.DataFrame:
+def _planned_row_time_hint(row: pd.Series) -> str | None:
+    raw_segments = row.get("parsed_json")
+    segments: list[dict[str, object]] = []
+    if isinstance(raw_segments, list):
+        segments = [s for s in raw_segments if isinstance(s, dict)]
+    elif isinstance(raw_segments, str) and raw_segments.strip():
+        try:
+            parsed = json.loads(raw_segments)
+            if isinstance(parsed, list):
+                segments = [s for s in parsed if isinstance(s, dict)]
+        except Exception:
+            segments = []
+    for seg in segments:
+        hint = str(seg.get("time_hint") or "").strip().upper()
+        if hint in {"AM", "PM"}:
+            return hint
+    workout_text = str(row.get("workout_text") or "")
+    _, hint = _strip_meridiem_tokens(workout_text)
+    return hint if hint in {"AM", "PM"} else None
+
+
+def _planned_row_expiry_local(day_local: pd.Timestamp, time_hint: str | None) -> pd.Timestamp:
+    day_norm = pd.Timestamp(day_local).normalize()
+    hint = str(time_hint or "").strip().upper()
+    if hint == "AM":
+        return day_norm + pd.Timedelta(hours=12)
+    if hint == "PM":
+        return day_norm + pd.Timedelta(hours=21)
+    return day_norm + pd.Timedelta(days=1)
+
+
+def _filter_effective_planned_rows(
+    planned_df: pd.DataFrame,
+    today_local_day: pd.Timestamp,
+    now_local_ts: pd.Timestamp | None = None,
+) -> pd.DataFrame:
     if planned_df.empty:
         return planned_df.copy()
     out = planned_df.copy()
     day_col = pd.to_datetime(out.get("day_utc"), errors="coerce").dt.normalize()
-    done_col = pd.to_numeric(out.get("manual_done"), errors="coerce").fillna(0.0) > 0
-    past_mask = day_col < pd.Timestamp(today_local_day).normalize()
-    today_done_mask = (day_col == pd.Timestamp(today_local_day).normalize()) & done_col
-    keep_mask = ~(past_mask | today_done_mask)
+    manual_done_col = pd.to_numeric(out.get("manual_done"), errors="coerce").fillna(0.0) > 0
+    now_local = pd.Timestamp(now_local_ts) if now_local_ts is not None else pd.Timestamp(datetime.now().astimezone())
+    if now_local.tzinfo is not None:
+        now_local = now_local.tz_localize(None)
+    auto_done_flags: list[bool] = []
+    for row_idx, row in out.iterrows():
+        day_local = pd.to_datetime(day_col.loc[row_idx], errors="coerce")
+        if pd.isna(day_local):
+            auto_done_flags.append(False)
+            continue
+        hint = _planned_row_time_hint(row)
+        expiry_local = _planned_row_expiry_local(day_local, hint)
+        auto_done_flags.append(now_local >= expiry_local)
+    auto_done_col = pd.Series(auto_done_flags, index=out.index, dtype=bool)
+    done_col = manual_done_col | auto_done_col
+    keep_mask = ~done_col
     return out.loc[keep_mask].copy()
 
 
@@ -1192,6 +1254,7 @@ def _expand_planned_segments(
     segments: list[dict[str, float | str | None]] = []
     warnings: list[str] = []
     raw = _normalize_plan_text(line)
+    raw, line_time_hint = _strip_meridiem_tokens(raw)
     if not raw:
         return segments, warnings
     lthr_value = float(lthr_bpm or 0.0)
@@ -1265,6 +1328,7 @@ def _expand_planned_segments(
                         "if_input": if_input,
                         "if_input_source": if_input_source,
                         "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
+                        "time_hint": line_time_hint,
                         "source": chunk,
                     }
                 )
@@ -1301,6 +1365,7 @@ def _expand_planned_segments(
                         "if_input": if_input,
                         "if_input_source": if_input_source,
                         "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
+                        "time_hint": line_time_hint,
                         "source": chunk,
                     }
                 )
@@ -1337,6 +1402,7 @@ def _expand_planned_segments(
                         "if_input": if_input,
                         "if_input_source": if_input_source,
                         "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
+                        "time_hint": line_time_hint,
                         "source": chunk,
                     }
                 )
@@ -1395,6 +1461,7 @@ def _expand_planned_segments(
                 "if_input": if_input,
                 "if_input_source": if_input_source,
                 "tss_target": float(tss_input) if tss_input else None,
+                "time_hint": line_time_hint,
                 "source": chunk,
             }
         )
