@@ -6729,10 +6729,8 @@ if view in {"Week Planner", "Weekly Summary"}:
                 & (_editor_day <= selected_planned_week_end)
             ].copy()
 
-        editor_df = planned_rows_for_editor[
+        editor_source_df = planned_rows_for_editor[
             [
-                "select",
-                "row_id",
                 "day_utc",
                 "line_no",
                 "activity",
@@ -6744,35 +6742,30 @@ if view in {"Week Planner", "Weekly Summary"}:
                 "if_proxy",
                 "manual_done",
                 "parsed_json",
-                "updated_at",
             ]
         ].copy()
-        editor_df["day_of_week"] = pd.to_datetime(editor_df["day_utc"], errors="coerce").dt.strftime("%a")
-        editor_df["if_proxy_pct"] = pd.to_numeric(editor_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
-        editor_df["manual_done"] = pd.to_numeric(editor_df.get("manual_done"), errors="coerce").fillna(0.0) > 0
-        if "duration_s" in editor_df.columns:
-            planner_duration_s = pd.to_numeric(editor_df["duration_s"], errors="coerce")
-        else:
-            planner_duration_s = pd.Series(0.0, index=editor_df.index)
-        planner_duration_fallback = editor_df.get("parsed_json", pd.Series(index=editor_df.index)).apply(
-            _sum_duration_s_from_parsed_segments
+        editor_source_df["day_of_week"] = pd.to_datetime(editor_source_df["day_utc"], errors="coerce").dt.strftime("%a")
+        editor_source_df["if_proxy_pct"] = (
+            pd.to_numeric(editor_source_df.get("if_proxy"), errors="coerce").fillna(0.0) * 100.0
         )
+        editor_source_df["manual_done"] = (
+            pd.to_numeric(editor_source_df.get("manual_done"), errors="coerce").fillna(0.0) > 0
+        )
+        if "duration_s" in editor_source_df.columns:
+            planner_duration_s = pd.to_numeric(editor_source_df["duration_s"], errors="coerce")
+        else:
+            planner_duration_s = pd.Series(0.0, index=editor_source_df.index)
+        planner_duration_fallback = editor_source_df.get(
+            "parsed_json", pd.Series(index=editor_source_df.index)
+        ).apply(_sum_duration_s_from_parsed_segments)
         planner_duration_s = planner_duration_s.where(
             planner_duration_s.fillna(0.0) > 0, planner_duration_fallback
         )
-        editor_df["duration_h"] = planner_duration_s.fillna(0.0) / 3600.0
-        editor_df = editor_df.drop(columns=["duration_s"], errors="ignore")
-        editor_df = editor_df.drop(columns=["if_proxy"], errors="ignore")
-        edited_plan = st.data_editor(
-            editor_df,
-            use_container_width=True,
-            hide_index=True,
-            column_order=[
-                "select",
-                "row_id",
-                "day_utc",
+        editor_source_df["duration_h"] = planner_duration_s.fillna(0.0) / 3600.0
+        editor_df = editor_source_df[
+            [
+                "manual_done",
                 "day_of_week",
-                "line_no",
                 "activity",
                 "workout_text",
                 "tss",
@@ -6780,16 +6773,27 @@ if view in {"Week Planner", "Weekly Summary"}:
                 "distance_eqv_km",
                 "duration_h",
                 "if_proxy_pct",
+            ]
+        ].copy()
+        editor_df = editor_df.reset_index(drop=True)
+        editor_source_df = editor_source_df.reset_index(drop=True)
+        edited_plan = st.data_editor(
+            editor_df,
+            use_container_width=True,
+            hide_index=True,
+            column_order=[
                 "manual_done",
-                "parsed_json",
-                "updated_at",
+                "day_of_week",
+                "activity",
+                "workout_text",
+                "tss",
+                "rtss",
+                "distance_eqv_km",
+                "duration_h",
+                "if_proxy_pct",
             ],
             column_config={
-                "select": st.column_config.CheckboxColumn("Select"),
-                "row_id": st.column_config.TextColumn("Row ID", disabled=True),
-                "day_utc": st.column_config.TextColumn("Planned Date"),
                 "day_of_week": st.column_config.TextColumn("DOW", disabled=True),
-                "line_no": st.column_config.NumberColumn("Line", format="%d", disabled=True),
                 "activity": st.column_config.TextColumn("Activity", disabled=True),
                 "workout_text": st.column_config.TextColumn("Activity String"),
                 "duration_h": st.column_config.NumberColumn("Duration (h)", format="%.1f", disabled=True),
@@ -6798,108 +6802,92 @@ if view in {"Week Planner", "Weekly Summary"}:
                 "distance_eqv_km": st.column_config.NumberColumn("Dist Eqv (km)", format="%.0f", disabled=True),
                 "if_proxy_pct": st.column_config.NumberColumn("IF", format="%.0f%%", disabled=True),
                 "manual_done": st.column_config.CheckboxColumn("Done"),
-                "parsed_json": st.column_config.TextColumn("Parsed JSON", disabled=True),
-                "updated_at": st.column_config.TextColumn("Updated At", disabled=True),
             },
             key="planner_raw_editor",
         )
 
-        selected_rows = edited_plan[edited_plan["select"] == True].copy()
-        cdel, cedit = st.columns(2)
-        with cdel:
-            if st.button("Delete selected", key="planner_delete_selected_btn", use_container_width=True):
-                if selected_rows.empty:
-                    st.info("Select at least one planned activity.")
-                else:
-                    delete_keys = []
-                    for _, r in selected_rows.iterrows():
-                        rid = str(r.get("row_id") or "")
-                        day_part, line_part = rid.split("::", 1)
-                        delete_keys.append((day_part, int(line_part)))
-                    delete_planned_activities(cfg.db_path, delete_keys)
-                    st.success(f"Deleted {len(delete_keys)} planned activities.")
-                    st.rerun()
-        with cedit:
-            if st.button("Save edits (selected rows)", key="planner_save_selected_edits_btn", use_container_width=True):
-                if not _ensure_db_writable_or_warn(cfg.db_path, action_label="save planned edits"):
-                    st.stop()
-                if selected_rows.empty:
-                    st.info("Select at least one row to edit.")
-                else:
-                    old_keys: list[tuple[str, int]] = []
-                    edit_rows: list[dict[str, object]] = []
-                    remaining = planned_raw.copy()
-                    for _, r in selected_rows.iterrows():
-                        rid = str(r.get("row_id") or "")
-                        day_part, line_part = rid.split("::", 1)
-                        old_keys.append((day_part, int(line_part)))
-                    old_key_set = {f"{d}::{ln}" for d, ln in old_keys}
-                    remaining = remaining[~remaining["row_id"].isin(old_key_set)].copy()
-                    max_line_by_day = (
-                        remaining.groupby("day_utc")["line_no"].max().to_dict() if not remaining.empty else {}
+        _planner_save_col, _planner_save_spacer = st.columns([1, 6])
+        with _planner_save_col:
+            save_table_clicked = st.button("Save", key="planner_save_table_edits_btn", use_container_width=False)
+        if save_table_clicked:
+            if not _ensure_db_writable_or_warn(cfg.db_path, action_label="save planned edits"):
+                st.stop()
+            original_records = editor_source_df.to_dict(orient="records")
+            changed_rows: list[dict[str, object]] = []
+            for _, r in edited_plan.iterrows():
+                row_idx = int(r.name)
+                if row_idx < 0 or row_idx >= len(original_records):
+                    continue
+                orig = original_records[row_idx]
+                new_workout = _normalize_plan_text(str(r.get("workout_text") or ""))
+                old_workout = _normalize_plan_text(str(orig.get("workout_text") or ""))
+                new_done = bool(r.get("manual_done", False))
+                old_done = bool(orig.get("manual_done", False))
+                if (new_workout != old_workout) or (new_done != old_done):
+                    changed_rows.append(
+                        {
+                            "day_utc": str(orig.get("day_utc") or ""),
+                            "line_no": int(pd.to_numeric(pd.Series([orig.get("line_no")]), errors="coerce").fillna(0).iloc[0]),
+                            "workout_text": new_workout,
+                            "manual_done": new_done,
+                        }
                     )
-                    remaining_signatures: set[str] = set()
-                    if not remaining.empty:
-                        for _, rr in remaining.iterrows():
-                            remaining_signatures.add(
-                                _planned_row_signature(
-                                    str(rr.get("day_utc") or ""),
-                                    str(rr.get("workout_text") or ""),
-                                )
-                            )
-                    errors: list[str] = []
-                    for _, r in selected_rows.iterrows():
-                        day_text = str(r.get("day_utc") or "").strip()
-                        workout_text = _normalize_plan_text(str(r.get("workout_text") or ""))
-                        done_value = bool(r.get("manual_done", False))
-                        try:
-                            day_ts = pd.Timestamp(day_text)
-                        except Exception:
-                            errors.append(f"Invalid date `{day_text}`")
-                            continue
-                        if day_ts < previous_sunday:
-                            errors.append(f"Date `{day_text}` is before allowed floor `{previous_sunday:%Y-%m-%d}`")
-                            continue
-                        today_local_day = pd.Timestamp(datetime.now().astimezone().date()).normalize()
-                        if done_value and day_ts.normalize() > today_local_day:
-                            errors.append(f"`{day_text}` is in the future. Cannot mark done for future planned activities.")
-                            continue
-                        segs, warns = _expand_planned_segments(
-                            workout_text,
-                            lthr_bpm=float(derived_lthr_bpm),
-                            threshold_pace_sec_per_km=float(derived_threshold_pace_sec),
+            if not changed_rows:
+                st.info("No table changes detected.")
+            else:
+                errors: list[str] = []
+                upsert_rows: list[dict[str, object]] = []
+                delete_keys: list[tuple[str, int]] = []
+                today_local_day = pd.Timestamp(datetime.now().astimezone().date()).normalize()
+                for r in changed_rows:
+                    day_text = str(r.get("day_utc") or "").strip()
+                    workout_text = str(r.get("workout_text") or "")
+                    done_value = bool(r.get("manual_done", False))
+                    line_no = int(r.get("line_no") or 0)
+                    try:
+                        day_ts = pd.Timestamp(day_text)
+                    except Exception:
+                        errors.append(f"Invalid date `{day_text}`")
+                        continue
+                    if workout_text == "":
+                        delete_keys.append((day_text, line_no))
+                        continue
+                    if done_value and day_ts.normalize() > today_local_day:
+                        errors.append(f"`{day_text}` is in the future. Cannot mark done for future planned activities.")
+                        continue
+                    segs, warns = _expand_planned_segments(
+                        workout_text,
+                        lthr_bpm=float(derived_lthr_bpm),
+                        threshold_pace_sec_per_km=float(derived_threshold_pace_sec),
+                    )
+                    if warns or not segs:
+                        errors.append(
+                            f"`{workout_text}` invalid: " + ("; ".join(warns[:2]) if warns else "unparseable")
                         )
-                        if warns or not segs:
-                            errors.append(
-                                f"`{workout_text}` invalid: " + ("; ".join(warns[:2]) if warns else "unparseable")
-                            )
-                            continue
-                        day_key = day_ts.date().isoformat()
-                        sig = _planned_row_signature(day_key, workout_text)
-                        if sig in remaining_signatures:
-                            errors.append(
-                                f"`{day_key}` + `{workout_text}` duplicates an existing planned row."
-                            )
-                            continue
-                        next_line = int(max_line_by_day.get(day_key, 0)) + 1
-                        max_line_by_day[day_key] = next_line
-                        edit_rows.append(
-                            {
-                                "day_utc": day_key,
-                                "line_no": next_line,
-                                "workout_text": workout_text,
-                                "parsed_json": segs,
-                                "manual_done": done_value,
-                            }
+                        continue
+                    upsert_rows.append(
+                        {
+                            "day_utc": day_text,
+                            "line_no": line_no,
+                            "workout_text": workout_text,
+                            "parsed_json": segs,
+                            "manual_done": done_value,
+                        }
+                    )
+                if errors:
+                    st.error("Cannot save edits:\n- " + "\n- ".join(errors[:8]))
+                else:
+                    if delete_keys:
+                        delete_planned_activities(cfg.db_path, delete_keys)
+                    if upsert_rows:
+                        upsert_planned_activities_rows(cfg.db_path, upsert_rows)
+                    if delete_keys or upsert_rows:
+                        st.success(
+                            f"Saved table changes: {len(upsert_rows)} updated, {len(delete_keys)} deleted."
                         )
-                        remaining_signatures.add(sig)
-                    if errors:
-                        st.error("Cannot save edits:\n- " + "\n- ".join(errors[:8]))
-                    else:
-                        delete_planned_activities(cfg.db_path, old_keys)
-                        upsert_planned_activities_rows(cfg.db_path, edit_rows)
-                        st.success(f"Updated {len(edit_rows)} planned activities.")
                         st.rerun()
+                    else:
+                        st.info("No valid table changes to save.")
 
 if view == "Custom Activities":
     st.header("Custom Activities")
