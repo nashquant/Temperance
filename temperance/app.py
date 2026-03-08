@@ -4630,6 +4630,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
             ].copy()
             cal_metrics["duration_s"] = pd.to_numeric(cal_metrics.get("duration_s"), errors="coerce").fillna(0.0)
             cal_metrics["avg_hr"] = pd.to_numeric(cal_metrics.get("avg_hr"), errors="coerce")
+            cal_metrics["if_proxy"] = pd.to_numeric(cal_metrics.get("if_proxy"), errors="coerce").fillna(0.0)
             cal_metrics["tss"] = pd.to_numeric(cal_metrics.get("tss"), errors="coerce").fillna(0.0)
             cal_metrics["rtss"] = pd.to_numeric(cal_metrics.get("rtss"), errors="coerce").fillna(0.0)
             cal_metrics["distance_km"] = pd.to_numeric(cal_metrics.get("distance_m"), errors="coerce").fillna(0.0) / 1000.0
@@ -4651,11 +4652,16 @@ if view in {"Weekly Summary", "Activity Summary"}:
             sport = cal_metrics["sport_type"].fillna("").astype(str).str.lower()
             is_running_like = sport.str.contains("run") | sport.str.contains("treadmill")
             cal_metrics.loc[~is_running_like, "distance_km"] = 0.0
+            cal_metrics["if_weighted"] = cal_metrics["if_proxy"] * cal_metrics["duration_s"]
             day_activity_stats = (
                 cal_metrics.groupby("day", as_index=False)
                 .agg(
                     day_calories=("calories_total", "sum"),
                     day_distance_eqv_km=("distance_proxy_km", "sum"),
+                    day_tss=("tss", "sum"),
+                    day_rtss=("rtss", "sum"),
+                    day_duration_s=("duration_s", "sum"),
+                    day_if_weighted=("if_weighted", "sum"),
                 )
                 .sort_values("day")
             )
