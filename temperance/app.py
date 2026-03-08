@@ -5891,18 +5891,26 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 compare_to_date = _agg_metric(compare_week, compare_to_date_mask, selected_metric)
                 compare_week_total = _agg_metric(compare_week, compare_week["day"].notna(), selected_metric)
                 if compare_choice == "Planned" and not planned_rows_compare_source.empty:
+                    planned_metric_key = (
+                        "distance_proxy_km"
+                        if selected_metric == "distance_eqv_km"
+                        else selected_metric
+                    )
                     _planned_mask_to_date = (
                         planned_rows_compare_source["day"] <= cutoff_day
                     )
                     compare_to_date = float(
                         pd.to_numeric(
-                            planned_rows_compare_source.loc[_planned_mask_to_date, selected_metric],
+                            planned_rows_compare_source.loc[
+                                _planned_mask_to_date,
+                                planned_metric_key,
+                            ] if planned_metric_key in planned_rows_compare_source.columns else pd.Series(dtype=float),
                             errors="coerce",
                         ).fillna(0.0).sum()
                     )
                     compare_week_total = float(
                         pd.to_numeric(
-                            planned_rows_compare_source.get(selected_metric),
+                            planned_rows_compare_source.get(planned_metric_key),
                             errors="coerce",
                         ).fillna(0.0).sum()
                     )
