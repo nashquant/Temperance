@@ -5210,15 +5210,6 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         font-size: 0.86rem !important;
                         line-height: 1.3 !important;
                     }
-                    div[data-testid="stHorizontalBlock"] {
-                        flex-wrap: nowrap !important;
-                        gap: 0.32rem !important;
-                    }
-                    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
-                        min-width: 0 !important;
-                        width: auto !important;
-                        flex: 1 1 0 !important;
-                    }
                     div[class*="st-key-compact_prev_week"] button,
                     div[class*="st-key-compact_next_week"] button,
                     div[class*="st-key-compact_filters_toggle"] button {
@@ -5300,6 +5291,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         padding: 0.04rem 0.14rem !important;
                         font-size: 0.72rem !important;
                         line-height: 1 !important;
+                        white-space: nowrap !important;
                     }
                 }
                 </style>
@@ -5374,7 +5366,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 is_mobile_compact_ui = _is_probably_mobile_client()
 
                 if is_mobile_compact_ui:
-                    nav1, nav2, nav3 = st.columns([0.36, 0.36, 0.78], gap="small")
+                    nav1, nav2, nav3, _nav_spacer = st.columns([0.24, 0.24, 0.52, 1.2], gap="small")
                     with nav1:
                         if st.button("◀", key="compact_prev_week", use_container_width=True):
                             st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
@@ -5386,7 +5378,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     with nav3:
                         filters_open = bool(st.session_state.get("calendar_compact_filters_open", False))
                         if st.button(
-                            ("Hide" if filters_open else "Filters"),
+                            ("Filters" if not filters_open else "Hide"),
                             key="compact_filters_toggle",
                             use_container_width=True,
                         ):
