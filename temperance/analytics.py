@@ -128,8 +128,13 @@ def compute_metrics(
     run_if_valid = run_mask & (tp_series > 0) & (avg_pace_num > 0)
     df.loc[run_if_valid, "if_proxy"] = tp_series[run_if_valid] / avg_pace_num[run_if_valid]
 
-    # Non-running: TSS parity solve with specificity_ratio fixed at 0.8.
+    # Non-running:
+    # - IF proxy should represent raw intensity (HR/LTHR) when HR is available.
+    # - Distance/pace proxy is solved from TSS parity with fixed specificity_ratio 0.8.
     non_run_mask = (~run_mask) & (~is_strength)
+    non_run_if_hr_valid = non_run_mask & (avg_hr > 0) & (avg_hr <= 260) & (lthr_series > 0)
+    df.loc[non_run_if_hr_valid, "if_proxy"] = avg_hr[non_run_if_hr_valid] / lthr_series[non_run_if_hr_valid]
+
     spec = 0.8
     effective_rtss_target = (tss_num * spec).clip(lower=0.0)
     common_valid = non_run_mask & (duration_num > 0) & (tp_series > 0) & np.isfinite(tss_num.to_numpy(dtype=float, na_value=np.nan))
@@ -151,7 +156,8 @@ def compute_metrics(
     df.loc[parity_valid, "pace_proxy_sec_per_km"] = solved_pace[parity_valid].round()
     df.loc[parity_valid, "distance_proxy_km"] = duration_num[parity_valid] / solved_pace[parity_valid]
     df.loc[parity_valid, "distance_proxy_method"] = "tss_parity_root_solve"
-    non_run_if_valid = parity_valid & (solved_pace > 0) & (tp_series > 0)
+    # Fallback IF for non-running only when HR-derived IF is missing.
+    non_run_if_valid = parity_valid & (solved_pace > 0) & (tp_series > 0) & df["if_proxy"].isna()
     df.loc[non_run_if_valid, "if_proxy"] = tp_series[non_run_if_valid] / solved_pace[non_run_if_valid]
 
     df["mechanical_load"] = pd.NA
