@@ -3061,6 +3061,8 @@ owner_scoped_keys = [
     "_custom_metrics_df_local_cache_value",
     "_planned_metrics_df_local_cache_key",
     "_planned_metrics_df_local_cache_value",
+    "_weekly_planned_metrics_cache_key",
+    "_weekly_planned_metrics_cache_value",
     "dashboard_metric_select",
     "dashboard_ema_windows",
     "dashboard_compare_mode",
@@ -4608,13 +4610,14 @@ if view in {"Weekly Summary", "Activity Summary"}:
             grid_start = range_start_ts - pd.Timedelta(days=int(range_start_ts.weekday()))
             grid_end = range_end_ts + pd.Timedelta(days=int(6 - range_end_ts.weekday()))
 
+            calendar_specificity_profile = _normalize_specificity_profile(
+                st.session_state.get("user_specificity_profile", {}),
+                fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
+            )
             cal_metrics, cal_daily = cached_filtered_views(
                 calendar_metrics_df,
                 activity_filter=cal_activity_filter,
-                specificity_profile=_normalize_specificity_profile(
-                    st.session_state.get("user_specificity_profile", {}),
-                    fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
-                ),
+                specificity_profile=calendar_specificity_profile,
                 daily_tss_target=float(derived_daily_tss_target),
             )
             cal_metrics = cal_metrics.copy()
@@ -4672,17 +4675,36 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 metrics_df,
             )
             if not planned_rows_for_calendar.empty:
-                planned_rows_metrics_all = _compute_planned_rows_metrics_df(
-                    planned_rows=planned_rows_for_calendar,
-                    lthr_curve_points=lthr_curve_points,
-                    lthr_default_bpm=float(derived_lthr_bpm),
-                    lt_pace_curve_points=lt_pace_curve_points,
-                    lt_pace_default_sec=float(derived_threshold_pace_sec),
-                    specificity_profile=_normalize_specificity_profile(
-                        st.session_state.get("user_specificity_profile", {}),
-                        fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
-                    ),
+                weekly_profile_key = tuple(
+                    sorted((str(k), float(v)) for k, v in calendar_specificity_profile.items())
                 )
+                weekly_planned_metrics_cache_key = (
+                    "weekly_planned_metrics_v1",
+                    str(planned_activities_cache_key),
+                    str(grid_start.date()),
+                    str(grid_end.date()),
+                    _curve_points_cache_key(lthr_curve_points),
+                    float(derived_lthr_bpm),
+                    _curve_points_cache_key(lt_pace_curve_points),
+                    float(derived_threshold_pace_sec),
+                    weekly_profile_key,
+                )
+                if (
+                    st.session_state.get("_weekly_planned_metrics_cache_key") == weekly_planned_metrics_cache_key
+                    and isinstance(st.session_state.get("_weekly_planned_metrics_cache_value"), pd.DataFrame)
+                ):
+                    planned_rows_metrics_all = st.session_state["_weekly_planned_metrics_cache_value"].copy()
+                else:
+                    planned_rows_metrics_all = _compute_planned_rows_metrics_df(
+                        planned_rows=planned_rows_for_calendar,
+                        lthr_curve_points=lthr_curve_points,
+                        lthr_default_bpm=float(derived_lthr_bpm),
+                        lt_pace_curve_points=lt_pace_curve_points,
+                        lt_pace_default_sec=float(derived_threshold_pace_sec),
+                        specificity_profile=calendar_specificity_profile,
+                    )
+                    st.session_state["_weekly_planned_metrics_cache_key"] = weekly_planned_metrics_cache_key
+                    st.session_state["_weekly_planned_metrics_cache_value"] = planned_rows_metrics_all.copy()
                 planned_rows_for_calendar = _filter_effective_planned_rows(
                     planned_rows_metrics_all,
                     today_local_day=today_local_day,
@@ -5256,7 +5278,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         border: 1px solid rgba(71,85,105,0.78) !important;
                         background: rgba(15,23,42,0.42) !important;
                         padding: 0.04rem 0.32rem 0.04rem 0.28rem !important;
-                        font-size: 0.82rem !important;
+                        font-size: 0.74rem !important;
                         line-height: 1 !important;
                     }
                     [class*="st-key-calendar_compact_compare_choice"] [data-baseweb="select"] > div > div,
@@ -5334,20 +5356,6 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 if selected_week_start > latest_week_start and compare_choice == "Planned":
                     compare_choice = "Previous week"
                     st.session_state["calendar_compact_compare_choice"] = compare_choice
-                compare_weeks = {
-                    "Previous week": 1,
-                    "2 weeks ago": 2,
-                    "3 weeks ago": 3,
-                    "4 weeks ago": 4,
-                    "Planned": 1,
-                }.get(compare_choice, 1)
-                if compare_choice == "Planned":
-                    # Planned compare is same selected week (actual vs plan in-week).
-                    compare_week_start = selected_week_start
-                    compare_week_end = selected_week_end
-                else:
-                    compare_week_start = selected_week_start - pd.Timedelta(days=7 * compare_weeks)
-                    compare_week_end = compare_week_start + pd.Timedelta(days=6)
 
                 st.markdown(
                     (
@@ -5506,6 +5514,20 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         )
                         active_metric_choice = str(selected_metric_desktop)
                 compare_choice = str(active_compare_choice or st.session_state.get("calendar_compact_compare_choice", compare_choice))
+                compare_weeks = {
+                    "Previous week": 1,
+                    "2 weeks ago": 2,
+                    "3 weeks ago": 3,
+                    "4 weeks ago": 4,
+                    "Planned": 1,
+                }.get(compare_choice, 1)
+                if compare_choice == "Planned":
+                    # Planned compare is same selected week (actual vs plan in-week).
+                    compare_week_start = selected_week_start
+                    compare_week_end = selected_week_end
+                else:
+                    compare_week_start = selected_week_start - pd.Timedelta(days=7 * compare_weeks)
+                    compare_week_end = compare_week_start + pd.Timedelta(days=6)
 
                 compact_days = pd.DataFrame({"day": pd.date_range(selected_week_start, selected_week_end, freq="D")})
                 compact_agg = (
@@ -5680,6 +5702,9 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 chart_df["metric_label"] = chart_df["metric_value"].map(
                     lambda v: f"{v:.0f}" if float(v) > 0 else ""
                 )
+                compare_chart_df["metric_label"] = compare_chart_df["metric_value"].map(
+                    lambda v: f"{v:.0f}" if float(v) > 0 else ""
+                )
 
                 def _compact_bar_color(metric_key: str, value: float) -> str:
                     if metric_key in {"tss", "rtss"}:
@@ -5708,6 +5733,9 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 chart_df = chart_df.dropna(subset=["day", "day_display"]).copy()
                 compare_chart_df = compare_chart_df.dropna(subset=["day", "day_display"]).copy()
                 bar_df = pd.concat([compare_chart_df, chart_df], ignore_index=True)
+                day_order = chart_df["day_display"].tolist()
+                if bar_df.empty and not chart_df.empty:
+                    bar_df = chart_df.copy()
                 bars = (
                     alt.Chart(bar_df)
                     .mark_bar(
@@ -5719,7 +5747,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     .encode(
                         x=alt.X(
                             "day_display:N",
-                            sort=chart_df["day_display"].tolist(),
+                            sort=day_order,
+                            scale=alt.Scale(domain=day_order),
                             title=None,
                             axis=alt.Axis(
                                 labelAngle=0,
@@ -5746,7 +5775,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         ],
                     )
                 )
-                labels = (
+                current_labels = (
                     alt.Chart(chart_df.assign(series="Current"))
                     .transform_filter("datum.metric_value > 0")
                     .mark_text(
@@ -5758,7 +5787,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         clip=False,
                     )
                     .encode(
-                        x=alt.X("day_display:N", sort=chart_df["day_display"].tolist()),
+                        x=alt.X("day_display:N", sort=day_order, scale=alt.Scale(domain=day_order)),
                         xOffset=alt.XOffset(
                             "series:N",
                             sort=["Compare", "Current"],
@@ -5767,6 +5796,31 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         text=alt.Text("metric_label:N"),
                     )
                 )
+                labels_layer = current_labels
+                if compare_choice != "Planned":
+                    compare_labels = (
+                        alt.Chart(compare_chart_df.assign(series="Compare"))
+                        .transform_filter("datum.metric_value > 0")
+                        .mark_text(
+                            dy=-4,
+                            baseline="bottom",
+                            color="#cbd5e1",
+                            fontSize=11,
+                            fontWeight=700,
+                            opacity=0.8,
+                            clip=False,
+                        )
+                        .encode(
+                            x=alt.X("day_display:N", sort=day_order, scale=alt.Scale(domain=day_order)),
+                            xOffset=alt.XOffset(
+                                "series:N",
+                                sort=["Compare", "Current"],
+                            ),
+                            y=alt.Y("metric_value:Q"),
+                            text=alt.Text("metric_label:N"),
+                        )
+                    )
+                    labels_layer = alt.layer(compare_labels, current_labels)
                 today_local = pd.Timestamp(datetime.now().astimezone().date())
                 cutoff_day = min(today_local, selected_week_end)
                 actual_to_date_mask = compact_week["day"] <= cutoff_day
@@ -5896,7 +5950,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         ),
                         unsafe_allow_html=True,
                     )
-                compact_chart = alt.layer(bars, labels).properties(
+                compact_chart = alt.layer(bars, labels_layer).properties(
                     height=(205 if is_mobile_compact else 250),
                     padding=(
                         {"left": 36, "right": 6, "top": 8, "bottom": 26}
