@@ -76,6 +76,7 @@ DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 CUSTOM_ACTIVITIES_LIMIT = 5000
 METRICS_LOCAL_CACHE_VERSION = 2
+METRICS_DERIVATION_CACHE_VERSION = 2
 OWNER_SCOPED_STATE_RESET_VERSION = 2
 # LT pace (sec/km) -> upper-bound weekly targets derived from user-defined table.
 # Points correspond to:
@@ -1841,8 +1842,9 @@ def get_metrics_df_fast(
     threshold_pace_curve_points: list[tuple[datetime, float]] | None,
     use_split_method: bool,
     if_zone_thresholds_key: tuple[float, float, float, float] | None = None,
+    metrics_derivation_cache_version: int = 1,
 ) -> pd.DataFrame:
-    _ = if_zone_thresholds_key
+    _ = if_zone_thresholds_key, metrics_derivation_cache_version
     runs_df = get_runs_df(db_path)
     df = compute_metrics(
         runs_df,
@@ -2187,6 +2189,7 @@ def _get_metrics_df_local_cached(
 ) -> pd.DataFrame:
     cache_key = (
         int(METRICS_LOCAL_CACHE_VERSION),
+        int(METRICS_DERIVATION_CACHE_VERSION),
         str(db_path),
         str(activities_cache_key),
         str(activity_splits_cache_key),
@@ -2211,6 +2214,7 @@ def _get_metrics_df_local_cached(
         threshold_pace_curve_points=threshold_pace_curve_points,
         use_split_method=use_split_method,
         if_zone_thresholds_key=if_zone_thresholds_key,
+        metrics_derivation_cache_version=int(METRICS_DERIVATION_CACHE_VERSION),
     )
     st.session_state["_metrics_df_local_cache_key"] = cache_key
     st.session_state["_metrics_df_local_cache_value"] = df
