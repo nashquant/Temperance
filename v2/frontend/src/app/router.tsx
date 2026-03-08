@@ -4,6 +4,7 @@ import { AppLayout } from '@/components/layout/app-layout';
 import { ProtectedRoute } from '@/features/auth/components/protected-route';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { LoginPage } from '@/features/auth/pages/login-page';
+import { PlanActivitiesPage } from '@/features/plan-activities/pages/plan-activities-page';
 import { WeeklyOutlookPage } from '@/features/weekly-outlook/pages/weekly-outlook-page';
 
 function RootRedirect(): JSX.Element {
@@ -34,6 +35,7 @@ export function AppRouter(): JSX.Element {
       <Route element={<ProtectedRoute />}>
         <Route path="/app" element={<AppLayout />}>
           <Route path="weekly-outlook" element={<WeeklyOutlookPage />} />
+          <Route path="plan-activities" element={<PlanActivitiesPage />} />
           <Route path="dashboard" element={<PlaceholderPage title="Dashboard" />} />
           <Route path="activities" element={<PlaceholderPage title="Activities" />} />
           <Route path="settings" element={<PlaceholderPage title="Settings" />} />

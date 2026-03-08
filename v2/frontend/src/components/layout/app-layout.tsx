@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: BarChart3, disabled: true },
   { to: '/app/weekly-outlook', label: 'Weekly Outlook', icon: CalendarDays, disabled: false },
+  { to: '/app/plan-activities', label: 'Plan Activities', icon: Activity, disabled: false },
   { to: '/app/activities', label: 'Activities', icon: Activity, disabled: true },
   { to: '/app/settings', label: 'Settings', icon: Settings, disabled: true },
 ];

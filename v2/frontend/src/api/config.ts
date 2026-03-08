@@ -5,6 +5,8 @@ export const API_CONFIG = {
     me: '/auth/me',
     owners: '/auth/owners',
     weekOutlook: '/week-outlook',
+    plannedActivities: '/planned-activities',
+    plannedManualDone: '/planned-activities/manual-done',
   },
 } as const;
 

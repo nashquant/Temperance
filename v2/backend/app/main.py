@@ -38,12 +38,14 @@ DB_PATH = Path(str(os.getenv("TEMPERANCE_DB_PATH") or _default_db_path()))
 from analytics import build_daily_summary, compute_metrics, display_table, weekly_summary  # noqa: E402
 from auth import build_users, password_matches, resolve_user  # noqa: E402
 from db import (  # noqa: E402
+    delete_planned_activities,
     get_activity_detail_raw,
     get_activity_raw,
     get_activity_records_df,
     get_planned_activities_df,
     get_runs_df,
     get_setting,
+    set_planned_activity_manual_done,
 )
 
 DEFAULT_LTHR = 178.0
@@ -68,6 +70,12 @@ LT_PACE_TO_WEEKLY_TARGET_POINTS = [
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class PlannedManualDoneRequest(BaseModel):
+    day_utc: str
+    line_no: int
+    manual_done: bool
 
 
 app = FastAPI(title="Temperance v2 API", version="0.2.0")
@@ -1255,6 +1263,155 @@ def _build_week_outlook_payload(
     }
 
 
+def _planned_activity_label(parsed_json: Any) -> str:
+    segments: list[dict[str, Any]] = []
+    if isinstance(parsed_json, list):
+        segments = [s for s in parsed_json if isinstance(s, dict)]
+    elif isinstance(parsed_json, str) and parsed_json.strip():
+        try:
+            parsed = json.loads(parsed_json)
+            if isinstance(parsed, list):
+                segments = [s for s in parsed if isinstance(s, dict)]
+        except Exception:
+            segments = []
+
+    kinds_seen: list[str] = []
+    for seg in segments:
+        kind = str(seg.get("kind") or "").strip().lower()
+        if kind and kind not in kinds_seen:
+            kinds_seen.append(kind)
+    if not kinds_seen:
+        return "-"
+    return ", ".join([k.replace("_", " ").title() for k in kinds_seen])
+
+
+def _build_planned_activities_payload(
+    db_path: Path,
+    owner: str,
+    weeks: int = 4,
+) -> dict[str, Any]:
+    planned_rows = get_planned_activities_df(db_path=db_path)
+    if planned_rows.empty:
+        return {
+            "owner": owner,
+            "goals": {"tss": 0.0, "rtss": 0.0, "distance_eqv_km": 0.0},
+            "weeks": [],
+            "rows": [],
+        }
+
+    lthr_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=DEFAULT_LTHR,
+    )
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    planned_rows = _compute_planned_rows_metrics_df(
+        planned_rows=planned_rows,
+        lthr_curve_points=lthr_curve,
+        lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+        lt_pace_curve_points=pace_curve,
+        lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        specificity_profile=specificity_profile,
+    )
+    if planned_rows.empty:
+        return {
+            "owner": owner,
+            "goals": {"tss": 0.0, "rtss": 0.0, "distance_eqv_km": 0.0},
+            "weeks": [],
+            "rows": [],
+        }
+
+    planned_rows["day"] = pd.to_datetime(planned_rows.get("day_utc"), errors="coerce").dt.normalize()
+    planned_rows = planned_rows.dropna(subset=["day"]).copy()
+    if planned_rows.empty:
+        return {
+            "owner": owner,
+            "goals": {"tss": 0.0, "rtss": 0.0, "distance_eqv_km": 0.0},
+            "weeks": [],
+            "rows": [],
+        }
+
+    this_week_start = _week_start_monday(pd.Timestamp(datetime.now().astimezone().date())).normalize()
+    horizon_end = this_week_start + pd.Timedelta(days=max(1, int(weeks)) * 7 - 1)
+    in_scope_rows = planned_rows[(planned_rows["day"] >= this_week_start) & (planned_rows["day"] <= horizon_end)].copy()
+
+    latest_lt_pace = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    goals = {
+        "tss": round(_weekly_tss_target_from_lt_pace(latest_lt_pace) * 1.10, 1),
+        "rtss": round(_weekly_tss_target_from_lt_pace(latest_lt_pace) * 0.90, 1),
+        "distance_eqv_km": round(_weekly_distance_target_from_lt_pace(latest_lt_pace), 1),
+    }
+
+    weeks_rows: list[dict[str, Any]] = []
+    if not in_scope_rows.empty:
+        wk = in_scope_rows.copy()
+        wk["week_start"] = wk["day"].map(_week_start_monday)
+        wk["duration_s"] = pd.to_numeric(wk.get("duration_s"), errors="coerce").fillna(0.0)
+        wk["if_proxy"] = pd.to_numeric(wk.get("if_proxy"), errors="coerce").fillna(0.0)
+        wk["if_weighted"] = wk["if_proxy"] * wk["duration_s"]
+        grouped = (
+            wk.groupby("week_start", as_index=False)
+            .agg(
+                planned_activities=("line_no", "count"),
+                duration_s=("duration_s", "sum"),
+                tss=("tss", "sum"),
+                rtss=("rtss", "sum"),
+                distance_eqv_km=("distance_proxy_km", "sum"),
+                if_weighted=("if_weighted", "sum"),
+            )
+            .sort_values("week_start")
+        )
+        for _, row in grouped.iterrows():
+            ws = pd.Timestamp(row["week_start"]).normalize()
+            we = ws + pd.Timedelta(days=6)
+            dur_s = _safe_float(row.get("duration_s"))
+            if_pct = (_safe_float(row.get("if_weighted")) / dur_s * 100.0) if dur_s > 0 else 0.0
+            weeks_rows.append(
+                {
+                    "week_start": ws.date().isoformat(),
+                    "week_end": we.date().isoformat(),
+                    "week_label": f"{ws.strftime('%d %b')} - {we.strftime('%d %b')}",
+                    "planned_activities": int(_safe_float(row.get("planned_activities"))),
+                    "duration_h": round(dur_s / 3600.0, 1),
+                    "tss": round(_safe_float(row.get("tss")), 1),
+                    "rtss": round(_safe_float(row.get("rtss")), 1),
+                    "distance_eqv_km": round(_safe_float(row.get("distance_eqv_km")), 1),
+                    "if_proxy_pct": round(if_pct, 1),
+                }
+            )
+
+    day_rows: list[dict[str, Any]] = []
+    for _, row in in_scope_rows.sort_values(["day", "line_no"], ascending=[True, True]).iterrows():
+        day_rows.append(
+            {
+                "day_utc": pd.Timestamp(row.get("day")).date().isoformat(),
+                "line_no": int(_safe_float(row.get("line_no"))),
+                "activity": _planned_activity_label(row.get("parsed_json")),
+                "workout_text": str(row.get("workout_text") or ""),
+                "manual_done": bool(_safe_float(row.get("manual_done")) > 0),
+                "tss": round(_safe_float(row.get("tss")), 1),
+                "rtss": round(_safe_float(row.get("rtss")), 1),
+                "distance_eqv_km": round(_safe_float(row.get("distance_proxy_km")), 1),
+                "duration_h": round(_safe_float(row.get("duration_s")) / 3600.0, 1),
+                "if_proxy_pct": round(_safe_float(row.get("if_proxy")) * 100.0, 1),
+            }
+        )
+
+    return {
+        "owner": owner,
+        "goals": goals,
+        "weeks": weeks_rows,
+        "rows": day_rows,
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -1366,6 +1523,63 @@ def week_outlook_view(
     payload["owner"] = resolved_owner
     payload["db_path"] = str(db_path)
     return payload
+
+
+@app.get("/api/v1/planned-activities")
+def planned_activities_view(
+    weeks: int = Query(default=4, ge=1, le=12),
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    payload = _build_planned_activities_payload(
+        db_path=db_path,
+        owner=resolved_owner,
+        weeks=weeks,
+    )
+    payload["db_path"] = str(db_path)
+    return payload
+
+
+@app.patch("/api/v1/planned-activities/manual-done")
+def planned_activity_manual_done(
+    payload: PlannedManualDoneRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    updated = set_planned_activity_manual_done(
+        db_path=db_path,
+        day_utc=str(payload.day_utc),
+        line_no=int(payload.line_no),
+        manual_done=bool(payload.manual_done),
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Planned activity not found")
+    return {"updated": True}
+
+
+@app.delete("/api/v1/planned-activities")
+def planned_activity_delete(
+    day_utc: str = Query(...),
+    line_no: int = Query(..., ge=1),
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    deleted = delete_planned_activities(
+        db_path=db_path,
+        keys=[(str(day_utc), int(line_no))],
+    )
+    if deleted <= 0:
+        raise HTTPException(status_code=404, detail="Planned activity not found")
+    return {"deleted": int(deleted)}
 
 
 @app.get("/api/v1/activities/{activity_id}")
