@@ -6,7 +6,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import replace
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, time
 
 import altair as alt
 import numpy as np
@@ -78,6 +78,14 @@ CUSTOM_ACTIVITIES_LIMIT = 5000
 METRICS_LOCAL_CACHE_VERSION = 2
 METRICS_DERIVATION_CACHE_VERSION = 2
 OWNER_SCOPED_STATE_RESET_VERSION = 2
+LOGIN_MAX_USER_LEN = 64
+LOGIN_MAX_PASSWORD_LEN = 256
+LOGIN_FAIL_WINDOW_S = 15 * 60
+LOGIN_LOCK_BASE_S = 30
+LOGIN_LOCK_MAX_S = 15 * 60
+LOGIN_FAILS_BEFORE_LOCK = 5
+MAX_PLANNED_ENTRY_CHARS = 4000
+MAX_PLANNED_ENTRIES_PER_SAVE = 40
 # LT pace (sec/km) -> upper-bound weekly targets derived from user-defined table.
 # Points correspond to:
 # 5:00, 4:30, 4:00, 3:45, 3:30, 3:20, 3:15, 3:10, 3:00
@@ -182,6 +190,8 @@ AUTH_VIEWER_TABS = [
     "User Inputs",
 ]
 
+_LOGIN_GUARD_STATE: dict[str, dict[str, float]] = {}
+
 
 def _auth_enabled() -> bool:
     return str(os.getenv("TEMPERANCE_AUTH_ENABLED", "1")).strip().lower() not in {"0", "false", "no", "off"}
@@ -204,6 +214,63 @@ def _auth_users() -> dict[str, dict[str, str]]:
         # Backward-compat fallback in case an older auth.py is loaded in a stale process.
         legacy_kwargs = {k: v for k, v in kwargs.items() if k not in {"viewer_users", "viewer_users_hash"}}
         return build_users(**legacy_kwargs)
+
+
+def _login_client_fingerprint() -> str:
+    # Best-effort source IP from reverse-proxy headers; falls back to session-only guard.
+    try:
+        ctx = getattr(st, "context", None)
+        headers = getattr(ctx, "headers", None)
+        if headers:
+            header_map = {str(k).lower(): str(v) for k, v in dict(headers).items()}
+            ip_raw = header_map.get("x-forwarded-for") or header_map.get("x-real-ip")
+            if ip_raw:
+                first = str(ip_raw).split(",")[0].strip()
+                if first:
+                    return first
+    except Exception:
+        pass
+    try:
+        session_stub = str(st.session_state.get("_active_data_owner") or st.session_state.get("auth_user") or "anon")
+    except Exception:
+        session_stub = "anon"
+    return f"session:{session_stub}"
+
+
+def _login_guard_key(username: str) -> str:
+    user_key = str(username or "").strip().casefold() or "<blank>"
+    return f"{_login_client_fingerprint()}|{user_key}"
+
+
+def _login_lock_remaining_s(guard_key: str) -> int:
+    rec = _LOGIN_GUARD_STATE.get(guard_key) or {}
+    locked_until = float(rec.get("locked_until") or 0.0)
+    remaining = int(round(max(0.0, locked_until - time())))
+    return remaining
+
+
+def _register_login_failure(guard_key: str) -> int:
+    now_ts = time()
+    rec = dict(_LOGIN_GUARD_STATE.get(guard_key) or {})
+    window_start = float(rec.get("window_start") or 0.0)
+    fail_count = int(rec.get("fail_count") or 0)
+    if now_ts - window_start > float(LOGIN_FAIL_WINDOW_S):
+        window_start = now_ts
+        fail_count = 0
+    fail_count += 1
+    rec["window_start"] = window_start
+    rec["fail_count"] = float(fail_count)
+    lock_seconds = 0
+    if fail_count >= int(LOGIN_FAILS_BEFORE_LOCK):
+        exponent = max(fail_count - int(LOGIN_FAILS_BEFORE_LOCK), 0)
+        lock_seconds = int(min(float(LOGIN_LOCK_BASE_S) * (2.0 ** exponent), float(LOGIN_LOCK_MAX_S)))
+        rec["locked_until"] = float(now_ts + lock_seconds)
+    _LOGIN_GUARD_STATE[guard_key] = rec
+    return int(lock_seconds)
+
+
+def _clear_login_guard(guard_key: str) -> None:
+    _LOGIN_GUARD_STATE.pop(guard_key, None)
 
 
 def _get_garmin_credentials() -> tuple[str | None, str | None]:
@@ -2673,19 +2740,46 @@ if auth_on and not st.session_state.get("auth_user"):
         unsafe_allow_html=True,
     )
     login_error = None
+    login_user_default = str(st.session_state.get("login_user_main") or "")
+    lock_remaining = _login_lock_remaining_s(_login_guard_key(login_user_default))
     with st.form("main_login_form", clear_on_submit=False):
         login_user = st.text_input("User", key="login_user_main")
         login_pass = st.text_input("Password", type="password", key="login_pass_main")
-        login_submit = st.form_submit_button("Sign in", use_container_width=True)
+        lock_remaining = _login_lock_remaining_s(_login_guard_key(login_user))
+        login_submit = st.form_submit_button(
+            "Sign in",
+            use_container_width=True,
+            disabled=lock_remaining > 0,
+        )
         if login_submit:
-            resolved_user, user_data = resolve_user(users, login_user)
-            if user_data and password_matches(login_pass, user_data["password_hash"]):
-                st.session_state["auth_user"] = resolved_user
-                st.session_state["auth_role"] = user_data["role"]
-                st.rerun()
-            login_error = "Invalid credentials."
+            guard_key = _login_guard_key(login_user)
+            current_remaining = _login_lock_remaining_s(guard_key)
+            if current_remaining > 0:
+                login_error = f"Too many attempts. Try again in {current_remaining}s."
+            elif len(str(login_user or "").strip()) > int(LOGIN_MAX_USER_LEN) or len(str(login_pass or "")) > int(
+                LOGIN_MAX_PASSWORD_LEN
+            ):
+                lock_s = _register_login_failure(guard_key)
+                if lock_s > 0:
+                    login_error = f"Invalid credentials. Try again in {lock_s}s."
+                else:
+                    login_error = "Invalid credentials."
+            else:
+                resolved_user, user_data = resolve_user(users, login_user)
+                if user_data and password_matches(login_pass, user_data["password_hash"]):
+                    st.session_state["auth_user"] = resolved_user
+                    st.session_state["auth_role"] = user_data["role"]
+                    _clear_login_guard(guard_key)
+                    st.rerun()
+                lock_s = _register_login_failure(guard_key)
+                if lock_s > 0:
+                    login_error = f"Invalid credentials. Try again in {lock_s}s."
+                else:
+                    login_error = "Invalid credentials."
     if login_error:
         st.error(login_error)
+    elif lock_remaining > 0:
+        st.warning(f"Too many attempts. Try again in {lock_remaining}s.")
     st.stop()
 
 with st.sidebar:
@@ -6058,9 +6152,15 @@ if view in {"Week Planner", "Weekly Summary"}:
         save_clicked = st.button("Save", key="planner_single_save_btn", use_container_width=True)
 
     if save_clicked:
-        entries = _split_dated_activity_entries(plan_entry)
+        if len(str(plan_entry or "")) > int(MAX_PLANNED_ENTRY_CHARS):
+            st.error(f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save.")
+            entries = []
+        else:
+            entries = _split_dated_activity_entries(plan_entry)
         if not entries:
             st.error("Input is empty. Use `[date]:[activity]`.")
+        elif len(entries) > int(MAX_PLANNED_ENTRIES_PER_SAVE):
+            st.error(f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}.")
         else:
             existing = get_planned_activities_df(cfg.db_path)
             max_line_by_day = (
@@ -6656,9 +6756,15 @@ if view == "Custom Activities":
         custom_save_clicked = st.button("Save custom", key="custom_single_save_btn", use_container_width=True)
 
     if custom_save_clicked:
-        entries = _split_dated_activity_entries(custom_entry)
+        if len(str(custom_entry or "")) > int(MAX_PLANNED_ENTRY_CHARS):
+            st.error(f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save.")
+            entries = []
+        else:
+            entries = _split_dated_activity_entries(custom_entry)
         if not entries:
             st.error("Input is empty. Use `[date]:[activity]`.")
+        elif len(entries) > int(MAX_PLANNED_ENTRIES_PER_SAVE):
+            st.error(f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}.")
         else:
             existing = get_custom_activities_df(cfg.db_path)
             max_line_by_day = (

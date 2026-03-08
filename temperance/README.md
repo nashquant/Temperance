@@ -303,3 +303,21 @@ For non-running segments with explicit `@...TSS`:
 ```bash
 pytest -q
 ```
+
+## Security Safeguards (current)
+- Login brute-force guard:
+  - Progressive lockout after repeated failures (per user + client fingerprint).
+  - Lock duration increases with repeated failures, capped at 15 minutes.
+  - Generic error messages (`Invalid credentials`) to avoid account enumeration.
+- Input abuse guards:
+  - Planned/custom activity input is capped per save:
+    - max `4000` chars
+    - max `40` entries
+- SQL injection posture:
+  - App DB operations use SQLite parameterized queries (`?` placeholders) for user-provided values.
+  - Dynamic SQL usage is limited to internal trusted table/column names.
+
+For public internet exposure, also add infrastructure controls:
+- Reverse proxy / WAF rate limits (Cloudflare/Nginx) on login and app requests.
+- IP allowlist or Zero Trust access where possible.
+- TLS + strong admin password hash configuration (`*_SHA256` env vars).
