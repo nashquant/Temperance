@@ -5538,33 +5538,27 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     compare_week_end = compare_week_start + pd.Timedelta(days=6)
 
                 compact_days = pd.DataFrame({"day": pd.date_range(selected_week_start, selected_week_end, freq="D")})
-                compact_agg = (
-                    cal_metrics[
-                        (cal_metrics["day"] >= selected_week_start)
-                        & (cal_metrics["day"] <= selected_week_end)
-                    ]
-                    .groupby("day", as_index=False)
-                    .agg(
-                        rtss=("rtss", "sum"),
-                        tss=("tss", "sum"),
-                        distance_eqv_km=("distance_proxy_km", "sum"),
-                        duration_s=("duration_s", "sum"),
-                        if_duration_weighted=("if_proxy", lambda s: float((pd.to_numeric(s, errors="coerce").fillna(0.0)).sum())),
-                    )
+                _daily_perf = day_activity_stats.rename(
+                    columns={
+                        "day_distance_eqv_km": "distance_eqv_km",
+                        "day_tss": "tss",
+                        "day_rtss": "rtss",
+                        "day_duration_s": "duration_s",
+                        "day_if_weighted": "if_weighted",
+                    }
                 )
-                compact_week = compact_days.merge(compact_agg, on="day", how="left")
-                for col in ["rtss", "tss", "distance_eqv_km", "duration_s", "if_duration_weighted"]:
+                compact_week = compact_days.merge(
+                    _daily_perf[["day", "rtss", "tss", "distance_eqv_km", "duration_s", "if_weighted"]],
+                    on="day",
+                    how="left",
+                )
+                for col in ["rtss", "tss", "distance_eqv_km", "duration_s", "if_weighted"]:
                     compact_week[col] = pd.to_numeric(compact_week[col], errors="coerce").fillna(0.0)
-
-                if_by_day = []
-                for day_ts in compact_week["day"]:
-                    day_df = cal_metrics[cal_metrics["day"] == day_ts]
-                    dur = pd.to_numeric(day_df.get("duration_s"), errors="coerce").fillna(0.0)
-                    ifv = pd.to_numeric(day_df.get("if_proxy"), errors="coerce").fillna(0.0)
-                    if_total = float((dur * ifv).sum())
-                    dur_total = float(dur.sum())
-                    if_by_day.append(if_total / dur_total if dur_total > 0 else 0.0)
-                compact_week["if_proxy"] = if_by_day
+                compact_week["if_proxy"] = 0.0
+                _cw_dur = pd.to_numeric(compact_week["duration_s"], errors="coerce").fillna(0.0)
+                _cw_w = pd.to_numeric(compact_week["if_weighted"], errors="coerce").fillna(0.0)
+                _cw_mask = _cw_dur > 0
+                compact_week.loc[_cw_mask, "if_proxy"] = _cw_w[_cw_mask] / _cw_dur[_cw_mask]
                 compare_days = pd.DataFrame({"day": pd.date_range(compare_week_start, compare_week_end, freq="D")})
                 planned_remaining_metric_totals = {"rtss": 0.0, "tss": 0.0, "distance_eqv_km": 0.0}
                 planned_remaining_tss_by_day: dict[pd.Timestamp, float] = {}
@@ -5625,31 +5619,18 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         for col in ["rtss", "tss", "distance_eqv_km", "duration_s", "if_proxy"]:
                             compare_week[col] = 0.0
                 else:
-                    compare_agg = (
-                        cal_metrics[
-                            (cal_metrics["day"] >= compare_week_start)
-                            & (cal_metrics["day"] <= compare_week_end)
-                        ]
-                        .groupby("day", as_index=False)
-                        .agg(
-                            rtss=("rtss", "sum"),
-                            tss=("tss", "sum"),
-                            distance_eqv_km=("distance_proxy_km", "sum"),
-                            duration_s=("duration_s", "sum"),
-                        )
+                    compare_week = compare_days.merge(
+                        _daily_perf[["day", "rtss", "tss", "distance_eqv_km", "duration_s", "if_weighted"]],
+                        on="day",
+                        how="left",
                     )
-                    compare_week = compare_days.merge(compare_agg, on="day", how="left")
-                    for col in ["rtss", "tss", "distance_eqv_km", "duration_s"]:
+                    for col in ["rtss", "tss", "distance_eqv_km", "duration_s", "if_weighted"]:
                         compare_week[col] = pd.to_numeric(compare_week[col], errors="coerce").fillna(0.0)
-                    compare_if_by_day = []
-                    for day_ts in compare_week["day"]:
-                        day_df = cal_metrics[cal_metrics["day"] == day_ts]
-                        dur = pd.to_numeric(day_df.get("duration_s"), errors="coerce").fillna(0.0)
-                        ifv = pd.to_numeric(day_df.get("if_proxy"), errors="coerce").fillna(0.0)
-                        if_total = float((dur * ifv).sum())
-                        dur_total = float(dur.sum())
-                        compare_if_by_day.append(if_total / dur_total if dur_total > 0 else 0.0)
-                    compare_week["if_proxy"] = compare_if_by_day
+                    compare_week["if_proxy"] = 0.0
+                    _cmp_dur = pd.to_numeric(compare_week["duration_s"], errors="coerce").fillna(0.0)
+                    _cmp_w = pd.to_numeric(compare_week["if_weighted"], errors="coerce").fillna(0.0)
+                    _cmp_mask = _cmp_dur > 0
+                    compare_week.loc[_cmp_mask, "if_proxy"] = _cmp_w[_cmp_mask] / _cmp_dur[_cmp_mask]
                 compact_week["day_label"] = compact_week["day"].dt.strftime("%a").str.upper()
                 compact_week["day_num"] = compact_week["day"].dt.day
 
