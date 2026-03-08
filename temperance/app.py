@@ -5638,134 +5638,67 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     )
                     planned_rows = _apply_planned_actual_matching(planned_rows, metrics_df)
                     today_local_now = pd.Timestamp(datetime.now().astimezone().date()).normalize()
-                    planned_rows_remaining = _filter_effective_planned_rows(
-                        planned_rows,
-                        today_local_day=today_local_now,
-                    )
                     planner_specificity_profile = _normalize_specificity_profile(
                         st.session_state.get("user_specificity_profile", {}),
                         fallback_default=float(st.session_state.get("user_non_running_factor", 0.8)),
                     )
-                    if not planned_rows_remaining.empty:
-                        planned_remaining_rows_metrics = _compute_planned_rows_metrics_df(
-                            planned_rows=planned_rows_remaining,
-                            lthr_curve_points=lthr_curve_points,
-                            lthr_default_bpm=float(derived_lthr_bpm),
-                            lt_pace_curve_points=lt_pace_curve_points,
-                            lt_pace_default_sec=float(derived_threshold_pace_sec),
-                            specificity_profile=planner_specificity_profile,
-                        )
-                        if not planned_remaining_rows_metrics.empty:
-                            planned_remaining_rows_metrics["day"] = pd.to_datetime(
-                                planned_remaining_rows_metrics.get("day_utc"), errors="coerce"
-                            ).dt.floor("D")
-                            _planned_remaining_tss = (
-                                planned_remaining_rows_metrics.dropna(subset=["day"])
-                                .groupby("day", as_index=False)["tss"]
-                                .sum()
-                            )
-                            planned_remaining_tss_by_day = {
-                                pd.Timestamp(r["day"]): float(pd.to_numeric(r["tss"], errors="coerce") or 0.0)
-                                for _, r in _planned_remaining_tss.iterrows()
+                    planned_rows_metrics = _compute_planned_rows_metrics_df(
+                        planned_rows=planned_rows,
+                        lthr_curve_points=lthr_curve_points,
+                        lthr_default_bpm=float(derived_lthr_bpm),
+                        lt_pace_curve_points=lt_pace_curve_points,
+                        lt_pace_default_sec=float(derived_threshold_pace_sec),
+                        specificity_profile=planner_specificity_profile,
+                    )
+                    if not planned_rows_metrics.empty:
+                        planned_rows_metrics["day"] = pd.to_datetime(
+                            planned_rows_metrics.get("day_utc"), errors="coerce"
+                        ).dt.floor("D")
+                        planned_daily = _build_planned_daily_summary_df(planned_rows_metrics)
+                        planned_daily["day"] = pd.to_datetime(planned_daily.get("day_utc"), errors="coerce").dt.floor("D")
+                        compare_agg = planned_daily.rename(
+                            columns={
+                                "rtss_total": "rtss",
+                                "tss_total": "tss",
+                                "distance_proxy_km": "distance_eqv_km",
                             }
-                            remaining_start_day = max(today_local_now, selected_week_start)
-                            planned_remaining_rows_metrics = planned_remaining_rows_metrics[
-                                (planned_remaining_rows_metrics["day"] >= remaining_start_day)
-                                & (planned_remaining_rows_metrics["day"] <= selected_week_end)
-                            ].copy()
-                            planned_remaining_metric_totals = {
-                                "rtss": float(
-                                    pd.to_numeric(
-                                        planned_remaining_rows_metrics.get("rtss"), errors="coerce"
-                                    ).fillna(0.0).sum()
-                                ),
-                                "tss": float(
-                                    pd.to_numeric(
-                                        planned_remaining_rows_metrics.get("tss"), errors="coerce"
-                                    ).fillna(0.0).sum()
-                                ),
-                                "distance_eqv_km": float(
-                                    pd.to_numeric(
-                                        planned_remaining_rows_metrics.get("distance_proxy_km"), errors="coerce"
-                                    ).fillna(0.0).sum()
-                                ),
-                            }
-                    planned_day_stats: list[dict[str, float | pd.Timestamp]] = []
-                    for day_ts in pd.date_range(selected_week_start, selected_week_end, freq="D"):
-                        day_key = day_ts.date().isoformat()
-                        day_rows = (
-                            planned_rows[planned_rows["day_utc"] == day_key]
-                            if not planned_rows.empty and "day_utc" in planned_rows.columns
-                            else pd.DataFrame()
+                        )[["day", "rtss", "tss", "distance_eqv_km", "duration_s", "if_proxy"]]
+                        compare_week = compare_days.merge(compare_agg, on="day", how="left")
+                        for col in ["rtss", "tss", "distance_eqv_km", "duration_s", "if_proxy"]:
+                            compare_week[col] = pd.to_numeric(compare_week[col], errors="coerce").fillna(0.0)
+
+                        _planned_remaining_tss = compare_agg.dropna(subset=["day"])[["day", "tss"]].copy()
+                        planned_remaining_tss_by_day = {
+                            pd.Timestamp(r["day"]): float(pd.to_numeric(r["tss"], errors="coerce") or 0.0)
+                            for _, r in _planned_remaining_tss.iterrows()
+                        }
+
+                        planned_rows_remaining = _filter_effective_planned_rows(
+                            planned_rows_metrics,
+                            today_local_day=today_local_now,
                         )
-                        lthr_for_day = float(
-                            _curve_value_at(
-                                lthr_curve_points,
-                                float(derived_lthr_bpm),
-                                day_ts,
-                            )
-                        )
-                        lt_pace_for_day = float(
-                            _curve_value_at(
-                                lt_pace_curve_points,
-                                float(derived_threshold_pace_sec),
-                                day_ts,
-                            )
-                        )
-                        total_tss = 0.0
-                        total_rtss = 0.0
-                        total_dist_eqv = 0.0
-                        if_weighted_sum = 0.0
-                        if_weight_seconds = 0.0
-                        if not day_rows.empty:
-                            for _, prow in day_rows.iterrows():
-                                raw_segments = prow.get("parsed_json")
-                                segments: list[dict[str, float | str | None]] = []
-                                if isinstance(raw_segments, list):
-                                    segments = [s for s in raw_segments if isinstance(s, dict)]
-                                elif isinstance(raw_segments, str) and raw_segments.strip():
-                                    try:
-                                        parsed = json.loads(raw_segments)
-                                        if isinstance(parsed, list):
-                                            segments = [s for s in parsed if isinstance(s, dict)]
-                                    except Exception:
-                                        segments = []
-                                for seg in segments:
-                                    seg_kind = str(seg.get("kind") or "").strip().lower()
-                                    seg_spec = _specificity_factor_for_plan_kind(
-                                        seg_kind,
-                                        planner_specificity_profile,
-                                    )
-                                    seg_for_metrics = _segment_with_effective_intensity_for_metrics(
-                                        seg,
-                                        seg_kind=seg_kind,
-                                        seg_spec=seg_spec,
-                                    )
-                                    m = _planned_segment_metrics(
-                                        seg_for_metrics,
-                                        lthr_bpm=lthr_for_day,
-                                        threshold_pace_sec_per_km=lt_pace_for_day,
-                                        non_running_factor=seg_spec,
-                                    )
-                                    seg_duration = float(m.get("duration_s") or 0.0)
-                                    seg_if = float(m.get("if_proxy") or 0.0)
-                                    total_tss += float(m.get("tss") or 0.0) * float(seg_spec)
-                                    total_rtss += float(m.get("rtss") or 0.0) * float(seg_spec)
-                                    total_dist_eqv += float(m.get("distance_eqv_km") or 0.0)
-                                    if seg_duration > 0:
-                                        if_weighted_sum += seg_if * seg_duration
-                                        if_weight_seconds += seg_duration
-                        planned_day_stats.append(
-                            {
-                                "day": day_ts,
-                                "rtss": total_rtss,
-                                "tss": total_tss,
-                                "distance_eqv_km": total_dist_eqv,
-                                "duration_s": if_weight_seconds,
-                                "if_proxy": (if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0),
-                            }
-                        )
-                    compare_week = pd.DataFrame(planned_day_stats)
+                        remaining_start_day = max(today_local_now, selected_week_start)
+                        planned_rows_remaining = planned_rows_remaining[
+                            (planned_rows_remaining["day"] >= remaining_start_day)
+                            & (planned_rows_remaining["day"] <= selected_week_end)
+                        ].copy()
+                        planned_remaining_metric_totals = {
+                            "rtss": float(
+                                pd.to_numeric(planned_rows_remaining.get("rtss"), errors="coerce").fillna(0.0).sum()
+                            ),
+                            "tss": float(
+                                pd.to_numeric(planned_rows_remaining.get("tss"), errors="coerce").fillna(0.0).sum()
+                            ),
+                            "distance_eqv_km": float(
+                                pd.to_numeric(
+                                    planned_rows_remaining.get("distance_proxy_km"), errors="coerce"
+                                ).fillna(0.0).sum()
+                            ),
+                        }
+                    else:
+                        compare_week = compare_days.copy()
+                        for col in ["rtss", "tss", "distance_eqv_km", "duration_s", "if_proxy"]:
+                            compare_week[col] = 0.0
                 else:
                     compare_agg = (
                         cal_metrics[
@@ -5972,26 +5905,16 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     projected_finish = float("nan")
                 projected_fatigue = float("nan")
                 try:
-                    fatigue_anchor = float("nan")
-                    if not cal_daily_lookup.empty and "fatigue" in cal_daily_lookup.columns:
-                        _daily_hist = cal_daily_lookup[cal_daily_lookup["day"] <= cutoff_day].sort_values("day")
-                        if not _daily_hist.empty:
-                            fatigue_anchor = float(
-                                pd.to_numeric(_daily_hist.iloc[-1].get("fatigue"), errors="coerce")
+                    if compare_choice == "Planned":
+                        eow_day = pd.Timestamp(selected_week_end).normalize()
+                        ff_row = daily_fitfat_with_projection.get(eow_day)
+                        if isinstance(ff_row, dict):
+                            projected_fatigue = float(
+                                pd.to_numeric(
+                                    pd.Series([ff_row.get("fatigue")]),
+                                    errors="coerce",
+                                ).iloc[0]
                             )
-                    if pd.isna(fatigue_anchor):
-                        fatigue_anchor = 0.0
-                    alpha_fatigue = float(ema_alpha_from_days(7))
-                    projected_fatigue = fatigue_anchor
-                    # Include remaining planned load for "today" (if any) before projecting future days.
-                    if compare_choice == "Planned":
-                        remaining_today_tss = float(planned_remaining_tss_by_day.get(pd.Timestamp(cutoff_day), 0.0))
-                        if remaining_today_tss > 0:
-                            projected_fatigue = projected_fatigue + (alpha_fatigue * remaining_today_tss)
-                    if compare_choice == "Planned":
-                        for day_ts in pd.date_range(cutoff_day + pd.Timedelta(days=1), selected_week_end, freq="D"):
-                            day_target_tss = float(planned_remaining_tss_by_day.get(pd.Timestamp(day_ts), 0.0))
-                            projected_fatigue = alpha_fatigue * float(day_target_tss) + (1.0 - alpha_fatigue) * projected_fatigue
                     else:
                         projected_fatigue = float("nan")
                 except Exception:
