@@ -8,12 +8,10 @@ import tempfile
 import hmac
 import hashlib
 import base64
-import html
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import replace
 from pathlib import Path
 from time import perf_counter, time
-from urllib.parse import urlencode
 
 import altair as alt
 import numpy as np
@@ -5215,148 +5213,77 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         font-size: 0.86rem !important;
                         line-height: 1.3 !important;
                     }
-                    .compact-mobile-controls {
-                        display: flex !important;
-                        flex-wrap: nowrap !important;
-                        align-items: center !important;
-                        justify-content: flex-start !important;
-                        gap: 0.08rem !important;
+                    [class*="st-key-compact_mobile_nav_row"] {
                         width: 100% !important;
-                        margin: 1px 0 4px 0 !important;
+                        overflow-x: hidden !important;
                     }
-                    .compact-mobile-controls a {
-                        display: inline-flex !important;
+                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] {
+                        display: grid !important;
+                        grid-template-columns: 30px 30px minmax(92px, 31%) minmax(0, 1fr) !important;
+                        column-gap: 0.18rem !important;
+                        row-gap: 0 !important;
                         align-items: center !important;
-                        justify-content: center !important;
-                        min-width: 0 !important;
-                        height: 24px !important;
-                        min-height: 24px !important;
-                        border-radius: 5px !important;
-                        border: 1px solid rgba(71,85,105,0.78) !important;
-                        background: rgba(15,23,42,0.42) !important;
-                        color: rgba(226,232,240,0.96) !important;
-                        font-size: 0.72rem !important;
-                        line-height: 1 !important;
-                        text-decoration: none !important;
-                        white-space: nowrap !important;
-                        padding: 0.04rem 0.14rem !important;
+                        width: 100% !important;
+                        max-width: 100% !important;
+                        overflow-x: hidden !important;
                     }
-                    .compact-mobile-controls a:visited,
-                    .compact-mobile-controls a:hover,
-                    .compact-mobile-controls a:focus,
-                    .compact-mobile-controls a:focus-visible,
-                    .compact-mobile-controls a:active {
-                        color: rgba(241,245,249,0.98) !important;
-                        text-decoration: none !important;
-                    }
-                    .compact-mobile-controls a.prev,
-                    .compact-mobile-controls a.next {
-                        flex: 0 0 32px !important;
-                        max-width: 32px !important;
-                    }
-                    .compact-mobile-controls a.compare {
-                        flex: 0 0 31% !important;
-                        max-width: 31% !important;
-                    }
-                    .compact-mobile-controls a.metric {
-                        flex: 0 0 calc(100% - 32px - 32px - 31% - 0.24rem) !important;
-                        max-width: calc(100% - 32px - 32px - 31% - 0.24rem) !important;
-                    }
-                    .compact-mobile-controls select {
-                        min-width: 0 !important;
-                        height: 24px !important;
-                        min-height: 24px !important;
-                        border-radius: 5px !important;
-                        border: 1px solid rgba(71,85,105,0.78) !important;
-                        background: rgba(15,23,42,0.42) !important;
-                        color: rgba(226,232,240,0.96) !important;
-                        font-size: 0.72rem !important;
-                        line-height: 1 !important;
-                        white-space: nowrap !important;
-                        padding: 0.04rem 1.1rem 0.04rem 0.22rem !important;
-                        -webkit-appearance: none !important;
-                        appearance: none !important;
-                        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23e2e8f0' d='M1 3l4 4 4-4'/%3E%3C/svg%3E") !important;
-                        background-repeat: no-repeat !important;
-                        background-position: right 0.28rem center !important;
-                    }
-                    .compact-mobile-controls select.compare {
-                        flex: 0 0 31% !important;
-                        max-width: 31% !important;
-                    }
-                    .compact-mobile-controls select.metric {
-                        flex: 0 0 calc(100% - 32px - 32px - 31% - 0.24rem) !important;
-                        max-width: calc(100% - 32px - 32px - 31% - 0.24rem) !important;
-                    }
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) {
-                        display: flex !important;
-                        flex-wrap: nowrap !important;
-                        gap: 0.08rem !important;
-                        align-items: center !important;
-                    }
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"] {
+                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
                         min-width: 0 !important;
                         width: auto !important;
                     }
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:nth-child(1) {
-                        flex: 0 0 8% !important;
-                        max-width: 8% !important;
-                    }
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:nth-child(2) {
-                        flex: 0 0 8% !important;
-                        max-width: 8% !important;
-                    }
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:nth-child(3) {
-                        flex: 0 0 36% !important;
-                        max-width: 36% !important;
-                    }
-                    div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-compact_prev_week"]) > div[data-testid="column"]:nth-child(4) {
-                        flex: 0 0 48% !important;
-                        max-width: 48% !important;
-                    }
-                    div[class*="st-key-compact_prev_week"] button,
-                    div[class*="st-key-compact_next_week"] button {
-                        min-height: 24px !important;
-                        height: 24px !important;
-                        min-width: 32px !important;
-                        width: 32px !important;
-                        max-width: 32px !important;
-                        border-radius: 5px !important;
-                        border: 1px solid rgba(71,85,105,0.78) !important;
-                        background: rgba(15,23,42,0.42) !important;
-                        padding: 0.04rem 0.14rem !important;
-                        font-size: 0.72rem !important;
-                        line-height: 1 !important;
-                    }
-                    div[class*="st-key-compact_prev_week"],
-                    div[class*="st-key-compact_next_week"] {
-                        min-width: 0 !important;
-                        width: auto !important;
-                    }
-                    div[class*="st-key-calendar_compact_compare_choice"] [data-baseweb="select"] > div,
-                    div[class*="st-key-calendar_compact_metric"] [data-baseweb="select"] > div {
-                        min-height: 26px !important;
-                        height: 26px !important;
+                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) button,
+                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) button {
+                        width: 30px !important;
+                        min-width: 30px !important;
+                        max-width: 30px !important;
+                        min-height: 28px !important;
+                        height: 28px !important;
                         border-radius: 6px !important;
                         border: 1px solid rgba(71,85,105,0.78) !important;
                         background: rgba(15,23,42,0.42) !important;
-                        padding-left: 0.14rem !important;
-                        padding-right: 0.14rem !important;
-                        padding-top: 0.02rem !important;
-                        padding-bottom: 0.02rem !important;
-                        font-size: 0.76rem !important;
-                        line-height: 1.08 !important;
+                        padding: 0 !important;
+                        font-size: 0.86rem !important;
+                        line-height: 1 !important;
                     }
-                    div[class*="st-key-calendar_compact_compare_choice"] [data-baseweb="select"] > div > div,
-                    div[class*="st-key-calendar_compact_metric"] [data-baseweb="select"] > div > div {
-                        line-height: 1.08 !important;
-                        min-height: 0 !important;
-                        padding-top: 0 !important;
-                        padding-bottom: 0 !important;
+                    [class*="st-key-compact_mobile_nav_row"] [data-baseweb="select"] {
+                        min-width: 0 !important;
+                        width: 100% !important;
+                        max-width: 100% !important;
                     }
-                    div[class*="st-key-calendar_compact_compare_choice"],
-                    div[class*="st-key-calendar_compact_metric"] {
-                        margin-bottom: 0.1rem !important;
+                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3) [data-baseweb="select"] > div,
+                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(4) [data-baseweb="select"] > div {
+                        min-width: 0 !important;
+                        width: 100% !important;
+                        max-width: 100% !important;
+                        min-height: 28px !important;
+                        height: 28px !important;
+                        border-radius: 6px !important;
+                        border: 1px solid rgba(71,85,105,0.78) !important;
+                        background: rgba(15,23,42,0.42) !important;
+                        padding: 0.04rem 0.32rem 0.04rem 0.28rem !important;
+                        font-size: 0.82rem !important;
+                        line-height: 1 !important;
+                    }
+                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3) [data-baseweb="select"] > div > div,
+                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(4) [data-baseweb="select"] > div > div {
+                        min-width: 0 !important;
+                        overflow: hidden !important;
+                        text-overflow: ellipsis !important;
+                        white-space: nowrap !important;
+                        line-height: 1 !important;
+                    }
+                    /* Fallback sizing if Streamlit changes wrapper nesting for the mobile row. */
+                    [class*="st-key-compact_prev_week"],
+                    [class*="st-key-compact_next_week"] {
+                        min-width: 30px !important;
+                        max-width: 30px !important;
+                    }
+                    [class*="st-key-calendar_compact_compare_choice"] {
+                        min-width: 88px !important;
+                        max-width: 34% !important;
+                    }
+                    [class*="st-key-calendar_compact_metric"] {
+                        min-width: 0 !important;
                     }
                     div[data-testid="stHorizontalBlock"]:has(.cal-week-summary) {
                         flex-direction: column !important;
@@ -5383,22 +5310,17 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         margin-bottom: 6px;
                         -webkit-line-clamp: unset;
                     }
-                    div[class*="st-key-compact_prev_week"] button,
-                    div[class*="st-key-compact_prev_week"] button:hover,
-                    div[class*="st-key-compact_prev_week"] button:focus,
-                    div[class*="st-key-compact_prev_week"] button:focus-visible,
-                    div[class*="st-key-compact_prev_week"] button:active,
-                    div[class*="st-key-compact_next_week"] button,
-                    div[class*="st-key-compact_next_week"] button:hover,
-                    div[class*="st-key-compact_next_week"] button:focus,
-                    div[class*="st-key-compact_next_week"] button:focus-visible,
-                    div[class*="st-key-compact_next_week"] button:active {
-                        min-height: 24px !important;
-                        height: 24px !important;
-                        padding: 0.04rem 0.14rem !important;
-                        font-size: 0.72rem !important;
-                        line-height: 1 !important;
-                        white-space: nowrap !important;
+                }
+                @media (max-width: 768px) and (orientation: portrait) {
+                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] {
+                        grid-template-columns: 28px 28px minmax(88px, 30%) minmax(0, 1fr) !important;
+                        column-gap: 0.16rem !important;
+                    }
+                }
+                @media (max-width: 768px) and (orientation: landscape) {
+                    [class*="st-key-compact_mobile_nav_row"] div[data-testid="stHorizontalBlock"] {
+                        grid-template-columns: 32px 32px minmax(96px, 31%) minmax(0, 1fr) !important;
+                        column-gap: 0.20rem !important;
                     }
                 }
                 </style>
@@ -5538,54 +5460,37 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         st.session_state["calendar_compact_metric"] = current_metric
                     active_compare_choice = current_compare
                     active_metric_choice = current_metric
-
-                    _qp_base: dict[str, list[str] | str] = {}
-                    try:
-                        for _k, _v in st.query_params.items():
-                            if str(_k) in {"compact_ctl", "compact_compare_idx", "compact_metric_key"}:
-                                continue
-                            if isinstance(_v, (list, tuple)):
-                                _qp_base[str(_k)] = [str(x) for x in _v]
-                            else:
-                                _qp_base[str(_k)] = str(_v)
-                    except Exception:
-                        _qp_base = {}
-                    _href_prev = "?" + urlencode({**_qp_base, "compact_ctl": "prev"}, doseq=True)
-                    _href_next = "?" + urlencode({**_qp_base, "compact_ctl": "next"}, doseq=True)
-                    compare_options_html = "".join(
-                        [
-                            f"<option value='{idx}'{' selected' if opt == current_compare else ''}>"
-                            f"{html.escape(compare_short.get(opt, opt))}</option>"
-                            for idx, opt in enumerate(compare_options)
-                        ]
-                    )
-                    metric_options_html = "".join(
-                        [
-                            (
-                                f"<option value='{html.escape(mk)}'{' selected' if mk == current_metric else ''}>"
-                                f"{html.escape(metric_short.get(mk, mk))} - "
-                                f"{int(round(metric_values_week.get(mk, 0.0)))}"
-                                f"{' km' if mk == 'distance_eqv_km' else ''}"
-                                "</option>"
+                    with st.container(key="compact_mobile_nav_row"):
+                        nav1, nav2, nav3, nav4 = st.columns([0.08, 0.08, 0.34, 0.50], gap="small")
+                        with nav1:
+                            if st.button("◀", key="compact_prev_week", use_container_width=True):
+                                st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
+                                st.rerun()
+                        with nav2:
+                            if st.button("▶", key="compact_next_week", use_container_width=True):
+                                st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
+                                st.rerun()
+                        with nav3:
+                            selected_compare_mobile = st.selectbox(
+                                "Compare against",
+                                compare_options,
+                                key="calendar_compact_compare_choice",
+                                label_visibility="collapsed",
+                                format_func=lambda opt: compare_short.get(opt, opt),
                             )
-                            for mk in compact_metric_keys
-                        ]
-                    )
-                    st.markdown(
-                        (
-                            "<div class='compact-mobile-controls'>"
-                            f"<a class='prev' href='{_href_prev}'>◀</a>"
-                            f"<a class='next' href='{_href_next}'>▶</a>"
-                            "<select class='compare' "
-                            "onchange=\"(function(v){const u=new URL(window.location.href);u.searchParams.set('compact_compare_idx',v);u.searchParams.delete('compact_ctl');u.searchParams.delete('compact_metric_key');window.location.href=u.toString();})(this.value)\">"
-                            f"{compare_options_html}</select>"
-                            "<select class='metric' "
-                            "onchange=\"(function(v){const u=new URL(window.location.href);u.searchParams.set('compact_metric_key',v);u.searchParams.delete('compact_ctl');u.searchParams.delete('compact_compare_idx');window.location.href=u.toString();})(this.value)\">"
-                            f"{metric_options_html}</select>"
-                            "</div>"
-                        ),
-                        unsafe_allow_html=True,
-                    )
+                            active_compare_choice = str(selected_compare_mobile)
+                        with nav4:
+                            selected_metric_mobile = st.selectbox(
+                                "Metric",
+                                compact_metric_keys,
+                                key="calendar_compact_metric",
+                                label_visibility="collapsed",
+                                format_func=lambda mk: (
+                                    f"{metric_short.get(mk, mk)} - {int(round(metric_values_week.get(mk, 0.0)))}"
+                                    + (" km" if mk == "distance_eqv_km" else "")
+                                ),
+                            )
+                            active_metric_choice = str(selected_metric_mobile)
                 else:
                     nav1, nav2, nav3, nav4, _nav_spacer = st.columns([0.75, 0.75, 1.0, 1.2, 0.8])
                     with nav1:
