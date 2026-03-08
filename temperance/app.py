@@ -5377,7 +5377,9 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     st.session_state["calendar_compact_metric"] = "tss"
                 if str(st.session_state.get("calendar_compact_metric")) not in compact_metric_keys:
                     st.session_state["calendar_compact_metric"] = "tss"
-                is_mobile_compact_ui = _is_probably_mobile_client()
+                is_mobile_layout = _is_probably_mobile_client()
+                # Keep one deterministic control layout across devices to avoid UA-dependent regressions.
+                is_mobile_compact_ui = True
                 active_compare_choice = str(st.session_state.get("calendar_compact_compare_choice", compare_choice))
                 active_metric_choice = str(st.session_state.get("calendar_compact_metric", "tss"))
 
@@ -5632,7 +5634,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     st.session_state["calendar_compact_metric"] = selected_metric
 
                 chart_df = compact_week.copy()
-                is_mobile_compact = bool(is_mobile_compact_ui)
+                is_mobile_compact = bool(is_mobile_layout)
                 chart_df["metric_value"] = pd.to_numeric(chart_df[selected_metric], errors="coerce").fillna(0.0)
                 if is_mobile_compact:
                     chart_df["day_display"] = chart_df["day"].dt.strftime("%a %d")
