@@ -243,6 +243,62 @@ Recommended pattern:
 
 These are practical v1 proxies, not lab-grade physiology/biomechanics.
 
+## Planned Activities Input Guide
+Temperance parses planned activities from free text using:
+
+- One entry format: `[date]:[activity]`
+- Multiple entries: separate with newline, `;`, or `,`
+
+Date formats supported:
+- `today`, `tomorrow`, `yesterday`
+- `T`, `T+N`, `T-N` (relative to today)
+- `3Mar26`
+- `2026-03-26`
+- `26/03/2026`
+
+Activity kinds recognized:
+- Running-like: `run`, `running`, `treadmill`
+- Non-running: `elliptical`, `bike`, `cycling`
+
+Duration / distance tokens:
+- `90min`, `1h`, `45s`
+- `10km`, `400m` (distance-only requires running/treadmill + pace)
+
+Intensity tokens (at least one is required per segment):
+- `@140bpm`
+- `@70%` (IF percent)
+- `@4:50/km` (pace; running/treadmill only)
+- `@70TSS`
+
+Composition / intervals:
+- Combine segments with `+`
+  - Example: `30min run @5:00/km + 20min elliptical @135bpm`
+- Reps by time:
+  - `5x6min @3:40/km`
+- Reps by distance (running/treadmill):
+  - `10x400m @3:35/km`
+  - `6x1km @3:45/km`
+
+### AM/PM planned expiry rule
+You can place `AM` or `PM` anywhere as a standalone token (space-separated) in the date or activity text.
+
+Examples:
+- `T: 90min elliptical @70TSS AM`
+- `T AM: 90min elliptical @70TSS`
+- `T-1: 90min AM elliptical @70TSS`
+- `T+3: 90min elliptical AM @70TSS`
+
+Behavior:
+- `AM` plan expires at `12:00` local time.
+- `PM` plan expires at `21:00` local time.
+- After expiry, the planned row is automatically treated as done (no manual check needed).
+- Without `AM/PM`, the plan expires at local day rollover (end of day).
+
+### TSS semantics for non-running plans
+For non-running segments with explicit `@...TSS`:
+- The typed TSS is treated as the final delivered TSS target.
+- IF is back-solved internally using sport specificity so the displayed final TSS matches the user input target.
+
 ## Tests
 ```bash
 pytest -q
