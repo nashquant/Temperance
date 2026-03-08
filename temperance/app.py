@@ -2626,6 +2626,7 @@ owner_scoped_keys = [
     "calendar_quick_range",
     "calendar_split_activity_id",
     "calendar_split_open",
+    "calendar_activity_weeks_visible",
     "planned_mark_done_pending",
     "_metrics_df_local_cache_key",
     "_metrics_df_local_cache_value",
@@ -4168,34 +4169,10 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 range_end_day = cal_max_day
                 cal_activity_filter = str(st.session_state.get("calendar_activity_filter", "All Activities"))
             else:
-                controls = st.columns([0.85, 0.85, 3.3])
-                with controls[0]:
-                    cal_range = st.selectbox(
-                        "Quick range",
-                        ["3M", "6M", "9M", "1Y", "2Y", "ALL"],
-                        index=3,
-                        key="calendar_quick_range",
-                    )
-                    if cal_range == "3M":
-                        range_start_day = max(cal_min_day, cal_max_day - timedelta(days=90))
-                    elif cal_range == "6M":
-                        range_start_day = max(cal_min_day, cal_max_day - timedelta(days=180))
-                    elif cal_range == "9M":
-                        range_start_day = max(cal_min_day, cal_max_day - timedelta(days=270))
-                    elif cal_range == "1Y":
-                        range_start_day = max(cal_min_day, cal_max_day - timedelta(days=365))
-                    elif cal_range == "2Y":
-                        range_start_day = max(cal_min_day, cal_max_day - timedelta(days=730))
-                    else:
-                        range_start_day = cal_min_day
-                    range_end_day = cal_max_day
-                with controls[1]:
-                    cal_activity_filter = st.selectbox(
-                        "Activity filter",
-                        ["All Activities", "All Running", "Running", "Treadmill", "Cycling", "Elliptical"],
-                        index=0,
-                        key="calendar_activity_filter",
-                    )
+                # Activity Dashboard now always renders full available history and all activities.
+                range_start_day = cal_min_day
+                range_end_day = cal_max_day
+                cal_activity_filter = "All Activities"
             range_start_ts = pd.Timestamp(range_start_day)
             range_end_ts = pd.Timestamp(range_end_day)
             grid_start = range_start_ts - pd.Timedelta(days=int(range_start_ts.weekday()))
@@ -5310,7 +5287,16 @@ if view in {"Weekly Summary", "Activity Summary"}:
 
                 week_starts = pd.date_range(start=grid_start, end=grid_end, freq="7D")
                 week_starts = week_starts.sort_values(ascending=False)
-                for ws in week_starts:
+                week_count = int(len(week_starts))
+                week_chunk = 6
+                visible_weeks = int(
+                    pd.to_numeric(st.session_state.get("calendar_activity_weeks_visible", week_chunk), errors="coerce")
+                    or week_chunk
+                )
+                visible_weeks = max(week_chunk, min(visible_weeks, week_count if week_count > 0 else week_chunk))
+                st.session_state["calendar_activity_weeks_visible"] = visible_weeks
+                render_week_starts = week_starts[:visible_weeks]
+                for ws in render_week_starts:
                     we = ws + pd.Timedelta(days=6)
                     week_df = cal_metrics[(cal_metrics["day"] >= ws) & (cal_metrics["day"] <= we)].copy()
                     if week_df.empty:
@@ -5621,6 +5607,21 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                     ),
                                     unsafe_allow_html=True,
                                 )
+                if visible_weeks < week_count:
+                    _remaining = week_count - visible_weeks
+                    load_cols = st.columns([1.2, 6.8])
+                    with load_cols[1]:
+                        if st.button(
+                            f"Load older weeks ({_remaining} remaining)",
+                            key="calendar_activity_load_more_weeks",
+                            use_container_width=False,
+                        ):
+                            st.session_state["calendar_activity_weeks_visible"] = min(
+                                week_count, visible_weeks + week_chunk
+                            )
+                            st.rerun()
+                elif week_count > week_chunk:
+                    st.caption(f"Showing all {week_count} weeks.")
 
                 pending_planned_done = st.session_state.get("planned_mark_done_pending")
                 if isinstance(pending_planned_done, dict):
