@@ -226,8 +226,16 @@ def _load_curve_points(
             parsed_date = datetime.fromisoformat(date_raw)
         except Exception:
             continue
+        raw_value = row.get(value_key)
+        if raw_value is None:
+            if value_key == "lt_pace_sec":
+                raw_value = row.get("lt_pace_sec_per_km")
+            elif value_key == "lt_pace_sec_per_km":
+                raw_value = row.get("lt_pace_sec")
+            elif value_key == "lthr_bpm":
+                raw_value = row.get("lthr")
         try:
-            value = float(row.get(value_key))
+            value = float(raw_value)
         except Exception:
             continue
         if parsed_date.tzinfo is None:
@@ -1150,10 +1158,7 @@ def _build_week_outlook_payload(
         week_total_compare += compare_v
         if day <= cutoff_day:
             wtd_current += current_v
-        if compare_key == "planned":
-            if day <= cutoff_day:
-                wtd_compare += compare_v
-        else:
+        if compare_key != "planned":
             if cday <= compare_cutoff:
                 wtd_compare += compare_v
         day_rows.append(
@@ -1168,6 +1173,13 @@ def _build_week_outlook_payload(
         )
 
     if compare_key == "planned":
+        # Sum raw daily planned values up to cutoff, then round only at payload formatting.
+        wtd_compare = float(
+            pd.to_numeric(
+                pd.Series([v for d, v in planned_metric_map.items() if pd.Timestamp(d) <= cutoff_day], dtype=float),
+                errors="coerce",
+            ).fillna(0.0).sum()
+        )
         remaining_to_go = float(planned_remaining_metric_total)
 
     pace_curve = _load_curve_points(

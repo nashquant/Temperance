@@ -40,13 +40,31 @@ function isIntegerMetric(metricKey) {
   return metricKey === "tss" || metricKey === "rtss";
 }
 
+function roundHalfEven(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return NaN;
+  }
+  const sign = n < 0 ? -1 : 1;
+  const abs = Math.abs(n);
+  const floor = Math.floor(abs);
+  const frac = abs - floor;
+  if (frac > 0.5) {
+    return sign * (floor + 1);
+  }
+  if (frac < 0.5) {
+    return sign * floor;
+  }
+  return sign * (floor % 2 === 0 ? floor : floor + 1);
+}
+
 function formatMetricValue(value, metricKey) {
   const n = Number(value);
   if (!Number.isFinite(n)) {
     return "-";
   }
   if (isIntegerMetric(metricKey)) {
-    return String(Math.round(n));
+    return String(roundHalfEven(n));
   }
   const rounded = Math.round(n * 10) / 10;
   return Number.isInteger(rounded) ? String(Math.trunc(rounded)) : rounded.toFixed(1);
@@ -130,10 +148,6 @@ export default function App() {
   const [owners, setOwners] = useState([]);
   const [owner, setOwner] = useState("");
 
-  const [days, setDays] = useState("84");
-  const [sport, setSport] = useState("");
-  const [startDay, setStartDay] = useState("");
-  const [endDay, setEndDay] = useState("");
   const [weekMetric, setWeekMetric] = useState("tss");
   const [weekCompare, setWeekCompare] = useState("planned");
   const [weekStart, setWeekStart] = useState("");
@@ -212,19 +226,10 @@ export default function App() {
       setLoading(true);
       setError("");
       const qs = new URLSearchParams();
-      qs.set("days", String(Number(days) || 84));
+      qs.set("days", "84");
       qs.set("limit", "60");
       if (owner) {
         qs.set("owner", owner);
-      }
-      if (sport.trim()) {
-        qs.set("sport", sport.trim());
-      }
-      if (startDay) {
-        qs.set("start_day", startDay);
-      }
-      if (endDay) {
-        qs.set("end_day", endDay);
       }
 
       const outlookQs = new URLSearchParams(qs.toString());
@@ -381,24 +386,16 @@ export default function App() {
           {error ? <p className="error">{error}</p> : null}
         </section>
       ) : (
-        <>
-          <section className="card">
-            <div className="row-between">
-              <h2>Session & Filters</h2>
-              <button onClick={logout}>Logout</button>
-            </div>
-            <p>
-              Signed in as <strong>{userCtx.user}</strong> ({userCtx.role})
-            </p>
-            <form
-              className="form-grid compact"
-              onSubmit={(e) => {
-                e.preventDefault();
-                loadDashboard();
-              }}
-            >
+        <div className="app-layout">
+          <aside className="sidebar-col">
+            <section className="card sidebar-card">
+              <h2>Navigation</h2>
+              <p>
+                Signed in as <strong>{userCtx.user}</strong> ({userCtx.role})
+              </p>
+              <button className="sidebar-logout" onClick={logout}>Logout</button>
               {userCtx.role === "admin" ? (
-                <label>
+                <label className="compact">
                   Data owner
                   <select value={owner} onChange={(e) => setOwner(e.target.value)}>
                     {owners.map((opt) => (
@@ -408,209 +405,196 @@ export default function App() {
                     ))}
                   </select>
                 </label>
-              ) : null}
-              <label>
-                Days
-                <input value={days} onChange={(e) => setDays(e.target.value)} />
-              </label>
-              <label>
-                Sport filter
-                <input placeholder="run, cycle, treadmill..." value={sport} onChange={(e) => setSport(e.target.value)} />
-              </label>
-              <label>
-                Start day
-                <input type="date" value={startDay} onChange={(e) => setStartDay(e.target.value)} />
-              </label>
-              <label>
-                End day
-                <input type="date" value={endDay} onChange={(e) => setEndDay(e.target.value)} />
-              </label>
-              <button type="submit" disabled={loading || !canLoadData}>
-                {loading ? "Loading..." : "Apply filters"}
-              </button>
-            </form>
-            {error ? <p className="error">{error}</p> : null}
-          </section>
-
-          <section className="tabs-row">
-            <button className={activeTab === "weekly_outlook" ? "tab-btn active" : "tab-btn"} onClick={() => setActiveTab("weekly_outlook")}>Weekly Outlook</button>
-            <button className={activeTab === "dashboard" ? "tab-btn active" : "tab-btn"} onClick={() => setActiveTab("dashboard")}>Dashboard</button>
-            <button className={activeTab === "weekly_summary" ? "tab-btn active" : "tab-btn"} onClick={() => setActiveTab("weekly_summary")}>Weekly Summary</button>
-            <button className={activeTab === "activities" ? "tab-btn active" : "tab-btn"} onClick={() => setActiveTab("activities")}>Activities</button>
-          </section>
-
-          {activeTab === "weekly_outlook" ? (
-            <section className="card">
-              {!weekOutlook ? (
-                <p>Load data to see week outlook.</p>
               ) : (
-                <>
-                  <h2>Week Outlook</h2>
-                  <h3 className="wk-range-title">
-                    {new Date(`${weekOutlook.week_start}T00:00:00`).toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                    })}{" "}
-                    -{" "}
-                    {new Date(`${weekOutlook.week_end}T00:00:00`).toLocaleDateString("en-US", {
-                      day: "numeric",
-                    })}
-                  </h3>
-                  <div className="wk-controls">
-                    <button className="wk-nav-btn" type="button" onClick={() => shiftOutlookWeek(-7)} disabled={loading}>◀</button>
-                    <button className="wk-nav-btn" type="button" onClick={() => shiftOutlookWeek(7)} disabled={loading}>▶</button>
-                    <select value={weekCompare} onChange={(e) => setWeekCompare(e.target.value)}>
-                      <option value="planned">Plan</option>
-                      <option value="previous_week">Previous week</option>
-                      <option value="two_weeks_ago">2 weeks ago</option>
-                      <option value="three_weeks_ago">3 weeks ago</option>
-                      <option value="four_weeks_ago">4 weeks ago</option>
-                    </select>
-                    <select value={weekMetric} onChange={(e) => setWeekMetric(e.target.value)}>
-                      <option value="tss">TSS</option>
-                      <option value="rtss">rTSS</option>
-                      <option value="distance_eqv_km">Distance Eqv (km)</option>
-                    </select>
-                    <span className="wk-goal-pill">
-                      {metricLabel(weekOutlook.metric)} - {Math.round(Number(weekOutlook.goal || 0))}
-                    </span>
-                  </div>
-                  <div className="kpi-grid">
-                    <div className="kpi-item"><span className="kpi-label">WTD (Current)</span><strong>{formatMetricValue(weekOutlook.wtd_current, weekOutlook.metric)}</strong></div>
-                    <div className="kpi-item"><span className="kpi-label">WTD ({compareLabel(weekOutlook.compare)})</span><strong>{formatMetricValue(weekOutlook.wtd_compare, weekOutlook.metric)}</strong></div>
-                    {weekOutlook.compare === "planned" ? (
-                      <>
-                        <div className="kpi-item"><span className="kpi-label">Remaining To Go</span><strong>{formatMetricValue(weekOutlook.remaining_to_go ?? 0, weekOutlook.metric)}</strong></div>
-                        <div className="kpi-item"><span className="kpi-label">Projected Finish</span><strong>{formatMetricValue(weekOutlook.projected_finish, weekOutlook.metric)}</strong></div>
-                        <div className="kpi-item"><span className="kpi-label">Estimated Fatigue EoW</span><strong>{formatNumber(weekOutlook.estimated_fatigue_eow, 1)}</strong></div>
-                      </>
-                    ) : (
-                      <div className="kpi-item"><span className="kpi-label">{compareLabel(weekOutlook.compare)} Total</span><strong>{formatMetricValue(weekOutlook.week_total_compare, weekOutlook.metric)}</strong></div>
-                    )}
-                  </div>
-                  <div className="goal-progress-track"><div className="goal-progress-fill" style={{ width: `${Math.max(0, Math.min(weekOutlook.goal_progress_pct, 200))}%` }} /></div>
-                  <WeekOutlookChart rows={weekOutlook.rows} metricKey={weekOutlook.metric} compareKey={weekOutlook.compare} />
-                </>
+                <p>Data owner: <strong>{userCtx.owner || owner || "-"}</strong></p>
               )}
-            </section>
-          ) : null}
+              {loading ? <p className="subtle">Loading data...</p> : null}
+              {error ? <p className="error">{error}</p> : null}
 
-          {activeTab === "dashboard" ? (
-            <section className="card">
-              <h2>Dashboard</h2>
-              {!dashboard ? (
-                <p>Load data to see dashboard metrics.</p>
-              ) : (
-                <>
-                  <div className="kpi-grid">
-                    <div className="kpi-item"><span className="kpi-label">Distance</span><strong>{dashboard.kpis.distance_km} km</strong></div>
-                    <div className="kpi-item"><span className="kpi-label">Proxy distance</span><strong>{dashboard.kpis.distance_proxy_km} km</strong></div>
-                    <div className="kpi-item"><span className="kpi-label">Total TSS</span><strong>{dashboard.kpis.tss_total}</strong></div>
-                    <div className="kpi-item"><span className="kpi-label">Activities</span><strong>{dashboard.kpis.activities}</strong></div>
-                  </div>
-                </>
-              )}
+              <div className="sidebar-nav">
+                <p className="sidebar-nav-title">Page</p>
+                <button className={activeTab === "weekly_outlook" ? "nav-btn active" : "nav-btn"} onClick={() => setActiveTab("weekly_outlook")}>Week Outlook</button>
+                <button className={activeTab === "dashboard" ? "nav-btn active" : "nav-btn"} onClick={() => setActiveTab("dashboard")}>Activity Dashboard</button>
+                <button className={activeTab === "weekly_summary" ? "nav-btn active" : "nav-btn"} onClick={() => setActiveTab("weekly_summary")}>Weekly Summary</button>
+                <button className={activeTab === "activities" ? "nav-btn active" : "nav-btn"} onClick={() => setActiveTab("activities")}>Activity Detail</button>
+              </div>
             </section>
-          ) : null}
+          </aside>
 
-          {activeTab === "weekly_summary" ? (
-            <section className="card">
-              <h2>Weekly Summary</h2>
-              {!weekly ? (
-                <p>Load data to see weekly summary.</p>
-              ) : weekly.weeks.length === 0 ? (
-                <p>No weekly rows available for this filter set.</p>
-              ) : (
-                <>
-                  <p className="subtle">Weeks: {weekly.summary.weeks} | Activities: {weekly.summary.total_activities} | Distance: {weekly.summary.total_distance_km} km | TSS: {weekly.summary.total_tss}</p>
-                  <table>
-                    <thead>
-                      <tr><th>Week start</th><th>Distance (km)</th><th>Proxy (km)</th><th>TSS</th><th>rTSS</th><th>Activities</th></tr>
-                    </thead>
-                    <tbody>
-                      {weekly.weeks.map((row) => (
-                        <tr key={row.week_start}><td>{row.week_start}</td><td>{row.distance_km}</td><td>{row.distance_proxy_km}</td><td>{row.tss}</td><td>{row.rtss}</td><td>{row.runs}</td></tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
-            </section>
-          ) : null}
-
-          {activeTab === "activities" ? (
-            <>
+          <section className="content-col">
+            {activeTab === "weekly_outlook" ? (
               <section className="card">
-                <h2>Activities</h2>
-                {!dashboard ? (
-                  <p>Load data to see activities.</p>
-                ) : dashboard.activities.length === 0 ? (
-                  <p>No activities found for this filter set.</p>
-                ) : (
-                  <table>
-                    <thead>
-                      <tr><th>Date</th><th>Sport</th><th>Distance</th><th>Duration</th><th>Pace</th><th>TSS</th><th>Action</th></tr>
-                    </thead>
-                    <tbody>
-                      {dashboard.activities.map((row) => (
-                        <tr key={row.activity_id} className={selectedActivityId === row.activity_id ? "selected-row" : ""}>
-                          <td>{row.date}</td><td>{row.sport_type}</td><td>{row.distance_km} km</td><td>{row.duration_min} min</td><td>{row.avg_pace_display}</td><td>{row.tss || row.rtss}</td>
-                          <td><button onClick={() => loadActivityDetail(row.activity_id)}>View detail</button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </section>
-
-              <section className="card">
-                <h2>Activity detail</h2>
-                {!activityDetail ? (
-                  <p>Select an activity to inspect detail + records.</p>
+                {!weekOutlook ? (
+                  <p>Load data to see week outlook.</p>
                 ) : (
                   <>
-                    <div className="detail-grid">
-                      <p><strong>ID:</strong> {activityDetail.activity.activity_id}</p>
-                      <p><strong>Date:</strong> {activityDetail.activity.date}</p>
-                      <p><strong>Sport:</strong> {activityDetail.activity.sport_type}</p>
-                      <p><strong>Distance:</strong> {activityDetail.activity.distance_km} km</p>
-                      <p><strong>Duration:</strong> {activityDetail.activity.duration_min} min</p>
-                      <p><strong>TSS / rTSS:</strong> {activityDetail.activity.tss} / {activityDetail.activity.rtss}</p>
+                    <h2>Week Outlook</h2>
+                    <h3 className="wk-range-title">
+                      {new Date(`${weekOutlook.week_start}T00:00:00`).toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                      })}{" "}
+                      -{" "}
+                      {new Date(`${weekOutlook.week_end}T00:00:00`).toLocaleDateString("en-US", {
+                        day: "numeric",
+                      })}
+                    </h3>
+                    <div className="wk-controls">
+                      <button className="wk-nav-btn" type="button" onClick={() => shiftOutlookWeek(-7)} disabled={loading}>◀</button>
+                      <button className="wk-nav-btn" type="button" onClick={() => shiftOutlookWeek(7)} disabled={loading}>▶</button>
+                      <select value={weekCompare} onChange={(e) => setWeekCompare(e.target.value)}>
+                        <option value="planned">Plan</option>
+                        <option value="previous_week">Previous week</option>
+                        <option value="two_weeks_ago">2 weeks ago</option>
+                        <option value="three_weeks_ago">3 weeks ago</option>
+                        <option value="four_weeks_ago">4 weeks ago</option>
+                      </select>
+                      <select value={weekMetric} onChange={(e) => setWeekMetric(e.target.value)}>
+                        <option value="tss">TSS</option>
+                        <option value="rtss">rTSS</option>
+                        <option value="distance_eqv_km">Distance Eqv (km)</option>
+                      </select>
+                      <span className="wk-goal-pill">
+                        {metricLabel(weekOutlook.metric)} - {Math.round(Number(weekOutlook.goal || 0))}
+                      </span>
                     </div>
-                    <h3>Records ({activityDetail.records.length})</h3>
-                    {activityDetail.records.length === 0 ? (
-                      <p>No records available.</p>
-                    ) : (
-                      <table>
-                        <thead><tr><th>Time</th><th>HR</th><th>Speed</th><th>Distance</th><th>Cadence</th></tr></thead>
-                        <tbody>
-                          {activityDetail.records.slice(0, 120).map((row, idx) => (
-                            <tr key={`${row.record_time_utc}-${idx}`}><td>{row.record_time_utc}</td><td>{row.heart_rate}</td><td>{row.speed}</td><td>{row.distance}</td><td>{row.cadence}</td></tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
+                    <div className="kpi-grid">
+                      <div className="kpi-item"><span className="kpi-label">WTD (Current)</span><strong>{formatMetricValue(weekOutlook.wtd_current, weekOutlook.metric)}</strong></div>
+                      <div className="kpi-item"><span className="kpi-label">WTD ({compareLabel(weekOutlook.compare)})</span><strong>{formatMetricValue(weekOutlook.wtd_compare, weekOutlook.metric)}</strong></div>
+                      {weekOutlook.compare === "planned" ? (
+                        <>
+                          <div className="kpi-item"><span className="kpi-label">Remaining To Go</span><strong>{formatMetricValue(weekOutlook.remaining_to_go ?? 0, weekOutlook.metric)}</strong></div>
+                          <div className="kpi-item"><span className="kpi-label">Projected Finish</span><strong>{formatMetricValue(weekOutlook.projected_finish, weekOutlook.metric)}</strong></div>
+                          <div className="kpi-item"><span className="kpi-label">Estimated Fatigue EoW</span><strong>{formatNumber(weekOutlook.estimated_fatigue_eow, 1)}</strong></div>
+                        </>
+                      ) : (
+                        <div className="kpi-item"><span className="kpi-label">{compareLabel(weekOutlook.compare)} Total</span><strong>{formatMetricValue(weekOutlook.week_total_compare, weekOutlook.metric)}</strong></div>
+                      )}
+                    </div>
+                    <div className="goal-progress-track"><div className="goal-progress-fill" style={{ width: `${Math.max(0, Math.min(weekOutlook.goal_progress_pct, 200))}%` }} /></div>
+                    <WeekOutlookChart rows={weekOutlook.rows} metricKey={weekOutlook.metric} compareKey={weekOutlook.compare} />
                   </>
                 )}
               </section>
-            </>
-          ) : null}
+            ) : null}
 
-          <section className="card">
-            <h2>Data snapshot</h2>
-            {!overview ? (
-              <p>Loading overview...</p>
-            ) : (
-              <ul>
-                <li>Owner: {overview.owner}</li>
-                <li>DB path: {overview.db_path}</li>
-                <li>Activities: {overview.activities}</li>
-                <li>Activity details: {overview.activity_details}</li>
-                <li>Wellness rows: {overview.wellness_daily}</li>
-              </ul>
-            )}
+            {activeTab === "dashboard" ? (
+              <section className="card">
+                <h2>Dashboard</h2>
+                {!dashboard ? (
+                  <p>Load data to see dashboard metrics.</p>
+                ) : (
+                  <>
+                    <div className="kpi-grid">
+                      <div className="kpi-item"><span className="kpi-label">Distance</span><strong>{dashboard.kpis.distance_km} km</strong></div>
+                      <div className="kpi-item"><span className="kpi-label">Proxy distance</span><strong>{dashboard.kpis.distance_proxy_km} km</strong></div>
+                      <div className="kpi-item"><span className="kpi-label">Total TSS</span><strong>{dashboard.kpis.tss_total}</strong></div>
+                      <div className="kpi-item"><span className="kpi-label">Activities</span><strong>{dashboard.kpis.activities}</strong></div>
+                    </div>
+                  </>
+                )}
+              </section>
+            ) : null}
+
+            {activeTab === "weekly_summary" ? (
+              <section className="card">
+                <h2>Weekly Summary</h2>
+                {!weekly ? (
+                  <p>Load data to see weekly summary.</p>
+                ) : weekly.weeks.length === 0 ? (
+                  <p>No weekly rows available for this filter set.</p>
+                ) : (
+                  <>
+                    <p className="subtle">Weeks: {weekly.summary.weeks} | Activities: {weekly.summary.total_activities} | Distance: {weekly.summary.total_distance_km} km | TSS: {weekly.summary.total_tss}</p>
+                    <table>
+                      <thead>
+                        <tr><th>Week start</th><th>Distance (km)</th><th>Proxy (km)</th><th>TSS</th><th>rTSS</th><th>Activities</th></tr>
+                      </thead>
+                      <tbody>
+                        {weekly.weeks.map((row) => (
+                          <tr key={row.week_start}><td>{row.week_start}</td><td>{row.distance_km}</td><td>{row.distance_proxy_km}</td><td>{row.tss}</td><td>{row.rtss}</td><td>{row.runs}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </section>
+            ) : null}
+
+            {activeTab === "activities" ? (
+              <>
+                <section className="card">
+                  <h2>Activities</h2>
+                  {!dashboard ? (
+                    <p>Load data to see activities.</p>
+                  ) : dashboard.activities.length === 0 ? (
+                    <p>No activities found for this filter set.</p>
+                  ) : (
+                    <table>
+                      <thead>
+                        <tr><th>Date</th><th>Sport</th><th>Distance</th><th>Duration</th><th>Pace</th><th>TSS</th><th>Action</th></tr>
+                      </thead>
+                      <tbody>
+                        {dashboard.activities.map((row) => (
+                          <tr key={row.activity_id} className={selectedActivityId === row.activity_id ? "selected-row" : ""}>
+                            <td>{row.date}</td><td>{row.sport_type}</td><td>{row.distance_km} km</td><td>{row.duration_min} min</td><td>{row.avg_pace_display}</td><td>{row.tss || row.rtss}</td>
+                            <td><button onClick={() => loadActivityDetail(row.activity_id)}>View detail</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </section>
+
+                <section className="card">
+                  <h2>Activity detail</h2>
+                  {!activityDetail ? (
+                    <p>Select an activity to inspect detail + records.</p>
+                  ) : (
+                    <>
+                      <div className="detail-grid">
+                        <p><strong>ID:</strong> {activityDetail.activity.activity_id}</p>
+                        <p><strong>Date:</strong> {activityDetail.activity.date}</p>
+                        <p><strong>Sport:</strong> {activityDetail.activity.sport_type}</p>
+                        <p><strong>Distance:</strong> {activityDetail.activity.distance_km} km</p>
+                        <p><strong>Duration:</strong> {activityDetail.activity.duration_min} min</p>
+                        <p><strong>TSS / rTSS:</strong> {activityDetail.activity.tss} / {activityDetail.activity.rtss}</p>
+                      </div>
+                      <h3>Records ({activityDetail.records.length})</h3>
+                      {activityDetail.records.length === 0 ? (
+                        <p>No records available.</p>
+                      ) : (
+                        <table>
+                          <thead><tr><th>Time</th><th>HR</th><th>Speed</th><th>Distance</th><th>Cadence</th></tr></thead>
+                          <tbody>
+                            {activityDetail.records.slice(0, 120).map((row, idx) => (
+                              <tr key={`${row.record_time_utc}-${idx}`}><td>{row.record_time_utc}</td><td>{row.heart_rate}</td><td>{row.speed}</td><td>{row.distance}</td><td>{row.cadence}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </>
+                  )}
+                </section>
+              </>
+            ) : null}
+
+            <section className="card">
+              <h2>Data snapshot</h2>
+              {!overview ? (
+                <p>Loading overview...</p>
+              ) : (
+                <ul>
+                  <li>Owner: {overview.owner}</li>
+                  <li>DB path: {overview.db_path}</li>
+                  <li>Activities: {overview.activities}</li>
+                  <li>Activity details: {overview.activity_details}</li>
+                  <li>Wellness rows: {overview.wellness_daily}</li>
+                </ul>
+              )}
+            </section>
           </section>
-        </>
+        </div>
       )}
     </main>
   );
