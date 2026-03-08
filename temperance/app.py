@@ -8,6 +8,7 @@ import tempfile
 import hmac
 import hashlib
 import base64
+import html
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import replace
 from pathlib import Path
@@ -5248,11 +5249,29 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         flex: 0 0 32px !important;
                         max-width: 32px !important;
                     }
-                    .compact-mobile-controls a.compare {
+                    .compact-mobile-controls select {
+                        min-width: 0 !important;
+                        height: 24px !important;
+                        min-height: 24px !important;
+                        border-radius: 5px !important;
+                        border: 1px solid rgba(71,85,105,0.78) !important;
+                        background: rgba(15,23,42,0.42) !important;
+                        color: rgba(226,232,240,0.96) !important;
+                        font-size: 0.72rem !important;
+                        line-height: 1 !important;
+                        white-space: nowrap !important;
+                        padding: 0.04rem 1.1rem 0.04rem 0.22rem !important;
+                        -webkit-appearance: none !important;
+                        appearance: none !important;
+                        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23e2e8f0' d='M1 3l4 4 4-4'/%3E%3C/svg%3E") !important;
+                        background-repeat: no-repeat !important;
+                        background-position: right 0.28rem center !important;
+                    }
+                    .compact-mobile-controls select.compare {
                         flex: 0 0 31% !important;
                         max-width: 31% !important;
                     }
-                    .compact-mobile-controls a.metric {
+                    .compact-mobile-controls select.metric {
                         flex: 0 0 calc(100% - 32px - 32px - 31% - 0.24rem) !important;
                         max-width: calc(100% - 32px - 32px - 31% - 0.24rem) !important;
                     }
@@ -5463,75 +5482,30 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         except Exception:
                             pass
                         st.rerun()
+                    _mobile_compare_raw = st.query_params.get("compact_compare_idx")
+                    if isinstance(_mobile_compare_raw, (list, tuple)):
+                        _mobile_compare_raw = _mobile_compare_raw[0] if _mobile_compare_raw else ""
+                    _mobile_compare_num = pd.to_numeric(_mobile_compare_raw, errors="coerce")
+                    _mobile_compare_idx = int(_mobile_compare_num) if pd.notna(_mobile_compare_num) else -1
+                    if 0 <= _mobile_compare_idx < len(compare_options):
+                        st.session_state["calendar_compact_compare_choice"] = compare_options[_mobile_compare_idx]
+                        try:
+                            del st.query_params["compact_compare_idx"]
+                        except Exception:
+                            pass
+                        st.rerun()
 
-                    if mobile_ctl == "compare":
-                        @st.dialog("Compare", width="small")
-                        def _compact_compare_dialog() -> None:
-                            current_compare_dialog = str(
-                                st.session_state.get("calendar_compact_compare_choice", compare_options[0])
-                            )
-                            if current_compare_dialog not in compare_options:
-                                current_compare_dialog = compare_options[0]
-                            selected_compare_dialog = st.selectbox(
-                                "Compare against",
-                                compare_options,
-                                index=compare_options.index(current_compare_dialog),
-                                key="compact_compare_dialog_select",
-                                label_visibility="collapsed",
-                            )
-                            d1, d2 = st.columns(2)
-                            with d1:
-                                if st.button("Apply", key="compact_compare_dialog_apply", use_container_width=True):
-                                    st.session_state["calendar_compact_compare_choice"] = selected_compare_dialog
-                                    try:
-                                        del st.query_params["compact_ctl"]
-                                    except Exception:
-                                        pass
-                                    st.rerun()
-                            with d2:
-                                if st.button("Cancel", key="compact_compare_dialog_cancel", use_container_width=True):
-                                    try:
-                                        del st.query_params["compact_ctl"]
-                                    except Exception:
-                                        pass
-                                    st.rerun()
-
-                        _compact_compare_dialog()
-
-                    if mobile_ctl == "metric":
-                        @st.dialog("Metric", width="small")
-                        def _compact_metric_dialog() -> None:
-                            current_metric_dialog = str(
-                                st.session_state.get("calendar_compact_metric", compact_metric_keys[0])
-                            )
-                            if current_metric_dialog not in compact_metric_keys:
-                                current_metric_dialog = compact_metric_keys[0]
-                            selected_metric_dialog = st.selectbox(
-                                "Metric",
-                                compact_metric_keys,
-                                index=compact_metric_keys.index(current_metric_dialog),
-                                key="compact_metric_dialog_select",
-                                label_visibility="collapsed",
-                                format_func=lambda v: metric_short.get(str(v), str(v)),
-                            )
-                            d1, d2 = st.columns(2)
-                            with d1:
-                                if st.button("Apply", key="compact_metric_dialog_apply", use_container_width=True):
-                                    st.session_state["calendar_compact_metric"] = selected_metric_dialog
-                                    try:
-                                        del st.query_params["compact_ctl"]
-                                    except Exception:
-                                        pass
-                                    st.rerun()
-                            with d2:
-                                if st.button("Cancel", key="compact_metric_dialog_cancel", use_container_width=True):
-                                    try:
-                                        del st.query_params["compact_ctl"]
-                                    except Exception:
-                                        pass
-                                    st.rerun()
-
-                        _compact_metric_dialog()
+                    _mobile_metric_raw = st.query_params.get("compact_metric_key")
+                    if isinstance(_mobile_metric_raw, (list, tuple)):
+                        _mobile_metric_raw = _mobile_metric_raw[0] if _mobile_metric_raw else ""
+                    _mobile_metric_key = str(_mobile_metric_raw or "").strip()
+                    if _mobile_metric_key in compact_metric_keys:
+                        st.session_state["calendar_compact_metric"] = _mobile_metric_key
+                        try:
+                            del st.query_params["compact_metric_key"]
+                        except Exception:
+                            pass
+                        st.rerun()
 
                     current_compare = str(st.session_state.get("calendar_compact_compare_choice", compare_options[0]))
                     if current_compare not in compare_options:
@@ -5542,7 +5516,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     _qp_base: dict[str, list[str] | str] = {}
                     try:
                         for _k, _v in st.query_params.items():
-                            if str(_k) == "compact_ctl":
+                            if str(_k) in {"compact_ctl", "compact_compare_idx", "compact_metric_key"}:
                                 continue
                             if isinstance(_v, (list, tuple)):
                                 _qp_base[str(_k)] = [str(x) for x in _v]
@@ -5552,20 +5526,39 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         _qp_base = {}
                     _href_prev = "?" + urlencode({**_qp_base, "compact_ctl": "prev"}, doseq=True)
                     _href_next = "?" + urlencode({**_qp_base, "compact_ctl": "next"}, doseq=True)
-                    _href_compare = "?" + urlencode({**_qp_base, "compact_ctl": "compare"}, doseq=True)
-                    _href_metric = "?" + urlencode({**_qp_base, "compact_ctl": "metric"}, doseq=True)
                     _compare_label = compare_short.get(current_compare, current_compare)
                     _metric_label = (
                         f"{metric_short.get(current_metric, current_metric)} - {int(round(metric_values_week.get(current_metric, 0.0)))}"
                         + (" km" if current_metric == "distance_eqv_km" else "")
+                    )
+                    compare_options_html = "".join(
+                        [
+                            f"<option value='{idx}'{' selected' if opt == current_compare else ''}>{html.escape(compare_short.get(opt, opt))}</option>"
+                            for idx, opt in enumerate(compare_options)
+                        ]
+                    )
+                    metric_options_html = "".join(
+                        [
+                            (
+                                f"<option value='{html.escape(mk)}'{' selected' if mk == current_metric else ''}>"
+                                f"{html.escape(metric_short.get(mk, mk))} - {int(round(metric_values_week.get(mk, 0.0)))}"
+                                f"{' km' if mk == 'distance_eqv_km' else ''}"
+                                "</option>"
+                            )
+                            for mk in compact_metric_keys
+                        ]
                     )
                     st.markdown(
                         (
                             "<div class='compact-mobile-controls'>"
                             f"<a class='prev' href='{_href_prev}'>◀</a>"
                             f"<a class='next' href='{_href_next}'>▶</a>"
-                            f"<a class='compare' href='{_href_compare}'>{_compare_label}</a>"
-                            f"<a class='metric' href='{_href_metric}'>{_metric_label}</a>"
+                            "<select class='compare' "
+                            "onchange=\"(function(v){const u=new URL(window.location.href);u.searchParams.set('compact_compare_idx',v);u.searchParams.delete('compact_ctl');u.searchParams.delete('compact_metric_key');window.location.href=u.toString();})(this.value)\">"
+                            f"{compare_options_html}</select>"
+                            "<select class='metric' "
+                            "onchange=\"(function(v){const u=new URL(window.location.href);u.searchParams.set('compact_metric_key',v);u.searchParams.delete('compact_ctl');u.searchParams.delete('compact_compare_idx');window.location.href=u.toString();})(this.value)\">"
+                            f"{metric_options_html}</select>"
                             "</div>"
                         ),
                         unsafe_allow_html=True,
