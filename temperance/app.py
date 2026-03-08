@@ -5450,6 +5450,8 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         st.session_state["calendar_compact_metric"] = current_metric
                     active_compare_choice = current_compare
                     active_metric_choice = current_metric
+                    compare_select_width = 96 if is_mobile_layout else 126
+                    metric_select_width = 142 if is_mobile_layout else 186
                     with st.container(
                         key="compact_mobile_nav_row",
                         horizontal=True,
@@ -5468,7 +5470,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                             key="calendar_compact_compare_choice",
                             label_visibility="collapsed",
                             format_func=lambda opt: compare_short.get(opt, opt),
-                            width=96,
+                            width=compare_select_width,
                         )
                         active_compare_choice = str(selected_compare_mobile)
                         selected_metric_mobile = st.selectbox(
@@ -5480,7 +5482,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                                 f"{metric_short.get(mk, mk)} - {int(round(metric_values_week.get(mk, 0.0)))}"
                                 + (" km" if mk == "distance_eqv_km" else "")
                             ),
-                            width=142,
+                            width=metric_select_width,
                         )
                         active_metric_choice = str(selected_metric_mobile)
                 else:
@@ -5823,12 +5825,12 @@ if view in {"Weekly Summary", "Activity Summary"}:
                     labels_layer = alt.layer(compare_labels, current_labels)
                 today_local = pd.Timestamp(datetime.now().astimezone().date())
                 cutoff_day = min(today_local, selected_week_end)
+                day_offset = int((cutoff_day - selected_week_start).days)
+                day_offset = min(max(day_offset, 0), 6)
                 actual_to_date_mask = compact_week["day"] <= cutoff_day
                 if compare_choice == "Planned":
                     compare_cutoff_day = cutoff_day
                 else:
-                    day_offset = int((cutoff_day - selected_week_start).days)
-                    day_offset = min(max(day_offset, 0), 6)
                     compare_cutoff_day = compare_week_start + pd.Timedelta(days=day_offset)
                 compare_to_date_mask = compare_week["day"] <= compare_cutoff_day
                 metric_label_map = {k: lbl for k, lbl, _, _, _ in metric_defs}
@@ -5849,6 +5851,20 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 realized_week_total = _agg_metric(compact_week, compact_week["day"].notna(), selected_metric)
                 compare_to_date = _agg_metric(compare_week, compare_to_date_mask, selected_metric)
                 compare_week_total = _agg_metric(compare_week, compare_week["day"].notna(), selected_metric)
+                if compare_choice != "Planned" and not compare_chart_df.empty:
+                    compare_to_date = float(
+                        pd.to_numeric(
+                            compare_chart_df.loc[
+                                pd.to_numeric(compare_chart_df.get("slot_idx"), errors="coerce").fillna(-1).astype(int)
+                                <= int(day_offset),
+                                "metric_value",
+                            ],
+                            errors="coerce",
+                        ).fillna(0.0).sum()
+                    )
+                    compare_week_total = float(
+                        pd.to_numeric(compare_chart_df.get("metric_value"), errors="coerce").fillna(0.0).sum()
+                    )
                 if compare_choice == "Planned" and not planned_rows_compare_source.empty:
                     planned_metric_key = (
                         "distance_proxy_km"
