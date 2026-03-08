@@ -4,8 +4,7 @@ import { AppLayout } from '@/components/layout/app-layout';
 import { ProtectedRoute } from '@/features/auth/components/protected-route';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { LoginPage } from '@/features/auth/pages/login-page';
-import { PlanActivitiesPage } from '@/features/plan-activities/pages/plan-activities-page';
-import { WeeklyOutlookPage } from '@/features/weekly-outlook/pages/weekly-outlook-page';
+import { WeekPlannerPage } from '@/features/week-planner/pages/week-planner-page';
 
 function RootRedirect(): JSX.Element {
   const { status } = useAuth();
@@ -14,7 +13,7 @@ function RootRedirect(): JSX.Element {
     return <div className="p-8 text-sm text-muted-foreground">Loading session...</div>;
   }
 
-  return <Navigate to={status === 'authenticated' ? '/app/weekly-outlook' : '/login'} replace />;
+  return <Navigate to={status === 'authenticated' ? '/app/week-planner' : '/login'} replace />;
 }
 
 function PlaceholderPage({ title }: { title: string }): JSX.Element {
@@ -34,12 +33,13 @@ export function AppRouter(): JSX.Element {
 
       <Route element={<ProtectedRoute />}>
         <Route path="/app" element={<AppLayout />}>
-          <Route path="weekly-outlook" element={<WeeklyOutlookPage />} />
-          <Route path="plan-activities" element={<PlanActivitiesPage />} />
+          <Route path="week-planner" element={<WeekPlannerPage />} />
+          <Route path="weekly-outlook" element={<Navigate to="/app/week-planner" replace />} />
+          <Route path="plan-activities" element={<Navigate to="/app/week-planner" replace />} />
           <Route path="dashboard" element={<PlaceholderPage title="Dashboard" />} />
           <Route path="activities" element={<PlaceholderPage title="Activities" />} />
           <Route path="settings" element={<PlaceholderPage title="Settings" />} />
-          <Route index element={<Navigate to="weekly-outlook" replace />} />
+          <Route index element={<Navigate to="week-planner" replace />} />
         </Route>
       </Route>
 

@@ -15,6 +15,14 @@ import type { WeeklyCompare, WeeklyMetric } from '@/features/weekly-outlook/type
 import { formatRange } from '@/features/weekly-outlook/utils/formatters';
 
 export function WeeklyOutlookPage(): JSX.Element {
+  return <WeeklyOutlookSection />;
+}
+
+interface WeeklyOutlookSectionProps {
+  embedded?: boolean;
+}
+
+export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionProps): JSX.Element {
   const [metric, setMetric] = useState<WeeklyMetric>('tss');
   const [compare, setCompare] = useState<WeeklyCompare>('planned');
   const query = useWeeklyOutlookQuery(metric, compare);
@@ -24,12 +32,14 @@ export function WeeklyOutlookPage(): JSX.Element {
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Weekly Outlook</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Compare current week performance against plan or historical benchmark.
-          </p>
-        </div>
+        {embedded ? null : (
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Weekly Outlook</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Compare current week performance against plan or historical benchmark.
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           <CompareSelector value={compare} onValueChange={setCompare} />

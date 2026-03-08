@@ -27,6 +27,14 @@ function dayLabel(isoDay: string): string {
 }
 
 export function PlanActivitiesPage(): JSX.Element {
+  return <PlanActivitiesSection />;
+}
+
+interface PlanActivitiesSectionProps {
+  embedded?: boolean;
+}
+
+export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectionProps): JSX.Element {
   const { session, profile } = useAuth();
   const query = usePlanActivitiesQuery(4);
   const [metric, setMetric] = useState<PlannedMetricView>('tss');
@@ -147,7 +155,11 @@ export function PlanActivitiesPage(): JSX.Element {
   return (
     <section className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Plan Activities</h1>
+        {embedded ? (
+          <h2 className="text-xl font-semibold tracking-tight">Plan Activities</h2>
+        ) : (
+          <h1 className="text-2xl font-semibold tracking-tight">Plan Activities</h1>
+        )}
         <p className="mt-1 text-sm text-muted-foreground">Use `[date]:[activity]` and `+` for intervals (same parser behavior as v1).</p>
       </div>
 
