@@ -189,16 +189,21 @@ export function SettingsPage(): JSX.Element {
 
       <Card>
         <CardContent className="space-y-4 p-4">
-          <p className="text-sm font-medium">IF Zones (fractions)</p>
+          <p className="text-sm font-medium">IF Zones (%)</p>
           <div className="grid gap-3 md:grid-cols-4">
             {(['z1_max', 'z2_max', 'z3_max', 'z4_max'] as const).map((key) => (
               <div key={key}>
-                <p className="mb-1 text-xs text-muted-foreground">{key}</p>
+                <p className="mb-1 text-xs text-muted-foreground">{key} (%)</p>
                 <Input
                   type="number"
-                  step="0.01"
-                  value={ifZones[key]}
-                  onChange={(event) => setIfZones((previous) => ({ ...previous, [key]: Number(event.target.value) }))}
+                  step="1"
+                  value={Math.round((Number(ifZones[key]) || 0) * 100)}
+                  onChange={(event) =>
+                    setIfZones((previous) => ({
+                      ...previous,
+                      [key]: (Number(event.target.value) || 0) / 100,
+                    }))
+                  }
                 />
               </div>
             ))}
@@ -213,12 +218,17 @@ export function SettingsPage(): JSX.Element {
           <div className="grid gap-3 md:grid-cols-4">
             {(['non_running', 'treadmill', 'elliptical', 'cycling'] as const).map((key) => (
               <div key={key}>
-                <p className="mb-1 text-xs text-muted-foreground">{key.replace('_', ' ')}</p>
+                <p className="mb-1 text-xs text-muted-foreground">{key.replace('_', ' ')} (%)</p>
                 <Input
                   type="number"
-                  step="0.01"
-                  value={specificity[key]}
-                  onChange={(event) => setSpecificity((previous) => ({ ...previous, [key]: Number(event.target.value) }))}
+                  step="1"
+                  value={Math.round((Number(specificity[key]) || 0) * 100)}
+                  onChange={(event) =>
+                    setSpecificity((previous) => ({
+                      ...previous,
+                      [key]: (Number(event.target.value) || 0) / 100,
+                    }))
+                  }
                 />
               </div>
             ))}
