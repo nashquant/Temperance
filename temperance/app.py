@@ -5476,6 +5476,7 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         "4 weeks ago": "Prev-4w",
                     }
                     metric_short = {"rtss": "rTSS", "tss": "TSS", "distance_eqv_km": "Dist"}
+                    # Backward-compatible support for older link-based mobile nav params.
                     _mobile_ctl_raw = st.query_params.get("compact_ctl")
                     if isinstance(_mobile_ctl_raw, (list, tuple)):
                         _mobile_ctl_raw = _mobile_ctl_raw[0] if _mobile_ctl_raw else ""
@@ -5490,89 +5491,36 @@ if view in {"Weekly Summary", "Activity Summary"}:
                         except Exception:
                             pass
                         st.rerun()
-                    _mobile_compare_raw = st.query_params.get("compact_compare_idx")
-                    if isinstance(_mobile_compare_raw, (list, tuple)):
-                        _mobile_compare_raw = _mobile_compare_raw[0] if _mobile_compare_raw else ""
-                    _mobile_compare_num = pd.to_numeric(_mobile_compare_raw, errors="coerce")
-                    _mobile_compare_idx = int(_mobile_compare_num) if pd.notna(_mobile_compare_num) else -1
-                    if 0 <= _mobile_compare_idx < len(compare_options):
-                        st.session_state["calendar_compact_compare_choice"] = compare_options[_mobile_compare_idx]
-                        try:
-                            del st.query_params["compact_compare_idx"]
-                        except Exception:
-                            pass
-                        st.rerun()
-
-                    _mobile_metric_raw = st.query_params.get("compact_metric_key")
-                    if isinstance(_mobile_metric_raw, (list, tuple)):
-                        _mobile_metric_raw = _mobile_metric_raw[0] if _mobile_metric_raw else ""
-                    _mobile_metric_key = str(_mobile_metric_raw or "").strip()
-                    if _mobile_metric_key in compact_metric_keys:
-                        st.session_state["calendar_compact_metric"] = _mobile_metric_key
-                        try:
-                            del st.query_params["compact_metric_key"]
-                        except Exception:
-                            pass
-                        st.rerun()
-
-                    current_compare = str(st.session_state.get("calendar_compact_compare_choice", compare_options[0]))
-                    if current_compare not in compare_options:
-                        current_compare = compare_options[0]
-                    current_metric = str(st.session_state.get("calendar_compact_metric", compact_metric_keys[0]))
-                    if current_metric not in compact_metric_keys:
-                        current_metric = compact_metric_keys[0]
-                    active_compare_choice = current_compare
-                    active_metric_choice = current_metric
-                    _qp_base: dict[str, list[str] | str] = {}
-                    try:
-                        for _k, _v in st.query_params.items():
-                            if str(_k) in {"compact_ctl", "compact_compare_idx", "compact_metric_key"}:
-                                continue
-                            if isinstance(_v, (list, tuple)):
-                                _qp_base[str(_k)] = [str(x) for x in _v]
-                            else:
-                                _qp_base[str(_k)] = str(_v)
-                    except Exception:
-                        _qp_base = {}
-                    _href_prev = "?" + urlencode({**_qp_base, "compact_ctl": "prev"}, doseq=True)
-                    _href_next = "?" + urlencode({**_qp_base, "compact_ctl": "next"}, doseq=True)
-                    _compare_label = compare_short.get(current_compare, current_compare)
-                    _metric_label = (
-                        f"{metric_short.get(current_metric, current_metric)} - {int(round(metric_values_week.get(current_metric, 0.0)))}"
-                        + (" km" if current_metric == "distance_eqv_km" else "")
-                    )
-                    compare_options_html = "".join(
-                        [
-                            f"<option value='{idx}'{' selected' if opt == current_compare else ''}>{html.escape(compare_short.get(opt, opt))}</option>"
-                            for idx, opt in enumerate(compare_options)
-                        ]
-                    )
-                    metric_options_html = "".join(
-                        [
-                            (
-                                f"<option value='{html.escape(mk)}'{' selected' if mk == current_metric else ''}>"
-                                f"{html.escape(metric_short.get(mk, mk))} - {int(round(metric_values_week.get(mk, 0.0)))}"
-                                f"{' km' if mk == 'distance_eqv_km' else ''}"
-                                "</option>"
-                            )
-                            for mk in compact_metric_keys
-                        ]
-                    )
-                    st.markdown(
-                        (
-                            "<div class='compact-mobile-controls'>"
-                            f"<a class='prev' href='{_href_prev}'>◀</a>"
-                            f"<a class='next' href='{_href_next}'>▶</a>"
-                            "<select class='compare' "
-                            "onchange=\"(function(v){const u=new URL(window.location.href);u.searchParams.set('compact_compare_idx',v);u.searchParams.delete('compact_ctl');u.searchParams.delete('compact_metric_key');window.location.href=u.toString();})(this.value)\">"
-                            f"{compare_options_html}</select>"
-                            "<select class='metric' "
-                            "onchange=\"(function(v){const u=new URL(window.location.href);u.searchParams.set('compact_metric_key',v);u.searchParams.delete('compact_ctl');u.searchParams.delete('compact_compare_idx');window.location.href=u.toString();})(this.value)\">"
-                            f"{metric_options_html}</select>"
-                            "</div>"
-                        ),
-                        unsafe_allow_html=True,
-                    )
+                    nav1, nav2, nav3, nav4 = st.columns([0.08, 0.08, 0.36, 0.48])
+                    with nav1:
+                        if st.button("◀", key="compact_prev_week", use_container_width=True):
+                            st.session_state["calendar_compact_week_start"] = selected_week_start - pd.Timedelta(days=7)
+                            st.rerun()
+                    with nav2:
+                        if st.button("▶", key="compact_next_week", use_container_width=True):
+                            st.session_state["calendar_compact_week_start"] = selected_week_start + pd.Timedelta(days=7)
+                            st.rerun()
+                    with nav3:
+                        selected_compare_mobile = st.selectbox(
+                            "Compare against",
+                            compare_options,
+                            key="calendar_compact_compare_choice",
+                            label_visibility="collapsed",
+                            format_func=lambda opt: compare_short.get(opt, opt),
+                        )
+                        active_compare_choice = str(selected_compare_mobile)
+                    with nav4:
+                        selected_metric_mobile = st.selectbox(
+                            "Metric",
+                            compact_metric_keys,
+                            key="calendar_compact_metric",
+                            label_visibility="collapsed",
+                            format_func=lambda mk: (
+                                f"{metric_short.get(mk, mk)} - {int(round(metric_values_week.get(mk, 0.0)))}"
+                                + (" km" if mk == "distance_eqv_km" else "")
+                            ),
+                        )
+                        active_metric_choice = str(selected_metric_mobile)
                 else:
                     nav1, nav2, nav3, nav4, _nav_spacer = st.columns([0.75, 0.75, 1.0, 1.2, 0.8])
                     with nav1:
@@ -5775,14 +5723,9 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 )
                 compare_chart_df = compare_chart_df[compare_chart_df["slot_idx"].isin(slot_to_display.keys())].copy()
                 y_title = next(label for key, label, _, _, _ in metric_defs if key == selected_metric)
-                if selected_metric == "distance_eqv_km":
-                    chart_df["metric_label"] = chart_df["metric_value"].map(
-                        lambda v: f"{v:.0f} km" if float(v) > 0 else ""
-                    )
-                else:
-                    chart_df["metric_label"] = chart_df["metric_value"].map(
-                        lambda v: f"{v:.0f}" if float(v) > 0 else ""
-                    )
+                chart_df["metric_label"] = chart_df["metric_value"].map(
+                    lambda v: f"{v:.0f}" if float(v) > 0 else ""
+                )
 
                 def _compact_bar_color(metric_key: str, value: float) -> str:
                     if metric_key in {"tss", "rtss"}:
@@ -5851,7 +5794,15 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 )
                 labels = (
                     alt.Chart(chart_df.assign(series="Current"))
-                    .mark_text(dy=-10, color="#e2e8f0", fontSize=12, fontWeight=700)
+                    .transform_filter("datum.metric_value > 0")
+                    .mark_text(
+                        dy=-4,
+                        baseline="bottom",
+                        color="#e2e8f0",
+                        fontSize=12,
+                        fontWeight=700,
+                        clip=False,
+                    )
                     .encode(
                         x=alt.X("day_display:N", sort=chart_df["day_display"].tolist()),
                         xOffset=alt.XOffset(
@@ -5994,9 +5945,9 @@ if view in {"Weekly Summary", "Activity Summary"}:
                 compact_chart = alt.layer(bars, labels).properties(
                     height=(205 if is_mobile_compact else 250),
                     padding=(
-                        {"left": 36, "right": 6, "top": 0, "bottom": 26}
+                        {"left": 36, "right": 6, "top": 8, "bottom": 26}
                         if is_mobile_compact
-                        else {"left": 52, "right": 10, "top": 0, "bottom": 42}
+                        else {"left": 52, "right": 10, "top": 10, "bottom": 42}
                     ),
                 )
                 if is_mobile_compact:
