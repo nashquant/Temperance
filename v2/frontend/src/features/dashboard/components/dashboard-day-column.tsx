@@ -47,8 +47,8 @@ function fmtMeta(day: DashboardDayColumnType): string[] {
   if (line2.length < 2 && (day.meta.planned_if_pct || 0) > 0) {
     line2.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
   }
-  if (line3.length === 0 && day.meta.stress_avg === null && day.meta.resting_hr === null && (day.meta.planned_if_pct || 0) > 0) {
-    line3.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
+  if (line3.length === 0 && day.meta.fatigue_expected !== null) {
+    line3.push(`Fatigue exp ${Math.round(day.meta.fatigue_expected)}`);
   }
 
   return [line1.join(' · '), line2.join(' · '), line3.join(' · ')].filter(Boolean);
@@ -144,7 +144,10 @@ export function DashboardDayColumn({ day }: DashboardDayColumnProps): JSX.Elemen
                 {compactLine([activity.duration_label, `${Math.round(activity.distance_eqv_km)} kmeq`])}
               </p>
               <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">
-                {compactLine([day.meta.fatigue !== null ? `Fatigue exp ${Math.round(day.meta.fatigue)}` : 'Fatigue exp -'])}
+                {compactLine([
+                  activity.pace_label && activity.pace_label !== '-' ? activity.pace_label : null,
+                  day.meta.fatigue_expected !== null ? `Fatigue exp ${Math.round(day.meta.fatigue_expected)}` : 'Fatigue exp -',
+                ])}
               </p>
               <p className="mt-auto truncate text-[12px] font-semibold leading-4 text-foreground">
                 TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}

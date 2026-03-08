@@ -1098,6 +1098,7 @@ def _compute_planned_rows_metrics_df(
     rtss_vals: list[float] = []
     dist_eqv_vals: list[float] = []
     if_vals: list[float] = []
+    pace_proxy_vals: list[float] = []
     dur_vals: list[float] = []
     for _, row in out.iterrows():
         raw_segments = row.get("parsed_json")
@@ -1144,13 +1145,19 @@ def _compute_planned_rows_metrics_df(
         rtss_vals.append(total_rtss)
         dist_eqv_vals.append(total_dist_eqv)
         dur_vals.append(if_weight_seconds)
-        if_vals.append(if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0)
+        row_if = if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0
+        if_vals.append(row_if)
+        if row_if > 0 and lt_pace_for_day > 0:
+            pace_proxy_vals.append(float(lt_pace_for_day / row_if))
+        else:
+            pace_proxy_vals.append(0.0)
 
     out["tss"] = tss_vals
     out["rtss"] = rtss_vals
     out["distance_proxy_km"] = dist_eqv_vals
     out["duration_s"] = dur_vals
     out["if_proxy"] = if_vals
+    out["pace_proxy_sec_per_km"] = pace_proxy_vals
     return out
 
 
@@ -1631,6 +1638,7 @@ def _build_activity_dashboard_payload(
     )
     planned_by_day: dict[pd.Timestamp, list[dict[str, Any]]] = {}
     planned_summary_lookup: dict[pd.Timestamp, dict[str, float]] = {}
+    planned_tss_lookup: dict[pd.Timestamp, float] = {}
     if not planned_rows.empty:
         lthr_curve = _load_curve_points(
             db_path=db_path,
@@ -1654,9 +1662,11 @@ def _build_activity_dashboard_payload(
             for day, grp in planned_metrics.groupby("day"):
                 day_key = pd.Timestamp(day).normalize()
                 cards: list[dict[str, Any]] = []
+                remaining_tss = 0.0
                 for _, row in grp.iterrows():
                     if bool(row.get("manual_done")):
                         continue
+                    remaining_tss += _safe_float(row.get("tss"))
                     cards.append(
                         {
                             "day_utc": day_key.date().isoformat(),
@@ -1666,6 +1676,7 @@ def _build_activity_dashboard_payload(
                             "duration_s": _safe_float(row.get("duration_s")),
                             "distance_eqv_km": _safe_float(row.get("distance_proxy_km")),
                             "if_proxy": _safe_float(row.get("if_proxy")),
+                            "pace_label": _format_pace_short(_safe_float(row.get("pace_proxy_sec_per_km"))),
                             "tss": _safe_float(row.get("tss")),
                             "rtss": _safe_float(row.get("rtss")),
                             "manual_done": bool(row.get("manual_done")),
@@ -1673,6 +1684,7 @@ def _build_activity_dashboard_payload(
                     )
                 if cards:
                     planned_by_day[day_key] = cards
+                planned_tss_lookup[day_key] = float(max(remaining_tss, 0.0))
                 planned_summary_lookup[day_key] = {
                     "duration_s": float(pd.to_numeric(grp.get("duration_s"), errors="coerce").fillna(0.0).sum()),
                     "distance_eqv_km": float(pd.to_numeric(grp.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()),
@@ -1703,6 +1715,29 @@ def _build_activity_dashboard_payload(
     latest_actual_day = pd.Timestamp(max_day).normalize()
     display_anchor_day = pd.Timestamp(min(today_local, latest_actual_day)).normalize()
     current_week_start = _week_start_monday(display_anchor_day)
+    fatigue_expected_lookup: dict[pd.Timestamp, float] = {}
+    if not day_agg.empty:
+        min_model_day = pd.to_datetime(day_agg.get("day"), errors="coerce").min()
+        projection_end_day = render_max_day
+        if pd.notna(min_model_day):
+            projection_days = pd.date_range(start=pd.Timestamp(min_model_day).normalize(), end=projection_end_day, freq="D")
+            actual_tss_lookup = {
+                pd.Timestamp(row["day"]).normalize(): _safe_float(row.get("tss"))
+                for _, row in day_agg.iterrows()
+            }
+            projected_tss = pd.Series(
+                [
+                    actual_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0)
+                    if pd.Timestamp(day).normalize() <= latest_actual_day
+                    else _safe_float(planned_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0))
+                    for day in projection_days
+                ],
+                index=projection_days,
+                dtype="float64",
+            )
+            projected_fatigue = ema_multi(projected_tss, [7])[7]
+            for day, value in projected_fatigue.items():
+                fatigue_expected_lookup[pd.Timestamp(day).normalize()] = _safe_float(value)
 
     actual_week_starts = {
         _week_start_monday(pd.Timestamp(day))
@@ -1836,6 +1871,11 @@ def _build_activity_dashboard_payload(
                         "calories": round(_safe_float(day_stats.get("calories")), 0),
                         "fitness": round(_safe_float(fitfat.get("fitness")), 1) if fitfat else None,
                         "fatigue": round(_safe_float(fitfat.get("fatigue")), 1) if fitfat else None,
+                        "fatigue_expected": (
+                            round(_safe_float(fatigue_expected_lookup.get(day)), 1)
+                            if day in fatigue_expected_lookup
+                            else None
+                        ),
                         "resting_hr": round(_safe_float(wellness.get("resting_hr")), 1) if wellness else None,
                         "stress_avg": round(_safe_float(wellness.get("stress_avg")), 1) if wellness else None,
                         "planned_duration_s": round(_safe_float(planned_summary.get("duration_s")), 1) if show_planned_meta else 0.0,
@@ -1851,6 +1891,7 @@ def _build_activity_dashboard_payload(
                             "duration_label": _format_duration_short(_safe_float(row.get("duration_s"))),
                             "distance_eqv_km": round(_safe_float(row.get("distance_eqv_km")), 1),
                             "if_pct": round(_safe_float(row.get("if_proxy")) * 100.0, 1),
+                            "pace_label": _format_pace_short(_safe_float(row.get("pace_proxy_sec_per_km"))),
                             "tss": round(_safe_float(row.get("tss")), 1),
                             "rtss": round(_safe_float(row.get("rtss")), 1),
                             "manual_done": bool(row.get("manual_done")),

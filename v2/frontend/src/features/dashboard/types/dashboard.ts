@@ -39,6 +39,7 @@ export interface DashboardPlannedCard {
   duration_label: string;
   distance_eqv_km: number;
   if_pct: number;
+  pace_label: string;
   tss: number;
   rtss: number;
   manual_done: boolean;
@@ -50,6 +51,7 @@ export interface DashboardDayMeta {
   calories: number;
   fitness: number | null;
   fatigue: number | null;
+  fatigue_expected: number | null;
   resting_hr: number | null;
   stress_avg: number | null;
   planned_duration_s: number;
