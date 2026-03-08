@@ -8,3 +8,7 @@ __pycache__/
 *.sqlite3
 temperance/data/private/
 temperance/data/imports/
+
+# v2 frontend artifacts
+v2/frontend/node_modules/
+v2/frontend/dist/

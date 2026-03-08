@@ -1,0 +1,154 @@
+:root {
+  color: #e6edf3;
+  background: radial-gradient(circle at top left, #1f2937, #0b1220 55%);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.status-pill {
+  border: 1px solid #334155;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.85rem;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+h1 {
+  margin-bottom: 0.25rem;
+}
+
+.card {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.7rem;
+}
+
+.form-grid.compact {
+  margin-top: 0.75rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+input,
+select,
+button {
+  border: 1px solid #475569;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.65);
+  color: #e6edf3;
+  padding: 0.45rem 0.55rem;
+}
+
+button {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.error {
+  color: #fca5a5;
+}
+
+ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.kpi-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.kpi-item {
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.45);
+  padding: 0.7rem;
+}
+
+.kpi-label {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.subtle {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid #334155;
+  padding: 0.5rem 0.35rem;
+  vertical-align: top;
+}
+
+.selected-row {
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.35rem 0.9rem;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 1rem 0.6rem 2rem;
+  }
+
+  .header-row {
+    flex-direction: column;
+  }
+}
