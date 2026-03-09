@@ -1,12 +1,13 @@
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { Clock3, HeartPulse, Route, Target, X } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useActivityDetailQuery } from '@/features/dashboard/hooks/use-activity-detail-query';
+import type { ActivityDetailResponse } from '@/features/dashboard/types/activity-detail';
 import { updateCustomActivityWorkout } from '@/features/custom-activities/services/custom-activities-api';
 import { updatePlannedWorkout } from '@/features/plan-activities/services/plan-activities-api';
 import { queryClient } from '@/lib/query-client';
@@ -17,6 +18,19 @@ interface ActivitySplitsDrawerProps {
   onClose: () => void;
 }
 
+type DrawerLapRow = {
+  lap: number;
+  description: string;
+  duration_label: string;
+  avg_hr: number;
+  if_pct: number;
+  distance_km: number;
+  distance_eqv_km: number;
+  pace_label: string;
+  pace_eqv_label: string;
+  display_mode: 'running' | 'eqv';
+};
+
 function fmtDurationSeconds(seconds: number): string {
   const total = Math.max(0, Math.round(Number(seconds) || 0));
   const h = Math.floor(total / 3600);
@@ -26,16 +40,56 @@ function fmtDurationSeconds(seconds: number): string {
   return `${m}m ${s}s`;
 }
 
+function paceLabelFromSpeed(speed: number): string {
+  const numeric = Number(speed) || 0;
+  if (numeric <= 0) return '-';
+  const secondsPerKm = 1000 / numeric;
+  const minutes = Math.floor(secondsPerKm / 60);
+  const seconds = Math.round(secondsPerKm % 60);
+  return `${minutes}:${String(seconds).padStart(2, '0')}/km`;
+}
+
+function normalizedLapRows(detail: ActivityDetailResponse | undefined): DrawerLapRow[] {
+  if (Array.isArray(detail?.split_rows) && detail.split_rows.length > 0) {
+    return detail.split_rows;
+  }
+
+  const rawLaps = detail?.splits?.split?.lapDTOs;
+  if (!Array.isArray(rawLaps) || rawLaps.length === 0) return [];
+
+  const sportType = String(detail?.activity?.sport_type || '').toLowerCase();
+  const runningLike = sportType.includes('run') || sportType.includes('treadmill');
+
+  return rawLaps
+    .map((lap, index) => {
+      const duration = Number(lap?.duration ?? lap?.elapsedDuration ?? 0) || 0;
+      const distanceKm = (Number(lap?.distance) || 0) / 1000;
+      const avgHr = Number(lap?.averageHR) || 0;
+      const avgSpeed = Number(lap?.averageSpeed) || 0;
+      return {
+        lap: Number(lap?.lapIndex) || index + 1,
+        description: '-',
+        duration_label: fmtDurationSeconds(duration),
+        avg_hr: avgHr,
+        if_pct: 0,
+        distance_km: distanceKm,
+        distance_eqv_km: distanceKm,
+        pace_label: paceLabelFromSpeed(avgSpeed),
+        pace_eqv_label: paceLabelFromSpeed(avgSpeed),
+        display_mode: runningLike ? ('running' as const) : ('eqv' as const),
+      };
+    })
+    .filter((lap) => lap.duration_label !== fmtDurationSeconds(0) || lap.distance_km > 0);
+}
+
 export function ActivitySplitsDrawer({
   activityId,
   open,
   onClose,
 }: ActivitySplitsDrawerProps): JSX.Element | null {
   const { session, profile } = useAuth();
-  const detailQuery = useActivityDetailQuery(open ? activityId : null);
+  const detailQuery = useActivityDetailQuery(open && activityId ? activityId : null);
   const [sourceText, setSourceText] = useState('');
-
-  if (!open) return null;
 
   const activity = detailQuery.data?.activity;
   const sourceKind = String(detailQuery.data?.details?.source || '').trim().toLowerCase();
@@ -51,10 +105,9 @@ export function ActivitySplitsDrawer({
   const canEditGeneratedText = Boolean(
     (sourceKind === 'planned' || sourceKind === 'custom') && rawDayUtc && rawLineNo > 0,
   );
-  const laps = Array.isArray(detailQuery.data?.split_rows)
-    ? detailQuery.data?.split_rows
-    : [];
+  const laps = normalizedLapRows(detailQuery.data);
   const useEqv = laps.length > 0 && laps.some((lap) => lap.display_mode === 'eqv');
+
   const updateMutation = useMutation({
     mutationFn: async (nextText: string) => {
       if (!session?.token) throw new Error('Missing auth token');
@@ -101,23 +154,26 @@ export function ActivitySplitsDrawer({
     setSourceText(generatedText);
   }, [generatedText, activityId]);
 
+  if (!open) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex">
       <button
         type="button"
-        className="h-full flex-1 bg-black/55"
+        className="h-full flex-1 bg-black/60 backdrop-blur-[2px]"
         onClick={onClose}
         aria-label="Close activity details"
       />
-      <div className="h-full w-full max-w-[560px] overflow-y-auto border-l border-border/70 bg-background p-4 shadow-2xl">
-        <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="h-full w-full max-w-[620px] overflow-y-auto border-l border-sky-300/12 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.99))] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+        <div className="mb-4 flex items-start justify-between gap-3 border-b border-white/8 pb-4">
           <div>
-            <h3 className="text-lg font-semibold">Activity Splits</h3>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Activity Details</p>
+            <h3 className="text-lg font-semibold text-foreground">Splits</h3>
+            <p className="text-sm text-slate-300/72">
               {activity?.sport_type || '-'} {activity?.date ? `· ${activity.date}` : ''}
             </p>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close panel">
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close panel" className="text-slate-300/80 hover:text-white">
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -140,19 +196,31 @@ export function ActivitySplitsDrawer({
 
         {!detailQuery.isLoading && !detailQuery.isError && detailQuery.data ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/70 bg-card/40 p-3 text-sm">
-              <div>TSS: <span className="font-semibold">{Math.round(activity?.tss ?? 0)}</span></div>
-              <div>rTSS: <span className="font-semibold">{Math.round(activity?.rtss ?? 0)}</span></div>
-              <div>Pace: <span className="font-semibold">{activity?.avg_pace_display || '-'}</span></div>
-              <div>HR: <span className="font-semibold">{Math.round(activity?.avg_hr ?? 0)} bpm</span></div>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />TSS</p>
+                <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.tss ?? 0)}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />rTSS</p>
+                <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.rtss ?? 0)}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Route className="h-3 w-3" />Pace</p>
+                <p className="mt-1 font-semibold text-foreground">{activity?.avg_pace_display || '-'}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><HeartPulse className="h-3 w-3" />HR</p>
+                <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.avg_hr ?? 0)} bpm</p>
+              </div>
             </div>
 
             {generatedText ? (
-              <div className="space-y-2 rounded-lg border border-border/70 bg-card/30 p-3">
+              <div className="space-y-2 rounded-xl border border-white/10 bg-black/15 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-foreground">Generated From</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-slate-300/72">
                       {canEditGeneratedText ? 'Edit the source string and resave to regenerate these splits.' : 'Source string used to generate this activity.'}
                     </p>
                   </div>
@@ -168,7 +236,7 @@ export function ActivitySplitsDrawer({
                   ) : null}
                 </div>
                 <textarea
-                  className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-24 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20 disabled:cursor-not-allowed disabled:opacity-60"
                   value={sourceText}
                   onChange={(event) => setSourceText(event.target.value)}
                   readOnly={!canEditGeneratedText}
@@ -183,13 +251,17 @@ export function ActivitySplitsDrawer({
             ) : null}
 
             {laps.length === 0 ? (
-              <div className="rounded-lg border border-border/70 bg-card/30 p-4 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-white/10 bg-black/15 p-4 text-sm text-slate-300/72">
                 No split laps available for this activity.
               </div>
             ) : (
-              <div className="overflow-hidden rounded-lg border border-border/70">
+              <div className="overflow-hidden rounded-xl border border-white/10 bg-black/15">
+                <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2 text-xs text-slate-300/72">
+                  <Clock3 className="h-3 w-3" />
+                  <span>{laps.length} split{laps.length === 1 ? '' : 's'}</span>
+                </div>
                 <table className="w-full text-sm">
-                  <thead className="bg-card/70 text-muted-foreground">
+                  <thead className="bg-white/5 text-slate-300/72">
                     <tr>
                       <th className="px-3 py-2 text-left">LAP</th>
                       <th className="px-3 py-2 text-left">Type</th>
@@ -202,13 +274,11 @@ export function ActivitySplitsDrawer({
                   </thead>
                   <tbody>
                     {laps.map((lap, index) => (
-                      <tr key={`${lap.lap ?? index}-${index}`} className="border-t border-border/60">
+                      <tr key={`${lap.lap ?? index}-${index}`} className="border-t border-white/10 text-foreground/94">
                         <td className="px-3 py-2">{lap.lap ?? index + 1}</td>
                         <td className="px-3 py-2">{lap.description || '-'}</td>
                         <td className="px-3 py-2">{lap.duration_label || fmtDurationSeconds(0)}</td>
-                        <td className="px-3 py-2">
-                          {Number(useEqv ? lap.distance_eqv_km : lap.distance_km).toFixed(2)} km
-                        </td>
+                        <td className="px-3 py-2">{Number(useEqv ? lap.distance_eqv_km : lap.distance_km).toFixed(2)} km</td>
                         <td className="px-3 py-2">{useEqv ? lap.pace_eqv_label : lap.pace_label}</td>
                         <td className="px-3 py-2">{Math.round(Number(lap.avg_hr) || 0)}</td>
                         <td className="px-3 py-2">{Math.round(Number(lap.if_pct) || 0)}%</td>

@@ -26,6 +26,8 @@ function todayIso(): string {
 }
 
 export function DataExtractPage(): JSX.Element {
+  const surfaceClassName =
+    'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
   const { session, profile } = useAuth();
   const statusQuery = useDataExtractStatusQuery();
   const customActivitiesQuery = useCustomActivitiesQuery();
@@ -261,7 +263,7 @@ export function DataExtractPage(): JSX.Element {
         <h1 className="text-2xl font-semibold tracking-tight">Data Extract</h1>
       </div>
 
-      <Card>
+      <Card className={surfaceClassName}>
         <CardContent className="space-y-3 p-4">
           <p className="text-sm font-medium">Comprehensive Garmin Extract</p>
           <div className="grid gap-3 md:grid-cols-2">
@@ -274,7 +276,7 @@ export function DataExtractPage(): JSX.Element {
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={includeWellness} onChange={(event) => setIncludeWellness(event.target.checked)} /> Include sleep + wellness</label>
           </div>
           <Button onClick={() => comprehensiveMutation.mutate()} disabled={comprehensiveMutation.isPending}>{comprehensiveMutation.isPending ? 'Running extract...' : 'Run comprehensive extract'}</Button>
-          <div className="rounded-md border border-border/70 bg-muted/20 p-2">
+          <div className="rounded-xl border border-white/10 bg-black/15 p-2">
             <div className="mb-1 flex items-center justify-between">
               <p className="text-xs font-medium text-muted-foreground">Extraction logs</p>
               <Button
@@ -285,7 +287,7 @@ export function DataExtractPage(): JSX.Element {
                 Clear
               </Button>
             </div>
-            <div className="max-h-44 overflow-auto rounded border border-border/70 bg-background/30 p-2 font-mono text-xs">
+            <div className="max-h-44 overflow-auto rounded-xl border border-white/10 bg-black/20 p-2 font-mono text-xs">
               {extractLogs.length === 0 ? (
                 <p className="text-muted-foreground">No logs yet. Run an extract to see progression.</p>
               ) : (
@@ -300,7 +302,7 @@ export function DataExtractPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={surfaceClassName}>
         <CardContent className="space-y-3 p-4">
           <p className="text-sm font-medium">Garmin Credentials</p>
           {isAdmin ? (
@@ -364,7 +366,7 @@ export function DataExtractPage(): JSX.Element {
 
       {result ? <p className="text-sm text-muted-foreground">{result}</p> : null}
 
-      <Card>
+      <Card className={surfaceClassName}>
         <CardContent className="space-y-4 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-5">
           <div className="space-y-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Custom Activity</p>
@@ -411,7 +413,7 @@ export function DataExtractPage(): JSX.Element {
               </div>
 
               {selectedCustomWeek ? (
-                <div className="rounded border p-2 text-xs">
+                <div className="rounded-xl border border-white/10 bg-black/15 p-2 text-xs">
                   <p className="text-muted-foreground">
                     {selectedCustomWeek.week_start} - {selectedCustomWeek.week_end}
                   </p>

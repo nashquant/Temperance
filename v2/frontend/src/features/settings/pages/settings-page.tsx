@@ -77,6 +77,8 @@ function formatPace(seconds: number): string {
 }
 
 export function SettingsPage(): JSX.Element {
+  const surfaceClassName =
+    'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
   const { session, profile } = useAuth();
   const query = useSettingsQuery();
 
@@ -259,7 +261,7 @@ export function SettingsPage(): JSX.Element {
 
       {saveMsg ? <p className="text-sm text-muted-foreground">{saveMsg}</p> : null}
 
-      <Card>
+      <Card className={surfaceClassName}>
         <CardContent className="space-y-4 p-4">
           <p className="text-sm font-medium">IF Zones (%)</p>
           <div className="grid gap-3 md:grid-cols-4">
@@ -284,15 +286,15 @@ export function SettingsPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={surfaceClassName}>
         <CardContent className="space-y-3 p-4">
           <p className="text-sm font-medium">IF Zones Guide</p>
           <p className="text-xs text-muted-foreground">
             Using latest values as of {zoneGuide.latestLthrDate || '-'} (LTHR {Math.round(zoneGuide.latestLthr)} bpm, LT pace {zoneGuide.latestPace || '-'}). Current thresholds: {zoneGuide.thresholdsText}.
           </p>
-          <div className="overflow-x-auto rounded-md border border-border/70">
+          <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/15">
             <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+              <thead className="bg-white/5 text-left text-xs text-slate-300/72">
                 <tr>
                   <th className="px-3 py-2">Zone</th>
                   <th className="px-3 py-2">IF Range</th>
@@ -302,7 +304,7 @@ export function SettingsPage(): JSX.Element {
               </thead>
               <tbody>
                 {zoneGuide.rows.map((row) => (
-                  <tr key={row.zone} className="border-t border-border/60">
+                  <tr key={row.zone} className="border-t border-white/10">
                     <td className="px-3 py-2 font-semibold">{row.zone}</td>
                     <td className="px-3 py-2">{row.ifRange}</td>
                     <td className="px-3 py-2">{row.hrRange}</td>
@@ -315,7 +317,7 @@ export function SettingsPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={surfaceClassName}>
         <CardContent className="space-y-4 p-4">
           <p className="text-sm font-medium">Specificity Factors</p>
           <div className="grid gap-3 md:grid-cols-4">
@@ -340,7 +342,7 @@ export function SettingsPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={surfaceClassName}>
         <CardContent className="space-y-3 p-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium">LTHR Curve</p>
@@ -386,7 +388,7 @@ export function SettingsPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={surfaceClassName}>
         <CardContent className="space-y-3 p-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium">LT Pace Curve</p>
@@ -444,7 +446,7 @@ export function SettingsPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={surfaceClassName}>
         <CardContent className="space-y-3 p-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium">Injury Overlays</p>
