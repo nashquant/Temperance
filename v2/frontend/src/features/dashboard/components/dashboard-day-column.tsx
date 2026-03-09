@@ -183,12 +183,13 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
         >
           {day.actual_activities.map((activity) => (
             (() => {
-              const timeLabel = deriveCompactTimeLabel(activity, userTimeZone);
+              const timeLabel = activity.is_custom ? '' : deriveCompactTimeLabel(activity, userTimeZone);
               return (
                 <div
                   key={activity.activity_id}
                   className={cn(
                     'flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border p-2 text-[12px] transition-colors hover:bg-white/5',
+                    activity.is_custom ? 'border-2 [border-style:dashdot]' : undefined,
                     intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
                   )}
                   onClick={() => onSelectActivity?.(activity.activity_id)}
@@ -203,7 +204,8 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
                 >
                   <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
                     {formatActivityTitle(activity.sport)}
-                    {timeLabel ? ` ${timeLabel}` : ''}
+                    {activity.is_custom ? '(C)' : ''}
+                    {!activity.is_custom && timeLabel ? ` ${timeLabel}` : ''}
                   </p>
                   <p className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-muted-foreground">
                     {compactLine([activity.duration_label, activity.distance_label])}
