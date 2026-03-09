@@ -90,12 +90,12 @@ export function ActivitySplitsDrawer({
                 <table className="w-full text-sm">
                   <thead className="bg-card/70 text-muted-foreground">
                     <tr>
-                      <th className="px-3 py-2 text-left">Lap</th>
-                      <th className="px-3 py-2 text-left">Description</th>
-                      <th className="px-3 py-2 text-left">Duration</th>
-                      <th className="px-3 py-2 text-left">{useEqv ? 'Dist Eqv' : 'Distance'}</th>
-                      <th className="px-3 py-2 text-left">{useEqv ? 'Pace Eqv' : 'Pace'}</th>
-                      <th className="px-3 py-2 text-left">Avg HR</th>
+                      <th className="px-3 py-2 text-left">LAP</th>
+                      <th className="px-3 py-2 text-left">Type</th>
+                      <th className="px-3 py-2 text-left">Time</th>
+                      <th className="px-3 py-2 text-left">{useEqv ? 'Dist(E)' : 'Dist'}</th>
+                      <th className="px-3 py-2 text-left">{useEqv ? 'Pace(E)' : 'Pace'}</th>
+                      <th className="px-3 py-2 text-left">HR</th>
                       <th className="px-3 py-2 text-left">IF</th>
                     </tr>
                   </thead>

@@ -117,6 +117,7 @@ export function ProgressionLineChartCard({
                 content={<ProgressionTooltip />}
                 labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
                 cursor={{ stroke: '#94a3b8', strokeOpacity: 0.35 }}
+                position={{ x: 16, y: 16 }}
               />
               <Legend />
               {mappedOverlays.map((overlay, index) => (
@@ -132,7 +133,7 @@ export function ProgressionLineChartCard({
                 />
               ))}
               {targetKey ? (
-                <ReferenceLine yAxisId="left" y={Number(data.at(-1)?.[targetKey] ?? 0)} stroke="#f59e0b" strokeDasharray="5 5" label={targetLabel} />
+                <ReferenceLine yAxisId="left" y={Number(data.at(-1)?.[targetKey] ?? 0)} stroke="#f59e0b" strokeDasharray="5 5" />
               ) : null}
               {series.map((item) => (
                 <Line
