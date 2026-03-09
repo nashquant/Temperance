@@ -68,6 +68,14 @@ function parsePaceInputToSeconds(raw: string): number | null {
   return null;
 }
 
+function formatPace(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '-';
+  const total = Math.round(seconds);
+  const mm = Math.floor(total / 60);
+  const ss = total % 60;
+  return `${mm}:${String(ss).padStart(2, '0')}/km`;
+}
+
 export function SettingsPage(): JSX.Element {
   const { session, profile } = useAuth();
   const query = useSettingsQuery();
@@ -160,6 +168,70 @@ export function SettingsPage(): JSX.Element {
     return { lthr, pace, injury, paceError };
   }, [injuryRows, lthrRows, paceRows]);
 
+  const zoneGuide = useMemo(() => {
+    const sortedLthr = [...lthrRows]
+      .filter((row) => row.date)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const sortedPace = [...paceRows]
+      .filter((row) => row.date)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const latestLthr = sortedLthr.at(-1) ?? null;
+    const latestPace = sortedPace.at(-1) ?? null;
+    const lthr = latestLthr?.lthr_bpm ?? 0;
+    const ltPaceSec = parsePaceInputToSeconds(latestPace?.pace_input ?? '') ?? 0;
+    const z1 = Number(ifZones.z1_max) || 0;
+    const z2 = Number(ifZones.z2_max) || 0;
+    const z3 = Number(ifZones.z3_max) || 0;
+    const z4 = Number(ifZones.z4_max) || 0;
+
+    const hrAt = (fraction: number) => Math.round(lthr * fraction);
+    const paceAt = (fraction: number) => (fraction > 0 ? ltPaceSec / fraction : 0);
+    const pct = (fraction: number) => Math.round(fraction * 100);
+
+    const rows = [
+      {
+        zone: 'Z1',
+        ifRange: `< ${pct(z1)}%`,
+        hrRange: `< ${hrAt(z1)}`,
+        paceRange: `> ${formatPace(paceAt(z1))}`,
+      },
+      {
+        zone: 'Z2',
+        ifRange: `${pct(z1)}% - <${pct(z2)}%`,
+        hrRange: `${hrAt(z1)}-${hrAt(z2)}`,
+        paceRange: `${formatPace(paceAt(z2))} - ${formatPace(paceAt(z1))}`,
+      },
+      {
+        zone: 'Z3',
+        ifRange: `${pct(z2)}% - <${pct(z3)}%`,
+        hrRange: `${hrAt(z2)}-${hrAt(z3)}`,
+        paceRange: `${formatPace(paceAt(z3))} - ${formatPace(paceAt(z2))}`,
+      },
+      {
+        zone: 'Z4',
+        ifRange: `${pct(z3)}% - <${pct(z4)}%`,
+        hrRange: `${hrAt(z3)}-${hrAt(z4)}`,
+        paceRange: `${formatPace(paceAt(z4))} - ${formatPace(paceAt(z3))}`,
+      },
+      {
+        zone: 'Z5',
+        ifRange: `>= ${pct(z4)}%`,
+        hrRange: `> ${hrAt(z4)}`,
+        paceRange: `< ${formatPace(paceAt(z4))}`,
+      },
+    ];
+
+    return {
+      rows,
+      latestLthrDate: latestLthr?.date ?? '',
+      latestPaceDate: latestPace?.date ?? '',
+      latestLthr: lthr,
+      latestPace: latestPace?.pace_input ?? '',
+      thresholdsText: `Z1 <${pct(z1)}%, Z2 <${pct(z2)}%, Z3 <${pct(z3)}%, Z4 <${pct(z4)}%, Z5 >=${pct(z4)}%`,
+    };
+  }, [ifZones.z1_max, ifZones.z2_max, ifZones.z3_max, ifZones.z4_max, lthrRows, paceRows]);
+
   if (query.isLoading) {
     return (
       <section className="space-y-4">
@@ -209,6 +281,37 @@ export function SettingsPage(): JSX.Element {
             ))}
           </div>
           <Button onClick={() => saveMutation.mutate({ if_zone_thresholds: ifZones })} disabled={saveMutation.isPending}>Save IF Zones</Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <p className="text-sm font-medium">IF Zones Guide</p>
+          <p className="text-xs text-muted-foreground">
+            Using latest values as of {zoneGuide.latestLthrDate || '-'} (LTHR {Math.round(zoneGuide.latestLthr)} bpm, LT pace {zoneGuide.latestPace || '-'}). Current thresholds: {zoneGuide.thresholdsText}.
+          </p>
+          <div className="overflow-x-auto rounded-md border border-border/70">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">Zone</th>
+                  <th className="px-3 py-2">IF Range</th>
+                  <th className="px-3 py-2">Suggested HR (bpm)</th>
+                  <th className="px-3 py-2">Suggested Pace</th>
+                </tr>
+              </thead>
+              <tbody>
+                {zoneGuide.rows.map((row) => (
+                  <tr key={row.zone} className="border-t border-border/60">
+                    <td className="px-3 py-2 font-semibold">{row.zone}</td>
+                    <td className="px-3 py-2">{row.ifRange}</td>
+                    <td className="px-3 py-2">{row.hrRange}</td>
+                    <td className="px-3 py-2">{row.paceRange}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 
