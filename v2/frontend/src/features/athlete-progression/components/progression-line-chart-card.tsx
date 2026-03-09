@@ -68,10 +68,20 @@ export function ProgressionLineChartCard({
   targetLabel,
   rightAxisLabel,
 }: Props): JSX.Element {
+  const targetValue = targetKey
+    ? (() => {
+        for (let i = data.length - 1; i >= 0; i -= 1) {
+          const candidate = Number(data[i]?.[targetKey] ?? 0);
+          if (Number.isFinite(candidate) && candidate > 0) return candidate;
+        }
+        return 0;
+      })()
+    : 0;
   const chartData = data.map((row) => ({
     ...row,
     _x: String(row.period_start ?? row.label ?? ''),
-  })) as Array<Record<string, number | string>>;
+    __target: targetValue > 0 ? targetValue : undefined,
+  })) as Array<Record<string, number | string | undefined>>;
   const labelMap = new Map(chartData.map((row) => [String(row._x ?? ''), String(row['label'] ?? row._x ?? '')]));
   return (
     <Card>
@@ -100,16 +110,6 @@ export function ProgressionLineChartCard({
                 allowEscapeViewBox={{ x: true, y: true }}
               />
               <Legend />
-              {targetKey ? (
-                <ReferenceLine
-                  yAxisId="left"
-                  y={Number(data.at(-1)?.[targetKey] ?? 0)}
-                  stroke="#cbd5e1"
-                  strokeOpacity={0.8}
-                  strokeWidth={1.5}
-                  strokeDasharray="6 6"
-                />
-              ) : null}
               {series.map((item) => (
                 <Line
                   key={item.key}
@@ -124,6 +124,21 @@ export function ProgressionLineChartCard({
                   strokeDasharray={item.dashed ? '5 5' : undefined}
                 />
               ))}
+              {targetKey && targetValue > 0 ? (
+                <Line
+                  type="monotone"
+                  dataKey="__target"
+                  yAxisId="left"
+                  stroke="#f59e0b"
+                  strokeOpacity={0.92}
+                  strokeWidth={1.4}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  activeDot={false}
+                  isAnimationActive={false}
+                  legendType="none"
+                />
+              ) : null}
             </LineChart>
           </ResponsiveContainer>
         </div>

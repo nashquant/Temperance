@@ -42,6 +42,7 @@ from auth import build_users, password_matches, resolve_user  # noqa: E402
 from db import (  # noqa: E402
     delete_custom_activities,
     delete_planned_activities,
+    init_db,
     get_custom_activities_df,
     get_last_sync,
     get_latest_activity_time,
@@ -271,13 +272,25 @@ def _db_path_for_owner(owner: str) -> Path:
     users_root = DB_PATH.parent / "users"
     owner_slug = _user_slug(owner)
     scoped = users_root / f"{owner_slug}.db"
+    def _ensure_initialized(path: Path) -> Path:
+        try:
+            if (not path.exists()) or path.stat().st_size == 0:
+                init_db(path)
+            else:
+                # Keep schema up-to-date for existing user DBs as well.
+                init_db(path)
+        except Exception:
+            # Best effort; callers may still handle DB errors explicitly.
+            pass
+        return path
+
     if not scoped.exists() and DB_PATH.exists():
-        return DB_PATH
+        return _ensure_initialized(DB_PATH)
     # If a scoped DB exists but is effectively empty, use the primary DB as fallback.
     # This keeps legacy single-DB users (e.g. viewer accounts) functional.
     if scoped.exists() and not _has_activity_rows(scoped) and _has_activity_rows(DB_PATH):
-        return DB_PATH
-    return scoped
+        return _ensure_initialized(DB_PATH)
+    return _ensure_initialized(scoped)
 
 
 def _auth_context(authorization: str | None) -> dict[str, str]:
@@ -932,6 +945,18 @@ def _normalize_activity_id(value: Any) -> str:
         if head.isdigit():
             return head
     return raw
+
+
+def _parse_custom_activity_id(activity_id: str) -> tuple[str, int] | None:
+    raw = _normalize_activity_id(activity_id)
+    match = re.match(r"^custom-(\d{4}-\d{2}-\d{2})-(\d+)$", raw)
+    if not match:
+        return None
+    day_utc = str(match.group(1))
+    line_no = int(match.group(2))
+    if line_no <= 0:
+        return None
+    return day_utc, line_no
 
 
 def _parse_distance_km_token(text: str) -> float | None:
@@ -1669,6 +1694,25 @@ def _split_description_from_if_proxy(if_proxy: float | int | None, thresholds: d
     return "VO2max"
 
 
+def _zone_key_from_if_proxy(if_proxy: float | int | None, thresholds: dict[str, float]) -> str:
+    v = _safe_float(if_proxy)
+    if v <= 0:
+        return "Z1"
+    z1 = float(thresholds.get("z1_max", 0.75))
+    z2 = float(thresholds.get("z2_max", 0.85))
+    z3 = float(thresholds.get("z3_max", 0.95))
+    z4 = float(thresholds.get("z4_max", 1.03))
+    if v < z1:
+        return "Z1"
+    if v < z2:
+        return "Z2"
+    if v < z3:
+        return "Z3"
+    if v < z4:
+        return "Z4"
+    return "Z5"
+
+
 def _activity_intensity_token(if_proxy: float, tss: float) -> str:
     if if_proxy <= 0:
         return "gray"
@@ -1808,6 +1852,7 @@ def _metrics_for_filters(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
+    if_thresholds = _load_if_zone_thresholds(db_path)
 
     specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
 
@@ -1898,6 +1943,54 @@ def _metrics_for_filters(
                 sport_type = _custom_primary_sport(row)
                 dist_eqv_km = _safe_float(row.get("distance_proxy_km"))
                 is_running_like = ("run" in sport_type) or ("treadmill" in sport_type)
+                zone_seconds = {"Z1": 0.0, "Z2": 0.0, "Z3": 0.0, "Z4": 0.0, "Z5": 0.0}
+
+                raw_segments = row.get("parsed_json")
+                segments: list[dict[str, Any]] = []
+                if isinstance(raw_segments, list):
+                    segments = [s for s in raw_segments if isinstance(s, dict)]
+                elif isinstance(raw_segments, str) and raw_segments.strip():
+                    try:
+                        parsed = json.loads(raw_segments)
+                        if isinstance(parsed, list):
+                            segments = [s for s in parsed if isinstance(s, dict)]
+                    except Exception:
+                        segments = []
+
+                day_for_curve = pd.to_datetime(row.get("day_utc"), utc=True, errors="coerce")
+                lthr_for_day = float(_curve_value_at(lthr_curve, float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR, day_for_curve))
+                lt_pace_for_day = float(
+                    _curve_value_at(
+                        pace_curve,
+                        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+                        day_for_curve,
+                    )
+                )
+
+                if segments:
+                    for seg in segments:
+                        seg_kind = str(seg.get("kind") or "").strip().lower()
+                        seg_spec = _specificity_factor_for_plan_kind(seg_kind, specificity_profile)
+                        seg_for_metrics = _segment_with_effective_intensity_for_metrics(seg, seg_kind=seg_kind, seg_spec=seg_spec)
+                        seg_metrics = _planned_segment_metrics(
+                            seg_for_metrics,
+                            lthr_bpm=lthr_for_day,
+                            threshold_pace_sec_per_km=lt_pace_for_day,
+                            non_running_factor=seg_spec,
+                        )
+                        seg_duration_s = _safe_float(seg_metrics.get("duration_s"))
+                        seg_if_proxy = _safe_float(seg_metrics.get("if_proxy"))
+                        if seg_duration_s <= 0:
+                            continue
+                        zone_key = _zone_key_from_if_proxy(seg_if_proxy, if_thresholds)
+                        zone_seconds[zone_key] = zone_seconds.get(zone_key, 0.0) + seg_duration_s
+                else:
+                    fallback_duration_s = _safe_float(row.get("duration_s"))
+                    fallback_if_proxy = _safe_float(row.get("if_proxy"))
+                    if fallback_duration_s > 0:
+                        zone_key = _zone_key_from_if_proxy(fallback_if_proxy, if_thresholds)
+                        zone_seconds[zone_key] = zone_seconds.get(zone_key, 0.0) + fallback_duration_s
+
                 custom_records.append(
                     {
                         "activity_id": f"custom-{day_norm.date().isoformat()}-{line_no}",
@@ -1915,11 +2008,11 @@ def _metrics_for_filters(
                         "pace_proxy_sec_per_km": _safe_float(row.get("pace_proxy_sec_per_km")),
                         "training_load_garmin": 0.0,
                         "calories_total": 0.0,
-                        "hr_time_in_zone_1": 0.0,
-                        "hr_time_in_zone_2": 0.0,
-                        "hr_time_in_zone_3": 0.0,
-                        "hr_time_in_zone_4": 0.0,
-                        "hr_time_in_zone_5": 0.0,
+                        "hr_time_in_zone_1": _safe_float(zone_seconds.get("Z1")),
+                        "hr_time_in_zone_2": _safe_float(zone_seconds.get("Z2")),
+                        "hr_time_in_zone_3": _safe_float(zone_seconds.get("Z3")),
+                        "hr_time_in_zone_4": _safe_float(zone_seconds.get("Z4")),
+                        "hr_time_in_zone_5": _safe_float(zone_seconds.get("Z5")),
                     }
                 )
 
@@ -4183,10 +4276,6 @@ def activity_detail(
     if not db_path.exists():
         raise HTTPException(status_code=404, detail="Owner database not found")
 
-    runs_df = get_runs_df(db_path)
-    if runs_df.empty:
-        raise HTTPException(status_code=404, detail="No activities found")
-
     lthr_curve = _load_curve_points(
         db_path=db_path,
         key=SETTINGS_KEY_LTHR_CURVE,
@@ -4200,6 +4289,176 @@ def activity_detail(
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
 
+    activity_id_norm = _normalize_activity_id(activity_id)
+    custom_key = _parse_custom_activity_id(activity_id_norm)
+    if custom_key is not None:
+        day_utc, line_no = custom_key
+        custom_df = get_custom_activities_df(db_path=db_path, start_day_utc=day_utc, end_day_utc=day_utc)
+        if custom_df.empty:
+            raise HTTPException(status_code=404, detail="Activity not found")
+        selected_custom = custom_df[
+            (custom_df["day_utc"].astype(str) == day_utc)
+            & (pd.to_numeric(custom_df["line_no"], errors="coerce").fillna(0).astype(int) == int(line_no))
+        ].head(1)
+        if selected_custom.empty:
+            raise HTTPException(status_code=404, detail="Activity not found")
+
+        row = selected_custom.iloc[0]
+        parsed_json = row.get("parsed_json")
+        segments: list[dict[str, Any]] = []
+        if isinstance(parsed_json, list):
+            segments = [s for s in parsed_json if isinstance(s, dict)]
+        elif isinstance(parsed_json, str) and parsed_json.strip():
+            try:
+                parsed = json.loads(parsed_json)
+                if isinstance(parsed, list):
+                    segments = [s for s in parsed if isinstance(s, dict)]
+            except Exception:
+                segments = []
+
+        day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
+        lthr_for_day = float(_curve_value_at(lthr_curve, float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR, day_ts))
+        threshold_pace_for_day = float(
+            _curve_value_at(
+                pace_curve,
+                float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+                day_ts,
+            )
+        )
+        if not segments:
+            expanded, _warnings = _expand_planned_segments(
+                str(row.get("activity_text") or ""),
+                lthr_bpm=lthr_for_day,
+                threshold_pace_sec_per_km=threshold_pace_for_day,
+            )
+            segments = [s for s in expanded if isinstance(s, dict)]
+
+        if_thresholds = _load_if_zone_thresholds(db_path)
+        specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+
+        total_duration_s = 0.0
+        total_tss = 0.0
+        total_rtss = 0.0
+        total_distance_eqv_km = 0.0
+        if_weighted_sum = 0.0
+        if_weight_seconds = 0.0
+        pace_weighted_sum = 0.0
+        pace_weight_seconds = 0.0
+        hr_weighted_sum = 0.0
+        hr_weight_seconds = 0.0
+        split_rows: list[dict[str, Any]] = []
+        lap_dtos: list[dict[str, Any]] = []
+        kinds_seen: list[str] = []
+
+        for idx, seg in enumerate(segments, start=1):
+            seg_kind = str(seg.get("kind") or "").strip().lower()
+            if seg_kind and seg_kind not in kinds_seen:
+                kinds_seen.append(seg_kind)
+            seg_spec = _specificity_factor_for_plan_kind(seg_kind, specificity_profile)
+            seg_for_metrics = _segment_with_effective_intensity_for_metrics(seg, seg_kind=seg_kind, seg_spec=seg_spec)
+            metric_row = _planned_segment_metrics(
+                seg_for_metrics,
+                lthr_bpm=lthr_for_day,
+                threshold_pace_sec_per_km=threshold_pace_for_day,
+                non_running_factor=seg_spec,
+            )
+            duration_s = float(metric_row.get("duration_s") or 0.0)
+            if duration_s <= 0:
+                continue
+            if_proxy = float(metric_row.get("if_proxy") or 0.0)
+            tss = float(metric_row.get("tss") or 0.0) * float(seg_spec)
+            rtss = float(metric_row.get("rtss") or 0.0) * float(seg_spec)
+            distance_eqv_km = float(metric_row.get("distance_eqv_km") or 0.0)
+            is_running_like = seg_kind in {"run", "treadmill"}
+
+            pace_raw = _safe_float(seg_for_metrics.get("pace_s_per_km"))
+            pace_eqv_s_per_km = (threshold_pace_for_day / if_proxy) if (threshold_pace_for_day > 0 and if_proxy > 0) else 0.0
+            pace_label_s_per_km = pace_raw if pace_raw > 0 else pace_eqv_s_per_km
+            distance_km = distance_eqv_km
+            avg_hr = _safe_float(seg_for_metrics.get("avg_hr_bpm"))
+            avg_speed_mps = (1000.0 / pace_label_s_per_km) if pace_label_s_per_km > 0 else 0.0
+
+            total_duration_s += duration_s
+            total_tss += tss
+            total_rtss += rtss
+            total_distance_eqv_km += max(distance_eqv_km, 0.0)
+            if if_proxy > 0:
+                if_weighted_sum += if_proxy * duration_s
+                if_weight_seconds += duration_s
+            if pace_label_s_per_km > 0:
+                pace_weighted_sum += pace_label_s_per_km * duration_s
+                pace_weight_seconds += duration_s
+            if avg_hr > 0:
+                hr_weighted_sum += avg_hr * duration_s
+                hr_weight_seconds += duration_s
+
+            split_rows.append(
+                {
+                    "lap": idx,
+                    "description": _split_description_from_if_proxy(if_proxy, if_thresholds),
+                    "duration_label": _format_duration_compact_with_seconds(duration_s),
+                    "avg_hr": round(avg_hr, 0) if avg_hr > 0 else 0.0,
+                    "if_pct": round(if_proxy * 100.0, 1) if if_proxy > 0 else 0.0,
+                    "distance_km": round(max(distance_km, 0.0), 2),
+                    "distance_eqv_km": round(max(distance_eqv_km, 0.0), 2),
+                    "pace_label": _format_pace_short(pace_label_s_per_km if pace_label_s_per_km > 0 else None),
+                    "pace_eqv_label": _format_pace_short(pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else None),
+                    "display_mode": "running" if is_running_like else "eqv",
+                }
+            )
+            lap_dtos.append(
+                {
+                    "lapIndex": idx,
+                    "duration": duration_s,
+                    "elapsedDuration": duration_s,
+                    "distance": max(distance_km, 0.0) * 1000.0,
+                    "averageHR": avg_hr if avg_hr > 0 else 0.0,
+                    "maxHR": avg_hr if avg_hr > 0 else 0.0,
+                    "averageSpeed": avg_speed_mps,
+                    "calories": 0.0,
+                }
+            )
+
+        sport_type = ", ".join([k.replace("_", " ").title() for k in kinds_seen]) if kinds_seen else "Custom"
+        avg_if_proxy = (if_weighted_sum / if_weight_seconds) if if_weight_seconds > 0 else 0.0
+        avg_pace_s_per_km = (pace_weighted_sum / pace_weight_seconds) if pace_weight_seconds > 0 else 0.0
+        avg_hr = (hr_weighted_sum / hr_weight_seconds) if hr_weight_seconds > 0 else 0.0
+        start_time = pd.Timestamp(day_ts).tz_convert("UTC").tz_localize(None) if pd.notna(day_ts) else pd.Timestamp.utcnow().tz_localize(None)
+        start_time = start_time.normalize() + pd.Timedelta(hours=12) + pd.Timedelta(minutes=max(0, int(line_no) - 1))
+
+        return {
+            "owner": resolved_owner,
+            "activity": {
+                "activity_id": activity_id_norm,
+                "date": day_utc,
+                "start_time_utc": start_time.isoformat(),
+                "sport_type": sport_type,
+                "distance_km": round(max(total_distance_eqv_km, 0.0), 2),
+                "duration_min": round(total_duration_s / 60.0, 1),
+                "avg_pace_display": _format_pace_short(avg_pace_s_per_km if avg_pace_s_per_km > 0 else None),
+                "avg_hr": round(avg_hr, 1) if avg_hr > 0 else 0.0,
+                "max_hr": round(avg_hr, 1) if avg_hr > 0 else 0.0,
+                "tss": round(total_tss, 1),
+                "rtss": round(total_rtss, 1),
+                "training_load_garmin": 0.0,
+            },
+            "records": [],
+            "raw": {"day_utc": day_utc, "line_no": int(line_no), "activity_text": str(row.get("activity_text") or "")},
+            "details": {"source": "custom", "if_proxy": avg_if_proxy, "segments": segments},
+            "splits": {
+                "lap_count": len(lap_dtos),
+                "total_duration_s": round(total_duration_s, 1),
+                "total_distance_m": round(max(total_distance_eqv_km, 0.0) * 1000.0, 1),
+                "split": {"lapDTOs": lap_dtos},
+                "split_summaries": {"splitSummaries": lap_dtos},
+            },
+            "split_rows": split_rows,
+        }
+
+    runs_df = get_runs_df(db_path)
+    if runs_df.empty:
+        raise HTTPException(status_code=404, detail="No activities found")
+
     metrics_df = compute_metrics(
         runs_df=runs_df,
         lthr_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
@@ -4207,7 +4466,6 @@ def activity_detail(
         lthr_curve_points=lthr_curve,
         threshold_pace_curve_points=pace_curve,
     )
-    activity_id_norm = _normalize_activity_id(activity_id)
     selected = metrics_df[
         metrics_df["activity_id"].astype(str).map(_normalize_activity_id) == activity_id_norm
     ].head(1)

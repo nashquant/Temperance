@@ -37,7 +37,7 @@ const SelectContent = React.forwardRef<
       className={cn('z-50 min-w-[10rem] overflow-hidden rounded-md border bg-card text-card-foreground shadow-md', className)}
       {...props}
     >
-      <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
+      <SelectPrimitive.Viewport className="max-h-72 overflow-y-auto p-1">{children}</SelectPrimitive.Viewport>
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
 ));

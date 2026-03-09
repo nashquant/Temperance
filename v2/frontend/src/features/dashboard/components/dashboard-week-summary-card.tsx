@@ -1,3 +1,5 @@
+import { Clock3, Flame, Route, Ruler } from 'lucide-react';
+
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -49,13 +51,13 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
         </div>
 
         <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-0.5 text-[12px] leading-5">
-          <p className="text-muted-foreground">Time</p>
+          <p className="inline-flex items-center gap-1 text-muted-foreground"><Clock3 className="h-3 w-3" />Time</p>
           <p className="text-right font-semibold tabular-nums">{fmtDuration(summary.duration_h)}</p>
-          <p className="text-muted-foreground">Dist</p>
+          <p className="inline-flex items-center gap-1 text-muted-foreground"><Route className="h-3 w-3" />Dist</p>
           <p className="text-right font-semibold tabular-nums">{fmtNumber(summary.distance_km)} km</p>
-          <p className="text-muted-foreground">Eqv</p>
+          <p className="inline-flex items-center gap-1 text-muted-foreground"><Ruler className="h-3 w-3" />Eqv</p>
           <p className="text-right font-semibold tabular-nums">{fmtNumber(summary.distance_eqv_km)} km</p>
-          <p className="text-muted-foreground">kcal</p>
+          <p className="inline-flex items-center gap-1 text-muted-foreground"><Flame className="h-3 w-3" />kcal</p>
           <p className="text-right font-semibold tabular-nums">{fmtNumber(summary.calories)}</p>
           <p className="text-muted-foreground">TSS | rTSS</p>
           <p className="text-right font-semibold tabular-nums">{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
