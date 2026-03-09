@@ -90,7 +90,7 @@ function compactLine(parts: Array<string | null | undefined>): string {
     .join(' · ');
 }
 
-function deriveHhmm(
+function deriveCompactTimeLabel(
   activity: DashboardDayColumnType['actual_activities'][number],
   userTimeZone?: string,
 ): string {
@@ -101,22 +101,46 @@ function deriveHhmm(
       const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const tz = String(userTimeZone || '').trim() || browserTz;
       try {
-        const hhmm = new Intl.DateTimeFormat('en-GB', {
-          hour: '2-digit',
+        const hh = new Intl.DateTimeFormat('en-US', {
+          hour: 'numeric',
+          hour12: false,
+          timeZone: tz,
+        }).format(parsed);
+        const mm = new Intl.DateTimeFormat('en-US', {
           minute: '2-digit',
           hour12: false,
           timeZone: tz,
         }).format(parsed);
-        if (/^\d{2}:\d{2}$/.test(hhmm)) return hhmm;
+        const hour24 = Number(hh);
+        const minute = Number(mm);
+        if (!Number.isNaN(hour24) && !Number.isNaN(minute)) {
+          const roundedHour24 = (hour24 + (minute >= 30 ? 1 : 0)) % 24;
+          const suffix = roundedHour24 >= 12 ? 'pm' : 'am';
+          const hour12 = roundedHour24 % 12 === 0 ? 12 : roundedHour24 % 12;
+          return `@${hour12}${suffix}`;
+        }
       } catch {
-        const h = String(parsed.getHours()).padStart(2, '0');
-        const m = String(parsed.getMinutes()).padStart(2, '0');
-        return `${h}:${m}`;
+        const hour24 = parsed.getHours();
+        const minute = parsed.getMinutes();
+        const roundedHour24 = (hour24 + (minute >= 30 ? 1 : 0)) % 24;
+        const suffix = roundedHour24 >= 12 ? 'pm' : 'am';
+        const hour12 = roundedHour24 % 12 === 0 ? 12 : roundedHour24 % 12;
+        return `@${hour12}${suffix}`;
       }
     }
   }
   const hhmm = String(activity.start_time_hhmm || '').trim();
-  if (/^\d{2}:\d{2}$/.test(hhmm)) return hhmm;
+  const fallbackMatch = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+  if (fallbackMatch) {
+    const hour24 = Number(fallbackMatch[1]);
+    const minute = Number(fallbackMatch[2]);
+    if (!Number.isNaN(hour24) && !Number.isNaN(minute)) {
+      const roundedHour24 = (hour24 + (minute >= 30 ? 1 : 0)) % 24;
+      const suffix = roundedHour24 >= 12 ? 'pm' : 'am';
+      const hour12 = roundedHour24 % 12 === 0 ? 12 : roundedHour24 % 12;
+      return `@${hour12}${suffix}`;
+    }
+  }
   return '';
 }
 
@@ -149,7 +173,7 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
         <div className="space-y-2">
           {day.actual_activities.map((activity) => (
             (() => {
-              const timeHhmm = deriveHhmm(activity, userTimeZone);
+              const timeLabel = deriveCompactTimeLabel(activity, userTimeZone);
               return (
                 <div
                   key={activity.activity_id}
@@ -169,7 +193,7 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
                 >
                   <div className="flex items-center gap-1 text-[13px] font-semibold leading-5 text-foreground">
                     <p className="min-w-0 flex-1 truncate">{formatActivityTitle(activity.sport)}</p>
-                    {timeHhmm ? <span className="shrink-0 text-[12px]">({timeHhmm})</span> : null}
+                    {timeLabel ? <span className="shrink-0 text-[12px]">{timeLabel}</span> : null}
                   </div>
                   <p className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-muted-foreground">
                     {compactLine([activity.duration_label, activity.distance_label])}
