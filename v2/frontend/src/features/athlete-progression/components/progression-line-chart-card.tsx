@@ -4,7 +4,6 @@ import {
   Legend,
   Line,
   LineChart,
-  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -29,12 +28,6 @@ interface Props {
   data: Array<Record<string, number | string>>;
   yLabel: string;
   series: SeriesConfig[];
-  injuryOverlays?: Array<{
-    start: string;
-    end: string;
-    severity: 'injury' | 'light_injury';
-    label?: string;
-  }>;
   targetKey?: string;
   targetLabel?: string;
   rightAxisLabel?: string;
@@ -71,7 +64,6 @@ export function ProgressionLineChartCard({
   data,
   yLabel,
   series,
-  injuryOverlays,
   targetKey,
   targetLabel,
   rightAxisLabel,
@@ -81,18 +73,6 @@ export function ProgressionLineChartCard({
     _x: String(row.period_start ?? row.label ?? ''),
   })) as Array<Record<string, number | string>>;
   const labelMap = new Map(chartData.map((row) => [String(row._x ?? ''), String(row['label'] ?? row._x ?? '')]));
-  const pointKeys = new Set(chartData.map((row) => String(row._x ?? '')));
-  const mappedOverlays = (injuryOverlays ?? [])
-    .map((overlay) => ({
-      ...overlay,
-      x1: String(overlay.start),
-      x2: String(overlay.end),
-    }))
-    .filter(
-      (overlay): overlay is { start: string; end: string; severity: 'injury' | 'light_injury'; label?: string; x1: string; x2: string } =>
-        pointKeys.has(overlay.x1) && pointKeys.has(overlay.x2),
-    );
-
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -120,18 +100,6 @@ export function ProgressionLineChartCard({
                 allowEscapeViewBox={{ x: true, y: true }}
               />
               <Legend />
-              {mappedOverlays.map((overlay, index) => (
-                <ReferenceArea
-                  key={`${overlay.start}-${overlay.end}-${index}`}
-                  x1={overlay.x1}
-                  x2={overlay.x2}
-                  ifOverflow="extendDomain"
-                  stroke={overlay.severity === 'injury' ? '#ef4444' : '#eab308'}
-                  strokeOpacity={0.55}
-                  fill={overlay.severity === 'injury' ? '#ef4444' : '#eab308'}
-                  fillOpacity={0.24}
-                />
-              ))}
               {targetKey ? (
                 <ReferenceLine yAxisId="left" y={Number(data.at(-1)?.[targetKey] ?? 0)} stroke="#f59e0b" strokeDasharray="5 5" />
               ) : null}

@@ -148,11 +148,11 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
   return (
     <Card
       className={cn(
-        'rounded-xl border-border/80 bg-card/75 shadow-sm',
+        'rounded-xl border-border/80 bg-card/75 shadow-sm lg:h-[430px]',
         day.is_today ? 'border-primary/70' : undefined,
       )}
     >
-      <CardContent className="space-y-2 p-2.5">
+      <CardContent className="flex h-full flex-col gap-2 p-2.5">
         <div className="space-y-1">
           <div className="flex min-h-[24px] items-center">
             <p className={cn('text-[13px] font-semibold leading-5', day.is_today ? 'text-primary' : 'text-foreground')}>
@@ -170,7 +170,7 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
 
         <Separator className="bg-border/70" />
 
-        <div className="space-y-2">
+        <div className="flex-1 space-y-2 overflow-y-auto pr-0.5">
           {day.actual_activities.map((activity) => (
             (() => {
               const timeLabel = deriveCompactTimeLabel(activity, userTimeZone);

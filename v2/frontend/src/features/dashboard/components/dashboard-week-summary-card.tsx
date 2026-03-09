@@ -37,8 +37,8 @@ const zoneColors: Record<string, string> = {
 
 export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summary }: DashboardWeekSummaryCardProps): JSX.Element {
   return (
-    <Card className="h-full rounded-xl border-border/80 bg-card/80 shadow-sm">
-      <CardContent className="space-y-2 p-2">
+    <Card className="rounded-xl border-border/80 bg-card/80 shadow-sm lg:h-[430px]">
+      <CardContent className="flex h-full flex-col space-y-2 overflow-y-auto p-2">
         <div className="space-y-1">
           <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-semibold tracking-wide">
             Week {weekNumber}

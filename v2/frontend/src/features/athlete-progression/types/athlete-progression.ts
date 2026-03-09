@@ -43,10 +43,4 @@ export interface AthleteProgressionResponse {
     rtss: number;
   };
   points: AthleteProgressionPoint[];
-  injury_windows?: Array<{
-    label: string;
-    start: string;
-    end: string;
-    severity: 'injury' | 'light_injury';
-  }>;
 }

@@ -19,13 +19,6 @@ import type {
   ProgressionAggregation,
 } from '@/features/athlete-progression/types/athlete-progression';
 
-interface InjuryOverlay {
-  start: string;
-  end: string;
-  severity: 'injury' | 'light_injury';
-  label?: string;
-}
-
 function formatDay(iso: string, aggregation: ProgressionAggregation): string {
   const d = new Date(`${iso}T00:00:00`);
   if (Number.isNaN(d.getTime())) return iso;
@@ -60,57 +53,6 @@ export function AthleteProgressionPage(): JSX.Element {
       };
     });
   }, [aggregation, chartData]);
-
-  const injuryOverlays = useMemo(() => {
-    const windows = query.data?.injury_windows ?? [];
-    if (windows.length === 0 || normalizedChartData.length === 0) return [];
-    const bucketSizeDays = aggregation === 'weekly' ? 7 : 1;
-    const buckets = normalizedChartData
-      .map((row) => {
-        const start = String(row.period_start ?? '');
-        if (!start) return null;
-        const startDate = new Date(`${start}T00:00:00`);
-        if (Number.isNaN(startDate.getTime())) return null;
-        const endExclusive = new Date(startDate);
-        endExclusive.setDate(endExclusive.getDate() + bucketSizeDays);
-        return {
-          key: start,
-          startMs: startDate.getTime(),
-          endExclusiveMs: endExclusive.getTime(),
-        };
-      })
-      .filter((bucket): bucket is { key: string; startMs: number; endExclusiveMs: number } => bucket !== null)
-      .sort((a, b) => a.startMs - b.startMs);
-    if (buckets.length === 0) return [];
-
-    const overlays: InjuryOverlay[] = [];
-    windows.forEach((window) => {
-      const start = String(window.start || '');
-      const end = String(window.end || '');
-      if (!start || !end) return;
-      const startDate = new Date(`${start}T00:00:00`);
-      const endDate = new Date(`${end}T00:00:00`);
-      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return;
-      const injuryStartMs = startDate.getTime();
-      const injuryEndExclusive = new Date(endDate);
-      injuryEndExclusive.setDate(injuryEndExclusive.getDate() + 1);
-      const injuryEndExclusiveMs = injuryEndExclusive.getTime();
-      if (injuryStartMs >= injuryEndExclusiveMs) return;
-
-      const overlappingBuckets = buckets.filter(
-        (bucket) => bucket.startMs < injuryEndExclusiveMs && bucket.endExclusiveMs > injuryStartMs,
-      );
-      if (overlappingBuckets.length === 0) return;
-
-      overlays.push({
-        start: overlappingBuckets[0].key,
-        end: overlappingBuckets[overlappingBuckets.length - 1].key,
-        severity: window.severity,
-        label: window.label,
-      });
-    });
-    return overlays;
-  }, [normalizedChartData, query.data?.injury_windows]);
 
   return (
     <section className="space-y-6">
@@ -181,7 +123,6 @@ export function AthleteProgressionPage(): JSX.Element {
                 yLabel={aggregation === 'weekly' ? 'Weekly Stress' : 'Daily Stress'}
                 targetKey="stress_target_tss"
                 targetLabel={aggregation === 'weekly' ? 'Weekly Target' : 'Daily Target'}
-                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'tss', label: 'TSS', color: '#60a5fa' },
                   { key: 'rtss', label: 'rTSS', color: '#f59e0b' },
@@ -194,7 +135,6 @@ export function AthleteProgressionPage(): JSX.Element {
                 yLabel="Load"
                 targetKey="pounding_target_tss"
                 targetLabel="Daily Target"
-                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'leg_elasticity', label: 'Leg Elasticity', color: '#22c55e' },
                   { key: 'pounding', label: 'Pounding', color: '#ef4444' },
@@ -207,7 +147,6 @@ export function AthleteProgressionPage(): JSX.Element {
                 yLabel="km"
                 targetKey="target_distance_km"
                 targetLabel="Distance Target"
-                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'distance_km', label: 'Distance', color: '#38bdf8' },
                   { key: 'distance_eqv_km', label: 'Distance Eqv', color: '#22c55e' },
@@ -218,7 +157,6 @@ export function AthleteProgressionPage(): JSX.Element {
                 title="Fitness vs Fatigue"
                 data={normalizedChartData}
                 yLabel="Load"
-                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'fitness', label: 'Fitness', color: '#22c55e' },
                   { key: 'fatigue', label: 'Fatigue', color: '#ef4444' },
@@ -229,7 +167,6 @@ export function AthleteProgressionPage(): JSX.Element {
                 title="Overreach vs Injury Risk"
                 data={normalizedChartData}
                 yLabel="Risk"
-                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'overreach', label: 'Overreach', color: '#60a5fa' },
                   { key: 'injury_risk', label: 'Injury Risk', color: '#ef4444' },
@@ -241,7 +178,6 @@ export function AthleteProgressionPage(): JSX.Element {
                 data={normalizedChartData}
                 yLabel="Training Load"
                 rightAxisLabel="Calories"
-                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'training_load_garmin', label: 'Garmin Training Load', color: '#60a5fa', yAxisId: 'left' },
                   { key: 'calories_total', label: 'Total Calories', color: '#f59e0b', yAxisId: 'right' },
@@ -252,7 +188,6 @@ export function AthleteProgressionPage(): JSX.Element {
                 title="HR Zone Time (hours)"
                 data={normalizedChartData}
                 yLabel="Hours"
-                injuryOverlays={injuryOverlays}
                 series={[
                   { key: 'zone_low_aerobic_h', label: 'Low Aerobic', color: '#60a5fa' },
                   { key: 'zone_moderate_aerobic_h', label: 'Moderate Aerobic', color: '#facc15' },
