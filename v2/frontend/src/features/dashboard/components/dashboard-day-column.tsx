@@ -1,4 +1,4 @@
-import { Check, X } from 'lucide-react';
+import { Check, Plus, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,9 +8,11 @@ import type { DashboardDayColumn as DashboardDayColumnType } from '@/features/da
 
 interface DashboardDayColumnProps {
   day: DashboardDayColumnType;
+  onAddPlannedActivity?: (dayUtc: string) => void;
   onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
   onDeletePlannedActivity?: (dayUtc: string, lineNo: number) => void;
   onSelectActivity?: (activityId: string) => void;
+  addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
   deletingPlannedActivity?: boolean;
   userTimeZone?: string;
@@ -156,9 +158,11 @@ function deriveCompactTimeLabel(
 
 export function DashboardDayColumn({
   day,
+  onAddPlannedActivity,
   onMarkPlannedDone,
   onDeletePlannedActivity,
   onSelectActivity,
+  addingPlannedActivity,
   markingPlannedDone,
   deletingPlannedActivity,
   userTimeZone,
@@ -179,6 +183,18 @@ export function DashboardDayColumn({
             <p className={cn('text-[13px] font-semibold leading-5', day.is_today ? 'text-primary' : 'text-foreground')}>
               {day.day_label}
             </p>
+            {!day.is_past ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="ml-auto h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
+                onClick={() => onAddPlannedActivity?.(day.day_utc)}
+                disabled={addingPlannedActivity}
+                aria-label={`Add planned activity for ${day.day_label}`}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            ) : null}
           </div>
           <div className="min-h-[50px] space-y-0.5 text-[12px] leading-[1.3] text-muted-foreground">
             {fmtMeta(day).map((line) => (
@@ -257,35 +273,37 @@ export function DashboardDayColumn({
                 }
               }}
             >
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute left-1 top-1 h-5 w-5 rounded-full text-emerald-300 hover:text-emerald-200"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onMarkPlannedDone?.(activity.day_utc, activity.line_no);
-                }}
-                disabled={markingPlannedDone}
-                aria-label="Mark planned activity as done"
-              >
-                <Check className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1 h-5 w-5 rounded-full text-muted-foreground hover:text-foreground"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (window.confirm('Delete this planned activity?')) {
-                    onDeletePlannedActivity?.(activity.day_utc, activity.line_no);
-                  }
-                }}
-                disabled={deletingPlannedActivity}
-                aria-label="Delete planned activity"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-              <p className="text-[13px] font-semibold leading-5 text-foreground">
+              <div className="absolute inset-x-0 top-0 flex items-start justify-between px-1.5 pt-1.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 rounded-full border border-emerald-300/30 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.22),transparent_55%),linear-gradient(180deg,rgba(16,185,129,0.26),rgba(5,150,105,0.14))] text-emerald-50 shadow-[0_8px_18px_rgba(5,150,105,0.2)] backdrop-blur-md transition-all hover:scale-[1.04] hover:border-emerald-200/45 hover:text-white"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onMarkPlannedDone?.(activity.day_utc, activity.line_no);
+                  }}
+                  disabled={markingPlannedDone}
+                  aria-label="Mark planned activity as done"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 rounded-full border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.18),transparent_55%),linear-gradient(180deg,rgba(51,65,85,0.42),rgba(15,23,42,0.28))] text-slate-200 shadow-[0_8px_18px_rgba(15,23,42,0.2)] backdrop-blur-md transition-all hover:scale-[1.04] hover:border-rose-300/35 hover:bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.2),transparent_55%),linear-gradient(180deg,rgba(244,63,94,0.2),rgba(127,29,29,0.18))] hover:text-rose-100"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (window.confirm('Delete this planned activity?')) {
+                      onDeletePlannedActivity?.(activity.day_utc, activity.line_no);
+                    }
+                  }}
+                  disabled={deletingPlannedActivity}
+                  aria-label="Delete planned activity"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <p className="pr-12 text-[13px] font-semibold leading-5 text-foreground">
                 {formatActivityTitle(activity.activity)} <span className="text-muted-foreground">(P)</span>
               </p>
               <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">

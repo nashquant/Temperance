@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -407,19 +409,45 @@ def _archive_daily_payload(raw_root: Path | None, day: str, name: str, payload: 
     _write_json(raw_root / "daily" / day / f"{name}.json", payload)
 
 
-def _download_fit_if_missing(client: Any, activity_id: str, raw_root: Path | None) -> tuple[Path | None, str | None]:
-    if raw_root is None:
-        return None, None
+def _payload_bytes(payload: Any) -> bytes | None:
+    if payload is None:
+        return None
+    if isinstance(payload, bytes):
+        return payload
+    if hasattr(payload, "read"):
+        try:
+            content = payload.read()
+            return content if isinstance(content, bytes) else None
+        except Exception:
+            return None
+    return None
 
-    fit_path = raw_root / "fit" / f"{activity_id}.fit"
-    if fit_path.exists():
-        return fit_path, None
 
-    fit_path.parent.mkdir(parents=True, exist_ok=True)
+def _extract_fit_bytes(blob: bytes) -> bytes | None:
+    # Raw FIT starts with ".FIT" in first bytes.
+    if len(blob) >= 12 and blob[8:12] == b".FIT":
+        return blob
 
+    # Garmin ORIGINAL downloads can be zip containers; pick first .fit entry.
+    try:
+        with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+            for name in zf.namelist():
+                if str(name).lower().endswith(".fit"):
+                    return zf.read(name)
+    except Exception:
+        pass
+    return None
+
+
+def _download_fit_bytes(client: Any, activity_id: str, raw_root: Path | None) -> tuple[bytes | None, str | None]:
     attempts: list[Callable[[], Any]] = []
     if hasattr(client, "download_activity"):
-        attempts.append(lambda: client.download_activity(int(activity_id), dl_fmt="fit"))
+        # garminconnect 0.2.x exposes ORIGINAL, not FIT.
+        dl_fmt = getattr(getattr(client, "ActivityDownloadFormat", None), "ORIGINAL", None)
+        if dl_fmt is not None:
+            attempts.append(lambda: client.download_activity(int(activity_id), dl_fmt=dl_fmt))
+        # Fallback to default signature for older/newer versions.
+        attempts.append(lambda: client.download_activity(int(activity_id)))
     if hasattr(client, "download_original_activity"):
         attempts.append(lambda: client.download_original_activity(int(activity_id)))
 
@@ -427,49 +455,42 @@ def _download_fit_if_missing(client: Any, activity_id: str, raw_root: Path | Non
     for attempt in attempts:
         payload, err = _safe_call(attempt)
         if err:
-            # Some garminconnect versions do not support FIT download via dl_fmt.
-            # Treat this as "not available" instead of surfacing noisy per-activity errors.
-            if "Unexpected value fit for dl_fmt" in err:
-                return None, None
             last_error = err
             continue
-
-        if payload is None:
+        content = _payload_bytes(payload)
+        if not content:
             continue
-
-        try:
-            if isinstance(payload, bytes):
-                fit_path.write_bytes(payload)
-                return fit_path, None
-
-            if hasattr(payload, "read"):
-                fit_path.write_bytes(payload.read())
-                return fit_path, None
-
-            if isinstance(payload, str):
-                fit_path.write_text(payload, encoding="utf-8")
-                return fit_path, None
-        except Exception as write_err:  # pragma: no cover
-            last_error = str(write_err)
+        fit_bytes = _extract_fit_bytes(content)
+        if not fit_bytes:
+            continue
+        if raw_root is not None:
+            try:
+                fit_path = raw_root / "fit" / f"{activity_id}.fit"
+                fit_path.parent.mkdir(parents=True, exist_ok=True)
+                fit_path.write_bytes(fit_bytes)
+            except Exception:
+                # Export is optional; keep ingestion flow running.
+                pass
+        return fit_bytes, None
 
     return None, last_error
 
 
-def _extract_fit_session(path: Path) -> dict[str, Any] | None:
+def _extract_fit_session_bytes(data: bytes) -> dict[str, Any] | None:
     if FitFile is None:
         return None
 
-    fit_file = FitFile(path)
+    fit_file = FitFile(io.BytesIO(data))
     for msg in fit_file.get_messages("session"):
         return {field.name: field.value for field in msg}
     return None
 
 
-def _parse_fit_records(path: Path, activity_id: str) -> list[dict[str, Any]]:
+def _parse_fit_records_bytes(data: bytes, activity_id: str) -> list[dict[str, Any]]:
     if FitFile is None:
         return []
 
-    fit_file = FitFile(path)
+    fit_file = FitFile(io.BytesIO(data))
     records: list[dict[str, Any]] = []
 
     for msg in fit_file.get_messages("record"):
@@ -495,8 +516,8 @@ def _parse_fit_records(path: Path, activity_id: str) -> list[dict[str, Any]]:
                 "stride_length": _to_float(row.get("stride_length")),
                 "vertical_ratio": _to_float(row.get("vertical_ratio")),
                 "vertical_oscillation": _to_float(row.get("vertical_oscillation")),
-                "power": _to_float(row.get("power")),
-                "grade": _to_float(row.get("grade")),
+                "power": _to_float(row.get("power") or row.get("enhanced_power")),
+                "grade": _to_float(row.get("grade") or row.get("grade_smooth")),
                 "altitude": _to_float(row.get("altitude") or row.get("enhanced_altitude")),
                 "speed": _to_float(row.get("speed") or row.get("enhanced_speed")),
                 "distance": _to_float(row.get("distance") or row.get("enhanced_distance")),
@@ -792,16 +813,15 @@ def fetch_garmin_comprehensive(
 
             normalized = _normalize_activity(row, source="garmin_api", details_bundle=details_bundle) or normalized
 
-            fit_path, fit_err = _download_fit_if_missing(client, activity_id, raw_export_dir)
+            fit_bytes, fit_err = _download_fit_bytes(client, activity_id, raw_export_dir)
             if fit_err:
                 errors.append(f"activity_id={activity_id} fit_download: {fit_err}")
 
-            if fit_path and fit_path.exists():
+            if fit_bytes:
                 try:
-                    session_data = _extract_fit_session(fit_path)
+                    session_data = _extract_fit_session_bytes(fit_bytes)
                     normalized = _merge_session_into_activity(normalized, session_data)
-                    if _is_running_activity(normalized.get("sport_type")):
-                        activity_records.extend(_parse_fit_records(fit_path, activity_id))
+                    activity_records.extend(_parse_fit_records_bytes(fit_bytes, activity_id))
                 except Exception as parse_err:
                     errors.append(f"activity_id={activity_id} fit_parse: {parse_err}")
 

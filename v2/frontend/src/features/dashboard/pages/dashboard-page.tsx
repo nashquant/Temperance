@@ -8,7 +8,11 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { ActivitySplitsDrawer } from '@/features/dashboard/components/activity-splits-drawer';
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
-import { deletePlannedActivity, setPlannedManualDone } from '@/features/plan-activities/services/plan-activities-api';
+import {
+  deletePlannedActivity,
+  ingestPlannedActivities,
+  setPlannedManualDone,
+} from '@/features/plan-activities/services/plan-activities-api';
 import { queryClient } from '@/lib/query-client';
 
 function timeHintFromWorkoutText(workoutText: string): 'AM' | 'PM' | null {
@@ -80,6 +84,23 @@ export function DashboardPage(): JSX.Element {
         owner: profile?.owner,
         dayUtc,
         lineNo,
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['planned-activities'] }),
+        queryClient.invalidateQueries({ queryKey: ['week-outlook'] }),
+      ]);
+    },
+  });
+  const plannedCreateMutation = useMutation({
+    mutationFn: async ({ dayUtc, workoutText }: { dayUtc: string; workoutText: string }) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      await ingestPlannedActivities({
+        token: session.token,
+        owner: profile?.owner,
+        entryText: `${dayUtc}: ${workoutText}`,
       });
     },
     onSuccess: async () => {
@@ -185,9 +206,19 @@ export function DashboardPage(): JSX.Element {
                 >
                   <DashboardWeekCard
                     week={week}
+                    onAddPlannedActivity={(dayUtc) => {
+                      const response = window.prompt(
+                        `Create planned activity for ${dayUtc}`,
+                        '',
+                      );
+                      const workoutText = String(response || '').trim();
+                      if (!workoutText) return;
+                      plannedCreateMutation.mutate({ dayUtc, workoutText });
+                    }}
                     onMarkPlannedDone={(dayUtc, lineNo) => plannedDoneMutation.mutate({ dayUtc, lineNo })}
                     onDeletePlannedActivity={(dayUtc, lineNo) => plannedDeleteMutation.mutate({ dayUtc, lineNo })}
                     onSelectActivity={(activityId) => setSelectedActivityId(activityId)}
+                    addingPlannedActivity={plannedCreateMutation.isPending}
                     markingPlannedDone={plannedDoneMutation.isPending}
                     deletingPlannedActivity={plannedDeleteMutation.isPending}
                     userTimeZone={userTimeZone}

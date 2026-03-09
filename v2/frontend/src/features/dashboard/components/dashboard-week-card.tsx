@@ -5,9 +5,11 @@ import type { DashboardWeekRow } from '@/features/dashboard/types/dashboard';
 
 interface DashboardWeekCardProps {
   week: DashboardWeekRow;
+  onAddPlannedActivity?: (dayUtc: string) => void;
   onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
   onDeletePlannedActivity?: (dayUtc: string, lineNo: number) => void;
   onSelectActivity?: (activityId: string) => void;
+  addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
   deletingPlannedActivity?: boolean;
   userTimeZone?: string;
@@ -19,9 +21,11 @@ function shortDay(iso: string): string {
 
 export function DashboardWeekCard({
   week,
+  onAddPlannedActivity,
   onMarkPlannedDone,
   onDeletePlannedActivity,
   onSelectActivity,
+  addingPlannedActivity,
   markingPlannedDone,
   deletingPlannedActivity,
   userTimeZone,
@@ -41,9 +45,11 @@ export function DashboardWeekCard({
               <DashboardDayColumn
                 key={day.day_utc}
                 day={day}
+                onAddPlannedActivity={onAddPlannedActivity}
                 onMarkPlannedDone={onMarkPlannedDone}
                 onDeletePlannedActivity={onDeletePlannedActivity}
                 onSelectActivity={onSelectActivity}
+                addingPlannedActivity={addingPlannedActivity}
                 markingPlannedDone={markingPlannedDone}
                 deletingPlannedActivity={deletingPlannedActivity}
                 userTimeZone={userTimeZone}
