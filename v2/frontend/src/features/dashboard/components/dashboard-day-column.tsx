@@ -89,10 +89,16 @@ function compactLine(parts: Array<string | null | undefined>): string {
     .join(' · ');
 }
 
-function titleWithTime(title: string, timeHhmm?: string | null): string {
-  const hhmm = String(timeHhmm || '').trim();
-  if (!/^\d{2}:\d{2}$/.test(hhmm)) return title;
-  return `${title} (${hhmm})`;
+function deriveHhmm(activity: DashboardDayColumnType['actual_activities'][number]): string {
+  const hhmm = String(activity.start_time_hhmm || '').trim();
+  if (/^\d{2}:\d{2}$/.test(hhmm)) return hhmm;
+  const rawUtc = String(activity.start_time_utc || '').trim();
+  if (!rawUtc) return '';
+  const parsed = new Date(rawUtc);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const h = String(parsed.getHours()).padStart(2, '0');
+  const m = String(parsed.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
 }
 
 export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, markingPlannedDone }: DashboardDayColumnProps): JSX.Element {
@@ -139,9 +145,10 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
                 }
               }}
             >
-              <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
-                {titleWithTime(formatActivityTitle(activity.sport), activity.start_time_hhmm)}
-              </p>
+              <div className="flex items-center gap-1 text-[13px] font-semibold leading-5 text-foreground">
+                <p className="min-w-0 flex-1 truncate">{formatActivityTitle(activity.sport)}</p>
+                {deriveHhmm(activity) ? <span className="shrink-0 text-[12px]">({deriveHhmm(activity)})</span> : null}
+              </div>
               <p className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-muted-foreground">
                 {compactLine([activity.duration_label, activity.distance_label])}
               </p>

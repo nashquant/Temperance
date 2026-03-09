@@ -64,33 +64,47 @@ export function AthleteProgressionPage(): JSX.Element {
   const injuryOverlays = useMemo(() => {
     const windows = query.data?.injury_windows ?? [];
     if (windows.length === 0 || normalizedChartData.length === 0) return [];
-    const points = normalizedChartData
-      .map((row) => String(row.period_start ?? ''))
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b));
-    if (points.length === 0) return [];
-    const first = points[0];
-    const last = points[points.length - 1];
+    const bucketSizeDays = aggregation === 'weekly' ? 7 : 1;
+    const buckets = normalizedChartData
+      .map((row) => {
+        const start = String(row.period_start ?? '');
+        if (!start) return null;
+        const startDate = new Date(`${start}T00:00:00`);
+        if (Number.isNaN(startDate.getTime())) return null;
+        const endExclusive = new Date(startDate);
+        endExclusive.setDate(endExclusive.getDate() + bucketSizeDays);
+        return {
+          key: start,
+          startMs: startDate.getTime(),
+          endExclusiveMs: endExclusive.getTime(),
+        };
+      })
+      .filter((bucket): bucket is { key: string; startMs: number; endExclusiveMs: number } => bucket !== null)
+      .sort((a, b) => a.startMs - b.startMs);
+    if (buckets.length === 0) return [];
 
     const overlays: InjuryOverlay[] = [];
     windows.forEach((window) => {
       const start = String(window.start || '');
       const end = String(window.end || '');
       if (!start || !end) return;
+      const startDate = new Date(`${start}T00:00:00`);
+      const endDate = new Date(`${end}T00:00:00`);
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return;
+      const injuryStartMs = startDate.getTime();
+      const injuryEndExclusive = new Date(endDate);
+      injuryEndExclusive.setDate(injuryEndExclusive.getDate() + 1);
+      const injuryEndExclusiveMs = injuryEndExclusive.getTime();
+      if (injuryStartMs >= injuryEndExclusiveMs) return;
 
-      const clippedStart = start < first ? first : start;
-      const clippedEnd = end > last ? last : end;
-      if (clippedStart > clippedEnd) return;
-
-      // The chart uses categorical x values (period_start); snap windows to existing buckets.
-      const snappedStart = points.find((p) => p >= clippedStart);
-      const reversed = [...points].reverse();
-      const snappedEnd = reversed.find((p) => p <= clippedEnd);
-      if (!snappedStart || !snappedEnd || snappedStart > snappedEnd) return;
+      const overlappingBuckets = buckets.filter(
+        (bucket) => bucket.startMs < injuryEndExclusiveMs && bucket.endExclusiveMs > injuryStartMs,
+      );
+      if (overlappingBuckets.length === 0) return;
 
       overlays.push({
-        start: snappedStart,
-        end: snappedEnd,
+        start: overlappingBuckets[0].key,
+        end: overlappingBuckets[overlappingBuckets.length - 1].key,
         severity: window.severity,
         label: window.label,
       });

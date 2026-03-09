@@ -2368,6 +2368,7 @@ def _build_activity_dashboard_payload(
                     {
                         "activity_id": _normalize_activity_id(act.get("activity_id")),
                         "sport": sport_raw or "Activity",
+                        "start_time_utc": str(act.get("start_time_utc") or ""),
                         "start_time_hhmm": (
                             pd.Timestamp(start_local_ts).strftime("%H:%M")
                             if pd.notna(start_local_ts)
