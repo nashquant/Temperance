@@ -72,10 +72,12 @@ export function DashboardPage(): JSX.Element {
     label: string;
     action: (() => Promise<void>) | null;
   } | null>(null);
+  const [undoVisible, setUndoVisible] = useState(false);
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const undoTimerRef = useRef<number | null>(null);
+  const undoDismissTimerRef = useRef<number | null>(null);
   const selectedYearWindowIndex = useMemo(() => {
     const parsed = Number(selectedYearWindow);
     if (!Number.isFinite(parsed) || parsed < 0) return 0;
@@ -108,16 +110,27 @@ export function DashboardPage(): JSX.Element {
     if (undoTimerRef.current) {
       window.clearTimeout(undoTimerRef.current);
     }
+    if (undoDismissTimerRef.current) {
+      window.clearTimeout(undoDismissTimerRef.current);
+    }
     const id = Date.now();
     setUndoState({ id, label, action });
+    window.requestAnimationFrame(() => setUndoVisible(true));
     undoTimerRef.current = window.setTimeout(() => {
-      setUndoState((current) => (current?.id === id ? null : current));
+      setUndoVisible(false);
+      undoDismissTimerRef.current = window.setTimeout(() => {
+        setUndoState((current) => (current?.id === id ? null : current));
+        undoDismissTimerRef.current = null;
+      }, 220);
       undoTimerRef.current = null;
     }, 6000);
   };
   useEffect(() => () => {
     if (undoTimerRef.current) {
       window.clearTimeout(undoTimerRef.current);
+    }
+    if (undoDismissTimerRef.current) {
+      window.clearTimeout(undoDismissTimerRef.current);
     }
   }, []);
   const plannedDoneMutation = useMutation({
@@ -405,20 +418,22 @@ export function DashboardPage(): JSX.Element {
                       )
                     }
                     onDeleteCustomActivity={(activity) =>
-                      activity.day_utc && activity.line_no && activity.activity_text
+                      activity.day_utc && activity.line_no
                         ? customDeleteMutation.mutate(
                             { dayUtc: activity.day_utc, lineNo: activity.line_no },
                             {
                               onSuccess: () => {
-                                showUndo(`Deleted ${activity.sport}`, async () => {
-                                  if (!session?.token) throw new Error('Missing auth token');
-                                  await ingestCustomActivities({
-                                    token: session.token,
-                                    owner: profile?.owner,
-                                    entryText: `${activity.day_utc}: ${activity.activity_text}`,
+                                if (activity.activity_text) {
+                                  showUndo(`Deleted ${activity.sport}`, async () => {
+                                    if (!session?.token) throw new Error('Missing auth token');
+                                    await ingestCustomActivities({
+                                      token: session.token,
+                                      owner: profile?.owner,
+                                      entryText: `${activity.day_utc}: ${activity.activity_text}`,
+                                    });
+                                    await refreshDashboardViews();
                                   });
-                                  await refreshDashboardViews();
-                                });
+                                }
                               },
                             },
                           )
@@ -543,29 +558,40 @@ export function DashboardPage(): JSX.Element {
         </div>
       ) : null}
       {undoState ? (
-        <div className="fixed bottom-5 right-5 z-50 w-full max-w-sm rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.14),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-3 shadow-[0_24px_60px_rgba(2,6,23,0.42)] backdrop-blur">
+        <div
+          className={`fixed bottom-5 right-5 z-50 w-full max-w-[320px] transition-all duration-200 ${
+            undoVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
+          }`}
+        >
+        <div className="rounded-2xl border border-white/8 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.1),transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.9),rgba(2,6,23,0.96))] p-2.5 shadow-[0_16px_36px_rgba(2,6,23,0.28)] backdrop-blur">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Dashboard Action</p>
-              <p className="truncate text-sm text-slate-100">{undoState.label}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/64">Dashboard Action</p>
+              <p className="truncate text-[13px] text-slate-100/92">{undoState.label}</p>
             </div>
             <Button
               variant="outline"
-              className="shrink-0 rounded-xl border-sky-300/18 bg-sky-400/10 text-sky-100 hover:bg-sky-400/16"
+              className="shrink-0 rounded-xl border-white/8 bg-white/5 text-slate-100 hover:bg-white/10"
               onClick={async () => {
                 const pending = undoState;
                 if (undoTimerRef.current) {
                   window.clearTimeout(undoTimerRef.current);
                   undoTimerRef.current = null;
                 }
-                setUndoState(null);
+                if (undoDismissTimerRef.current) {
+                  window.clearTimeout(undoDismissTimerRef.current);
+                  undoDismissTimerRef.current = null;
+                }
+                setUndoVisible(false);
+                window.setTimeout(() => setUndoState(null), 180);
                 await pending.action?.();
               }}
             >
-              <RotateCcw className="mr-2 h-3.5 w-3.5" />
+              <RotateCcw className="mr-2 h-3.5 w-3.5 text-sky-200/80" />
               Undo
             </Button>
           </div>
+        </div>
         </div>
       ) : null}
     </section>
