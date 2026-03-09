@@ -11,6 +11,7 @@ interface DashboardDayColumnProps {
   onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
   onSelectActivity?: (activityId: string) => void;
   markingPlannedDone?: boolean;
+  userTimeZone?: string;
 }
 
 const intensityClasses: Record<string, string> = {
@@ -89,19 +90,37 @@ function compactLine(parts: Array<string | null | undefined>): string {
     .join(' · ');
 }
 
-function deriveHhmm(activity: DashboardDayColumnType['actual_activities'][number]): string {
+function deriveHhmm(
+  activity: DashboardDayColumnType['actual_activities'][number],
+  userTimeZone?: string,
+): string {
+  const rawUtc = String(activity.start_time_utc || '').trim();
+  if (rawUtc) {
+    const parsed = new Date(rawUtc);
+    if (!Number.isNaN(parsed.getTime())) {
+      const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const tz = String(userTimeZone || '').trim() || browserTz;
+      try {
+        const hhmm = new Intl.DateTimeFormat('en-GB', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          timeZone: tz,
+        }).format(parsed);
+        if (/^\d{2}:\d{2}$/.test(hhmm)) return hhmm;
+      } catch {
+        const h = String(parsed.getHours()).padStart(2, '0');
+        const m = String(parsed.getMinutes()).padStart(2, '0');
+        return `${h}:${m}`;
+      }
+    }
+  }
   const hhmm = String(activity.start_time_hhmm || '').trim();
   if (/^\d{2}:\d{2}$/.test(hhmm)) return hhmm;
-  const rawUtc = String(activity.start_time_utc || '').trim();
-  if (!rawUtc) return '';
-  const parsed = new Date(rawUtc);
-  if (Number.isNaN(parsed.getTime())) return '';
-  const h = String(parsed.getHours()).padStart(2, '0');
-  const m = String(parsed.getMinutes()).padStart(2, '0');
-  return `${h}:${m}`;
+  return '';
 }
 
-export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, markingPlannedDone }: DashboardDayColumnProps): JSX.Element {
+export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, markingPlannedDone, userTimeZone }: DashboardDayColumnProps): JSX.Element {
   return (
     <Card
       className={cn(
@@ -129,36 +148,41 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
 
         <div className="space-y-2">
           {day.actual_activities.map((activity) => (
-            <div
-              key={activity.activity_id}
-              className={cn(
-                'flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border p-2 text-[12px] transition-colors hover:bg-white/5',
-                intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
-              )}
-              onClick={() => onSelectActivity?.(activity.activity_id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  onSelectActivity?.(activity.activity_id);
-                }
-              }}
-            >
-              <div className="flex items-center gap-1 text-[13px] font-semibold leading-5 text-foreground">
-                <p className="min-w-0 flex-1 truncate">{formatActivityTitle(activity.sport)}</p>
-                {deriveHhmm(activity) ? <span className="shrink-0 text-[12px]">({deriveHhmm(activity)})</span> : null}
-              </div>
-              <p className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-muted-foreground">
-                {compactLine([activity.duration_label, activity.distance_label])}
-              </p>
-              <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">
-                {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
-              </p>
-              <p className="mt-auto truncate text-[12px] font-semibold leading-4 text-foreground">
-                TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
-              </p>
-            </div>
+            (() => {
+              const timeHhmm = deriveHhmm(activity, userTimeZone);
+              return (
+                <div
+                  key={activity.activity_id}
+                  className={cn(
+                    'flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border p-2 text-[12px] transition-colors hover:bg-white/5',
+                    intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
+                  )}
+                  onClick={() => onSelectActivity?.(activity.activity_id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelectActivity?.(activity.activity_id);
+                    }
+                  }}
+                >
+                  <div className="flex items-center gap-1 text-[13px] font-semibold leading-5 text-foreground">
+                    <p className="min-w-0 flex-1 truncate">{formatActivityTitle(activity.sport)}</p>
+                    {timeHhmm ? <span className="shrink-0 text-[12px]">({timeHhmm})</span> : null}
+                  </div>
+                  <p className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-muted-foreground">
+                    {compactLine([activity.duration_label, activity.distance_label])}
+                  </p>
+                  <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">
+                    {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
+                  </p>
+                  <p className="mt-auto truncate text-[12px] font-semibold leading-4 text-foreground">
+                    TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
+                  </p>
+                </div>
+              );
+            })()
           ))}
 
           {day.planned_activities.map((activity) => (

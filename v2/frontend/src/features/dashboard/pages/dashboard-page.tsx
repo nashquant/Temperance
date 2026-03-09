@@ -46,6 +46,13 @@ export function DashboardPage(): JSX.Element {
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
   const query = useDashboardQuery(visibleWeeks, 'all');
+  const userTimeZone = useMemo(() => {
+    const profileAny = profile as unknown as Record<string, unknown> | null;
+    const tzFromProfile =
+      String(profileAny?.timezone || profileAny?.user_timezone || profileAny?.tz || '').trim();
+    if (tzFromProfile) return tzFromProfile;
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }, [profile]);
   const plannedDoneMutation = useMutation({
     mutationFn: async ({ dayUtc, lineNo }: { dayUtc: string; lineNo: number }) => {
       if (!session?.token) throw new Error('Missing auth token');
@@ -163,6 +170,7 @@ export function DashboardPage(): JSX.Element {
                     onMarkPlannedDone={(dayUtc, lineNo) => plannedDoneMutation.mutate({ dayUtc, lineNo })}
                     onSelectActivity={(activityId) => setSelectedActivityId(activityId)}
                     markingPlannedDone={plannedDoneMutation.isPending}
+                    userTimeZone={userTimeZone}
                   />
                 </div>
               ))}
