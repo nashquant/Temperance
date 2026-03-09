@@ -784,7 +784,7 @@ def get_activity_records_df(db_path: Path, activity_id: str) -> pd.DataFrame:
             """
             SELECT record_time_utc, heart_rate, cadence, step_length, stride_length,
                    vertical_ratio, vertical_oscillation, power, grade, altitude,
-                   speed, distance, stamina
+                   speed, distance, stamina, raw_json
             FROM activity_records
             WHERE activity_id = ?
             ORDER BY record_time_utc

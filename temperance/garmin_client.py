@@ -486,6 +486,13 @@ def _extract_fit_session_bytes(data: bytes) -> dict[str, Any] | None:
     return None
 
 
+def _extract_fit_session(path: Path) -> dict[str, Any] | None:
+    try:
+        return _extract_fit_session_bytes(path.read_bytes())
+    except Exception:
+        return None
+
+
 def _parse_fit_records_bytes(data: bytes, activity_id: str) -> list[dict[str, Any]]:
     if FitFile is None:
         return []
@@ -527,6 +534,13 @@ def _parse_fit_records_bytes(data: bytes, activity_id: str) -> list[dict[str, An
         )
 
     return records
+
+
+def _parse_fit_records(path: Path, activity_id: str) -> list[dict[str, Any]]:
+    try:
+        return _parse_fit_records_bytes(path.read_bytes(), activity_id)
+    except Exception:
+        return []
 
 
 def _merge_session_into_activity(activity: dict[str, Any], session_data: dict[str, Any] | None) -> dict[str, Any]:
