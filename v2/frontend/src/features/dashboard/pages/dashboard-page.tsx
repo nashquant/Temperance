@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { ingestCustomActivities } from '@/features/custom-activities/services/cu
 import { ActivitySplitsDrawer } from '@/features/dashboard/components/activity-splits-drawer';
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
+import { getDashboard } from '@/features/dashboard/services/dashboard-api';
 import {
   deletePlannedActivity,
   ingestPlannedActivities,
@@ -54,14 +55,17 @@ function isTodayOrPast(dayUtc: string): boolean {
 }
 
 export function DashboardPage(): JSX.Element {
+  const dashboardPageSize = 6;
+  const dashboardMaxWeeks = 52;
   const { session, profile } = useAuth();
-  const [visibleWeeks, setVisibleWeeks] = useState(6);
+  const [visibleWeeks, setVisibleWeeks] = useState(dashboardPageSize);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [addActivityDayUtc, setAddActivityDayUtc] = useState<string | null>(null);
   const [addActivityText, setAddActivityText] = useState('');
   const [addActivityMode, setAddActivityMode] = useState<'planned' | 'custom'>('planned');
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const query = useDashboardQuery(visibleWeeks, 'all');
   const userTimeZone = useMemo(() => {
     const profileAny = profile as unknown as Record<string, unknown> | null;
@@ -212,6 +216,47 @@ export function DashboardPage(): JSX.Element {
     lastAnchoredWeekRef.current = currentWeekStart;
   }, [currentWeekStart]);
 
+  useEffect(() => {
+    if (!session?.token) return;
+    if (!query.data?.has_more_weeks) return;
+    const nextWeeks = Math.min(visibleWeeks + dashboardPageSize, dashboardMaxWeeks);
+    if (nextWeeks <= visibleWeeks) return;
+
+    void queryClient.prefetchQuery({
+      queryKey: ['dashboard', profile?.owner, nextWeeks, 'all'],
+      queryFn: async () =>
+        getDashboard({
+          token: session.token,
+          owner: profile?.owner,
+          weeks: nextWeeks,
+        }),
+      staleTime: 0,
+    });
+  }, [dashboardMaxWeeks, dashboardPageSize, profile?.owner, query.data?.has_more_weeks, session?.token, visibleWeeks]);
+
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node) return;
+    if (!query.data?.has_more_weeks) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        if (query.isFetching) return;
+        const nextWeeks = Math.min(visibleWeeks + dashboardPageSize, dashboardMaxWeeks);
+        if (nextWeeks <= visibleWeeks) return;
+        startTransition(() => {
+          setVisibleWeeks(nextWeeks);
+        });
+      },
+      { rootMargin: '900px 0px' },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [dashboardMaxWeeks, dashboardPageSize, query.data?.has_more_weeks, query.isFetching, visibleWeeks]);
+
   return (
     <section className="space-y-6">
       {query.isLoading ? (
@@ -261,17 +306,7 @@ export function DashboardPage(): JSX.Element {
                   />
                 </div>
               ))}
-              {query.data.has_more_weeks ? (
-                <div className="flex justify-center">
-                  <Button
-                    variant="outline"
-                    onClick={() => setVisibleWeeks((previous) => Math.min(previous + 6, 52))}
-                    disabled={query.isFetching}
-                  >
-                    Load older weeks
-                  </Button>
-                </div>
-              ) : null}
+              {query.data.has_more_weeks ? <div ref={loadMoreRef} className="h-8 w-full" aria-hidden="true" /> : null}
             </div>
           )}
         </>
