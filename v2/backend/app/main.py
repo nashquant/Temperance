@@ -2957,11 +2957,9 @@ def _build_planned_activities_payload(
             "rows": [],
         }
 
-    this_week_start = _week_start_monday(pd.Timestamp(datetime.now().astimezone().date())).normalize()
-    window_weeks = max(1, int(weeks))
-    range_start = this_week_start - pd.Timedelta(days=(window_weeks - 1) * 7)
-    horizon_end = this_week_start + pd.Timedelta(days=window_weeks * 7 - 1)
-    in_scope_rows = planned_rows[(planned_rows["day"] >= range_start) & (planned_rows["day"] <= horizon_end)].copy()
+    # v2 UI expects full week history in selectors/tables (not only a narrow window around current week).
+    # Keep all planned rows in scope so users can choose any prior/future week.
+    in_scope_rows = planned_rows.copy()
 
     latest_lt_pace = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
     goals = {
