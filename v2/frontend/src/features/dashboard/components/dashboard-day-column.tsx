@@ -9,6 +9,7 @@ import type { DashboardDayColumn as DashboardDayColumnType } from '@/features/da
 interface DashboardDayColumnProps {
   day: DashboardDayColumnType;
   onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
+  onSelectActivity?: (activityId: string) => void;
   markingPlannedDone?: boolean;
 }
 
@@ -64,6 +65,10 @@ function formatActivityTitle(raw: string): string {
   if (!cleaned) return 'Activity';
 
   const normalized = cleaned.toLowerCase();
+  if (normalized.includes('strength')) return 'Lift';
+  if (normalized.includes('swim')) return 'Swim';
+  if (normalized.includes('cycl')) return 'Bike';
+  if (normalized === 'run' || normalized === 'running' || normalized.includes(' run')) return 'Run';
   if (normalized === 'treadmill_running' || normalized === 'treadmill run' || normalized === 'treadmillrunning') {
     return 'Treadmill';
   }
@@ -84,7 +89,13 @@ function compactLine(parts: Array<string | null | undefined>): string {
     .join(' · ');
 }
 
-export function DashboardDayColumn({ day, onMarkPlannedDone, markingPlannedDone }: DashboardDayColumnProps): JSX.Element {
+function titleWithTime(title: string, timeHhmm?: string | null): string {
+  const hhmm = String(timeHhmm || '').trim();
+  if (!/^\d{2}:\d{2}$/.test(hhmm)) return title;
+  return `${title} (${hhmm})`;
+}
+
+export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, markingPlannedDone }: DashboardDayColumnProps): JSX.Element {
   return (
     <Card
       className={cn(
@@ -115,12 +126,21 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, markingPlannedDone 
             <div
               key={activity.activity_id}
               className={cn(
-                'flex h-[102px] flex-col overflow-hidden rounded-lg border p-2 text-[12px]',
+                'flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border p-2 text-[12px] transition-colors hover:bg-white/5',
                 intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
               )}
+              onClick={() => onSelectActivity?.(activity.activity_id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onSelectActivity?.(activity.activity_id);
+                }
+              }}
             >
               <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
-                {formatActivityTitle(activity.sport)}
+                {titleWithTime(formatActivityTitle(activity.sport), activity.start_time_hhmm)}
               </p>
               <p className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-muted-foreground">
                 {compactLine([activity.duration_label, activity.distance_label])}

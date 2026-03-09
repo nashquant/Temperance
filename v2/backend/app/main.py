@@ -47,6 +47,7 @@ from db import (  # noqa: E402
     get_latest_activity_time,
     get_latest_recovery_day,
     get_activity_detail_raw,
+    get_activity_splits_raw,
     get_activity_raw,
     get_activity_records_df,
     get_planned_activities_df,
@@ -2350,10 +2351,16 @@ def _build_activity_dashboard_payload(
                 hr = _safe_float(act.get("avg_hr"))
                 avg_pace = _safe_float(act.get("avg_pace_s_per_km"))
                 eqv_pace = _safe_float(act.get("pace_proxy_sec_per_km"))
+                start_local_ts = pd.to_datetime(act.get("start_local"), errors="coerce")
                 actual_cards.append(
                     {
                         "activity_id": str(act.get("activity_id") or ""),
                         "sport": sport_raw or "Activity",
+                        "start_time_hhmm": (
+                            pd.Timestamp(start_local_ts).strftime("%H:%M")
+                            if pd.notna(start_local_ts)
+                            else ""
+                        ),
                         "duration_label": _format_duration_short(_safe_float(act.get("duration_s"))),
                         "distance_label": (
                             f"{dist_km:.0f} km"
@@ -3990,4 +3997,5 @@ def activity_detail(
         "records": records,
         "raw": get_activity_raw(db_path, str(activity_id)) or {},
         "details": get_activity_detail_raw(db_path, str(activity_id)) or {},
+        "splits": get_activity_splits_raw(db_path, str(activity_id)) or {},
     }

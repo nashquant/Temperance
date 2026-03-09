@@ -794,6 +794,34 @@ def get_activity_records_df(db_path: Path, activity_id: str) -> pd.DataFrame:
         )
 
 
+def get_activity_splits_raw(db_path: Path, activity_id: str) -> dict[str, Any] | None:
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            """
+            SELECT split_json, split_summaries_json, lap_count, total_duration_s, total_distance_m
+            FROM activity_splits
+            WHERE activity_id = ?
+            """,
+            (activity_id,),
+        ).fetchone()
+    if not row:
+        return None
+    out: dict[str, Any] = {
+        "lap_count": float(row["lap_count"]) if row["lap_count"] is not None else None,
+        "total_duration_s": float(row["total_duration_s"]) if row["total_duration_s"] is not None else None,
+        "total_distance_m": float(row["total_distance_m"]) if row["total_distance_m"] is not None else None,
+    }
+    try:
+        out["split"] = json.loads(row["split_json"]) if row["split_json"] else {}
+    except Exception:
+        out["split"] = {}
+    try:
+        out["split_summaries"] = json.loads(row["split_summaries_json"]) if row["split_summaries_json"] else {}
+    except Exception:
+        out["split_summaries"] = {}
+    return out
+
+
 def get_activity_raw(db_path: Path, activity_id: str) -> dict[str, Any] | None:
     with closing(get_conn(db_path)) as conn:
         row = conn.execute(

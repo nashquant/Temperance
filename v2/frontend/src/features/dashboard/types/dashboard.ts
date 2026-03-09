@@ -21,6 +21,7 @@ export interface DashboardWeekSummary {
 export interface DashboardActivityCard {
   activity_id: string;
   sport: string;
+  start_time_hhmm?: string;
   duration_label: string;
   distance_label: string;
   hr_label: string;

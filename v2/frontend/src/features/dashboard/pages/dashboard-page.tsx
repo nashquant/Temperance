@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import { ActivitySplitsDrawer } from '@/features/dashboard/components/activity-splits-drawer';
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
 import { setPlannedManualDone } from '@/features/plan-activities/services/plan-activities-api';
@@ -41,6 +42,7 @@ function plannedCardIsVisible(
 export function DashboardPage(): JSX.Element {
   const { session, profile } = useAuth();
   const [visibleWeeks, setVisibleWeeks] = useState(6);
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
   const query = useDashboardQuery(visibleWeeks, 'all');
@@ -159,6 +161,7 @@ export function DashboardPage(): JSX.Element {
                   <DashboardWeekCard
                     week={week}
                     onMarkPlannedDone={(dayUtc, lineNo) => plannedDoneMutation.mutate({ dayUtc, lineNo })}
+                    onSelectActivity={(activityId) => setSelectedActivityId(activityId)}
                     markingPlannedDone={plannedDoneMutation.isPending}
                   />
                 </div>
@@ -178,6 +181,11 @@ export function DashboardPage(): JSX.Element {
           )}
         </>
       ) : null}
+      <ActivitySplitsDrawer
+        activityId={selectedActivityId}
+        open={Boolean(selectedActivityId)}
+        onClose={() => setSelectedActivityId(null)}
+      />
     </section>
   );
 }
