@@ -53,6 +53,7 @@ from db import (  # noqa: E402
     get_activity_records_df,
     get_planned_activities_df,
     get_runs_df,
+    get_sleep_df,
     get_setting,
     get_table_counts,
     get_wellness_df,
@@ -365,6 +366,23 @@ def _safe_float(value: Any) -> float:
         return out
     except Exception:
         return 0.0
+
+
+def _optional_float(value: Any) -> float | None:
+    try:
+        out = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(out):
+        return None
+    return out
+
+
+def _rounded_optional(value: Any, digits: int = 2) -> float | None:
+    out = _optional_float(value)
+    if out is None:
+        return None
+    return round(out, digits)
 
 
 def _settings_json(value: Any) -> str:
@@ -2313,6 +2331,192 @@ def _build_athlete_progression_payload(
     }
 
 
+def _build_wellness_payload(
+    db_path: Path,
+    days: int,
+    aggregation: str,
+    owner: str,
+) -> dict[str, Any]:
+    sleep_df = get_sleep_df(db_path=db_path)
+    wellness_df = get_wellness_df(db_path=db_path)
+
+    if sleep_df.empty and wellness_df.empty:
+        return {
+            "owner": owner,
+            "days": max(30, int(days)),
+            "aggregation": "weekly" if str(aggregation).strip().lower() == "weekly" else "daily",
+            "range": {"start_day": "", "end_day": ""},
+            "summary": {},
+            "points": [],
+        }
+
+    if not sleep_df.empty:
+        sleep_df = sleep_df.copy()
+        sleep_df["day"] = pd.to_datetime(sleep_df.get("day_utc"), errors="coerce").dt.normalize()
+        sleep_df = sleep_df.dropna(subset=["day"]).sort_values("day").drop_duplicates(subset=["day"], keep="last")
+    else:
+        sleep_df = pd.DataFrame(columns=["day"])
+
+    if not wellness_df.empty:
+        wellness_df = wellness_df.copy()
+        wellness_df["day"] = pd.to_datetime(wellness_df.get("day_utc"), errors="coerce").dt.normalize()
+        wellness_df = wellness_df.dropna(subset=["day"]).sort_values("day").drop_duplicates(subset=["day"], keep="last")
+    else:
+        wellness_df = pd.DataFrame(columns=["day"])
+
+    merged = pd.merge(
+        sleep_df,
+        wellness_df,
+        on="day",
+        how="outer",
+        suffixes=("_sleep", "_well"),
+    ).sort_values("day")
+    if merged.empty:
+        return {
+            "owner": owner,
+            "days": max(30, int(days)),
+            "aggregation": "weekly" if str(aggregation).strip().lower() == "weekly" else "daily",
+            "range": {"start_day": "", "end_day": ""},
+            "summary": {},
+            "points": [],
+        }
+
+    for col in [
+        "sleep_score",
+        "sleep_duration_s",
+        "deep_sleep_s",
+        "rem_sleep_s",
+        "light_sleep_s",
+        "awake_s",
+        "resting_hr",
+        "hrv_status",
+        "training_readiness",
+        "stress_avg",
+        "stress_max",
+        "body_battery_start",
+        "body_battery_end",
+        "body_battery_avg",
+        "respiration_avg",
+        "steps",
+        "intensity_minutes",
+        "calories_total",
+    ]:
+        merged[col] = pd.to_numeric(merged.get(col), errors="coerce")
+
+    end_day = pd.to_datetime(merged["day"], errors="coerce").max()
+    min_day = pd.to_datetime(merged["day"], errors="coerce").min()
+    if pd.isna(end_day) or pd.isna(min_day):
+        return {
+            "owner": owner,
+            "days": max(30, int(days)),
+            "aggregation": "weekly" if str(aggregation).strip().lower() == "weekly" else "daily",
+            "range": {"start_day": "", "end_day": ""},
+            "summary": {},
+            "points": [],
+        }
+
+    window_days = max(30, int(days))
+    start_bound = pd.Timestamp(end_day).normalize() - pd.Timedelta(days=window_days - 1)
+    merged = merged[merged["day"] >= start_bound].copy()
+
+    merged["sleep_duration_h"] = pd.to_numeric(merged.get("sleep_duration_s"), errors="coerce") / 3600.0
+    merged["deep_sleep_h"] = pd.to_numeric(merged.get("deep_sleep_s"), errors="coerce") / 3600.0
+    merged["rem_sleep_h"] = pd.to_numeric(merged.get("rem_sleep_s"), errors="coerce") / 3600.0
+    merged["light_sleep_h"] = pd.to_numeric(merged.get("light_sleep_s"), errors="coerce") / 3600.0
+    merged["awake_h"] = pd.to_numeric(merged.get("awake_s"), errors="coerce") / 3600.0
+
+    mode = "weekly" if str(aggregation).strip().lower() == "weekly" else "daily"
+    if mode == "weekly":
+        merged["period_start"] = pd.to_datetime(merged["day"], errors="coerce").map(_week_start_monday)
+        points_df = (
+            merged.groupby("period_start", as_index=False)
+            .agg(
+                sample_days=("day", "count"),
+                sleep_score=("sleep_score", "mean"),
+                sleep_duration_h=("sleep_duration_h", "sum"),
+                deep_sleep_h=("deep_sleep_h", "sum"),
+                rem_sleep_h=("rem_sleep_h", "sum"),
+                light_sleep_h=("light_sleep_h", "sum"),
+                awake_h=("awake_h", "sum"),
+                resting_hr=("resting_hr", "mean"),
+                hrv_status=("hrv_status", "mean"),
+                training_readiness=("training_readiness", "mean"),
+                stress_avg=("stress_avg", "mean"),
+                stress_max=("stress_max", "mean"),
+                body_battery_start=("body_battery_start", "mean"),
+                body_battery_end=("body_battery_end", "mean"),
+                body_battery_avg=("body_battery_avg", "mean"),
+                respiration_avg=("respiration_avg", "mean"),
+                steps=("steps", "sum"),
+                intensity_minutes=("intensity_minutes", "sum"),
+                calories_total=("calories_total", "sum"),
+            )
+            .sort_values("period_start")
+        )
+    else:
+        points_df = merged.rename(columns={"day": "period_start"}).copy()
+        points_df["sample_days"] = 1
+        points_df = points_df.sort_values("period_start")
+
+    def _latest_metric(column: str, digits: int = 1) -> float | None:
+        if column not in merged.columns:
+            return None
+        series = pd.to_numeric(merged[column], errors="coerce").dropna()
+        if series.empty:
+            return None
+        return round(float(series.iloc[-1]), digits)
+
+    points: list[dict[str, Any]] = []
+    for _, row in points_df.iterrows():
+        period_start = pd.to_datetime(row.get("period_start"), errors="coerce")
+        if pd.isna(period_start):
+            continue
+        points.append(
+            {
+                "period_start": period_start.date().isoformat(),
+                "sample_days": int(_safe_float(row.get("sample_days"))),
+                "sleep_score": _rounded_optional(row.get("sleep_score")),
+                "sleep_duration_h": _rounded_optional(row.get("sleep_duration_h"), 3),
+                "deep_sleep_h": _rounded_optional(row.get("deep_sleep_h"), 3),
+                "rem_sleep_h": _rounded_optional(row.get("rem_sleep_h"), 3),
+                "light_sleep_h": _rounded_optional(row.get("light_sleep_h"), 3),
+                "awake_h": _rounded_optional(row.get("awake_h"), 3),
+                "resting_hr": _rounded_optional(row.get("resting_hr")),
+                "hrv_status": _rounded_optional(row.get("hrv_status")),
+                "training_readiness": _rounded_optional(row.get("training_readiness")),
+                "stress_avg": _rounded_optional(row.get("stress_avg")),
+                "stress_max": _rounded_optional(row.get("stress_max")),
+                "body_battery_start": _rounded_optional(row.get("body_battery_start")),
+                "body_battery_end": _rounded_optional(row.get("body_battery_end")),
+                "body_battery_avg": _rounded_optional(row.get("body_battery_avg")),
+                "respiration_avg": _rounded_optional(row.get("respiration_avg")),
+                "steps": _rounded_optional(row.get("steps")),
+                "intensity_minutes": _rounded_optional(row.get("intensity_minutes")),
+                "calories_total": _rounded_optional(row.get("calories_total")),
+            }
+        )
+
+    summary = {
+        "latest_sleep_score": _latest_metric("sleep_score"),
+        "latest_resting_hr": _latest_metric("resting_hr"),
+        "latest_stress_avg": _latest_metric("stress_avg"),
+        "latest_training_readiness": _latest_metric("training_readiness"),
+        "latest_body_battery_end": _latest_metric("body_battery_end"),
+    }
+
+    return {
+        "owner": owner,
+        "days": window_days,
+        "aggregation": mode,
+        "range": {
+            "start_day": pd.Timestamp(start_bound).date().isoformat() if pd.notna(start_bound) else "",
+            "end_day": pd.Timestamp(end_day).date().isoformat() if pd.notna(end_day) else "",
+        },
+        "summary": summary,
+        "points": points,
+    }
+
+
 def _build_activity_dashboard_payload(
     db_path: Path,
     visible_weeks: int,
@@ -3727,6 +3931,26 @@ def athlete_progression_view(
         db_path=db_path,
         days=days,
         activity_filter=activity_filter,
+        aggregation=aggregation,
+        owner=resolved_owner,
+    )
+    payload["db_path"] = str(db_path)
+    return payload
+
+
+@app.get("/api/v1/wellness")
+def wellness_view(
+    days: int = Query(default=365, ge=30, le=5000),
+    aggregation: str = Query(default="weekly"),
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    payload = _build_wellness_payload(
+        db_path=db_path,
+        days=days,
         aggregation=aggregation,
         owner=resolved_owner,
     )

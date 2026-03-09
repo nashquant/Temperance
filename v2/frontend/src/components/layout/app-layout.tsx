@@ -1,4 +1,4 @@
-import { BarChart3, CalendarDays, Database, LogOut, Menu, Settings, X } from 'lucide-react';
+import { BarChart3, CalendarDays, Database, HeartPulse, LogOut, Menu, Settings, X } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: BarChart3, disabled: false },
   { to: '/app/athlete-progression', label: 'Athlete Progression', icon: BarChart3, disabled: false },
+  { to: '/app/wellness', label: 'Wellness', icon: HeartPulse, disabled: false },
   { to: '/app/week-planner', label: 'Week Planner', icon: CalendarDays, disabled: false },
   { to: '/app/data-extract', label: 'Data Extract', icon: Database, disabled: false },
   { to: '/app/settings', label: 'Settings', icon: Settings, disabled: false },
@@ -24,6 +25,7 @@ export function AppLayout(): JSX.Element {
     const path = location.pathname;
     if (path.startsWith('/app/dashboard')) return { section: 'Performance', title: 'Dashboard' };
     if (path.startsWith('/app/athlete-progression')) return { section: 'Analytics', title: 'Athlete Progression' };
+    if (path.startsWith('/app/wellness')) return { section: 'Recovery', title: 'Wellness' };
     if (path.startsWith('/app/week-planner')) return { section: 'Performance', title: 'Week Planner' };
     if (path.startsWith('/app/data-extract')) return { section: 'Data', title: 'Data Extract' };
     if (path.startsWith('/app/settings')) return { section: 'Configuration', title: 'Settings' };

@@ -25,7 +25,7 @@ interface SeriesConfig {
 
 interface Props {
   title: string;
-  data: Array<Record<string, number | string>>;
+  data: Array<Record<string, number | string | null | undefined>>;
   yLabel: string;
   series: SeriesConfig[];
   targetKey?: string;
@@ -81,7 +81,7 @@ export function ProgressionLineChartCard({
     ...row,
     _x: String(row.period_start ?? row.label ?? ''),
     __target: targetValue > 0 ? targetValue : undefined,
-  })) as Array<Record<string, number | string | undefined>>;
+  })) as Array<Record<string, number | string | null | undefined>>;
   const labelMap = new Map(chartData.map((row) => [String(row._x ?? ''), String(row['label'] ?? row._x ?? '')]));
   return (
     <Card>

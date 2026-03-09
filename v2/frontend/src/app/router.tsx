@@ -9,6 +9,7 @@ import { DashboardPage } from '@/features/dashboard/pages/dashboard-page';
 import { AthleteProgressionPage } from '@/features/athlete-progression/pages/athlete-progression-page';
 import { SettingsPage } from '@/features/settings/pages/settings-page';
 import { WeekPlannerPage } from '@/features/week-planner/pages/week-planner-page';
+import { WellnessPage } from '@/features/wellness/pages/wellness-page';
 
 function RootRedirect(): JSX.Element {
   const { status } = useAuth();
@@ -42,6 +43,7 @@ export function AppRouter(): JSX.Element {
           <Route path="plan-activities" element={<Navigate to="/app/week-planner" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="athlete-progression" element={<AthleteProgressionPage />} />
+          <Route path="wellness" element={<WellnessPage />} />
           <Route path="data-extract" element={<DataExtractPage />} />
           <Route path="activities" element={<Navigate to="/app/data-extract" replace />} />
           <Route path="settings" element={<SettingsPage />} />
