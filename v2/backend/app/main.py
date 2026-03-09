@@ -253,43 +253,24 @@ def _user_slug(value: str) -> str:
 
 
 def _db_path_for_owner(owner: str) -> Path:
-    def _has_activity_rows(path: Path) -> bool:
-        if not path.exists():
-            return False
-        try:
-            with sqlite3.connect(path) as conn:
-                cur = conn.cursor()
-                exists = cur.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='activities' LIMIT 1"
-                ).fetchone()
-                if not exists:
-                    return False
-                count_row = cur.execute("SELECT COUNT(*) FROM activities").fetchone()
-                return bool(count_row and int(count_row[0] or 0) > 0)
-        except Exception:
-            return False
-
     users_root = DB_PATH.parent / "users"
     owner_slug = _user_slug(owner)
     scoped = users_root / f"{owner_slug}.db"
+
     def _ensure_initialized(path: Path) -> Path:
         try:
-            if (not path.exists()) or path.stat().st_size == 0:
-                init_db(path)
-            else:
-                # Keep schema up-to-date for existing user DBs as well.
-                init_db(path)
+            # Keep schema up-to-date for both new and existing DBs.
+            init_db(path)
         except Exception:
             # Best effort; callers may still handle DB errors explicitly.
             pass
         return path
 
-    if not scoped.exists() and DB_PATH.exists():
+    # Keep legacy behavior only for the synthetic/default owner.
+    if owner_slug == "default" and DB_PATH.exists():
         return _ensure_initialized(DB_PATH)
-    # If a scoped DB exists but is effectively empty, use the primary DB as fallback.
-    # This keeps legacy single-DB users (e.g. viewer accounts) functional.
-    if scoped.exists() and not _has_activity_rows(scoped) and _has_activity_rows(DB_PATH):
-        return _ensure_initialized(DB_PATH)
+
+    # Named users always use isolated scoped DBs, created on demand.
     return _ensure_initialized(scoped)
 
 
