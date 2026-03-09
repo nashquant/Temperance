@@ -201,8 +201,11 @@ export function DataExtractPage(): JSX.Element {
       const total = customRowsForWeek
         .filter((row) => row.day_utc === dayIso)
         .reduce((sum, row) => sum + Number(row[customMetric] ?? 0), 0);
+      const tssBasis = customRowsForWeek
+        .filter((row) => row.day_utc === dayIso)
+        .reduce((sum, row) => sum + Number(row.tss ?? 0), 0);
       const dayLabel = new Intl.DateTimeFormat('en-US', { weekday: 'short', day: 'numeric', month: 'short' }).format(day);
-      return { dayLabel, value: total };
+      return { dayLabel, value: total, tssBasis };
     });
   }, [customMetric, customRowsForWeek, selectedCustomWeek]);
 

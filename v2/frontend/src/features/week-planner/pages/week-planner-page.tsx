@@ -43,6 +43,9 @@ export function WeekPlannerPage(): JSX.Element {
         value: rowsForWeek
           .filter((row) => row.day_utc === label.iso)
           .reduce((sum, row) => sum + Number(row[metric] ?? 0), 0),
+        tssBasis: rowsForWeek
+          .filter((row) => row.day_utc === label.iso)
+          .reduce((sum, row) => sum + Number(row.tss ?? 0), 0),
       }));
     return {
       tss: mapMetric('tss'),
