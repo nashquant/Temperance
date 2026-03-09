@@ -55,7 +55,7 @@ function isTodayOrPast(dayUtc: string): boolean {
 }
 
 export function DashboardPage(): JSX.Element {
-  const dashboardPageSize = 6;
+  const dashboardPageSize = 10;
   const dashboardMaxWeeks = 52;
   const { session, profile } = useAuth();
   const [visibleWeeks, setVisibleWeeks] = useState(dashboardPageSize);
