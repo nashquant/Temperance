@@ -48,8 +48,8 @@ export function AthleteProgressionPage(): JSX.Element {
       const rawTarget = Number(row.target_tss ?? 0);
       return {
         ...row,
-        stress_target_tss: aggregation === 'weekly' ? rawTarget : rawTarget / 7,
-        pounding_target_tss: rawTarget / 7,
+        stress_target_tss: rawTarget,
+        pounding_target_tss: aggregation === 'weekly' ? rawTarget / 7 : rawTarget,
       };
     });
   }, [aggregation, chartData]);
