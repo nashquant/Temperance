@@ -1,6 +1,9 @@
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Clock3, HeartPulse, Route, Target, X } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import type { TooltipProps } from 'recharts';
+import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -22,6 +25,7 @@ type DrawerLapRow = {
   lap: number;
   description: string;
   duration_label: string;
+  duration_seconds?: number;
   avg_hr: number;
   if_pct: number;
   distance_km: number;
@@ -49,9 +53,115 @@ function paceLabelFromSpeed(speed: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}/km`;
 }
 
+function parseDurationLabelSeconds(label: string): number {
+  const raw = String(label || '').trim().toLowerCase();
+  if (!raw) return 0;
+  const hourMatch = raw.match(/(\d+)\s*h/);
+  const minuteMatch = raw.match(/(\d+)\s*m/);
+  const secondMatch = raw.match(/(\d+)\s*s/);
+  const hours = Number(hourMatch?.[1] || 0);
+  const minutes = Number(minuteMatch?.[1] || 0);
+  const seconds = Number(secondMatch?.[1] || 0);
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function splitBarColor(ifPct: number): string {
+  if (ifPct >= 100) return '#f43f5e';
+  if (ifPct >= 90) return '#f97316';
+  if (ifPct >= 80) return '#facc15';
+  if (ifPct >= 65) return '#38bdf8';
+  return '#22c55e';
+}
+
+function SplitBarTooltip({
+  active,
+  payload,
+}: TooltipProps<ValueType, NameType>): JSX.Element | null {
+  if (!active || !payload || payload.length === 0) return null;
+  const row = payload[0]?.payload as
+    | {
+        lap_label: string;
+        if_pct: number;
+        duration_label: string;
+        duration_ratio: number;
+      }
+    | undefined;
+  if (!row) return null;
+
+  return (
+    <div className="min-w-[170px] rounded-xl border border-sky-300/15 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.98))] p-3 shadow-2xl backdrop-blur">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-200/78">{row.lap_label}</p>
+      <div className="space-y-1.5 text-xs">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-300/72">Duration</span>
+          <span className="font-semibold text-foreground">{row.duration_label}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-300/72">IF</span>
+          <span className="font-semibold text-foreground">{Math.round(Number(row.if_pct) || 0)}%</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SplitDurationShape(props: {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  payload?: { duration_ratio?: number; if_pct?: number };
+}): JSX.Element {
+  const x = Number(props.x || 0);
+  const y = Number(props.y || 0);
+  const width = Number(props.width || 0);
+  const height = Number(props.height || 0);
+  const durationRatio = Math.max(0.18, Math.min(1, Number(props.payload?.duration_ratio || 0.18)));
+  const actualWidth = width * durationRatio;
+  const insetX = x + (width - actualWidth) / 2;
+  const fill = splitBarColor(Number(props.payload?.if_pct || 0));
+
+  return (
+    <g>
+      <rect
+        x={insetX}
+        y={y}
+        width={actualWidth}
+        height={height}
+        rx={8}
+        ry={8}
+        fill="rgba(255,255,255,0.04)"
+        stroke="rgba(255,255,255,0.06)"
+      />
+      <rect
+        x={insetX}
+        y={y}
+        width={actualWidth}
+        height={height}
+        rx={8}
+        ry={8}
+        fill={fill}
+        fillOpacity={0.92}
+      />
+      <rect
+        x={insetX}
+        y={y}
+        width={actualWidth}
+        height={Math.min(18, height * 0.22)}
+        rx={8}
+        ry={8}
+        fill="rgba(255,255,255,0.16)"
+      />
+    </g>
+  );
+}
+
 function normalizedLapRows(detail: ActivityDetailResponse | undefined): DrawerLapRow[] {
   if (Array.isArray(detail?.split_rows) && detail.split_rows.length > 0) {
-    return detail.split_rows;
+    return detail.split_rows.map((row) => ({
+      ...row,
+      duration_seconds: row.duration_seconds ?? parseDurationLabelSeconds(row.duration_label),
+    }));
   }
 
   const rawLaps = detail?.splits?.split?.lapDTOs;
@@ -70,6 +180,7 @@ function normalizedLapRows(detail: ActivityDetailResponse | undefined): DrawerLa
         lap: Number(lap?.lapIndex) || index + 1,
         description: '-',
         duration_label: fmtDurationSeconds(duration),
+        duration_seconds: duration,
         avg_hr: avgHr,
         if_pct: 0,
         distance_km: distanceKm,
@@ -107,6 +218,16 @@ export function ActivitySplitsDrawer({
   );
   const laps = normalizedLapRows(detailQuery.data);
   const useEqv = laps.length > 0 && laps.some((lap) => lap.display_mode === 'eqv');
+  const maxDurationSeconds = Math.max(...laps.map((lap) => Number(lap.duration_seconds) || parseDurationLabelSeconds(lap.duration_label)), 0);
+  const splitChartData = laps.map((lap) => {
+    const durationSeconds = Number(lap.duration_seconds) || parseDurationLabelSeconds(lap.duration_label);
+    return {
+      lap_label: `Lap ${lap.lap}`,
+      if_pct: Number(lap.if_pct) || 0,
+      duration_label: lap.duration_label,
+      duration_ratio: maxDurationSeconds > 0 ? durationSeconds / maxDurationSeconds : 0.18,
+    };
+  });
 
   const updateMutation = useMutation({
     mutationFn: async (nextText: string) => {
@@ -255,8 +376,48 @@ export function ActivitySplitsDrawer({
                 No split laps available for this activity.
               </div>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-white/10 bg-black/15">
-                <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2 text-xs text-slate-300/72">
+              <div className="space-y-3">
+                <div className="overflow-hidden rounded-xl border border-white/10 bg-black/15 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Split Profile</p>
+                      <p className="text-xs text-slate-300/72">Each bar is a lap fingerprint: taller means harder, wider means longer.</p>
+                    </div>
+                  </div>
+                  <div className="rounded-[20px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_52%),linear-gradient(180deg,rgba(2,6,23,0.82),rgba(15,23,42,0.6))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                    <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
+                      {splitChartData.map((row) => (
+                        <div key={`chip-${row.lap_label}`} className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-slate-300/76">
+                          {row.lap_label}
+                        </div>
+                      ))}
+                    </div>
+                  <div className="h-[220px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={splitChartData} barCategoryGap="18%">
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} horizontal={false} stroke="rgba(125,211,252,0.1)" />
+                        <XAxis
+                          dataKey="lap_label"
+                          hide
+                        />
+                        <YAxis
+                          domain={[0, 110]}
+                          hide
+                        />
+                        <Tooltip content={<SplitBarTooltip />} cursor={{ fill: 'rgba(56, 189, 248, 0.08)' }} />
+                        <Bar dataKey="if_pct" radius={[8, 8, 0, 0]} shape={<SplitDurationShape />}>
+                          {splitChartData.map((row) => (
+                            <Cell key={row.lap_label} fill={splitBarColor(row.if_pct)} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  </div>
+                </div>
+
+                <div className="overflow-hidden rounded-xl border border-white/10 bg-black/15">
+                  <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2 text-xs text-slate-300/72">
                   <Clock3 className="h-3 w-3" />
                   <span>{laps.length} split{laps.length === 1 ? '' : 's'}</span>
                 </div>

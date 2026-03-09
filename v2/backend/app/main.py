@@ -570,6 +570,63 @@ def _extract_progress_fail(owner: str, message: str) -> None:
         state["log_count"] = int(state.get("log_count") or 0) + 1
 
 
+def _run_comprehensive_extract_background(
+    *,
+    owner: str,
+    db_path: Path,
+    garmin_email: str,
+    garmin_password: str,
+    start_day: date,
+    end_day: date,
+    include_details: bool,
+    include_wellness: bool,
+) -> None:
+    try:
+        extract = fetch_garmin_comprehensive(
+            email=garmin_email,
+            password=garmin_password,
+            start_day=start_day,
+            end_day=end_day,
+            include_activity_details=bool(include_details),
+            include_splits=bool(include_details),
+            include_wellness=bool(include_wellness),
+            raw_export_dir=None,
+            progress_cb=lambda evt: _extract_progress_event(owner, evt),
+        )
+        _extract_progress_append(
+            owner,
+            (
+                f"[fetch:done] activities={len(extract.activities)} details={len(extract.activity_details)} "
+                f"records={len(extract.activity_records)} splits={len(extract.activity_splits)} "
+                f"sleep={len(extract.sleep_daily)} wellness={len(extract.wellness_daily)} errors={len(extract.errors)}"
+            ),
+        )
+        _extract_progress_append(owner, "[db] upserting activities/details/records/splits/sleep/wellness")
+        n_a = upsert_activities(db_path, extract.activities)
+        n_d = upsert_activity_details(db_path, extract.activity_details)
+        n_r = upsert_activity_records(db_path, extract.activity_records)
+        n_sp = upsert_activity_splits(db_path, extract.activity_splits)
+        n_s = upsert_sleep_daily(db_path, extract.sleep_daily)
+        n_w = upsert_wellness_daily(db_path, extract.wellness_daily)
+        _extract_progress_append(
+            owner,
+            (
+                f"[db:done] activities={n_a} details={n_d} records={n_r} "
+                f"splits={n_sp} sleep={n_s} wellness={n_w}"
+            ),
+        )
+        msg = (
+            f"activities={len(extract.activities)}({n_a}), details={len(extract.activity_details)}({n_d}), "
+            f"records={len(extract.activity_records)}({n_r}), splits={len(extract.activity_splits)}({n_sp}), "
+            f"sleep={len(extract.sleep_daily)}({n_s}), wellness={len(extract.wellness_daily)}({n_w}), errors={len(extract.errors)}"
+        )
+        log_sync(db_path, source="v2_garmin_comprehensive", success=True, message=msg)
+        _extract_progress_finish(owner, msg, extract.errors[:40])
+    except Exception as exc:
+        _extract_progress_fail(owner, str(exc))
+        log_sync(db_path, source="v2_garmin_comprehensive", success=False, message=str(exc))
+
+
 def _default_lthr_curve() -> list[dict[str, object]]:
     return [{"date": "2025-01-01", "lthr_bpm": DEFAULT_LTHR}]
 
@@ -3846,63 +3903,37 @@ def data_extract_comprehensive(
             anchor = min(anchors)
             start_day = max(start_day, (anchor - timedelta(days=2)).date())
 
+    existing_progress = _extract_progress_get(resolved_owner)
+    if bool(existing_progress.get("running")):
+        raise HTTPException(status_code=409, detail="A comprehensive extract is already running for this owner.")
+
     _extract_progress_start(resolved_owner, start_day.isoformat(), end_day.isoformat())
     _extract_progress_append(
         resolved_owner,
         f"[config] include_details={bool(payload.include_details)} include_wellness={bool(payload.include_wellness)} incremental_only={bool(payload.incremental_only)}",
     )
-    try:
-        extract = fetch_garmin_comprehensive(
-            email=garmin_email,
-            password=garmin_password,
-            start_day=start_day,
-            end_day=end_day,
-            include_activity_details=bool(payload.include_details),
-            include_splits=bool(payload.include_details),
-            include_wellness=bool(payload.include_wellness),
-            raw_export_dir=None,
-            progress_cb=lambda evt: _extract_progress_event(resolved_owner, evt),
-        )
-        _extract_progress_append(
-            resolved_owner,
-            (
-                f"[fetch:done] activities={len(extract.activities)} details={len(extract.activity_details)} "
-                f"records={len(extract.activity_records)} splits={len(extract.activity_splits)} "
-                f"sleep={len(extract.sleep_daily)} wellness={len(extract.wellness_daily)} errors={len(extract.errors)}"
-            ),
-        )
-        _extract_progress_append(resolved_owner, "[db] upserting activities/details/records/splits/sleep/wellness")
-        n_a = upsert_activities(db_path, extract.activities)
-        n_d = upsert_activity_details(db_path, extract.activity_details)
-        n_r = upsert_activity_records(db_path, extract.activity_records)
-        n_sp = upsert_activity_splits(db_path, extract.activity_splits)
-        n_s = upsert_sleep_daily(db_path, extract.sleep_daily)
-        n_w = upsert_wellness_daily(db_path, extract.wellness_daily)
-        _extract_progress_append(
-            resolved_owner,
-            (
-                f"[db:done] activities={n_a} details={n_d} records={n_r} "
-                f"splits={n_sp} sleep={n_s} wellness={n_w}"
-            ),
-        )
-        msg = (
-            f"activities={len(extract.activities)}({n_a}), details={len(extract.activity_details)}({n_d}), "
-            f"records={len(extract.activity_records)}({n_r}), splits={len(extract.activity_splits)}({n_sp}), "
-            f"sleep={len(extract.sleep_daily)}({n_s}), wellness={len(extract.wellness_daily)}({n_w}), errors={len(extract.errors)}"
-        )
-        log_sync(db_path, source="v2_garmin_comprehensive", success=True, message=msg)
-        _extract_progress_finish(resolved_owner, msg, extract.errors[:40])
-        return {
-            "success": True,
-            "start_day": start_day.isoformat(),
-            "end_day": end_day.isoformat(),
-            "summary": msg,
-            "errors": extract.errors[:40],
-        }
-    except Exception as exc:
-        _extract_progress_fail(resolved_owner, str(exc))
-        log_sync(db_path, source="v2_garmin_comprehensive", success=False, message=str(exc))
-        raise
+    worker = threading.Thread(
+        target=_run_comprehensive_extract_background,
+        kwargs={
+            "owner": resolved_owner,
+            "db_path": db_path,
+            "garmin_email": garmin_email,
+            "garmin_password": garmin_password,
+            "start_day": start_day,
+            "end_day": end_day,
+            "include_details": bool(payload.include_details),
+            "include_wellness": bool(payload.include_wellness),
+        },
+        daemon=True,
+    )
+    worker.start()
+    return {
+        "success": True,
+        "start_day": start_day.isoformat(),
+        "end_day": end_day.isoformat(),
+        "summary": "Comprehensive extract started in background.",
+        "errors": [],
+    }
 
 
 @app.get("/api/v1/week-outlook")

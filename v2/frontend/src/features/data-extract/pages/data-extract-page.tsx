@@ -264,18 +264,58 @@ export function DataExtractPage(): JSX.Element {
       </div>
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-3 p-4">
+        <CardContent className="space-y-4 p-4">
           <p className="text-sm font-medium">Comprehensive Garmin Extract</p>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-full sm:w-[220px]">
               <p className="mb-1 text-xs text-muted-foreground">Start day</p>
-              <input className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm" type="date" max={todayIso()} value={startDay} onChange={(event) => setStartDay(event.target.value)} />
+              <input
+                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                type="date"
+                max={todayIso()}
+                value={startDay}
+                onChange={(event) => setStartDay(event.target.value)}
+              />
             </div>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={incrementalOnly} onChange={(event) => setIncrementalOnly(event.target.checked)} /> Incremental only</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={includeDetails} onChange={(event) => setIncludeDetails(event.target.checked)} /> Include details</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={includeWellness} onChange={(event) => setIncludeWellness(event.target.checked)} /> Include sleep + wellness</label>
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex h-9 items-center gap-2 rounded-md border border-input/80 bg-background/30 px-3 text-xs text-foreground">
+                <input
+                  className="h-3.5 w-3.5 accent-blue-500"
+                  type="checkbox"
+                  checked={incrementalOnly}
+                  onChange={(event) => setIncrementalOnly(event.target.checked)}
+                />
+                Incremental only
+              </label>
+              <label className="inline-flex h-9 items-center gap-2 rounded-md border border-input/80 bg-background/30 px-3 text-xs text-foreground">
+                <input
+                  className="h-3.5 w-3.5 accent-blue-500"
+                  type="checkbox"
+                  checked={includeDetails}
+                  onChange={(event) => setIncludeDetails(event.target.checked)}
+                />
+                Include details
+              </label>
+              <label className="inline-flex h-9 items-center gap-2 rounded-md border border-input/80 bg-background/30 px-3 text-xs text-foreground">
+                <input
+                  className="h-3.5 w-3.5 accent-blue-500"
+                  type="checkbox"
+                  checked={includeWellness}
+                  onChange={(event) => setIncludeWellness(event.target.checked)}
+                />
+                Include sleep + wellness
+              </label>
+            </div>
           </div>
-          <Button onClick={() => comprehensiveMutation.mutate()} disabled={comprehensiveMutation.isPending}>{comprehensiveMutation.isPending ? 'Running extract...' : 'Run comprehensive extract'}</Button>
+          <div className="flex items-center justify-end">
+            <Button
+              className="h-9 px-4"
+              onClick={() => comprehensiveMutation.mutate()}
+              disabled={comprehensiveMutation.isPending}
+            >
+              {comprehensiveMutation.isPending ? 'Running extract...' : 'Run comprehensive extract'}
+            </Button>
+          </div>
           <div className="rounded-xl border border-white/10 bg-black/15 p-2">
             <div className="mb-1 flex items-center justify-between">
               <p className="text-xs font-medium text-muted-foreground">Extraction logs</p>
