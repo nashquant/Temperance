@@ -1585,6 +1585,46 @@ def _format_pace_short(pace_s_per_km: float | None) -> str:
     return f"{mm}:{ss:02d}/km"
 
 
+def _format_duration_compact_with_seconds(duration_s: float | int | None) -> str:
+    total = max(int(round(_safe_float(duration_s))), 0)
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    seconds = total % 60
+    if hours > 0:
+        return f"{hours}h{minutes:02d}'{seconds:02d}\""
+    return f"{minutes}'{seconds:02d}\""
+
+
+def _load_if_zone_thresholds(db_path: Path) -> dict[str, float]:
+    raw = get_setting(db_path, SETTINGS_KEY_IF_ZONE_THRESHOLDS)
+    if not raw:
+        return _default_if_zone_thresholds()
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return _default_if_zone_thresholds()
+    return _normalize_if_zone_thresholds(payload if isinstance(payload, dict) else None)
+
+
+def _split_description_from_if_proxy(if_proxy: float | int | None, thresholds: dict[str, float]) -> str:
+    v = _safe_float(if_proxy)
+    if v <= 0:
+        return "Recovery"
+    z1 = float(thresholds.get("z1_max", 0.70))
+    z2 = float(thresholds.get("z2_max", 0.80))
+    z3 = float(thresholds.get("z3_max", 0.90))
+    z4 = float(thresholds.get("z4_max", 1.00))
+    if v < z1:
+        return "Recovery"
+    if v < z2:
+        return "Easy"
+    if v < z3:
+        return "Steady"
+    if v < z4:
+        return "Threshold"
+    return "VO2max"
+
+
 def _activity_intensity_token(if_proxy: float, tss: float) -> str:
     if if_proxy <= 0:
         return "gray"
@@ -3995,6 +4035,86 @@ def activity_detail(
                     }
                 )
 
+    splits_raw = get_activity_splits_raw(db_path, selected_activity_id) or {}
+    split_rows: list[dict[str, Any]] = []
+    split_payload = splits_raw.get("split") if isinstance(splits_raw, dict) else {}
+    summaries_payload = splits_raw.get("split_summaries") if isinstance(splits_raw, dict) else {}
+    laps = split_payload.get("lapDTOs") if isinstance(split_payload, dict) else None
+    if not isinstance(laps, list) or not laps:
+        maybe = summaries_payload.get("splitSummaries") if isinstance(summaries_payload, dict) else None
+        if isinstance(maybe, list):
+            laps = maybe
+    if not isinstance(laps, list):
+        laps = []
+
+    start_ts = pd.to_datetime(base.get("start_time_utc"), utc=True, errors="coerce")
+    lthr_for_day = float(_curve_value_at(lthr_curve, float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR, start_ts))
+    threshold_pace_for_day = float(
+        _curve_value_at(
+            pace_curve,
+            float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+            start_ts,
+        )
+    )
+    if_thresholds = _load_if_zone_thresholds(db_path)
+    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    sport_type = str(base.get("sport_type") or "")
+    sport_lower = sport_type.lower()
+    is_running_like = ("run" in sport_lower) or ("treadmill" in sport_lower)
+    specificity_factor = _specificity_factor_for_sport(sport_type, specificity_profile)
+    for idx, lap in enumerate([x for x in laps if isinstance(x, dict)], start=1):
+        duration_s = _safe_float(
+            lap.get("duration")
+            or lap.get("elapsedDuration")
+            or lap.get("movingDuration")
+            or lap.get("totalTimerTime")
+        )
+        if duration_s <= 0:
+            continue
+        distance_m = _safe_float(lap.get("distance") or lap.get("totalDistance") or lap.get("distanceMeters"))
+        avg_hr = _safe_float(lap.get("averageHR"))
+        avg_speed_mps = _safe_float(lap.get("averageSpeed"))
+        pace_s_per_km = (1000.0 / avg_speed_mps) if avg_speed_mps > 0 else 0.0
+
+        if_proxy = 0.0
+        if is_running_like and pace_s_per_km > 0 and threshold_pace_for_day > 0:
+            if_proxy = threshold_pace_for_day / pace_s_per_km
+        elif avg_hr > 0 and lthr_for_day > 0:
+            if_proxy = avg_hr / lthr_for_day
+        elif pace_s_per_km > 0 and threshold_pace_for_day > 0:
+            if_proxy = threshold_pace_for_day / pace_s_per_km
+
+        pace_eqv_s_per_km = (threshold_pace_for_day / if_proxy) if (threshold_pace_for_day > 0 and if_proxy > 0) else 0.0
+        if is_running_like:
+            distance_eqv_km = (distance_m / 1000.0) if distance_m > 0 else (duration_s / pace_s_per_km if pace_s_per_km > 0 else 0.0)
+            distance_km_ui = (distance_m / 1000.0) if distance_m > 0 else distance_eqv_km
+            pace_ui_s_per_km = pace_s_per_km if pace_s_per_km > 0 else pace_eqv_s_per_km
+        else:
+            if pace_eqv_s_per_km <= 0 and pace_s_per_km > 0:
+                pace_eqv_s_per_km = pace_s_per_km / max(specificity_factor, 0.01)
+            distance_eqv_km = duration_s / pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else 0.0
+            if distance_eqv_km <= 0 and distance_m > 0:
+                distance_eqv_km = (distance_m / 1000.0) * max(specificity_factor, 0.01)
+            distance_km_ui = distance_eqv_km
+            pace_ui_s_per_km = pace_eqv_s_per_km
+
+        split_rows.append(
+            {
+                "lap": int(_safe_float(lap.get("lapIndex")) or idx),
+                "description": _split_description_from_if_proxy(if_proxy, if_thresholds),
+                "duration_label": _format_duration_compact_with_seconds(duration_s),
+                "avg_hr": round(avg_hr, 0) if avg_hr > 0 else 0.0,
+                "if_pct": round(if_proxy * 100.0, 1) if if_proxy > 0 else 0.0,
+                "distance_km": round(max(distance_km_ui, 0.0), 2),
+                "distance_eqv_km": round(max(distance_eqv_km, 0.0), 2),
+                "pace_label": _format_pace_short(pace_ui_s_per_km if pace_ui_s_per_km > 0 else None),
+                "pace_eqv_label": _format_pace_short(pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else None),
+                "display_mode": "running" if is_running_like else "eqv",
+            }
+        )
+
+    split_rows = sorted(split_rows, key=lambda row: int(_safe_float(row.get("lap"))))
+
     return {
         "owner": resolved_owner,
         "activity": {
@@ -4014,5 +4134,6 @@ def activity_detail(
         "records": records,
         "raw": get_activity_raw(db_path, selected_activity_id) or {},
         "details": get_activity_detail_raw(db_path, selected_activity_id) or {},
-        "splits": get_activity_splits_raw(db_path, selected_activity_id) or {},
+        "splits": splits_raw,
+        "split_rows": split_rows,
     }

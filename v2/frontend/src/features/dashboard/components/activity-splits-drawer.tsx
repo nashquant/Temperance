@@ -30,9 +30,10 @@ export function ActivitySplitsDrawer({
   if (!open) return null;
 
   const activity = detailQuery.data?.activity;
-  const laps = Array.isArray(detailQuery.data?.splits?.split?.lapDTOs)
-    ? detailQuery.data?.splits?.split?.lapDTOs
+  const laps = Array.isArray(detailQuery.data?.split_rows)
+    ? detailQuery.data?.split_rows
     : [];
+  const useEqv = laps.length > 0 && laps.some((lap) => lap.display_mode === 'eqv');
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -90,20 +91,26 @@ export function ActivitySplitsDrawer({
                   <thead className="bg-card/70 text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 text-left">Lap</th>
+                      <th className="px-3 py-2 text-left">Description</th>
                       <th className="px-3 py-2 text-left">Duration</th>
-                      <th className="px-3 py-2 text-left">Distance</th>
+                      <th className="px-3 py-2 text-left">{useEqv ? 'Dist Eqv' : 'Distance'}</th>
+                      <th className="px-3 py-2 text-left">{useEqv ? 'Pace Eqv' : 'Pace'}</th>
                       <th className="px-3 py-2 text-left">Avg HR</th>
-                      <th className="px-3 py-2 text-left">Max HR</th>
+                      <th className="px-3 py-2 text-left">IF</th>
                     </tr>
                   </thead>
                   <tbody>
                     {laps.map((lap, index) => (
-                      <tr key={`${lap.lapIndex ?? index}-${index}`} className="border-t border-border/60">
-                        <td className="px-3 py-2">{lap.lapIndex ?? index + 1}</td>
-                        <td className="px-3 py-2">{fmtDurationSeconds(Number(lap.duration) || 0)}</td>
-                        <td className="px-3 py-2">{((Number(lap.distance) || 0) / 1000).toFixed(2)} km</td>
-                        <td className="px-3 py-2">{Math.round(Number(lap.averageHR) || 0)}</td>
-                        <td className="px-3 py-2">{Math.round(Number(lap.maxHR) || 0)}</td>
+                      <tr key={`${lap.lap ?? index}-${index}`} className="border-t border-border/60">
+                        <td className="px-3 py-2">{lap.lap ?? index + 1}</td>
+                        <td className="px-3 py-2">{lap.description || '-'}</td>
+                        <td className="px-3 py-2">{lap.duration_label || fmtDurationSeconds(0)}</td>
+                        <td className="px-3 py-2">
+                          {Number(useEqv ? lap.distance_eqv_km : lap.distance_km).toFixed(2)} km
+                        </td>
+                        <td className="px-3 py-2">{useEqv ? lap.pace_eqv_label : lap.pace_label}</td>
+                        <td className="px-3 py-2">{Math.round(Number(lap.avg_hr) || 0)}</td>
+                        <td className="px-3 py-2">{Math.round(Number(lap.if_pct) || 0)}%</td>
                       </tr>
                     ))}
                   </tbody>
@@ -116,4 +123,3 @@ export function ActivitySplitsDrawer({
     </div>
   );
 }
-

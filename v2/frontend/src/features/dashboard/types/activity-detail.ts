@@ -39,5 +39,16 @@ export interface ActivityDetailResponse {
       [key: string]: unknown;
     } | Record<string, unknown>;
   };
+  split_rows?: Array<{
+    lap: number;
+    description: string;
+    duration_label: string;
+    avg_hr: number;
+    if_pct: number;
+    distance_km: number;
+    distance_eqv_km: number;
+    pace_label: string;
+    pace_eqv_label: string;
+    display_mode: 'running' | 'eqv';
+  }>;
 }
-

@@ -191,10 +191,10 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
                     }
                   }}
                 >
-                  <div className="flex items-center gap-1 text-[13px] font-semibold leading-5 text-foreground">
-                    <p className="min-w-0 flex-1 truncate">{formatActivityTitle(activity.sport)}</p>
-                    {timeLabel ? <span className="shrink-0 text-[12px]">{timeLabel}</span> : null}
-                  </div>
+                  <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
+                    {formatActivityTitle(activity.sport)}
+                    {timeLabel ? ` ${timeLabel}` : ''}
+                  </p>
                   <p className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-muted-foreground">
                     {compactLine([activity.duration_label, activity.distance_label])}
                   </p>
