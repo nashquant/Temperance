@@ -3816,7 +3816,7 @@ def planned_activity_workout_update(
 
 @app.get("/api/v1/custom-activities")
 def custom_activities_view(
-    weeks: int = Query(default=8, ge=1, le=52),
+    weeks: int | None = Query(default=None, ge=1, le=5200),
     owner: str | None = Query(default=None),
     authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> dict[str, Any]:
@@ -3886,8 +3886,9 @@ def custom_activities_view(
             if_weighted=("if_proxy", lambda v: float((pd.to_numeric(v, errors="coerce").fillna(0.0)).sum())),
         )
         .sort_values("week_start", ascending=False)
-        .head(max(1, int(weeks)))
     )
+    if weeks is not None:
+        weekly = weekly.head(max(1, int(weeks)))
     weeks_out: list[dict[str, Any]] = []
     for _, row in weekly.iterrows():
         ws = pd.Timestamp(row.get("week_start")).normalize()

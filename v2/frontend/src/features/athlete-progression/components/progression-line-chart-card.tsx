@@ -101,7 +101,14 @@ export function ProgressionLineChartCard({
               />
               <Legend />
               {targetKey ? (
-                <ReferenceLine yAxisId="left" y={Number(data.at(-1)?.[targetKey] ?? 0)} stroke="#f59e0b" strokeDasharray="5 5" />
+                <ReferenceLine
+                  yAxisId="left"
+                  y={Number(data.at(-1)?.[targetKey] ?? 0)}
+                  stroke="#cbd5e1"
+                  strokeOpacity={0.8}
+                  strokeWidth={1.5}
+                  strokeDasharray="6 6"
+                />
               ) : null}
               {series.map((item) => (
                 <Line
