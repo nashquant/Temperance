@@ -958,6 +958,18 @@ def _parse_custom_activity_id(activity_id: str) -> tuple[str, int] | None:
     return day_utc, line_no
 
 
+def _parse_planned_activity_id(activity_id: str) -> tuple[str, int] | None:
+    raw = _normalize_activity_id(activity_id)
+    match = re.match(r"^planned-(\d{4}-\d{2}-\d{2})-(\d+)$", raw)
+    if not match:
+        return None
+    day_utc = str(match.group(1))
+    line_no = int(match.group(2))
+    if line_no <= 0:
+        return None
+    return day_utc, line_no
+
+
 def _parse_distance_km_token(text: str) -> float | None:
     lower = str(text or "").lower()
     m = re.search(r"(\d+(?:\.\d+)?)\s*km\b", lower)
@@ -2652,6 +2664,7 @@ def _build_activity_dashboard_payload(
                     remaining_tss += _safe_float(row.get("tss"))
                     cards.append(
                         {
+                            "activity_id": f"planned-{day_key.date().isoformat()}-{int(_safe_float(row.get('line_no')))}",
                             "day_utc": day_key.date().isoformat(),
                             "line_no": int(_safe_float(row.get("line_no"))),
                             "activity": _planned_activity_label(row.get("parsed_json")),
@@ -2899,6 +2912,7 @@ def _build_activity_dashboard_payload(
                     "actual_activities": actual_cards,
                     "planned_activities": [
                         {
+                            "activity_id": str(row.get("activity_id") or ""),
                             "day_utc": str(row.get("day_utc") or ""),
                             "line_no": int(_safe_float(row.get("line_no"))),
                             "activity": str(row.get("activity") or "Planned"),
@@ -4650,6 +4664,171 @@ def activity_detail(
             "records": [],
             "raw": {"day_utc": day_utc, "line_no": int(line_no), "activity_text": str(row.get("activity_text") or "")},
             "details": {"source": "custom", "if_proxy": avg_if_proxy, "segments": segments},
+            "splits": {
+                "lap_count": len(lap_dtos),
+                "total_duration_s": round(total_duration_s, 1),
+                "total_distance_m": round(max(total_distance_eqv_km, 0.0) * 1000.0, 1),
+                "split": {"lapDTOs": lap_dtos},
+                "split_summaries": {"splitSummaries": lap_dtos},
+            },
+            "split_rows": split_rows,
+        }
+
+    planned_key = _parse_planned_activity_id(activity_id_norm)
+    if planned_key is not None:
+        day_utc, line_no = planned_key
+        planned_df = get_planned_activities_df(db_path=db_path, start_day_utc=day_utc, end_day_utc=day_utc)
+        if planned_df.empty:
+            raise HTTPException(status_code=404, detail="Activity not found")
+        selected_planned = planned_df[
+            (planned_df["day_utc"].astype(str) == day_utc)
+            & (pd.to_numeric(planned_df["line_no"], errors="coerce").fillna(0).astype(int) == int(line_no))
+        ].head(1)
+        if selected_planned.empty:
+            raise HTTPException(status_code=404, detail="Activity not found")
+
+        row = selected_planned.iloc[0]
+        parsed_json = row.get("parsed_json")
+        segments: list[dict[str, Any]] = []
+        if isinstance(parsed_json, list):
+            segments = [s for s in parsed_json if isinstance(s, dict)]
+        elif isinstance(parsed_json, str) and parsed_json.strip():
+            try:
+                parsed = json.loads(parsed_json)
+                if isinstance(parsed, list):
+                    segments = [s for s in parsed if isinstance(s, dict)]
+            except Exception:
+                segments = []
+
+        day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
+        lthr_for_day = float(_curve_value_at(lthr_curve, float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR, day_ts))
+        threshold_pace_for_day = float(
+            _curve_value_at(
+                pace_curve,
+                float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+                day_ts,
+            )
+        )
+        if not segments:
+            expanded, _warnings = _expand_planned_segments(
+                str(row.get("workout_text") or ""),
+                lthr_bpm=lthr_for_day,
+                threshold_pace_sec_per_km=threshold_pace_for_day,
+            )
+            segments = [s for s in expanded if isinstance(s, dict)]
+
+        if_thresholds = _load_if_zone_thresholds(db_path)
+        specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+
+        total_duration_s = 0.0
+        total_tss = 0.0
+        total_rtss = 0.0
+        total_distance_eqv_km = 0.0
+        if_weighted_sum = 0.0
+        if_weight_seconds = 0.0
+        pace_weighted_sum = 0.0
+        pace_weight_seconds = 0.0
+        hr_weighted_sum = 0.0
+        hr_weight_seconds = 0.0
+        split_rows: list[dict[str, Any]] = []
+        lap_dtos: list[dict[str, Any]] = []
+        kinds_seen: list[str] = []
+
+        for idx, seg in enumerate(segments, start=1):
+            seg_kind = str(seg.get("kind") or "").strip().lower()
+            if seg_kind and seg_kind not in kinds_seen:
+                kinds_seen.append(seg_kind)
+            seg_spec = _specificity_factor_for_plan_kind(seg_kind, specificity_profile)
+            seg_for_metrics = _segment_with_effective_intensity_for_metrics(seg, seg_kind=seg_kind, seg_spec=seg_spec)
+            metric_row = _planned_segment_metrics(
+                seg_for_metrics,
+                lthr_bpm=lthr_for_day,
+                threshold_pace_sec_per_km=threshold_pace_for_day,
+                non_running_factor=seg_spec,
+            )
+            duration_s = float(metric_row.get("duration_s") or 0.0)
+            if duration_s <= 0:
+                continue
+            if_proxy = float(metric_row.get("if_proxy") or 0.0)
+            tss = float(metric_row.get("tss") or 0.0) * float(seg_spec)
+            rtss = float(metric_row.get("rtss") or 0.0) * float(seg_spec)
+            distance_eqv_km = float(metric_row.get("distance_eqv_km") or 0.0)
+            is_running_like = seg_kind in {"run", "treadmill"}
+
+            pace_raw = _safe_float(seg_for_metrics.get("pace_s_per_km"))
+            pace_eqv_s_per_km = (threshold_pace_for_day / if_proxy) if (threshold_pace_for_day > 0 and if_proxy > 0) else 0.0
+            pace_label_s_per_km = pace_raw if pace_raw > 0 else pace_eqv_s_per_km
+            distance_km = distance_eqv_km
+            avg_hr = _safe_float(seg_for_metrics.get("avg_hr_bpm"))
+            avg_speed_mps = (1000.0 / pace_label_s_per_km) if pace_label_s_per_km > 0 else 0.0
+
+            total_duration_s += duration_s
+            total_tss += tss
+            total_rtss += rtss
+            total_distance_eqv_km += max(distance_eqv_km, 0.0)
+            if if_proxy > 0:
+                if_weighted_sum += if_proxy * duration_s
+                if_weight_seconds += duration_s
+            if pace_label_s_per_km > 0:
+                pace_weighted_sum += pace_label_s_per_km * duration_s
+                pace_weight_seconds += duration_s
+            if avg_hr > 0:
+                hr_weighted_sum += avg_hr * duration_s
+                hr_weight_seconds += duration_s
+
+            split_rows.append(
+                {
+                    "lap": idx,
+                    "description": _split_description_from_if_proxy(if_proxy, if_thresholds),
+                    "duration_label": _format_duration_compact_with_seconds(duration_s),
+                    "avg_hr": round(avg_hr, 0) if avg_hr > 0 else 0.0,
+                    "if_pct": round(if_proxy * 100.0, 1) if if_proxy > 0 else 0.0,
+                    "distance_km": round(max(distance_km, 0.0), 2),
+                    "distance_eqv_km": round(max(distance_eqv_km, 0.0), 2),
+                    "pace_label": _format_pace_short(pace_label_s_per_km if pace_label_s_per_km > 0 else None),
+                    "pace_eqv_label": _format_pace_short(pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else None),
+                    "display_mode": "running" if is_running_like else "eqv",
+                }
+            )
+            lap_dtos.append(
+                {
+                    "lapIndex": idx,
+                    "duration": duration_s,
+                    "elapsedDuration": duration_s,
+                    "distance": max(distance_km, 0.0) * 1000.0,
+                    "averageHR": avg_hr if avg_hr > 0 else 0.0,
+                    "maxHR": avg_hr if avg_hr > 0 else 0.0,
+                    "averageSpeed": avg_speed_mps,
+                    "calories": 0.0,
+                }
+            )
+
+        sport_type = ", ".join([k.replace("_", " ").title() for k in kinds_seen]) if kinds_seen else "Planned"
+        avg_if_proxy = (if_weighted_sum / if_weight_seconds) if if_weight_seconds > 0 else 0.0
+        avg_pace_s_per_km = (pace_weighted_sum / pace_weight_seconds) if pace_weight_seconds > 0 else 0.0
+        avg_hr = (hr_weighted_sum / hr_weight_seconds) if hr_weight_seconds > 0 else 0.0
+        start_time = pd.Timestamp(day_ts).tz_convert("UTC").tz_localize(None) if pd.notna(day_ts) else pd.Timestamp.utcnow().tz_localize(None)
+        start_time = start_time.normalize() + pd.Timedelta(hours=12) + pd.Timedelta(minutes=max(0, int(line_no) - 1))
+
+        return {
+            "owner": resolved_owner,
+            "activity": {
+                "activity_id": activity_id_norm,
+                "date": day_utc,
+                "start_time_utc": start_time.isoformat(),
+                "sport_type": sport_type,
+                "distance_km": round(max(total_distance_eqv_km, 0.0), 2),
+                "duration_min": round(total_duration_s / 60.0, 1),
+                "avg_pace_display": _format_pace_short(avg_pace_s_per_km if avg_pace_s_per_km > 0 else None),
+                "avg_hr": round(avg_hr, 1) if avg_hr > 0 else 0.0,
+                "max_hr": round(avg_hr, 1) if avg_hr > 0 else 0.0,
+                "tss": round(total_tss, 1),
+                "rtss": round(total_rtss, 1),
+                "training_load_garmin": 0.0,
+            },
+            "records": [],
+            "raw": {"day_utc": day_utc, "line_no": int(line_no), "workout_text": str(row.get("workout_text") or "")},
+            "details": {"source": "planned", "if_proxy": avg_if_proxy, "segments": segments},
             "splits": {
                 "lap_count": len(lap_dtos),
                 "total_duration_s": round(total_duration_s, 1),

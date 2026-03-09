@@ -35,6 +35,7 @@ export interface DashboardActivityCard {
 }
 
 export interface DashboardPlannedCard {
+  activity_id: string;
   day_utc: string;
   line_no: number;
   activity: string;

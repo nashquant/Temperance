@@ -25,7 +25,16 @@ export interface ActivityDetailResponse {
     rtss: number;
     training_load_garmin: number;
   };
-  details: Record<string, unknown>;
+  details: Record<string, unknown> & {
+    source?: 'planned' | 'custom' | string;
+  };
+  raw?: {
+    day_utc?: string;
+    line_no?: number;
+    workout_text?: string;
+    activity_text?: string;
+    [key: string]: unknown;
+  };
   splits?: {
     lap_count?: number | null;
     total_duration_s?: number | null;

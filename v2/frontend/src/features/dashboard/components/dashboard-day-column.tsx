@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,8 +9,10 @@ import type { DashboardDayColumn as DashboardDayColumnType } from '@/features/da
 interface DashboardDayColumnProps {
   day: DashboardDayColumnType;
   onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
+  onDeletePlannedActivity?: (dayUtc: string, lineNo: number) => void;
   onSelectActivity?: (activityId: string) => void;
   markingPlannedDone?: boolean;
+  deletingPlannedActivity?: boolean;
   userTimeZone?: string;
 }
 
@@ -152,7 +154,15 @@ function deriveCompactTimeLabel(
   return '';
 }
 
-export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, markingPlannedDone, userTimeZone }: DashboardDayColumnProps): JSX.Element {
+export function DashboardDayColumn({
+  day,
+  onMarkPlannedDone,
+  onDeletePlannedActivity,
+  onSelectActivity,
+  markingPlannedDone,
+  deletingPlannedActivity,
+  userTimeZone,
+}: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
   const shouldScrollActivities = activityCount > 3;
 
@@ -234,17 +244,44 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
             <div
               key={`${activity.day_utc}-${activity.line_no}`}
               className={cn(
-                'relative flex h-[102px] flex-col overflow-hidden rounded-lg border-2 border-dashed p-2 text-[12px]',
+                'relative flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border-2 border-dashed p-2 text-[12px] transition-colors hover:bg-white/5',
                 plannedIntensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
               )}
+              onClick={() => onSelectActivity?.(activity.activity_id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onSelectActivity?.(activity.activity_id);
+                }
+              }}
             >
               <Button
                 variant="ghost"
                 size="icon"
-                className="absolute right-1 top-1 h-5 w-5 rounded-full text-muted-foreground hover:text-foreground"
-                onClick={() => onMarkPlannedDone?.(activity.day_utc, activity.line_no)}
+                className="absolute left-1 top-1 h-5 w-5 rounded-full text-emerald-300 hover:text-emerald-200"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onMarkPlannedDone?.(activity.day_utc, activity.line_no);
+                }}
                 disabled={markingPlannedDone}
                 aria-label="Mark planned activity as done"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1 h-5 w-5 rounded-full text-muted-foreground hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (window.confirm('Delete this planned activity?')) {
+                    onDeletePlannedActivity?.(activity.day_utc, activity.line_no);
+                  }
+                }}
+                disabled={deletingPlannedActivity}
+                aria-label="Delete planned activity"
               >
                 <X className="h-3.5 w-3.5" />
               </Button>
