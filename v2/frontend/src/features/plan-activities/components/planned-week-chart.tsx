@@ -8,6 +8,7 @@ import type { PlannedMetricView } from '@/features/plan-activities/types/plan-ac
 interface PlannedWeekChartRow {
   dayLabel: string;
   value: number;
+  tssBasis: number;
 }
 
 interface PlannedWeekChartProps {
@@ -50,12 +51,17 @@ function PlannedWeekTooltip({
 
 export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.Element {
   const valueLabelFormatter = (value: number) => (value > 0 ? formatValue(value, metric) : '');
-  const getBarFill = (value: number): string => {
-    if (metric !== 'tss' && metric !== 'rtss') return '#34d399';
-    if (value > 150) return '#a855f7';
-    if (value > 120) return '#ef4444';
-    if (value > 80) return '#f97316';
-    if (value > 50) return '#facc15';
+  const getBarFill = (row: PlannedWeekChartRow): string => {
+    const thresholdBasis =
+      metric === 'tss'
+        ? row.value
+        : metric === 'rtss' || metric === 'distance_eqv_km'
+          ? row.tssBasis
+          : row.value;
+    if (thresholdBasis > 150) return '#a855f7';
+    if (thresholdBasis > 120) return '#ef4444';
+    if (thresholdBasis > 80) return '#f97316';
+    if (thresholdBasis > 50) return '#facc15';
     return '#22c55e';
   };
 
@@ -71,7 +77,7 @@ export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.E
               <Tooltip content={<PlannedWeekTooltip metric={metric} />} cursor={{ fill: 'rgba(148, 163, 184, 0.12)' }} />
               <Bar dataKey="value" fill="#34d399" radius={[6, 6, 0, 0]}>
                 {data.map((row) => (
-                  <Cell key={`planned-week-bar-${row.dayLabel}`} fill={getBarFill(row.value)} />
+                  <Cell key={`planned-week-bar-${row.dayLabel}`} fill={getBarFill(row)} />
                 ))}
                 <LabelList
                   dataKey="value"

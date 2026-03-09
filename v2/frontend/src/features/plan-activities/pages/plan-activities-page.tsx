@@ -151,9 +151,13 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       const rowValue = selectedRows
         .filter((row) => row.day_utc === iso)
         .reduce((sum, row) => sum + Number(row[metric] ?? 0), 0);
+      const tssBasis = selectedRows
+        .filter((row) => row.day_utc === iso)
+        .reduce((sum, row) => sum + Number(row.tss ?? 0), 0);
       return {
         dayLabel: dayLabel(iso),
         value: rowValue,
+        tssBasis,
       };
     });
   }, [effectiveWeek, metric, selectedRows]);
