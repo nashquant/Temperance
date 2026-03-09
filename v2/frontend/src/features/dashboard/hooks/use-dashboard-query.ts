@@ -12,17 +12,18 @@ function mapSportFilterToApi(filter: DashboardSportFilter): string | undefined {
   return 'ellipt';
 }
 
-export function useDashboardQuery(weeks: number, sportFilter: DashboardSportFilter) {
+export function useDashboardQuery(weeks: number, sportFilter: DashboardSportFilter, weekOffset = 0) {
   const { session, profile } = useAuth();
 
   return useQuery({
-    queryKey: ['dashboard', profile?.owner, weeks, sportFilter],
+    queryKey: ['dashboard', profile?.owner, weeks, weekOffset, sportFilter],
     queryFn: async () => {
       if (!session?.token) throw new Error('Missing auth token');
       return getDashboard({
         token: session.token,
         owner: profile?.owner,
         weeks,
+        weekOffset,
         sport: mapSportFilterToApi(sportFilter),
       });
     },

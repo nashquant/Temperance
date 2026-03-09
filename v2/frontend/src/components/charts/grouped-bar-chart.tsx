@@ -43,7 +43,7 @@ function GroupedBarTooltip({
   const row = payload[0]?.payload as GroupedBarChartRow | undefined;
 
   return (
-    <div className="min-w-[190px] rounded-lg border border-border/80 bg-background/95 p-3 shadow-2xl backdrop-blur">
+    <div className="min-w-[190px] rounded-xl border border-sky-300/15 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.98))] p-3 shadow-2xl backdrop-blur">
       <p className="mb-2 text-xs font-semibold text-foreground">{String(label || '')}</p>
       <div className="space-y-1.5">
         {payload.map((entry) => {
@@ -101,12 +101,12 @@ function GroupedBarChartComponent({
     <div className="h-[360px] w-full">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} barGap={4} barCategoryGap="20%">
-          <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.25} />
-          <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-          <YAxis tick={{ fontSize: 12 }} label={{ value: axisLabel, angle: -90, position: 'insideLeft' }} />
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(125,211,252,0.14)" />
+          <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={{ stroke: 'rgba(148,163,184,0.18)' }} tickLine={false} />
+          <YAxis tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={false} tickLine={false} label={{ value: axisLabel, angle: -90, position: 'insideLeft', style: { fill: '#94a3b8' } }} />
           <Tooltip
             content={<GroupedBarTooltip metric={metric} getCurrentBarFill={getCurrentBarFill} compareFill={series[1].fill} />}
-            cursor={{ fill: 'rgba(148, 163, 184, 0.12)' }}
+            cursor={{ fill: 'rgba(56, 189, 248, 0.08)' }}
           />
           {series.map((item) => (
             <Bar key={item.dataKey} dataKey={item.dataKey} name={item.name} fill={item.fill} radius={[6, 6, 0, 0]}>

@@ -9,7 +9,7 @@ interface WeeklyOutlookChartCardProps {
 
 export function WeeklyOutlookChartCard({ data, metric }: WeeklyOutlookChartCardProps): JSX.Element {
   return (
-    <Card>
+    <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
       <CardContent className="p-4">
         <GroupedBarChart
           data={data.chartRows}

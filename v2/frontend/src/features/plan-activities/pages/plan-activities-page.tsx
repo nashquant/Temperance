@@ -173,19 +173,27 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       </div>
 
       <Card>
-        <CardContent className="space-y-3 p-4">
-          <p className="text-sm font-medium">Quick add planned activities</p>
+        <CardContent className="space-y-4 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-5">
+          <div className="space-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Planned Activity</p>
+            <p className="text-sm text-muted-foreground">
+              Enter one or more workout strings. Example: `3Mar26: 80min elliptical @140bpm` or `2026-03-26: 10min run @4:50 + 5x6min @3:40/km`
+            </p>
+          </div>
           <textarea
-            className="min-h-[88px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+            className="min-h-[120px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
             placeholder="e.g. 3Mar26: 80min elliptical @140bpm; 2026-03-26: 10min run @4:50 + 5x6min @3:40/km"
             value={entryText}
             onChange={(event) => setEntryText(event.target.value)}
           />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">Multiple entries are supported with new lines, `;`, or `,`.</p>
+            <div className="flex items-center gap-2">
             <Button onClick={() => ingestMutation.mutate(entryText)} disabled={ingestMutation.isPending || !entryText.trim()}>
               {ingestMutation.isPending ? 'Saving...' : 'Save planned entry'}
             </Button>
             {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -224,15 +232,15 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               </div>
 
               {selectedWeekMeta ? (
-                <Card>
+                <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
                   <CardContent className="p-4">
                     <div className="grid gap-3 md:grid-cols-6">
-                      <div className="rounded border p-3"><p className="text-xs text-muted-foreground">Week</p><p className="font-medium">{selectedWeekMeta.week_label}</p></div>
-                      <div className="rounded border p-3"><p className="text-xs text-muted-foreground">Activities</p><p className="font-medium">{selectedWeekMeta.planned_activities}</p></div>
-                      <div className="rounded border p-3"><p className="text-xs text-muted-foreground">Duration</p><p className="font-medium">{selectedWeekMeta.duration_h.toFixed(1)}h</p></div>
-                      <div className="rounded border p-3"><p className="text-xs text-muted-foreground">TSS</p><p className="font-medium">{Math.round(selectedWeekMeta.tss)}</p></div>
-                      <div className="rounded border p-3"><p className="text-xs text-muted-foreground">rTSS</p><p className="font-medium">{Math.round(selectedWeekMeta.rtss)}</p></div>
-                      <div className="rounded border p-3"><p className="text-xs text-muted-foreground">Dist Eqv</p><p className="font-medium">{selectedWeekMeta.distance_eqv_km.toFixed(1)} km</p></div>
+                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Week</p><p className="font-medium text-foreground">{selectedWeekMeta.week_label}</p></div>
+                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Activities</p><p className="font-medium text-foreground">{selectedWeekMeta.planned_activities}</p></div>
+                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Duration</p><p className="font-medium text-foreground">{selectedWeekMeta.duration_h.toFixed(1)}h</p></div>
+                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">TSS</p><p className="font-medium text-foreground">{Math.round(selectedWeekMeta.tss)}</p></div>
+                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">rTSS</p><p className="font-medium text-foreground">{Math.round(selectedWeekMeta.rtss)}</p></div>
+                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Dist Eqv</p><p className="font-medium text-foreground">{selectedWeekMeta.distance_eqv_km.toFixed(1)} km</p></div>
                     </div>
                   </CardContent>
                 </Card>

@@ -365,23 +365,28 @@ export function DataExtractPage(): JSX.Element {
       {result ? <p className="text-sm text-muted-foreground">{result}</p> : null}
 
       <Card>
-        <CardContent className="space-y-3 p-4">
-          <p className="text-sm font-medium">Custom Activities</p>
-          <p className="text-xs text-muted-foreground">
-            Use <code>[date]:[activity]</code>. Date formats like <code>3Mar26</code>, <code>2026-03-26</code>, or <code>26/03/2026</code>.
-            You can add multiple entries separated by new line, <code>;</code>, or <code>,</code>.
-          </p>
+        <CardContent className="space-y-4 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-5">
+          <div className="space-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Custom Activity</p>
+            <p className="text-sm text-muted-foreground">
+              Use <code>[date]:[activity]</code>. Date formats like <code>3Mar26</code>, <code>2026-03-26</code>, or <code>26/03/2026</code>.
+              You can add multiple entries separated by new line, <code>;</code>, or <code>,</code>.
+            </p>
+          </div>
           <textarea
-            className="min-h-[84px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+            className="min-h-[120px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
             value={customEntryText}
             onChange={(event) => setCustomEntryText(event.target.value)}
             placeholder="e.g. 3Mar26: 80min elliptical @140bpm; 2026-03-26: 10min run @4:50 + 5x6min @3:40/km"
           />
-          <div className="flex items-center gap-2">
-            <Button onClick={() => customIngestMutation.mutate()} disabled={customIngestMutation.isPending || !customEntryText.trim()}>
-              {customIngestMutation.isPending ? 'Saving...' : 'Save custom entry'}
-            </Button>
-            {customResult ? <p className="text-xs text-muted-foreground">{customResult}</p> : null}
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">This keeps the existing custom-activity save flow, just with the newer composer styling.</p>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => customIngestMutation.mutate()} disabled={customIngestMutation.isPending || !customEntryText.trim()}>
+                {customIngestMutation.isPending ? 'Saving...' : 'Save custom entry'}
+              </Button>
+              {customResult ? <p className="text-xs text-muted-foreground">{customResult}</p> : null}
+            </div>
           </div>
 
           {customWeeks.length > 0 ? (

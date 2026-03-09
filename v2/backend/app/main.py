@@ -2532,6 +2532,7 @@ def _build_wellness_payload(
 def _build_activity_dashboard_payload(
     db_path: Path,
     visible_weeks: int,
+    week_offset: int,
     sport: str | None,
 ) -> dict[str, Any]:
     metrics_df = _metrics_for_filters(
@@ -2761,7 +2762,8 @@ def _build_activity_dashboard_payload(
 
     weeks_total = int(len(ordered_week_starts))
     max_visible = max(1, min(int(visible_weeks), max(weeks_total, 1)))
-    selected_week_starts = ordered_week_starts[:max_visible]
+    safe_offset = max(0, min(int(week_offset), max(weeks_total - 1, 0)))
+    selected_week_starts = ordered_week_starts[safe_offset:safe_offset + max_visible]
 
     summary = {
         "activities": int(len(metrics_df.index)),
@@ -2986,7 +2988,7 @@ def _build_activity_dashboard_payload(
     return {
         "weeks_total": weeks_total,
         "weeks_visible": int(len(weeks_out)),
-        "has_more_weeks": bool(max_visible < weeks_total),
+        "has_more_weeks": bool((safe_offset + max_visible) < weeks_total),
         "summary": summary,
         "weeks": weeks_out,
     }
@@ -3975,6 +3977,7 @@ def wellness_view(
 @app.get("/api/v1/dashboard")
 def activity_dashboard(
     weeks: int = Query(default=6, ge=1, le=52),
+    week_offset: int = Query(default=0, ge=0, le=5200),
     sport: str | None = Query(default=None),
     owner: str | None = Query(default=None),
     authorization: str | None = Header(default=None, alias="Authorization"),
@@ -3985,6 +3988,7 @@ def activity_dashboard(
     payload = _build_activity_dashboard_payload(
         db_path=db_path,
         visible_weeks=weeks,
+        week_offset=week_offset,
         sport=sport,
     )
     payload["owner"] = resolved_owner

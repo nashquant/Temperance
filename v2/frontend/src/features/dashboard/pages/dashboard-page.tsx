@@ -3,6 +3,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { ingestCustomActivities } from '@/features/custom-activities/services/custom-activities-api';
@@ -56,9 +57,11 @@ function isTodayOrPast(dayUtc: string): boolean {
 
 export function DashboardPage(): JSX.Element {
   const dashboardPageSize = 10;
+  const dashboardYearWindowWeeks = 52;
   const dashboardMaxWeeks = 52;
   const { session, profile } = useAuth();
   const [visibleWeeks, setVisibleWeeks] = useState(dashboardPageSize);
+  const [selectedYearWindow, setSelectedYearWindow] = useState('0');
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [addActivityDayUtc, setAddActivityDayUtc] = useState<string | null>(null);
   const [addActivityText, setAddActivityText] = useState('');
@@ -66,7 +69,13 @@ export function DashboardPage(): JSX.Element {
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const query = useDashboardQuery(visibleWeeks, 'all');
+  const selectedYearWindowIndex = useMemo(() => {
+    const parsed = Number(selectedYearWindow);
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return parsed;
+  }, [selectedYearWindow]);
+  const weekOffset = selectedYearWindowIndex * dashboardYearWindowWeeks;
+  const query = useDashboardQuery(visibleWeeks, 'all', weekOffset);
   const userTimeZone = useMemo(() => {
     const profileAny = profile as unknown as Record<string, unknown> | null;
     const tzFromProfile =
@@ -171,7 +180,6 @@ export function DashboardPage(): JSX.Element {
 
   const sortedWeeks = useMemo(() => {
     if (displayWeeks.length === 0) return [];
-
     return [...displayWeeks].sort((a, b) => {
       const aTs = Date.parse(a.week_start);
       const bTs = Date.parse(b.week_start);
@@ -181,6 +189,11 @@ export function DashboardPage(): JSX.Element {
       return bTs - aTs;
     });
   }, [displayWeeks]);
+
+  const totalYearWindows = useMemo(() => {
+    const weeksTotal = Math.max(Number(query.data?.weeks_total ?? 0), 0);
+    return Math.max(1, Math.ceil(weeksTotal / dashboardYearWindowWeeks));
+  }, [dashboardYearWindowWeeks, query.data?.weeks_total, sortedWeeks.length]);
 
   const currentWeekStart = useMemo(() => {
     if (sortedWeeks.length === 0) return '';
@@ -223,16 +236,21 @@ export function DashboardPage(): JSX.Element {
     if (nextWeeks <= visibleWeeks) return;
 
     void queryClient.prefetchQuery({
-      queryKey: ['dashboard', profile?.owner, nextWeeks, 'all'],
+      queryKey: ['dashboard', profile?.owner, nextWeeks, weekOffset, 'all'],
       queryFn: async () =>
         getDashboard({
           token: session.token,
           owner: profile?.owner,
           weeks: nextWeeks,
+          weekOffset,
         }),
       staleTime: 0,
     });
-  }, [dashboardMaxWeeks, dashboardPageSize, profile?.owner, query.data?.has_more_weeks, session?.token, visibleWeeks]);
+  }, [dashboardMaxWeeks, dashboardPageSize, profile?.owner, query.data?.has_more_weeks, session?.token, visibleWeeks, weekOffset]);
+
+  useEffect(() => {
+    setVisibleWeeks(dashboardYearWindowWeeks);
+  }, [dashboardYearWindowWeeks, weekOffset]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -282,6 +300,24 @@ export function DashboardPage(): JSX.Element {
             </div>
           ) : (
             <div className="space-y-4">
+              {totalYearWindows > 1 ? (
+                <div className="flex justify-end">
+                  <div className="w-full max-w-[220px]">
+                    <Select value={selectedYearWindow} onValueChange={setSelectedYearWindow}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select year window" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: totalYearWindows }).map((_, index) => (
+                          <SelectItem key={index} value={String(index)}>
+                            {index === 0 ? 'Latest year' : `${index}-${index + 1} years ago`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ) : null}
               {sortedWeeks.map((week) => (
                 <div
                   key={week.week_start}
