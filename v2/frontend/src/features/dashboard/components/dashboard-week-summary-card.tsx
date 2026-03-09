@@ -1,4 +1,4 @@
-import { Clock3, Flame, Route, Ruler } from 'lucide-react';
+import { Activity, AlertTriangle, Clock3, Flame, HeartPulse, Route, Ruler } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -50,21 +50,21 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
           </p>
         </div>
 
-        <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-0.5 text-[12px] leading-5">
-          <p className="inline-flex items-center gap-1 text-muted-foreground"><Clock3 className="h-3 w-3" />Time</p>
-          <p className="text-right font-semibold tabular-nums">{fmtDuration(summary.duration_h)}</p>
-          <p className="inline-flex items-center gap-1 text-muted-foreground"><Route className="h-3 w-3" />Dist</p>
-          <p className="text-right font-semibold tabular-nums">{fmtNumber(summary.distance_km)} km</p>
-          <p className="inline-flex items-center gap-1 text-muted-foreground"><Ruler className="h-3 w-3" />Eqv</p>
-          <p className="text-right font-semibold tabular-nums">{fmtNumber(summary.distance_eqv_km)} km</p>
-          <p className="inline-flex items-center gap-1 text-muted-foreground"><Flame className="h-3 w-3" />kcal</p>
-          <p className="text-right font-semibold tabular-nums">{fmtNumber(summary.calories)}</p>
-          <p className="text-muted-foreground">TSS | rTSS</p>
-          <p className="text-right font-semibold tabular-nums">{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
-          <p className="text-muted-foreground">Fit | Fatg</p>
-          <p className="text-right font-semibold tabular-nums">{fmtNumber(summary.fitness)} | {fmtNumber(summary.fatigue)}</p>
-          <p className="text-muted-foreground">Ovr | Risk</p>
-          <p className="text-right font-semibold tabular-nums">{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
+        <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-0.5">
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Clock3 className="h-3 w-3" />Time</p>
+          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtDuration(summary.duration_h)}</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Route className="h-3 w-3" />Dist</p>
+          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.distance_km)} km</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Ruler className="h-3 w-3" />Eqv</p>
+          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.distance_eqv_km)} km</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Flame className="h-3 w-3" />kcal</p>
+          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.calories)}</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Activity className="h-3 w-3" />TSS | rTSS</p>
+          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><HeartPulse className="h-3 w-3" />Fit | Fatg</p>
+          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.fitness)} | {fmtNumber(summary.fatigue)}</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><AlertTriangle className="h-3 w-3" />Ovr | Risk</p>
+          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
         </div>
 
         <Separator className="bg-border/70" />

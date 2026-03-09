@@ -4864,7 +4864,32 @@ def activity_detail(
     if include_records:
         records_df = get_activity_records_df(db_path, selected_activity_id).head(int(records_limit)).copy()
         if not records_df.empty:
+            def _extract_from_raw(raw_payload: Any, keys: tuple[str, ...]) -> float:
+                if raw_payload is None:
+                    return 0.0
+                payload_obj = raw_payload
+                if isinstance(raw_payload, str):
+                    try:
+                        payload_obj = json.loads(raw_payload)
+                    except Exception:
+                        payload_obj = {}
+                if not isinstance(payload_obj, dict):
+                    return 0.0
+                for key in keys:
+                    val = _safe_float(payload_obj.get(key))
+                    if val > 0:
+                        return val
+                return 0.0
+
             for _, row in records_df.iterrows():
+                gap_mps = _extract_from_raw(
+                    row.get("raw_json"),
+                    (
+                        "grade_adjusted_speed",
+                        "grade_adjusted_speed_smoothed",
+                        "enhanced_grade_adjusted_speed",
+                    ),
+                )
                 records.append(
                     {
                         "record_time_utc": str(row.get("record_time_utc") or ""),
@@ -4875,6 +4900,9 @@ def activity_detail(
                         "power": _safe_float(row.get("power")),
                         "grade": _safe_float(row.get("grade")),
                         "altitude": _safe_float(row.get("altitude")),
+                        "stamina": _safe_float(row.get("stamina")),
+                        "grade_adjusted_speed": gap_mps,
+                        "grade_adjusted_pace_s_per_km": (1000.0 / gap_mps) if gap_mps > 0 else 0.0,
                     }
                 )
 

@@ -242,13 +242,13 @@ export function DashboardDayColumn({
                     {activity.is_custom ? '(C)' : ''}
                     {!activity.is_custom && timeLabel ? ` ${timeLabel}` : ''}
                   </p>
-                  <p className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-muted-foreground">
+                  <p className="mt-0.5 line-clamp-2 text-[10.5px] font-medium leading-[1.24] tracking-[0.01em] text-slate-300/92">
                     {compactLine([activity.duration_label, activity.distance_label])}
                   </p>
-                  <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">
+                  <p className="line-clamp-2 text-[10.5px] font-medium leading-[1.24] tracking-[0.01em] text-slate-300/92">
                     {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
                   </p>
-                  <p className="mt-auto truncate text-[12px] font-semibold leading-4 text-foreground">
+                  <p className="mt-auto truncate text-[11px] font-semibold leading-4 text-foreground/95">
                     TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
                   </p>
                 </div>
@@ -260,7 +260,7 @@ export function DashboardDayColumn({
             <div
               key={`${activity.day_utc}-${activity.line_no}`}
               className={cn(
-                'relative flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border-2 border-dashed p-2 text-[12px] transition-colors hover:bg-white/5',
+                'relative flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border-2 border-dashed px-2.5 pb-2.5 pt-2 text-[12px] transition-colors hover:bg-white/5',
                 plannedIntensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
               )}
               onClick={() => onSelectActivity?.(activity.activity_id)}
@@ -273,46 +273,44 @@ export function DashboardDayColumn({
                 }
               }}
             >
-              <div className="absolute inset-x-0 top-0 flex items-start justify-between px-1.5 pt-1.5">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 rounded-full border border-emerald-300/30 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.22),transparent_55%),linear-gradient(180deg,rgba(16,185,129,0.26),rgba(5,150,105,0.14))] text-emerald-50 shadow-[0_8px_18px_rgba(5,150,105,0.2)] backdrop-blur-md transition-all hover:scale-[1.04] hover:border-emerald-200/45 hover:text-white"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onMarkPlannedDone?.(activity.day_utc, activity.line_no);
-                  }}
-                  disabled={markingPlannedDone}
-                  aria-label="Mark planned activity as done"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 rounded-full border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.18),transparent_55%),linear-gradient(180deg,rgba(51,65,85,0.42),rgba(15,23,42,0.28))] text-slate-200 shadow-[0_8px_18px_rgba(15,23,42,0.2)] backdrop-blur-md transition-all hover:scale-[1.04] hover:border-rose-300/35 hover:bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.2),transparent_55%),linear-gradient(180deg,rgba(244,63,94,0.2),rgba(127,29,29,0.18))] hover:text-rose-100"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (window.confirm('Delete this planned activity?')) {
-                      onDeletePlannedActivity?.(activity.day_utc, activity.line_no);
-                    }
-                  }}
-                  disabled={deletingPlannedActivity}
-                  aria-label="Delete planned activity"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <p className="pr-12 text-[13px] font-semibold leading-5 text-foreground">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute -left-1 -top-1 h-5 w-5 shrink-0 rounded-full border border-emerald-300/35 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.24),transparent_55%),linear-gradient(180deg,rgba(16,185,129,0.24),rgba(5,150,105,0.12))] text-emerald-50 shadow-[0_5px_12px_rgba(5,150,105,0.18)] backdrop-blur-md transition-all hover:scale-[1.03] hover:border-emerald-200/50 hover:text-white"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onMarkPlannedDone?.(activity.day_utc, activity.line_no);
+                }}
+                disabled={markingPlannedDone}
+                aria-label="Mark planned activity as done"
+              >
+                <Check className="h-2.5 w-2.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute -right-1 -top-1 h-5 w-5 shrink-0 rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.18),transparent_55%),linear-gradient(180deg,rgba(51,65,85,0.4),rgba(15,23,42,0.24))] text-slate-200 shadow-[0_5px_12px_rgba(15,23,42,0.18)] backdrop-blur-md transition-all hover:scale-[1.03] hover:border-rose-300/40 hover:bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.2),transparent_55%),linear-gradient(180deg,rgba(244,63,94,0.18),rgba(127,29,29,0.16))] hover:text-rose-100"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (window.confirm('Delete this planned activity?')) {
+                    onDeletePlannedActivity?.(activity.day_utc, activity.line_no);
+                  }
+                }}
+                disabled={deletingPlannedActivity}
+                aria-label="Delete planned activity"
+              >
+                <X className="h-2.5 w-2.5" />
+              </Button>
+              <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
                 {formatActivityTitle(activity.activity)} <span className="text-muted-foreground">(P)</span>
               </p>
-              <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">
+              <p className="line-clamp-2 text-[10.5px] font-medium leading-[1.24] tracking-[0.01em] text-slate-300/92">
                 {compactLine([activity.duration_label, `${Math.round(activity.distance_eqv_km)} kmeq`])}
               </p>
-              <p className="line-clamp-2 text-[12px] leading-4 text-muted-foreground">
+              <p className="line-clamp-2 text-[10.5px] font-medium leading-[1.24] tracking-[0.01em] text-slate-300/92">
                 {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
               </p>
-              <p className="mt-auto truncate text-[12px] font-semibold leading-4 text-foreground">
+              <p className="mt-auto truncate text-[11px] font-semibold leading-4 tracking-[0.02em] text-foreground/95">
                 TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
               </p>
             </div>

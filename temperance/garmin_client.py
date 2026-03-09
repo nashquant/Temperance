@@ -692,6 +692,16 @@ def fetch_garmin_comprehensive(
     activity_records: list[dict[str, Any]] = []
     activity_splits: list[dict[str, Any]] = []
 
+    if FitFile is None:
+        errors.append("fitparse unavailable: install fitparse to enable FIT session/record parsing (power, stamina, grade, etc.)")
+        _progress(
+            {
+                "phase": "activities",
+                "message": "FIT parsing disabled (fitparse not installed)",
+                "fraction": 0.0,
+            }
+        )
+
     def _count_activities_in_window() -> int:
         total = 0
         probe_offset = 0
