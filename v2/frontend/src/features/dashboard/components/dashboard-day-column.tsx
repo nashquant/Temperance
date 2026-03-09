@@ -177,7 +177,7 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
           className={cn(
             'flex-1 space-y-2',
             shouldScrollActivities
-              ? 'overflow-y-auto pr-1 [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.55)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-400/50 hover:[&::-webkit-scrollbar-thumb]:bg-slate-300/70'
+              ? 'overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
               : 'overflow-visible',
           )}
         >
