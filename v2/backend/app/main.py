@@ -1858,6 +1858,7 @@ def _metrics_for_filters(
                     {
                         "activity_id": f"custom-{day_norm.date().isoformat()}-{line_no}",
                         "start_time_utc": start_time.isoformat(),
+                        "source": "custom",
                         "sport_type": sport_type,
                         "distance_m": dist_eqv_km * 1000.0 if is_running_like else 0.0,
                         "duration_s": _safe_float(row.get("duration_s")),
@@ -2512,6 +2513,7 @@ def _build_activity_dashboard_payload(
                     {
                         "activity_id": _normalize_activity_id(act.get("activity_id")),
                         "sport": sport_raw or "Activity",
+                        "is_custom": bool(str(act.get("source") or "").strip().lower() == "custom"),
                         "start_time_utc": str(act.get("start_time_utc") or ""),
                         "start_time_hhmm": (
                             pd.Timestamp(start_local_ts).strftime("%H:%M")
