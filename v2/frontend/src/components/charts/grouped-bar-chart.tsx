@@ -9,6 +9,7 @@ interface GroupedBarChartRow {
   label: string;
   current: number;
   compare: number;
+  currentTss: number;
 }
 
 interface GroupedBarChartProps {
@@ -70,12 +71,13 @@ function GroupedBarChartComponent({
     [compareLabel, currentLabel],
   );
 
-  const getCurrentBarFill = (value: number): string => {
-    if (metric !== 'tss' && metric !== 'rtss') return '#3b82f6';
-    if (value > 150) return '#a855f7';
-    if (value > 120) return '#ef4444';
-    if (value > 80) return '#f97316';
-    if (value > 50) return '#facc15';
+  const getCurrentBarFill = (row: GroupedBarChartRow): string => {
+    const thresholdBasis = metric === 'distance' ? row.currentTss : row.current;
+    if (metric !== 'tss' && metric !== 'rtss' && metric !== 'distance') return '#3b82f6';
+    if (thresholdBasis > 150) return '#a855f7';
+    if (thresholdBasis > 120) return '#ef4444';
+    if (thresholdBasis > 80) return '#f97316';
+    if (thresholdBasis > 50) return '#facc15';
     return '#22c55e';
   };
 
@@ -93,7 +95,7 @@ function GroupedBarChartComponent({
           {series.map((item) => (
             <Bar key={item.dataKey} dataKey={item.dataKey} name={item.name} fill={item.fill} radius={[6, 6, 0, 0]}>
               {item.dataKey === 'current'
-                ? data.map((row) => <Cell key={`${row.label}-current`} fill={getCurrentBarFill(row.current)} />)
+                ? data.map((row) => <Cell key={`${row.label}-current`} fill={getCurrentBarFill(row)} />)
                 : null}
               <LabelList
                 dataKey={item.dataKey}
