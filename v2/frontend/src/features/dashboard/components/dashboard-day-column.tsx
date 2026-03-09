@@ -146,7 +146,7 @@ function deriveCompactTimeLabel(
 
 export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, markingPlannedDone, userTimeZone }: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
-  const shouldScrollActivities = activityCount > 4;
+  const shouldScrollActivities = activityCount > 3;
 
   return (
     <Card
