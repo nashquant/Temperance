@@ -4,6 +4,8 @@ import type {
   ComprehensiveExtractRequest,
   ComprehensiveExtractResponse,
   DataExtractStatusResponse,
+  GarminCredentialsRequest,
+  GarminCredentialsResponse,
   SyncRequest,
   SyncResponse,
 } from '@/features/data-extract/types/data-extract';
@@ -36,6 +38,18 @@ export async function runSync({ token, owner, payload }: BaseParams & { payload:
 
 export async function runComprehensiveExtract({ token, owner, payload }: BaseParams & { payload: ComprehensiveExtractRequest }): Promise<ComprehensiveExtractResponse> {
   return apiRequest<ComprehensiveExtractResponse>(withOwner(API_CONFIG.endpoints.dataExtractComprehensive, owner), {
+    method: 'POST',
+    token,
+    body: payload,
+  });
+}
+
+export async function setGarminCredentials({
+  token,
+  owner,
+  payload,
+}: BaseParams & { payload: GarminCredentialsRequest }): Promise<GarminCredentialsResponse> {
+  return apiRequest<GarminCredentialsResponse>(withOwner(API_CONFIG.endpoints.dataExtractCredentials, owner), {
     method: 'POST',
     token,
     body: payload,

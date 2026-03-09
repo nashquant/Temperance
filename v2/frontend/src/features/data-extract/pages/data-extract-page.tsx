@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomActivitiesQuery } from '@/features/custom-activities/hooks/use-custom-activities-query';
@@ -13,7 +14,7 @@ import {
   updateCustomActivityWorkout,
 } from '@/features/custom-activities/services/custom-activities-api';
 import { useDataExtractStatusQuery } from '@/features/data-extract/hooks/use-data-extract-status';
-import { runComprehensiveExtract } from '@/features/data-extract/services/data-extract-api';
+import { runComprehensiveExtract, setGarminCredentials } from '@/features/data-extract/services/data-extract-api';
 import { PlannedMetricSelector } from '@/features/plan-activities/components/planned-metric-selector';
 import { PlannedWeekChart } from '@/features/plan-activities/components/planned-week-chart';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
@@ -36,9 +37,12 @@ export function DataExtractPage(): JSX.Element {
   const [customEntryText, setCustomEntryText] = useState('');
   const [customSelectedWeek, setCustomSelectedWeek] = useState('');
   const [customMetric, setCustomMetric] = useState<PlannedMetricView>('tss');
+  const [garminEmail, setGarminEmail] = useState('');
+  const [garminPassword, setGarminPassword] = useState('');
 
   const [result, setResult] = useState<string | null>(null);
   const [customResult, setCustomResult] = useState<string | null>(null);
+  const [garminCredResult, setGarminCredResult] = useState<string | null>(null);
   const [editingCustomKey, setEditingCustomKey] = useState<string | null>(null);
   const [editingCustomText, setEditingCustomText] = useState('');
   const [extractLogs, setExtractLogs] = useState<string[]>([]);
@@ -174,6 +178,27 @@ export function DataExtractPage(): JSX.Element {
     },
   });
 
+  const setGarminCredsMutation = useMutation({
+    mutationFn: async ({ email, password }: { email: string; password: string }) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return setGarminCredentials({
+        token: session.token,
+        owner: profile?.owner,
+        payload: { email, password },
+      });
+    },
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
+      setGarminCredResult(response.message);
+      if (response.source === 'session' || response.source === 'missing') {
+        setGarminPassword('');
+      }
+    },
+    onError: (error) => {
+      setGarminCredResult(error instanceof Error ? error.message : 'Unable to update Garmin credentials.');
+    },
+  });
+
   const customWeeks = customActivitiesQuery.data?.weeks ?? [];
   const selectedCustomWeek = useMemo(() => {
     if (customWeeks.length === 0) return null;
@@ -228,6 +253,7 @@ export function DataExtractPage(): JSX.Element {
   }
 
   const status = statusQuery.data;
+  const isAdmin = session?.role === 'admin';
 
   return (
     <section className="space-y-6">
@@ -271,6 +297,68 @@ export function DataExtractPage(): JSX.Element {
               )}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <p className="text-sm font-medium">Garmin Credentials</p>
+          {isAdmin ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Admin account uses server environment credentials (<code>GARMIN_EMAIL</code> / <code>GARMIN_PASSWORD</code>).
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Current source: <span className="font-medium text-foreground">{status?.garmin_credentials_source ?? 'missing'}</span>
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Credentials are kept in backend memory only for this user session. They are not saved to the database and will be cleared on backend restart.
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Garmin email</p>
+                  <Input
+                    value={garminEmail}
+                    onChange={(event) => setGarminEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="username"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Garmin password</p>
+                  <Input
+                    type="password"
+                    value={garminPassword}
+                    onChange={(event) => setGarminPassword(event.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  onClick={() => setGarminCredsMutation.mutate({ email: garminEmail.trim(), password: garminPassword })}
+                  disabled={setGarminCredsMutation.isPending || !garminEmail.trim() || !garminPassword}
+                >
+                  {setGarminCredsMutation.isPending ? 'Saving...' : 'Save session credentials'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setGarminCredsMutation.mutate({ email: '', password: '' })}
+                  disabled={setGarminCredsMutation.isPending}
+                >
+                  Clear
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Active source: <span className="font-medium text-foreground">{status?.garmin_credentials_source ?? 'missing'}</span>
+                </p>
+              </div>
+              {garminCredResult ? <p className="text-xs text-muted-foreground">{garminCredResult}</p> : null}
+            </>
+          )}
         </CardContent>
       </Card>
 

@@ -9,6 +9,9 @@ export interface DataExtractStatusResponse {
     message: string;
   } | null;
   garmin_credentials_available: boolean;
+  garmin_credentials_source?: 'env' | 'session' | 'missing';
+  garmin_runtime_credentials_set?: boolean;
+  garmin_credentials_hint?: string;
   import_dir: string;
   extract_progress?: {
     running: boolean;
@@ -59,4 +62,15 @@ export interface ComprehensiveExtractResponse {
   end_day: string;
   summary: string;
   errors: string[];
+}
+
+export interface GarminCredentialsRequest {
+  email: string;
+  password: string;
+}
+
+export interface GarminCredentialsResponse {
+  updated: boolean;
+  source: 'env' | 'session' | 'missing';
+  message: string;
 }

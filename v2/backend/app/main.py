@@ -161,6 +161,11 @@ class ComprehensiveExtractRequest(BaseModel):
     verify_raw_integrity: bool = False
 
 
+class GarminCredentialsRequest(BaseModel):
+    email: str
+    password: str
+
+
 app = FastAPI(title="Temperance v2 API", version="0.2.0")
 
 app.add_middleware(
@@ -374,6 +379,8 @@ def _settings_json(value: Any) -> str:
 
 _EXTRACT_PROGRESS_LOCK = threading.Lock()
 _EXTRACT_PROGRESS_BY_OWNER: dict[str, dict[str, Any]] = {}
+_GARMIN_RUNTIME_CREDENTIALS_LOCK = threading.Lock()
+_GARMIN_RUNTIME_CREDENTIALS_BY_OWNER: dict[str, dict[str, str]] = {}
 
 
 def _utc_now_iso() -> str:
@@ -659,6 +666,43 @@ def _garmin_credentials_from_env() -> tuple[str, str]:
     email = str(os.getenv("GARMIN_EMAIL") or "").strip()
     password = str(os.getenv("GARMIN_PASSWORD") or "").strip()
     return email, password
+
+
+def _set_runtime_garmin_credentials(owner: str, email: str, password: str) -> None:
+    with _GARMIN_RUNTIME_CREDENTIALS_LOCK:
+        _GARMIN_RUNTIME_CREDENTIALS_BY_OWNER[owner] = {
+            "email": str(email or "").strip(),
+            "password": str(password or "").strip(),
+            "updated_at": _utc_now_iso(),
+        }
+
+
+def _clear_runtime_garmin_credentials(owner: str) -> None:
+    with _GARMIN_RUNTIME_CREDENTIALS_LOCK:
+        _GARMIN_RUNTIME_CREDENTIALS_BY_OWNER.pop(owner, None)
+
+
+def _runtime_garmin_credentials(owner: str) -> tuple[str, str]:
+    with _GARMIN_RUNTIME_CREDENTIALS_LOCK:
+        payload = _GARMIN_RUNTIME_CREDENTIALS_BY_OWNER.get(owner) or {}
+    return str(payload.get("email") or "").strip(), str(payload.get("password") or "").strip()
+
+
+def _resolve_garmin_credentials(ctx: dict[str, str], owner: str) -> tuple[str, str, str]:
+    role = str(ctx.get("role") or "viewer").strip().lower()
+    if role == "admin":
+        env_email, env_password = _garmin_credentials_from_env()
+        if env_email and env_password:
+            return env_email, env_password, "env"
+        runtime_email, runtime_password = _runtime_garmin_credentials(owner)
+        if runtime_email and runtime_password:
+            return runtime_email, runtime_password, "session"
+        return "", "", "missing"
+
+    runtime_email, runtime_password = _runtime_garmin_credentials(owner)
+    if runtime_email and runtime_password:
+        return runtime_email, runtime_password, "session"
+    return "", "", "missing"
 
 
 def _lt_target_from_regression(lt_pace_sec_per_km: float, value_index: int) -> float:
@@ -3335,16 +3379,55 @@ def data_extract_status(
     db_path = _db_path_for_owner(resolved_owner)
     last_sync = get_last_sync(db_path)
     counts = get_table_counts(db_path)
-    garmin_email, garmin_password = _garmin_credentials_from_env()
+    role = str(ctx.get("role") or "viewer").strip().lower()
+    runtime_email, runtime_password = _runtime_garmin_credentials(resolved_owner)
+    garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
     return {
         "owner": resolved_owner,
         "db_path": str(db_path),
         "counts": counts,
         "last_sync": last_sync,
         "garmin_credentials_available": bool(garmin_email and garmin_password),
+        "garmin_credentials_source": garmin_source,
+        "garmin_runtime_credentials_set": bool(runtime_email and runtime_password),
+        "garmin_credentials_hint": (
+            "Admin uses GARMIN_EMAIL/GARMIN_PASSWORD from environment."
+            if role == "admin"
+            else "Provide Garmin credentials for this user session (memory only)."
+        ),
         "import_dir": str((Path(load_config().import_dir) if hasattr(load_config(), "import_dir") else (TEMPERANCE_SRC / "data" / "import"))),
         "extract_progress": _extract_progress_get(resolved_owner),
     }
+
+
+@app.post("/api/v1/data-extract/credentials")
+def data_extract_credentials(
+    payload: GarminCredentialsRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    role = str(ctx.get("role") or "viewer").strip().lower()
+
+    if role == "admin":
+        env_email, env_password = _garmin_credentials_from_env()
+        return {
+            "updated": False,
+            "source": "env" if (env_email and env_password) else "missing",
+            "message": "Admin uses GARMIN_EMAIL/GARMIN_PASSWORD from environment.",
+        }
+
+    email = str(payload.email or "").strip()
+    password = str(payload.password or "").strip()
+    if not email and not password:
+        _clear_runtime_garmin_credentials(resolved_owner)
+        return {"updated": True, "source": "missing", "message": "Session credentials cleared."}
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Both email and password are required.")
+
+    _set_runtime_garmin_credentials(resolved_owner, email=email, password=password)
+    return {"updated": True, "source": "session", "message": "Session credentials saved in memory only."}
 
 
 @app.post("/api/v1/data-extract/sync")
@@ -3368,12 +3451,12 @@ def data_extract_sync(
     messages: list[str] = []
     details: dict[str, Any] = {}
     total_rows = 0
-    garmin_email, garmin_password = _garmin_credentials_from_env()
+    garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
     latest = get_latest_activity_time(db_path)
 
     if source in {"garmin_api", "both"}:
         if not (garmin_email and garmin_password):
-            messages.append("Garmin credentials missing (GARMIN_EMAIL/GARMIN_PASSWORD).")
+            messages.append("Garmin credentials missing. Set session credentials (viewer) or GARMIN_EMAIL/GARMIN_PASSWORD (admin).")
             details["garmin"] = {"skipped": True, "reason": "credentials_missing"}
         else:
             if profile == "quick":
@@ -3385,7 +3468,7 @@ def data_extract_sync(
                 )
                 changed = upsert_activities(db_path, rows)
                 total_rows += len(rows)
-                details["garmin"] = {"profile": "quick", "rows": len(rows), "db_changes": int(changed)}
+                details["garmin"] = {"profile": "quick", "rows": len(rows), "db_changes": int(changed), "credentials_source": garmin_source}
             else:
                 deep_start = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
                 extract = fetch_garmin_comprehensive(
@@ -3408,6 +3491,7 @@ def data_extract_sync(
                 total_rows += len(extract.activities)
                 details["garmin"] = {
                     "profile": "deep",
+                    "credentials_source": garmin_source,
                     "activities": len(extract.activities),
                     "details": len(extract.activity_details),
                     "records": len(extract.activity_records),
@@ -3447,9 +3531,12 @@ def data_extract_comprehensive(
     ctx = _auth_context(authorization)
     resolved_owner = _resolve_owner(ctx, owner)
     db_path = _db_path_for_owner(resolved_owner)
-    garmin_email, garmin_password = _garmin_credentials_from_env()
+    garmin_email, garmin_password, _garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
     if not (garmin_email and garmin_password):
-        raise HTTPException(status_code=400, detail="Garmin credentials missing (GARMIN_EMAIL/GARMIN_PASSWORD).")
+        raise HTTPException(
+            status_code=400,
+            detail="Garmin credentials missing. Set session credentials (viewer) or GARMIN_EMAIL/GARMIN_PASSWORD (admin).",
+        )
 
     try:
         start_day = datetime.fromisoformat(str(payload.start_day)).date()
