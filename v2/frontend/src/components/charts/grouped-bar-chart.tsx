@@ -19,32 +19,52 @@ interface GroupedBarChartProps {
   compareLabel: string;
 }
 
+function tssThresholdColor(thresholdBasis: number): string {
+  if (thresholdBasis > 150) return '#a855f7';
+  if (thresholdBasis > 120) return '#ef4444';
+  if (thresholdBasis > 80) return '#f97316';
+  if (thresholdBasis > 50) return '#facc15';
+  return '#22c55e';
+}
+
 function GroupedBarTooltip({
   active,
   label,
   payload,
   metric,
-}: TooltipProps<ValueType, NameType> & { metric: GroupedBarChartProps['metric'] }): JSX.Element | null {
+  getCurrentBarFill,
+  compareFill,
+}: TooltipProps<ValueType, NameType> & {
+  metric: GroupedBarChartProps['metric'];
+  getCurrentBarFill: (row: GroupedBarChartRow) => string;
+  compareFill: string;
+}): JSX.Element | null {
   if (!active || !payload || payload.length === 0) return null;
+  const row = payload[0]?.payload as GroupedBarChartRow | undefined;
 
   return (
     <div className="min-w-[190px] rounded-lg border border-border/80 bg-background/95 p-3 shadow-2xl backdrop-blur">
       <p className="mb-2 text-xs font-semibold text-foreground">{String(label || '')}</p>
       <div className="space-y-1.5">
-        {payload.map((entry) => (
+        {payload.map((entry) => {
+          const isCurrent = String(entry.dataKey) === 'current';
+          const color = isCurrent
+            ? (row ? getCurrentBarFill(row) : String(entry.color || '#94a3b8'))
+            : compareFill;
+          return (
           <div key={`${entry.name}-${entry.dataKey}`} className="flex items-center justify-between gap-3 text-xs">
             <div className="flex min-w-0 items-center gap-2">
               <span
                 className="inline-block h-2 w-2 shrink-0 rounded-full"
-                style={{ backgroundColor: String(entry.color || '#94a3b8') }}
+                style={{ backgroundColor: color }}
               />
-              <span className="truncate text-muted-foreground">{String(entry.name || '-')}</span>
+              <span className="truncate" style={{ color }}>{String(entry.name || '-')}</span>
             </div>
             <span className="shrink-0 font-semibold text-foreground">
               {formatMetricValue(Number(entry.value || 0), metric)}
             </span>
           </div>
-        ))}
+        )})}
       </div>
     </div>
   );
@@ -74,11 +94,7 @@ function GroupedBarChartComponent({
   const getCurrentBarFill = (row: GroupedBarChartRow): string => {
     const thresholdBasis = metric === 'distance' ? row.currentTss : row.current;
     if (metric !== 'tss' && metric !== 'rtss' && metric !== 'distance') return '#3b82f6';
-    if (thresholdBasis > 150) return '#a855f7';
-    if (thresholdBasis > 120) return '#ef4444';
-    if (thresholdBasis > 80) return '#f97316';
-    if (thresholdBasis > 50) return '#facc15';
-    return '#22c55e';
+    return tssThresholdColor(thresholdBasis);
   };
 
   return (
@@ -89,7 +105,7 @@ function GroupedBarChartComponent({
           <XAxis dataKey="label" tick={{ fontSize: 12 }} />
           <YAxis tick={{ fontSize: 12 }} label={{ value: axisLabel, angle: -90, position: 'insideLeft' }} />
           <Tooltip
-            content={<GroupedBarTooltip metric={metric} />}
+            content={<GroupedBarTooltip metric={metric} getCurrentBarFill={getCurrentBarFill} compareFill={series[1].fill} />}
             cursor={{ fill: 'rgba(148, 163, 184, 0.12)' }}
           />
           {series.map((item) => (
