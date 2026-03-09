@@ -8,10 +8,12 @@ interface DashboardWeekCardProps {
   onAddPlannedActivity?: (dayUtc: string) => void;
   onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
   onDeletePlannedActivity?: (dayUtc: string, lineNo: number) => void;
+  onDeleteCustomActivity?: (activityId: string) => void;
   onSelectActivity?: (activityId: string) => void;
   addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
   deletingPlannedActivity?: boolean;
+  deletingCustomActivity?: boolean;
   userTimeZone?: string;
 }
 
@@ -24,10 +26,12 @@ export function DashboardWeekCard({
   onAddPlannedActivity,
   onMarkPlannedDone,
   onDeletePlannedActivity,
+  onDeleteCustomActivity,
   onSelectActivity,
   addingPlannedActivity,
   markingPlannedDone,
   deletingPlannedActivity,
+  deletingCustomActivity,
   userTimeZone,
 }: DashboardWeekCardProps): JSX.Element {
   return (
@@ -48,10 +52,12 @@ export function DashboardWeekCard({
                 onAddPlannedActivity={onAddPlannedActivity}
                 onMarkPlannedDone={onMarkPlannedDone}
                 onDeletePlannedActivity={onDeletePlannedActivity}
+                onDeleteCustomActivity={onDeleteCustomActivity}
                 onSelectActivity={onSelectActivity}
                 addingPlannedActivity={addingPlannedActivity}
                 markingPlannedDone={markingPlannedDone}
                 deletingPlannedActivity={deletingPlannedActivity}
+                deletingCustomActivity={deletingCustomActivity}
                 userTimeZone={userTimeZone}
               />
             ))}

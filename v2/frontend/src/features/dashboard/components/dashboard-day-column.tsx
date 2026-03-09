@@ -11,10 +11,12 @@ interface DashboardDayColumnProps {
   onAddPlannedActivity?: (dayUtc: string) => void;
   onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
   onDeletePlannedActivity?: (dayUtc: string, lineNo: number) => void;
+  onDeleteCustomActivity?: (activityId: string) => void;
   onSelectActivity?: (activityId: string) => void;
   addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
   deletingPlannedActivity?: boolean;
+  deletingCustomActivity?: boolean;
   userTimeZone?: string;
 }
 
@@ -161,10 +163,12 @@ export function DashboardDayColumn({
   onAddPlannedActivity,
   onMarkPlannedDone,
   onDeletePlannedActivity,
+  onDeleteCustomActivity,
   onSelectActivity,
   addingPlannedActivity,
   markingPlannedDone,
   deletingPlannedActivity,
+  deletingCustomActivity,
   userTimeZone,
 }: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
@@ -222,7 +226,7 @@ export function DashboardDayColumn({
                 <div
                   key={activity.activity_id}
                   className={cn(
-                    'flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border p-2 text-[12px] transition-colors hover:bg-white/5',
+                    'relative flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border p-2 text-[12px] transition-colors hover:bg-white/5',
                     activity.is_custom ? 'border-2 border-dashed outline outline-1 outline-offset-[-3px] outline-dotted' : undefined,
                     intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
                     activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
@@ -237,6 +241,23 @@ export function DashboardDayColumn({
                     }
                   }}
                 >
+                  {activity.is_custom ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute -right-1 -top-1 h-5 w-5 shrink-0 rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.18),transparent_55%),linear-gradient(180deg,rgba(51,65,85,0.4),rgba(15,23,42,0.24))] text-slate-200 shadow-[0_5px_12px_rgba(15,23,42,0.18)] backdrop-blur-md transition-all hover:scale-[1.03] hover:border-rose-300/40 hover:bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.2),transparent_55%),linear-gradient(180deg,rgba(244,63,94,0.18),rgba(127,29,29,0.16))] hover:text-rose-100"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (window.confirm('Delete this custom activity?')) {
+                          onDeleteCustomActivity?.(activity.activity_id);
+                        }
+                      }}
+                      disabled={deletingCustomActivity}
+                      aria-label="Delete custom activity"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </Button>
+                  ) : null}
                   <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
                     {formatActivityTitle(activity.sport)}
                     {activity.is_custom ? '(C)' : ''}

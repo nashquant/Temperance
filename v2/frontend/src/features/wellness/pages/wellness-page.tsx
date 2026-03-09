@@ -26,6 +26,8 @@ function fmt(value: number | null | undefined): string {
 }
 
 export function WellnessPage(): JSX.Element {
+  const surfaceClassName =
+    'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
   const [days, setDays] = useState(30);
   const [aggregation, setAggregation] = useState<WellnessAggregation>('daily');
   const query = useWellnessQuery(days, aggregation);
@@ -85,15 +87,15 @@ export function WellnessPage(): JSX.Element {
       {!query.isLoading && !query.isError && query.data ? (
         <>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Sleep Score</p><p className="text-2xl font-semibold">{fmt(query.data.summary.latest_sleep_score)}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Resting HR</p><p className="text-2xl font-semibold">{fmt(query.data.summary.latest_resting_hr)}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Stress Avg</p><p className="text-2xl font-semibold">{fmt(query.data.summary.latest_stress_avg)}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Training Readiness</p><p className="text-2xl font-semibold">{fmt(query.data.summary.latest_training_readiness)}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Body Battery (End)</p><p className="text-2xl font-semibold">{fmt(query.data.summary.latest_body_battery_end)}</p></CardContent></Card>
+            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Sleep Score</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_sleep_score)}</p></CardContent></Card>
+            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Resting HR</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_resting_hr)}</p></CardContent></Card>
+            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Stress Avg</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_stress_avg)}</p></CardContent></Card>
+            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Training Readiness</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_training_readiness)}</p></CardContent></Card>
+            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Body Battery (End)</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_body_battery_end)}</p></CardContent></Card>
           </div>
 
           {chartData.length === 0 ? (
-            <Card><CardContent className="p-8 text-sm text-muted-foreground">No wellness data available for this selection.</CardContent></Card>
+            <Card className={surfaceClassName}><CardContent className="p-8 text-sm text-slate-300/72">No wellness data available for this selection.</CardContent></Card>
           ) : (
             <div className="grid gap-4">
               <ProgressionLineChartCard

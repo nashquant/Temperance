@@ -49,6 +49,7 @@ export function DataExtractPage(): JSX.Element {
   const [editingCustomText, setEditingCustomText] = useState('');
   const [extractLogs, setExtractLogs] = useState<string[]>([]);
   const lastProgressLogCountRef = useRef(0);
+  const lastFinishedAtRef = useRef<string | null>(null);
 
   const stamp = () => `[${new Date().toLocaleTimeString()}]`;
   const safeCount = (counts: Record<string, number> | null | undefined, key: string) => Number(counts?.[key] ?? 0);
@@ -58,6 +59,7 @@ export function DataExtractPage(): JSX.Element {
       if (!session?.token) throw new Error('Missing auth token');
       setExtractLogs([]);
       lastProgressLogCountRef.current = 0;
+      lastFinishedAtRef.current = null;
       return runComprehensiveExtract({
         token: session.token,
         owner: profile?.owner,
@@ -73,13 +75,10 @@ export function DataExtractPage(): JSX.Element {
     onSuccess: async (response) => {
       await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
       const latest = await statusQuery.refetch();
-      const counts = latest.data?.counts ?? {};
-      setResult(`Comprehensive extract complete: ${response.summary}`);
-      setExtractLogs((previous) => [
-        ...previous,
-        `${stamp()} Final counts: activities=${safeCount(counts, 'activities')}, details=${safeCount(counts, 'activity_details')}, splits=${safeCount(counts, 'activity_splits')}, sleep=${safeCount(counts, 'sleep_daily')}, wellness=${safeCount(counts, 'wellness_daily')}`,
-        ...response.errors.map((error) => `[error] ${error}`),
-      ]);
+      const progress = latest.data?.extract_progress;
+      lastProgressLogCountRef.current = Number(progress?.log_count ?? 0);
+      setExtractLogs(Array.isArray(progress?.logs) ? progress.logs : []);
+      setResult(response.summary);
     },
     onError: (error) => {
       setResult(error instanceof Error ? error.message : 'Comprehensive extract failed');
@@ -91,32 +90,33 @@ export function DataExtractPage(): JSX.Element {
   });
 
   useEffect(() => {
-    if (!comprehensiveMutation.isPending) return undefined;
-    let busy = false;
-    const interval = window.setInterval(() => {
-      if (busy) return;
-      busy = true;
-      void statusQuery.refetch().then((snapshot) => {
-        const progress = snapshot.data?.extract_progress;
-        if (!progress) return;
+    const progress = statusQuery.data?.extract_progress;
+    if (!progress) return;
 
-        const currentLogCount = Number(progress.log_count ?? 0);
-        const previousLogCount = Number(lastProgressLogCountRef.current ?? 0);
-        if (currentLogCount > previousLogCount) {
-          const delta = currentLogCount - previousLogCount;
-          const lines = Array.isArray(progress.logs) ? progress.logs : [];
-          const appended = delta <= lines.length ? lines.slice(lines.length - delta) : lines;
-          if (appended.length > 0) {
-            setExtractLogs((prior) => [...prior, ...appended]);
-          }
-          lastProgressLogCountRef.current = currentLogCount;
-        }
-      }).finally(() => {
-        busy = false;
-      });
-    }, 2500);
-    return () => window.clearInterval(interval);
-  }, [comprehensiveMutation.isPending, statusQuery]);
+    const currentLogCount = Number(progress.log_count ?? 0);
+    const previousLogCount = Number(lastProgressLogCountRef.current ?? 0);
+    const lines = Array.isArray(progress.logs) ? progress.logs : [];
+
+    if (previousLogCount === 0 || currentLogCount < previousLogCount) {
+      setExtractLogs(lines);
+      lastProgressLogCountRef.current = currentLogCount;
+    } else if (currentLogCount > previousLogCount) {
+      const delta = currentLogCount - previousLogCount;
+      const appended = delta <= lines.length ? lines.slice(lines.length - delta) : lines;
+      if (appended.length > 0) {
+        setExtractLogs((prior) => [...prior, ...appended]);
+      }
+      lastProgressLogCountRef.current = currentLogCount;
+    }
+
+    if (!progress.running && progress.finished_at && lastFinishedAtRef.current !== progress.finished_at) {
+      lastFinishedAtRef.current = progress.finished_at;
+      const counts = statusQuery.data?.counts ?? {};
+      setResult(
+        `Comprehensive extract complete: activities=${safeCount(counts, 'activities')}, details=${safeCount(counts, 'activity_details')}, splits=${safeCount(counts, 'activity_splits')}, sleep=${safeCount(counts, 'sleep_daily')}, wellness=${safeCount(counts, 'wellness_daily')}`,
+      );
+    }
+  }, [safeCount, statusQuery.data]);
 
   const customIngestMutation = useMutation({
     mutationFn: async () => {
@@ -256,6 +256,7 @@ export function DataExtractPage(): JSX.Element {
 
   const status = statusQuery.data;
   const isAdmin = session?.role === 'admin';
+  const extractRunning = Boolean(status?.extract_progress?.running);
 
   return (
     <section className="space-y-6">
@@ -264,21 +265,43 @@ export function DataExtractPage(): JSX.Element {
       </div>
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-4 p-4">
-          <p className="text-sm font-medium">Comprehensive Garmin Extract</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="w-full sm:w-[220px]">
-              <p className="mb-1 text-xs text-muted-foreground">Start day</p>
+        <CardContent className="space-y-4 p-5">
+          <div className="space-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Garmin Extract</p>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Comprehensive Garmin Extract</h2>
+                <p className="text-sm text-slate-300/72">Run a full background pull and keep navigating while progress continues.</p>
+              </div>
+              <Button
+                className="h-10 rounded-xl bg-[linear-gradient(180deg,rgba(56,189,248,0.94),rgba(37,99,235,0.9))] px-4 text-white shadow-[0_14px_30px_rgba(37,99,235,0.24)] hover:brightness-105"
+                onClick={() => comprehensiveMutation.mutate()}
+                disabled={comprehensiveMutation.isPending || extractRunning}
+              >
+                {extractRunning || comprehensiveMutation.isPending ? 'Extract running in background...' : 'Run comprehensive extract'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:grid-cols-[220px_1fr]">
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Start Day</p>
               <input
-                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                className="h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-slate-100 outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
                 type="date"
                 max={todayIso()}
                 value={startDay}
                 onChange={(event) => setStartDay(event.target.value)}
               />
             </div>
-            <div className="flex flex-wrap gap-2">
-              <label className="inline-flex h-9 items-center gap-2 rounded-md border border-input/80 bg-background/30 px-3 text-xs text-foreground">
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Options</p>
+              <div className="flex flex-wrap gap-2">
+                <label className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-medium transition ${
+                  incrementalOnly
+                    ? 'border-sky-300/28 bg-sky-400/12 text-sky-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+                    : 'border-white/10 bg-black/15 text-slate-200/88 hover:bg-white/8'
+                }`}>
                 <input
                   className="h-3.5 w-3.5 accent-blue-500"
                   type="checkbox"
@@ -287,7 +310,11 @@ export function DataExtractPage(): JSX.Element {
                 />
                 Incremental only
               </label>
-              <label className="inline-flex h-9 items-center gap-2 rounded-md border border-input/80 bg-background/30 px-3 text-xs text-foreground">
+                <label className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-medium transition ${
+                  includeDetails
+                    ? 'border-sky-300/28 bg-sky-400/12 text-sky-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+                    : 'border-white/10 bg-black/15 text-slate-200/88 hover:bg-white/8'
+                }`}>
                 <input
                   className="h-3.5 w-3.5 accent-blue-500"
                   type="checkbox"
@@ -296,7 +323,11 @@ export function DataExtractPage(): JSX.Element {
                 />
                 Include details
               </label>
-              <label className="inline-flex h-9 items-center gap-2 rounded-md border border-input/80 bg-background/30 px-3 text-xs text-foreground">
+                <label className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-medium transition ${
+                  includeWellness
+                    ? 'border-sky-300/28 bg-sky-400/12 text-sky-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+                    : 'border-white/10 bg-black/15 text-slate-200/88 hover:bg-white/8'
+                }`}>
                 <input
                   className="h-3.5 w-3.5 accent-blue-500"
                   type="checkbox"
@@ -307,14 +338,6 @@ export function DataExtractPage(): JSX.Element {
               </label>
             </div>
           </div>
-          <div className="flex items-center justify-end">
-            <Button
-              className="h-9 px-4"
-              onClick={() => comprehensiveMutation.mutate()}
-              disabled={comprehensiveMutation.isPending}
-            >
-              {comprehensiveMutation.isPending ? 'Running extract...' : 'Run comprehensive extract'}
-            </Button>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/15 p-2">
             <div className="mb-1 flex items-center justify-between">
@@ -322,7 +345,7 @@ export function DataExtractPage(): JSX.Element {
               <Button
                 variant="outline"
                 onClick={() => setExtractLogs([])}
-                disabled={comprehensiveMutation.isPending || extractLogs.length === 0}
+                disabled={extractRunning || comprehensiveMutation.isPending || extractLogs.length === 0}
               >
                 Clear
               </Button>

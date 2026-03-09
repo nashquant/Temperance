@@ -52,6 +52,7 @@ export interface ActivityDetailResponse {
     lap: number;
     description: string;
     duration_label: string;
+    duration_seconds?: number;
     avg_hr: number;
     if_pct: number;
     distance_km: number;

@@ -13,5 +13,9 @@ export function useDataExtractStatusQuery() {
       return getDataExtractStatus({ token: session.token, owner: profile?.owner });
     },
     enabled: Boolean(session?.token),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data?.extract_progress?.running ? 2500 : false;
+    },
   });
 }

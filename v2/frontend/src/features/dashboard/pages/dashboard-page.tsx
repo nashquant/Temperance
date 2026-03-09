@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { ingestCustomActivities } from '@/features/custom-activities/services/custom-activities-api';
+import { deleteCustomActivity, ingestCustomActivities } from '@/features/custom-activities/services/custom-activities-api';
 import { ActivitySplitsDrawer } from '@/features/dashboard/components/activity-splits-drawer';
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
@@ -87,6 +87,16 @@ export function DashboardPage(): JSX.Element {
     () => Boolean(addActivityDayUtc && isTodayOrPast(addActivityDayUtc)),
     [addActivityDayUtc],
   );
+  const refreshDashboardViews = async () => {
+    await Promise.all([
+      query.refetch(),
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+      queryClient.invalidateQueries({ queryKey: ['planned-activities'] }),
+      queryClient.invalidateQueries({ queryKey: ['custom-activities'] }),
+      queryClient.invalidateQueries({ queryKey: ['week-outlook'] }),
+      queryClient.invalidateQueries({ queryKey: ['data-extract-status'] }),
+    ]);
+  };
   const plannedDoneMutation = useMutation({
     mutationFn: async ({ dayUtc, lineNo }: { dayUtc: string; lineNo: number }) => {
       if (!session?.token) throw new Error('Missing auth token');
@@ -99,11 +109,7 @@ export function DashboardPage(): JSX.Element {
       });
     },
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['planned-activities'] }),
-        queryClient.invalidateQueries({ queryKey: ['week-outlook'] }),
-      ]);
+      await refreshDashboardViews();
       setAddActivityDayUtc(null);
       setAddActivityText('');
       setAddActivityMode('planned');
@@ -120,11 +126,7 @@ export function DashboardPage(): JSX.Element {
       });
     },
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['planned-activities'] }),
-        queryClient.invalidateQueries({ queryKey: ['week-outlook'] }),
-      ]);
+      await refreshDashboardViews();
     },
   });
   const plannedCreateMutation = useMutation({
@@ -153,15 +155,26 @@ export function DashboardPage(): JSX.Element {
       });
     },
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['planned-activities'] }),
-        queryClient.invalidateQueries({ queryKey: ['custom-activities'] }),
-        queryClient.invalidateQueries({ queryKey: ['week-outlook'] }),
-      ]);
+      await refreshDashboardViews();
       setAddActivityDayUtc(null);
       setAddActivityText('');
       setAddActivityMode('planned');
+    },
+  });
+  const customDeleteMutation = useMutation({
+    mutationFn: async ({ activityId }: { activityId: string }) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      const match = String(activityId).match(/^custom-(\d{4}-\d{2}-\d{2})-(\d+)$/);
+      if (!match) throw new Error('Invalid custom activity id');
+      await deleteCustomActivity({
+        token: session.token,
+        owner: profile?.owner,
+        dayUtc: match[1],
+        lineNo: Number(match[2]),
+      });
+    },
+    onSuccess: async () => {
+      await refreshDashboardViews();
     },
   });
   const displayWeeks = useMemo(() => {
@@ -334,10 +347,12 @@ export function DashboardPage(): JSX.Element {
                     }}
                     onMarkPlannedDone={(dayUtc, lineNo) => plannedDoneMutation.mutate({ dayUtc, lineNo })}
                     onDeletePlannedActivity={(dayUtc, lineNo) => plannedDeleteMutation.mutate({ dayUtc, lineNo })}
+                    onDeleteCustomActivity={(activityId) => customDeleteMutation.mutate({ activityId })}
                     onSelectActivity={(activityId) => setSelectedActivityId(activityId)}
                     addingPlannedActivity={plannedCreateMutation.isPending}
                     markingPlannedDone={plannedDoneMutation.isPending}
                     deletingPlannedActivity={plannedDeleteMutation.isPending}
+                    deletingCustomActivity={customDeleteMutation.isPending}
                     userTimeZone={userTimeZone}
                   />
                 </div>

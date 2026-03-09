@@ -35,6 +35,8 @@ interface PlanActivitiesSectionProps {
 }
 
 export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectionProps): JSX.Element {
+  const surfaceClassName =
+    'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
   const { session, profile } = useAuth();
   const query = usePlanActivitiesQuery(4);
   const [metric, setMetric] = useState<PlannedMetricView>('tss');
@@ -172,7 +174,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         )}
       </div>
 
-      <Card>
+      <Card className={surfaceClassName}>
         <CardContent className="space-y-4 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-5">
           <div className="space-y-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Planned Activity</p>
@@ -221,9 +223,9 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
           </div>
 
           {weeks.length === 0 ? (
-            <Card>
-              <CardContent className="p-8 text-sm text-muted-foreground">No planned activities found in this time window.</CardContent>
-            </Card>
+              <Card className={surfaceClassName}>
+                <CardContent className="p-8 text-sm text-slate-300/72">No planned activities found in this time window.</CardContent>
+              </Card>
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
@@ -232,7 +234,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               </div>
 
               {selectedWeekMeta ? (
-                <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
+                <Card className={surfaceClassName}>
                   <CardContent className="p-4">
                     <div className="grid gap-3 md:grid-cols-6">
                       <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Week</p><p className="font-medium text-foreground">{selectedWeekMeta.week_label}</p></div>
@@ -248,11 +250,11 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
               <PlannedWeekChart data={chartRows} metric={metric} />
 
-              <Card>
+              <Card className={surfaceClassName}>
                 <CardContent className="p-0">
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto rounded-2xl">
                     <table className="w-full text-sm">
-                      <thead className="bg-muted/60 text-muted-foreground">
+                      <thead className="bg-white/5 text-slate-300/72">
                         <tr>
                           <th className="px-3 py-2 text-left">Done</th>
                           <th className="px-3 py-2 text-left">Day</th>
@@ -269,9 +271,10 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                         {selectedRows.map((row) => {
                           const rowKey = `${row.day_utc}-${row.line_no}`;
                           return (
-                            <tr key={rowKey} className="border-t">
+                            <tr key={rowKey} className="border-t border-white/10">
                               <td className="px-3 py-2">
                                 <input
+                                  className="h-4 w-4 accent-sky-400"
                                   type="checkbox"
                                   checked={row.manual_done}
                                   onChange={(event) =>
@@ -287,7 +290,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                               <td className="px-3 py-2">{row.activity}</td>
                               <td className="px-3 py-2">
                                 <input
-                                  className="w-full min-w-[320px] rounded border border-input bg-transparent px-2 py-1"
+                                  className="w-full min-w-[320px] rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
                                   value={editValues[rowKey] ?? ''}
                                   onChange={(event) =>
                                     setEditValues((previous) => ({ ...previous, [rowKey]: event.target.value }))
@@ -303,6 +306,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                                   <Button
                                     variant="ghost"
                                     size="sm"
+                                    className="text-slate-200 hover:bg-white/10 hover:text-white"
                                     onClick={() =>
                                       workoutUpdateMutation.mutate({
                                         dayUtc: row.day_utc,
@@ -317,6 +321,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                                   <Button
                                     variant="ghost"
                                     size="sm"
+                                    className="text-slate-300 hover:bg-rose-500/12 hover:text-rose-100"
                                     onClick={() => {
                                       if (window.confirm('Delete this planned activity?')) {
                                         deleteMutation.mutate({ dayUtc: row.day_utc, lineNo: row.line_no });
@@ -330,6 +335,13 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                             </tr>
                           );
                         })}
+                        {selectedRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="px-3 py-6 text-center text-sm text-slate-300/60">
+                              No planned activities in the selected week.
+                            </td>
+                          </tr>
+                        ) : null}
                       </tbody>
                     </table>
                   </div>
