@@ -29,9 +29,9 @@ export function AppLayout(): JSX.Element {
   })();
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="grid min-h-screen md:grid-cols-[250px_1fr]">
-        <aside className="border-r bg-card/50 p-4 md:p-6">
+    <div className="h-screen overflow-hidden bg-background">
+      <div className="grid h-full md:grid-cols-[250px_1fr]">
+        <aside className="sticky top-0 h-screen overflow-y-auto border-r bg-card/50 p-4 md:p-6">
           <div className="mb-6 flex items-center justify-between">
             <h1 className="text-lg font-semibold">Temperance</h1>
           </div>
@@ -77,8 +77,8 @@ export function AppLayout(): JSX.Element {
           </div>
         </aside>
 
-        <div className="flex min-h-screen flex-col">
-          <header className="border-b px-6 py-4">
+        <div className="flex h-screen min-h-0 flex-col overflow-hidden">
+          <header className="sticky top-0 z-20 border-b bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <div className="mx-auto flex w-full max-w-7xl items-center justify-between">
               <div>
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">{headerMeta.section}</p>
@@ -86,8 +86,10 @@ export function AppLayout(): JSX.Element {
               </div>
             </div>
           </header>
-          <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-6">
-            <Outlet />
+          <main className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-7xl px-6 py-6">
+              <Outlet />
+            </div>
           </main>
         </div>
       </div>
