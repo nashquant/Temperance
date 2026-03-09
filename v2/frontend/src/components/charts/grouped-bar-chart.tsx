@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { Bar, BarChart, CartesianGrid, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
@@ -70,6 +70,15 @@ function GroupedBarChartComponent({
     [compareLabel, currentLabel],
   );
 
+  const getCurrentBarFill = (value: number): string => {
+    if (metric !== 'tss') return '#3b82f6';
+    if (value > 150) return '#a855f7';
+    if (value > 120) return '#ef4444';
+    if (value > 80) return '#f97316';
+    if (value > 50) return '#facc15';
+    return '#22c55e';
+  };
+
   return (
     <div className="h-[360px] w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -81,9 +90,11 @@ function GroupedBarChartComponent({
             content={<GroupedBarTooltip metric={metric} />}
             cursor={{ fill: 'rgba(148, 163, 184, 0.12)' }}
           />
-          <Legend />
           {series.map((item) => (
             <Bar key={item.dataKey} dataKey={item.dataKey} name={item.name} fill={item.fill} radius={[6, 6, 0, 0]}>
+              {item.dataKey === 'current'
+                ? data.map((row) => <Cell key={`${row.label}-current`} fill={getCurrentBarFill(row.current)} />)
+                : null}
               <LabelList
                 dataKey={item.dataKey}
                 position="top"
