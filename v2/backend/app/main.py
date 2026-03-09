@@ -1503,20 +1503,9 @@ def _planned_daily_metric_map(
     if metrics_rows.empty:
         return {}, {}, 0.0
 
-    # Day rule for compare bars: if a day has at least one open planned row,
-    # ignore done rows for that day; otherwise keep all rows.
+    # Week Planner compare bars must represent full planned load for each day.
+    # Do not apply AM/PM expiry or per-day done/open filtering here.
     metrics_for_compare = metrics_rows.copy()
-    metrics_for_compare["manual_done"] = pd.to_numeric(
-        metrics_for_compare.get("manual_done"),
-        errors="coerce",
-    ).fillna(0.0) > 0
-    day_has_open = metrics_for_compare.groupby("day")["manual_done"].transform(
-        lambda s: bool((~s).any())
-    )
-    keep_compare = (~metrics_for_compare["manual_done"]) | (~day_has_open)
-    metrics_for_compare = metrics_for_compare.loc[keep_compare].copy()
-    if metrics_for_compare.empty:
-        metrics_for_compare = metrics_rows.copy()
 
     metric_col = "distance_proxy_km" if metric_key == "distance_eqv_km" else metric_key
     metric_by_day = (
@@ -1534,7 +1523,13 @@ def _planned_daily_metric_map(
 
     today_local = pd.Timestamp(today_local_day if today_local_day is not None else datetime.now().astimezone().date()).normalize()
     remaining_start_day = max(today_local, pd.Timestamp(week_start).normalize())
-    metrics_remaining = _filter_effective_planned_rows(metrics_rows, today_local_day=today_local)
+    # Remaining-to-go should ignore AM/PM expiry and only honor explicit manual done.
+    metrics_remaining = metrics_rows.copy()
+    metrics_remaining["manual_done"] = pd.to_numeric(
+        metrics_remaining.get("manual_done"),
+        errors="coerce",
+    ).fillna(0.0) > 0
+    metrics_remaining = metrics_remaining.loc[~metrics_remaining["manual_done"]].copy()
     remaining_metric_total = 0.0
     if not metrics_remaining.empty:
         metrics_remaining["day"] = pd.to_datetime(metrics_remaining.get("day"), errors="coerce").dt.normalize()
