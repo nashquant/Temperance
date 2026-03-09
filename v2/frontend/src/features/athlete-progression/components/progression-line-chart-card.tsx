@@ -77,11 +77,23 @@ export function ProgressionLineChartCard({
         return 0;
       })()
     : 0;
-  const chartData = data.map((row) => ({
-    ...row,
-    _x: String(row.period_start ?? row.label ?? ''),
-    __target: targetValue > 0 ? targetValue : undefined,
-  })) as Array<Record<string, number | string | null | undefined>>;
+  const chartData = data.map((row) => {
+    const nextRow: Record<string, number | string | null | undefined> = {
+      ...row,
+      _x: String(row.period_start ?? row.label ?? ''),
+      __target: targetValue > 0 ? targetValue : undefined,
+    };
+    for (const item of series) {
+      const raw = nextRow[item.key];
+      if (raw == null || raw === '') {
+        nextRow[item.key] = null;
+        continue;
+      }
+      const parsed = Number(raw);
+      nextRow[item.key] = Number.isFinite(parsed) ? parsed : null;
+    }
+    return nextRow;
+  }) as Array<Record<string, number | string | null | undefined>>;
   const labelMap = new Map(chartData.map((row) => [String(row._x ?? ''), String(row['label'] ?? row._x ?? '')]));
   return (
     <Card>
@@ -122,6 +134,7 @@ export function ProgressionLineChartCard({
                   activeDot={{ r: 4 }}
                   yAxisId={item.yAxisId ?? 'left'}
                   strokeDasharray={item.dashed ? '5 5' : undefined}
+                  connectNulls
                 />
               ))}
               {targetKey && targetValue > 0 ? (
@@ -137,6 +150,7 @@ export function ProgressionLineChartCard({
                   activeDot={false}
                   isAnimationActive={false}
                   legendType="none"
+                  connectNulls
                 />
               ) : null}
             </LineChart>
