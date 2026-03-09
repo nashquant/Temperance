@@ -1752,10 +1752,6 @@ def _metrics_for_filters(
     if not db_path.exists():
         return pd.DataFrame()
 
-    runs_df = get_runs_df(db_path)
-    if runs_df.empty:
-        return pd.DataFrame()
-
     lthr_curve = _load_curve_points(
         db_path=db_path,
         key=SETTINGS_KEY_LTHR_CURVE,
@@ -1769,18 +1765,126 @@ def _metrics_for_filters(
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
 
-    metrics_df = compute_metrics(
-        runs_df=runs_df,
-        lthr_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
-        threshold_pace_sec_per_km=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
-        lthr_curve_points=lthr_curve,
-        threshold_pace_curve_points=pace_curve,
-    )
-    if metrics_df.empty:
-        return metrics_df
-
     specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
-    metrics_df = _apply_specificity_factor(metrics_df, specificity_profile=specificity_profile)
+
+    metrics_parts: list[pd.DataFrame] = []
+
+    runs_df = get_runs_df(db_path)
+    if not runs_df.empty:
+        runs_metrics_df = compute_metrics(
+            runs_df=runs_df,
+            lthr_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+            threshold_pace_sec_per_km=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+            lthr_curve_points=lthr_curve,
+            threshold_pace_curve_points=pace_curve,
+        )
+        if not runs_metrics_df.empty:
+            runs_metrics_df = _apply_specificity_factor(runs_metrics_df, specificity_profile=specificity_profile)
+            metrics_parts.append(runs_metrics_df)
+
+    custom_df = get_custom_activities_df(db_path=db_path)
+    if not custom_df.empty:
+        custom_rows = custom_df.rename(columns={"activity_text": "workout_text"}).copy()
+        custom_rows["manual_done"] = False
+        custom_metrics = _compute_planned_rows_metrics_df(
+            planned_rows=custom_rows,
+            lthr_curve_points=lthr_curve,
+            lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+            lt_pace_curve_points=pace_curve,
+            lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+            specificity_profile=specificity_profile,
+        )
+        if not custom_metrics.empty:
+            merged_custom = custom_rows.merge(
+                custom_metrics[
+                    [
+                        "day_utc",
+                        "line_no",
+                        "tss",
+                        "rtss",
+                        "distance_proxy_km",
+                        "duration_s",
+                        "if_proxy",
+                        "pace_proxy_sec_per_km",
+                    ]
+                ],
+                on=["day_utc", "line_no"],
+                how="left",
+            )
+
+            def _custom_primary_sport(row: pd.Series) -> str:
+                raw_segments = row.get("parsed_json")
+                segments: list[dict[str, object]] = []
+                if isinstance(raw_segments, list):
+                    segments = [s for s in raw_segments if isinstance(s, dict)]
+                elif isinstance(raw_segments, str) and raw_segments.strip():
+                    try:
+                        parsed = json.loads(raw_segments)
+                        if isinstance(parsed, list):
+                            segments = [s for s in parsed if isinstance(s, dict)]
+                    except Exception:
+                        segments = []
+                if segments:
+                    kind = str(segments[0].get("kind") or "").strip().lower()
+                    if kind:
+                        return kind
+                text = str(row.get("workout_text") or "").lower()
+                if "treadmill" in text:
+                    return "treadmill"
+                if "run" in text:
+                    return "running"
+                if "cycl" in text or "bike" in text:
+                    return "cycling"
+                if "swim" in text:
+                    return "swimming"
+                if "ellipt" in text:
+                    return "elliptical"
+                if "strength" in text or "lift" in text:
+                    return "strength_training"
+                return "custom"
+
+            custom_records: list[dict[str, Any]] = []
+            for _, row in merged_custom.iterrows():
+                day_ts = pd.to_datetime(row.get("day_utc"), errors="coerce")
+                if pd.isna(day_ts):
+                    continue
+                day_norm = pd.Timestamp(day_ts).normalize()
+                line_no = int(_safe_float(row.get("line_no")))
+                start_time = day_norm + pd.Timedelta(hours=12) + pd.Timedelta(minutes=max(0, line_no - 1))
+                sport_type = _custom_primary_sport(row)
+                dist_eqv_km = _safe_float(row.get("distance_proxy_km"))
+                is_running_like = ("run" in sport_type) or ("treadmill" in sport_type)
+                custom_records.append(
+                    {
+                        "activity_id": f"custom-{day_norm.date().isoformat()}-{line_no}",
+                        "start_time_utc": start_time.isoformat(),
+                        "sport_type": sport_type,
+                        "distance_m": dist_eqv_km * 1000.0 if is_running_like else 0.0,
+                        "duration_s": _safe_float(row.get("duration_s")),
+                        "avg_hr": 0.0,
+                        "avg_pace_s_per_km": _safe_float(row.get("pace_proxy_sec_per_km")) if is_running_like else 0.0,
+                        "tss": _safe_float(row.get("tss")),
+                        "rtss": _safe_float(row.get("rtss")),
+                        "distance_proxy_km": dist_eqv_km,
+                        "if_proxy": _safe_float(row.get("if_proxy")),
+                        "pace_proxy_sec_per_km": _safe_float(row.get("pace_proxy_sec_per_km")),
+                        "training_load_garmin": 0.0,
+                        "calories_total": 0.0,
+                        "hr_time_in_zone_1": 0.0,
+                        "hr_time_in_zone_2": 0.0,
+                        "hr_time_in_zone_3": 0.0,
+                        "hr_time_in_zone_4": 0.0,
+                        "hr_time_in_zone_5": 0.0,
+                    }
+                )
+
+            if custom_records:
+                metrics_parts.append(pd.DataFrame(custom_records))
+
+    if not metrics_parts:
+        return pd.DataFrame()
+
+    metrics_df = pd.concat(metrics_parts, ignore_index=True, sort=False)
 
     metrics_df["start_time_utc"] = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce")
     metrics_df = metrics_df.dropna(subset=["start_time_utc"]).copy()
