@@ -113,7 +113,13 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   });
 
   const weeks = query.data?.weeks ?? [];
-  const effectiveWeek = selectedWeek || weeks[0]?.week_start || '';
+  const today = new Date();
+  const currentWeekStartDate = new Date(today);
+  const dayOffset = (currentWeekStartDate.getDay() + 6) % 7;
+  currentWeekStartDate.setDate(currentWeekStartDate.getDate() - dayOffset);
+  const currentWeekStart = `${currentWeekStartDate.getFullYear()}-${String(currentWeekStartDate.getMonth() + 1).padStart(2, '0')}-${String(currentWeekStartDate.getDate()).padStart(2, '0')}`;
+  const defaultWeek = weeks.find((week) => week.week_start === currentWeekStart)?.week_start ?? weeks[0]?.week_start ?? '';
+  const effectiveWeek = selectedWeek || defaultWeek;
   const selectedWeekMeta = weeks.find((week) => week.week_start === effectiveWeek);
 
   const selectedRows = useMemo(() => {
@@ -204,7 +210,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
           {weeks.length === 0 ? (
             <Card>
-              <CardContent className="p-8 text-sm text-muted-foreground">No planned activities found for upcoming weeks.</CardContent>
+              <CardContent className="p-8 text-sm text-muted-foreground">No planned activities found in this time window.</CardContent>
             </Card>
           ) : (
             <>

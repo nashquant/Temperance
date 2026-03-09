@@ -1,4 +1,6 @@
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import type { TooltipProps } from 'recharts';
+import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
 import { Card, CardContent } from '@/components/ui/card';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
@@ -26,6 +28,26 @@ function formatValue(value: number, metric: PlannedMetricView): string {
   return `${Math.round(value)}`;
 }
 
+function PlannedWeekTooltip({
+  active,
+  label,
+  payload,
+  metric,
+}: TooltipProps<ValueType, NameType> & { metric: PlannedMetricView }): JSX.Element | null {
+  if (!active || !payload || payload.length === 0) return null;
+  const value = Number(payload[0]?.value ?? 0);
+
+  return (
+    <div className="min-w-[170px] rounded-lg border border-border/80 bg-background/95 p-3 shadow-2xl backdrop-blur">
+      <p className="mb-2 text-xs font-semibold text-foreground">{String(label || '')}</p>
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="text-muted-foreground">{metricLabel(metric)}</span>
+        <span className="font-semibold text-foreground">{formatValue(value, metric)}</span>
+      </div>
+    </div>
+  );
+}
+
 export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.Element {
   const valueLabelFormatter = (value: number) => (value > 0 ? formatValue(value, metric) : '');
   const getBarFill = (value: number): string => {
@@ -46,7 +68,7 @@ export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.E
               <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.25} />
               <XAxis dataKey="dayLabel" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} label={{ value: metricLabel(metric), angle: -90, position: 'insideLeft' }} />
-              <Tooltip formatter={(value: number) => formatValue(value, metric)} />
+              <Tooltip content={<PlannedWeekTooltip metric={metric} />} cursor={{ fill: 'rgba(148, 163, 184, 0.12)' }} />
               <Bar dataKey="value" fill="#34d399" radius={[6, 6, 0, 0]}>
                 {data.map((row) => (
                   <Cell key={`planned-week-bar-${row.dayLabel}`} fill={getBarFill(row.value)} />
