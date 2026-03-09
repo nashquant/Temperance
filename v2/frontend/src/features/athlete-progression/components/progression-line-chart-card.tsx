@@ -11,6 +11,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import type { TooltipProps } from 'recharts';
+import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -36,6 +38,32 @@ interface Props {
   targetKey?: string;
   targetLabel?: string;
   rightAxisLabel?: string;
+}
+
+function ProgressionTooltip({
+  active,
+  label,
+  payload,
+}: TooltipProps<ValueType, NameType>): JSX.Element | null {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="min-w-[168px] rounded-md border border-border/80 bg-background/95 p-2 shadow-xl backdrop-blur">
+      <p className="mb-1 text-xs font-semibold text-foreground">{String(label || '')}</p>
+      <div className="space-y-0.5">
+        {payload.map((entry) => (
+          <p key={`${entry.name}-${entry.dataKey}`} className="text-xs">
+            <span className="font-medium" style={{ color: String(entry.color || '#cbd5e1') }}>
+              {entry.name}
+            </span>
+            <span className="text-muted-foreground">: </span>
+            <span className="font-semibold" style={{ color: String(entry.color || '#e2e8f0') }}>
+              {typeof entry.value === 'number' ? entry.value.toFixed(2) : String(entry.value ?? '-')}
+            </span>
+          </p>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function ProgressionLineChartCard({
@@ -85,7 +113,11 @@ export function ProgressionLineChartCard({
                 <Label value={yLabel} angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} />
               </YAxis>
               {rightAxisLabel ? <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} /> : null}
-              <Tooltip labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)} />
+              <Tooltip
+                content={<ProgressionTooltip />}
+                labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
+                cursor={{ stroke: '#94a3b8', strokeOpacity: 0.35 }}
+              />
               <Legend />
               {mappedOverlays.map((overlay, index) => (
                 <ReferenceArea
