@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import { ingestCustomActivities } from '@/features/custom-activities/services/custom-activities-api';
 import { ActivitySplitsDrawer } from '@/features/dashboard/components/activity-splits-drawer';
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
@@ -43,10 +44,22 @@ function plannedCardIsVisible(
   return now.getTime() < expiry.getTime();
 }
 
+function isTodayOrPast(dayUtc: string): boolean {
+  const selected = new Date(`${dayUtc}T00:00:00`);
+  if (Number.isNaN(selected.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  selected.setHours(0, 0, 0, 0);
+  return selected.getTime() <= today.getTime();
+}
+
 export function DashboardPage(): JSX.Element {
   const { session, profile } = useAuth();
   const [visibleWeeks, setVisibleWeeks] = useState(6);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
+  const [addActivityDayUtc, setAddActivityDayUtc] = useState<string | null>(null);
+  const [addActivityText, setAddActivityText] = useState('');
+  const [addActivityMode, setAddActivityMode] = useState<'planned' | 'custom'>('planned');
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
   const query = useDashboardQuery(visibleWeeks, 'all');
@@ -57,6 +70,10 @@ export function DashboardPage(): JSX.Element {
     if (tzFromProfile) return tzFromProfile;
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
   }, [profile]);
+  const canAddCustomForComposer = useMemo(
+    () => Boolean(addActivityDayUtc && isTodayOrPast(addActivityDayUtc)),
+    [addActivityDayUtc],
+  );
   const plannedDoneMutation = useMutation({
     mutationFn: async ({ dayUtc, lineNo }: { dayUtc: string; lineNo: number }) => {
       if (!session?.token) throw new Error('Missing auth token');
@@ -74,6 +91,9 @@ export function DashboardPage(): JSX.Element {
         queryClient.invalidateQueries({ queryKey: ['planned-activities'] }),
         queryClient.invalidateQueries({ queryKey: ['week-outlook'] }),
       ]);
+      setAddActivityDayUtc(null);
+      setAddActivityText('');
+      setAddActivityMode('planned');
     },
   });
   const plannedDeleteMutation = useMutation({
@@ -95,8 +115,24 @@ export function DashboardPage(): JSX.Element {
     },
   });
   const plannedCreateMutation = useMutation({
-    mutationFn: async ({ dayUtc, workoutText }: { dayUtc: string; workoutText: string }) => {
+    mutationFn: async ({
+      dayUtc,
+      workoutText,
+      mode,
+    }: {
+      dayUtc: string;
+      workoutText: string;
+      mode: 'planned' | 'custom';
+    }) => {
       if (!session?.token) throw new Error('Missing auth token');
+      if (mode === 'custom') {
+        await ingestCustomActivities({
+          token: session.token,
+          owner: profile?.owner,
+          entryText: `${dayUtc}: ${workoutText}`,
+        });
+        return;
+      }
       await ingestPlannedActivities({
         token: session.token,
         owner: profile?.owner,
@@ -107,8 +143,12 @@ export function DashboardPage(): JSX.Element {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
         queryClient.invalidateQueries({ queryKey: ['planned-activities'] }),
+        queryClient.invalidateQueries({ queryKey: ['custom-activities'] }),
         queryClient.invalidateQueries({ queryKey: ['week-outlook'] }),
       ]);
+      setAddActivityDayUtc(null);
+      setAddActivityText('');
+      setAddActivityMode('planned');
     },
   });
   const displayWeeks = useMemo(() => {
@@ -207,13 +247,9 @@ export function DashboardPage(): JSX.Element {
                   <DashboardWeekCard
                     week={week}
                     onAddPlannedActivity={(dayUtc) => {
-                      const response = window.prompt(
-                        `Create planned activity for ${dayUtc}`,
-                        '',
-                      );
-                      const workoutText = String(response || '').trim();
-                      if (!workoutText) return;
-                      plannedCreateMutation.mutate({ dayUtc, workoutText });
+                      setAddActivityDayUtc(dayUtc);
+                      setAddActivityText('');
+                      setAddActivityMode(isTodayOrPast(dayUtc) ? 'planned' : 'planned');
                     }}
                     onMarkPlannedDone={(dayUtc, lineNo) => plannedDoneMutation.mutate({ dayUtc, lineNo })}
                     onDeletePlannedActivity={(dayUtc, lineNo) => plannedDeleteMutation.mutate({ dayUtc, lineNo })}
@@ -245,6 +281,105 @@ export function DashboardPage(): JSX.Element {
         open={Boolean(selectedActivityId)}
         onClose={() => setSelectedActivityId(null)}
       />
+      {addActivityDayUtc ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
+            aria-label="Close activity composer"
+            onClick={() => {
+              if (plannedCreateMutation.isPending) return;
+              setAddActivityDayUtc(null);
+              setAddActivityText('');
+              setAddActivityMode('planned');
+            }}
+          />
+          <div className="relative z-10 w-full max-w-xl rounded-2xl border border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Activity</p>
+              <h3 className="text-lg font-semibold text-foreground">{addActivityDayUtc}</h3>
+              <p className="text-sm text-muted-foreground">
+                {addActivityMode === 'planned'
+                  ? 'Enter the planned workout string for this date.'
+                  : 'Enter the custom activity string for this date.'}{' '}
+                Example: `80min elliptical @140bpm` or `10min run @4:50 + 5x6min @3:40/km`
+              </p>
+              {!canAddCustomForComposer ? (
+                <p className="text-xs text-muted-foreground">Custom activities can only be added for today or past dates.</p>
+              ) : null}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="inline-flex rounded-xl border border-white/10 bg-black/20 p-1">
+                <button
+                  type="button"
+                  className={`rounded-lg px-3 py-1.5 text-sm transition ${
+                    addActivityMode === 'planned'
+                      ? 'bg-white/10 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => setAddActivityMode('planned')}
+                  disabled={plannedCreateMutation.isPending}
+                >
+                  Planned
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-lg px-3 py-1.5 text-sm transition ${
+                    addActivityMode === 'custom'
+                      ? 'bg-white/10 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => setAddActivityMode('custom')}
+                  disabled={plannedCreateMutation.isPending || !canAddCustomForComposer}
+                >
+                  Custom
+                </button>
+              </div>
+              <textarea
+                className="min-h-[120px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                value={addActivityText}
+                onChange={(event) => setAddActivityText(event.target.value)}
+                placeholder={addActivityMode === 'planned' ? 'Type the planned workout...' : 'Type the custom activity...'}
+                autoFocus
+              />
+              {plannedCreateMutation.isError ? (
+                <p className="text-sm text-red-400">
+                  {plannedCreateMutation.error instanceof Error ? plannedCreateMutation.error.message : 'Unable to save activity.'}
+                </p>
+              ) : null}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  This will be saved directly to the selected day as a {addActivityMode} activity.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setAddActivityDayUtc(null);
+                      setAddActivityText('');
+                      setAddActivityMode('planned');
+                    }}
+                    disabled={plannedCreateMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      const workoutText = addActivityText.trim();
+                      if (!workoutText || !addActivityDayUtc) return;
+                      plannedCreateMutation.mutate({ dayUtc: addActivityDayUtc, workoutText, mode: addActivityMode });
+                    }}
+                    disabled={plannedCreateMutation.isPending || !addActivityText.trim()}
+                  >
+                    {plannedCreateMutation.isPending ? 'Saving...' : `Save ${addActivityMode} activity`}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
