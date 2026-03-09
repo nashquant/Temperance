@@ -26,8 +26,8 @@ function fmt(value: number | null | undefined): string {
 }
 
 export function WellnessPage(): JSX.Element {
-  const [days, setDays] = useState(365);
-  const [aggregation, setAggregation] = useState<WellnessAggregation>('weekly');
+  const [days, setDays] = useState(30);
+  const [aggregation, setAggregation] = useState<WellnessAggregation>('daily');
   const query = useWellnessQuery(days, aggregation);
 
   const chartData = useMemo(() => {
@@ -45,6 +45,7 @@ export function WellnessPage(): JSX.Element {
           <Select value={String(days)} onValueChange={(value) => setDays(Number(value))}>
             <SelectTrigger className="w-[130px]"><SelectValue placeholder="Lookback" /></SelectTrigger>
             <SelectContent>
+              <SelectItem value="30">1 month</SelectItem>
               <SelectItem value="90">3 months</SelectItem>
               <SelectItem value="180">6 months</SelectItem>
               <SelectItem value="365">1 year</SelectItem>

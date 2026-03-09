@@ -290,14 +290,20 @@ def _normalize_activity(
 
 def _extract_sleep_row(day: date, sleep_data: dict[str, Any] | None) -> dict[str, Any]:
     blob = sleep_data or {}
+    daily_sleep = blob.get("dailySleepDTO") if isinstance(blob.get("dailySleepDTO"), dict) else {}
+    sleep_scores = daily_sleep.get("sleepScores") if isinstance(daily_sleep.get("sleepScores"), dict) else {}
+    overall_sleep = sleep_scores.get("overall") if isinstance(sleep_scores.get("overall"), dict) else {}
     return {
         "day_utc": day.isoformat(),
-        "sleep_score": _first_numeric(blob, ("overallSleepScore", "sleepScore", "overallScore", "score")),
+        "sleep_score": (
+            _to_float(overall_sleep.get("value"))
+            or _first_numeric(blob, ("overallSleepScore", "sleepScore", "overallScore", "score"))
+        ),
         "sleep_duration_s": _first_numeric(blob, ("sleepTimeSeconds", "totalSleepSeconds")),
         "deep_sleep_s": _first_numeric(blob, ("deepSleepSeconds", "deepSleepDuration")),
         "rem_sleep_s": _first_numeric(blob, ("remSleepSeconds", "remSleepDuration")),
         "light_sleep_s": _first_numeric(blob, ("lightSleepSeconds", "lightSleepDuration")),
-        "awake_s": _first_numeric(blob, ("awakeTimeSeconds", "awakeDuration")),
+        "awake_s": _first_numeric(blob, ("awakeSleepSeconds", "awakeTimeSeconds", "awakeDuration")),
         "sleep_start_utc": _to_str(_deep_first(blob, {"sleepStartTimestampGMT", "sleepStartTimestamp"})),
         "sleep_end_utc": _to_str(_deep_first(blob, {"sleepEndTimestampGMT", "sleepEndTimestamp"})),
         "raw": blob,
@@ -318,9 +324,17 @@ def _extract_wellness_row(
 ) -> dict[str, Any]:
     battery_values: list[float] = []
     for row in body_battery or []:
-        val = _to_float(row.get("bodyBattery"))
+        val = _to_float(row.get("bodyBattery") or row.get("bodyBatteryLevel"))
         if val is not None:
             battery_values.append(val)
+        series = row.get("bodyBatteryValuesArray")
+        if isinstance(series, list):
+            for sample in series:
+                if not isinstance(sample, (list, tuple)) or len(sample) < 2:
+                    continue
+                sample_val = _to_float(sample[1])
+                if sample_val is not None:
+                    battery_values.append(sample_val)
 
     stats = stats_body or {}
     stress_values: list[float] = []
@@ -349,8 +363,8 @@ def _extract_wellness_row(
         "training_readiness": _first_numeric(readiness, ("trainingReadinessScore", "score", "value")),
         "stress_avg": _first_numeric(stress, ("averageStressLevel", "avgStressLevel", "overallStressLevel")),
         "stress_max": stress_max,
-        "body_battery_start": min(battery_values) if battery_values else None,
-        "body_battery_end": max(battery_values) if battery_values else None,
+        "body_battery_start": battery_values[0] if battery_values else None,
+        "body_battery_end": battery_values[-1] if battery_values else None,
         "body_battery_avg": (sum(battery_values) / len(battery_values)) if battery_values else None,
         "respiration_avg": _first_numeric(
             respiration,
