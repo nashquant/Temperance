@@ -48,9 +48,22 @@ export function ProgressionLineChartCard({
   targetLabel,
   rightAxisLabel,
 }: Props): JSX.Element {
-  const labelMap = new Map(
-    data.map((row) => [String(row.period_start ?? row.label ?? ''), String(row.label ?? row.period_start ?? '')]),
-  );
+  const chartData = data.map((row) => ({
+    ...row,
+    _x: String(row.period_start ?? row.label ?? ''),
+  })) as Array<Record<string, number | string>>;
+  const labelMap = new Map(chartData.map((row) => [String(row._x ?? ''), String(row['label'] ?? row._x ?? '')]));
+  const pointKeys = new Set(chartData.map((row) => String(row._x ?? '')));
+  const mappedOverlays = (injuryOverlays ?? [])
+    .map((overlay) => ({
+      ...overlay,
+      x1: String(overlay.start),
+      x2: String(overlay.end),
+    }))
+    .filter(
+      (overlay): overlay is { start: string; end: string; severity: 'injury' | 'light_injury'; label?: string; x1: string; x2: string } =>
+        pointKeys.has(overlay.x1) && pointKeys.has(overlay.x2),
+    );
 
   return (
     <Card>
@@ -60,10 +73,11 @@ export function ProgressionLineChartCard({
       <CardContent className="p-4 pt-0">
         <div className="h-[280px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 14, right: 14, bottom: 6, left: 2 }}>
+            <LineChart data={chartData} margin={{ top: 14, right: 14, bottom: 6, left: 2 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.25} />
               <XAxis
-                dataKey="period_start"
+                dataKey="_x"
+                type="category"
                 tick={{ fontSize: 12 }}
                 tickFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
               />
@@ -73,14 +87,16 @@ export function ProgressionLineChartCard({
               {rightAxisLabel ? <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} /> : null}
               <Tooltip labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)} />
               <Legend />
-              {(injuryOverlays ?? []).map((overlay, index) => (
+              {mappedOverlays.map((overlay, index) => (
                 <ReferenceArea
                   key={`${overlay.start}-${overlay.end}-${index}`}
-                  x1={overlay.start}
-                  x2={overlay.end}
-                  strokeOpacity={0}
-                  fill={overlay.severity === 'injury' ? '#7f1d1d' : '#854d0e'}
-                  fillOpacity={0.22}
+                  x1={overlay.x1}
+                  x2={overlay.x2}
+                  ifOverflow="extendDomain"
+                  stroke={overlay.severity === 'injury' ? '#ef4444' : '#eab308'}
+                  strokeOpacity={0.55}
+                  fill={overlay.severity === 'injury' ? '#ef4444' : '#eab308'}
+                  fillOpacity={0.24}
                 />
               ))}
               {targetKey ? (

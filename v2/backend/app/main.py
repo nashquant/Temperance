@@ -13,6 +13,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -78,6 +79,15 @@ SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
+APP_TIMEZONE_NAME = str(os.getenv("TEMPERANCE_TIMEZONE") or os.getenv("TZ") or "America/Sao_Paulo").strip() or "America/Sao_Paulo"
+
+
+def _now_app_local() -> pd.Timestamp:
+    try:
+        return pd.Timestamp(datetime.now(ZoneInfo(APP_TIMEZONE_NAME))).tz_localize(None)
+    except Exception:
+        now_local = pd.Timestamp(datetime.now().astimezone())
+        return now_local.tz_localize(None) if now_local.tzinfo is not None else now_local
 SETTINGS_KEY_IF_ZONE_THRESHOLDS = "if_zone_thresholds_v1"
 TOKEN_TTL_S = int(os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60))
 MAX_PLANNED_ENTRY_CHARS = 4000
@@ -1394,10 +1404,8 @@ def _planned_row_time_hint(row: pd.Series) -> str | None:
             return hint
 
     workout_text = str(row.get("workout_text") or "")
-    match = re.search(r"\b(AM|PM)\b", workout_text, flags=re.IGNORECASE)
-    if match:
-        return str(match.group(1)).upper()
-    return None
+    _, hint = _strip_meridiem_tokens(workout_text)
+    return hint if hint in {"AM", "PM"} else None
 
 
 def _planned_row_expiry_local(day_local: pd.Timestamp, time_hint: str | None) -> pd.Timestamp:
@@ -1421,7 +1429,7 @@ def _filter_effective_planned_rows(
     out = planned_df.copy()
     day_col = pd.to_datetime(out.get("day_utc"), errors="coerce").dt.normalize()
     manual_done_col = pd.to_numeric(out.get("manual_done"), errors="coerce").fillna(0.0) > 0
-    now_local = pd.Timestamp(now_local_ts) if now_local_ts is not None else pd.Timestamp(datetime.now().astimezone())
+    now_local = pd.Timestamp(now_local_ts) if now_local_ts is not None else _now_app_local()
     if now_local.tzinfo is not None:
         now_local = now_local.tz_localize(None)
 
@@ -1786,6 +1794,16 @@ def _build_athlete_progression_payload(
     aggregation: str,
     owner: str,
 ) -> dict[str, Any]:
+    injury_rows: list[dict[str, str]] = []
+    raw_injury = get_setting(db_path, SETTINGS_KEY_INJURY_WINDOWS)
+    if raw_injury:
+        try:
+            parsed_injury = json.loads(raw_injury)
+            if isinstance(parsed_injury, list):
+                injury_rows = _normalize_injury_windows(parsed_injury)
+        except Exception:
+            injury_rows = []
+
     metrics_df = _metrics_for_filters(
         db_path=db_path,
         days=max(30, int(days)),
@@ -1808,6 +1826,7 @@ def _build_athlete_progression_payload(
                 "rtss": 0.0,
             },
             "points": [],
+            "injury_windows": injury_rows,
         }
 
     filtered = _filter_metrics_by_activity(metrics_df, activity_filter)
@@ -1826,6 +1845,7 @@ def _build_athlete_progression_payload(
                 "rtss": 0.0,
             },
             "points": [],
+            "injury_windows": injury_rows,
         }
 
     filtered = filtered.copy()
@@ -1895,6 +1915,7 @@ def _build_athlete_progression_payload(
                 "rtss": 0.0,
             },
             "points": [],
+            "injury_windows": injury_rows,
         }
 
     day_index = pd.date_range(start=min_day, end=max_day, freq="D")
@@ -2017,6 +2038,7 @@ def _build_athlete_progression_payload(
         },
         "summary": summary,
         "points": points,
+        "injury_windows": injury_rows,
     }
 
 
@@ -2143,13 +2165,15 @@ def _build_activity_dashboard_payload(
             planned_metrics["day"] = pd.to_datetime(planned_metrics.get("day_utc"), errors="coerce").dt.normalize()
             planned_metrics = planned_metrics.dropna(subset=["day"]).copy()
             planned_metrics["manual_done"] = pd.to_numeric(planned_metrics.get("manual_done"), errors="coerce").fillna(0.0) > 0
-            for day, grp in planned_metrics.groupby("day"):
+            effective_planned_metrics = _filter_effective_planned_rows(
+                planned_metrics,
+                today_local_day=today_local,
+            )
+            for day, grp in effective_planned_metrics.groupby("day"):
                 day_key = pd.Timestamp(day).normalize()
                 cards: list[dict[str, Any]] = []
                 remaining_tss = 0.0
                 for _, row in grp.iterrows():
-                    if bool(row.get("manual_done")):
-                        continue
                     remaining_tss += _safe_float(row.get("tss"))
                     cards.append(
                         {
@@ -2200,6 +2224,9 @@ def _build_activity_dashboard_payload(
     display_anchor_day = pd.Timestamp(min(today_local, latest_actual_day)).normalize()
     current_week_start = _week_start_monday(display_anchor_day)
     fatigue_expected_lookup: dict[pd.Timestamp, float] = {}
+    last_planned_day: pd.Timestamp | None = (
+        max(planned_tss_lookup.keys()) if planned_tss_lookup else None
+    )
     if not day_agg.empty:
         min_model_day = pd.to_datetime(day_agg.get("day"), errors="coerce").min()
         projection_end_day = render_max_day
@@ -2211,9 +2238,16 @@ def _build_activity_dashboard_payload(
             }
             projected_tss = pd.Series(
                 [
-                    actual_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0)
-                    if pd.Timestamp(day).normalize() <= latest_actual_day
-                    else _safe_float(planned_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0))
+                    (
+                        _safe_float(actual_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0))
+                        + _safe_float(planned_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0))
+                    )
+                    if pd.Timestamp(day).normalize() == today_local
+                    else (
+                        actual_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0)
+                        if pd.Timestamp(day).normalize() < today_local
+                        else _safe_float(planned_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0))
+                    )
                     for day in projection_days
                 ],
                 index=projection_days,
@@ -2298,6 +2332,7 @@ def _build_activity_dashboard_payload(
         for offset in range(7):
             day = ws + pd.Timedelta(days=offset)
             day_df = week_df[week_df["day"] == day].sort_values("start_local", ascending=False)
+            day_is_today = bool(day == today_local)
             day_stats = day_stats_lookup.get(day, {})
             fitfat = fitfat_lookup.get(day, {})
             wellness = wellness_lookup.get(day, {})
@@ -2348,7 +2383,7 @@ def _build_activity_dashboard_payload(
                 {
                     "day_utc": day.date().isoformat(),
                     "day_label": day.strftime("%d %b (%a)"),
-                    "is_today": bool(day == today_local),
+                    "is_today": day_is_today,
                     "is_past": bool(day < today_local),
                     "meta": {
                         "distance_eqv_km": round(_safe_float(day_stats.get("distance_eqv_km")), 1),
@@ -2360,10 +2395,23 @@ def _build_activity_dashboard_payload(
                             if day in fatigue_expected_lookup
                             else None
                         ),
-                        "resting_hr": round(_safe_float(wellness.get("resting_hr")), 1) if wellness else None,
-                        "stress_avg": round(_safe_float(wellness.get("stress_avg")), 1) if wellness else None,
+                        "resting_hr": (
+                            None
+                            if day_is_today
+                            else (round(_safe_float(wellness.get("resting_hr")), 1) if wellness else None)
+                        ),
+                        "stress_avg": (
+                            None
+                            if day_is_today
+                            else (round(_safe_float(wellness.get("stress_avg")), 1) if wellness else None)
+                        ),
                         "planned_duration_s": round(_safe_float(planned_summary.get("duration_s")), 1) if show_planned_meta else 0.0,
                         "planned_if_pct": round(_safe_float(planned_summary.get("if_proxy")) * 100.0, 1) if show_planned_meta else 0.0,
+                        "show_fatigue_expected": bool(
+                            last_planned_day is not None
+                            and day >= today_local
+                            and day <= pd.Timestamp(last_planned_day).normalize()
+                        ),
                     },
                     "actual_activities": actual_cards,
                     "planned_activities": [

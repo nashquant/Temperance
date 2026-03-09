@@ -56,6 +56,7 @@ export interface DashboardDayMeta {
   stress_avg: number | null;
   planned_duration_s: number;
   planned_if_pct: number;
+  show_fatigue_expected?: boolean;
 }
 
 export interface DashboardDayColumn {

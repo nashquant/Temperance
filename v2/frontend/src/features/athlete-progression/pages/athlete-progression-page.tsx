@@ -14,7 +14,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProgressionLineChartCard } from '@/features/athlete-progression/components/progression-line-chart-card';
 import { useAthleteProgressionQuery } from '@/features/athlete-progression/hooks/use-athlete-progression-query';
-import { useSettingsQuery } from '@/features/settings/hooks/use-settings-query';
 import type {
   ProgressionActivityFilter,
   ProgressionAggregation,
@@ -43,7 +42,6 @@ export function AthleteProgressionPage(): JSX.Element {
   const [activityFilter, setActivityFilter] = useState<ProgressionActivityFilter>('all');
 
   const query = useAthleteProgressionQuery(days, aggregation, activityFilter);
-  const settingsQuery = useSettingsQuery();
 
   const chartData = useMemo(() => {
     return (query.data?.points ?? []).map((row) => ({
@@ -64,7 +62,7 @@ export function AthleteProgressionPage(): JSX.Element {
   }, [aggregation, chartData]);
 
   const injuryOverlays = useMemo(() => {
-    const windows = settingsQuery.data?.injury_windows ?? [];
+    const windows = query.data?.injury_windows ?? [];
     if (windows.length === 0 || normalizedChartData.length === 0) return [];
     const points = normalizedChartData
       .map((row) => String(row.period_start ?? ''))
@@ -98,7 +96,7 @@ export function AthleteProgressionPage(): JSX.Element {
       });
     });
     return overlays;
-  }, [normalizedChartData, settingsQuery.data?.injury_windows]);
+  }, [normalizedChartData, query.data?.injury_windows]);
 
   return (
     <section className="space-y-6">

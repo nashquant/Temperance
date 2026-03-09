@@ -27,5 +27,9 @@ export function useDashboardQuery(weeks: number, sportFilter: DashboardSportFilt
       });
     },
     enabled: Boolean(session?.token),
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
+    refetchOnMount: 'always',
+    refetchOnReconnect: 'always',
   });
 }

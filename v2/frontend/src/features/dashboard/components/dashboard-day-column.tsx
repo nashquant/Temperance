@@ -32,14 +32,6 @@ function fmtMeta(day: DashboardDayColumnType): string[] {
   const line1: string[] = [];
   const line2: string[] = [];
   const line3: string[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  const dayDate = new Date(`${day.day_utc}T00:00:00`);
-  dayDate.setHours(0, 0, 0, 0);
-  const isTodayOrTomorrow = dayDate.getTime() === today.getTime() || dayDate.getTime() === tomorrow.getTime();
-  const hasUndonePlanned = day.planned_activities.length > 0;
 
   line1.push(`${Math.round(day.meta.distance_eqv_km || 0)} km`);
   if ((day.meta.calories || 0) > 0) line1.push(`${Math.round(day.meta.calories)} kcal`);
@@ -60,7 +52,7 @@ function fmtMeta(day: DashboardDayColumnType): string[] {
   if (line2.length < 2 && (day.meta.planned_if_pct || 0) > 0) {
     line2.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
   }
-  if (line3.length === 0 && isTodayOrTomorrow && hasUndonePlanned && day.meta.fatigue_expected !== null) {
+  if (line3.length === 0 && day.meta.show_fatigue_expected && day.meta.fatigue_expected !== null) {
     line3.push(`Fatigue exp ${Math.round(day.meta.fatigue_expected)}`);
   }
 
