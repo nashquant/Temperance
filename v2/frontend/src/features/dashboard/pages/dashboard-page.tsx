@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
+import { RotateCcw } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -66,9 +67,15 @@ export function DashboardPage(): JSX.Element {
   const [addActivityDayUtc, setAddActivityDayUtc] = useState<string | null>(null);
   const [addActivityText, setAddActivityText] = useState('');
   const [addActivityMode, setAddActivityMode] = useState<'planned' | 'custom'>('planned');
+  const [undoState, setUndoState] = useState<{
+    id: number;
+    label: string;
+    action: (() => Promise<void>) | null;
+  } | null>(null);
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const undoTimerRef = useRef<number | null>(null);
   const selectedYearWindowIndex = useMemo(() => {
     const parsed = Number(selectedYearWindow);
     if (!Number.isFinite(parsed) || parsed < 0) return 0;
@@ -97,6 +104,22 @@ export function DashboardPage(): JSX.Element {
       queryClient.invalidateQueries({ queryKey: ['data-extract-status'] }),
     ]);
   };
+  const showUndo = (label: string, action: () => Promise<void>) => {
+    if (undoTimerRef.current) {
+      window.clearTimeout(undoTimerRef.current);
+    }
+    const id = Date.now();
+    setUndoState({ id, label, action });
+    undoTimerRef.current = window.setTimeout(() => {
+      setUndoState((current) => (current?.id === id ? null : current));
+      undoTimerRef.current = null;
+    }, 6000);
+  };
+  useEffect(() => () => {
+    if (undoTimerRef.current) {
+      window.clearTimeout(undoTimerRef.current);
+    }
+  }, []);
   const plannedDoneMutation = useMutation({
     mutationFn: async ({ dayUtc, lineNo }: { dayUtc: string; lineNo: number }) => {
       if (!session?.token) throw new Error('Missing auth token');
@@ -343,9 +366,64 @@ export function DashboardPage(): JSX.Element {
                       setAddActivityText('');
                       setAddActivityMode(isTodayOrPast(dayUtc) ? 'planned' : 'planned');
                     }}
-                    onMarkPlannedDone={(dayUtc, lineNo) => plannedDoneMutation.mutate({ dayUtc, lineNo })}
-                    onDeletePlannedActivity={(dayUtc, lineNo) => plannedDeleteMutation.mutate({ dayUtc, lineNo })}
-                    onDeleteCustomActivity={(dayUtc, lineNo) => customDeleteMutation.mutate({ dayUtc, lineNo })}
+                    onMarkPlannedDone={(activity) =>
+                      plannedDoneMutation.mutate(
+                        { dayUtc: activity.day_utc, lineNo: activity.line_no },
+                        {
+                          onSuccess: () => {
+                            showUndo(`Marked ${activity.activity} done`, async () => {
+                              if (!session?.token) throw new Error('Missing auth token');
+                              await setPlannedManualDone({
+                                token: session.token,
+                                owner: profile?.owner,
+                                dayUtc: activity.day_utc,
+                                lineNo: activity.line_no,
+                                manualDone: false,
+                              });
+                              await refreshDashboardViews();
+                            });
+                          },
+                        },
+                      )
+                    }
+                    onDeletePlannedActivity={(activity) =>
+                      plannedDeleteMutation.mutate(
+                        { dayUtc: activity.day_utc, lineNo: activity.line_no },
+                        {
+                          onSuccess: () => {
+                            showUndo(`Deleted ${activity.activity}`, async () => {
+                              if (!session?.token) throw new Error('Missing auth token');
+                              await ingestPlannedActivities({
+                                token: session.token,
+                                owner: profile?.owner,
+                                entryText: `${activity.day_utc}: ${activity.workout_text}`,
+                              });
+                              await refreshDashboardViews();
+                            });
+                          },
+                        },
+                      )
+                    }
+                    onDeleteCustomActivity={(activity) =>
+                      activity.day_utc && activity.line_no && activity.activity_text
+                        ? customDeleteMutation.mutate(
+                            { dayUtc: activity.day_utc, lineNo: activity.line_no },
+                            {
+                              onSuccess: () => {
+                                showUndo(`Deleted ${activity.sport}`, async () => {
+                                  if (!session?.token) throw new Error('Missing auth token');
+                                  await ingestCustomActivities({
+                                    token: session.token,
+                                    owner: profile?.owner,
+                                    entryText: `${activity.day_utc}: ${activity.activity_text}`,
+                                  });
+                                  await refreshDashboardViews();
+                                });
+                              },
+                            },
+                          )
+                        : undefined
+                    }
                     onSelectActivity={(activityId) => setSelectedActivityId(activityId)}
                     addingPlannedActivity={plannedCreateMutation.isPending}
                     markingPlannedDone={plannedDoneMutation.isPending}
@@ -461,6 +539,32 @@ export function DashboardPage(): JSX.Element {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {undoState ? (
+        <div className="fixed bottom-5 right-5 z-50 w-full max-w-sm rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.14),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-3 shadow-[0_24px_60px_rgba(2,6,23,0.42)] backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Dashboard Action</p>
+              <p className="truncate text-sm text-slate-100">{undoState.label}</p>
+            </div>
+            <Button
+              variant="outline"
+              className="shrink-0 rounded-xl border-sky-300/18 bg-sky-400/10 text-sky-100 hover:bg-sky-400/16"
+              onClick={async () => {
+                const pending = undoState;
+                if (undoTimerRef.current) {
+                  window.clearTimeout(undoTimerRef.current);
+                  undoTimerRef.current = null;
+                }
+                setUndoState(null);
+                await pending.action?.();
+              }}
+            >
+              <RotateCcw className="mr-2 h-3.5 w-3.5" />
+              Undo
+            </Button>
           </div>
         </div>
       ) : null}

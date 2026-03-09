@@ -2921,6 +2921,7 @@ def _build_activity_dashboard_payload(
                             else ""
                         ),
                         "duration_label": _format_duration_short(_safe_float(act.get("duration_s"))),
+                        "activity_text": str(act.get("activity_text") or "") if bool(str(act.get("source") or "").strip().lower() == "custom") else None,
                         "distance_label": (
                             f"{dist_km:.0f} km"
                             if is_running and dist_km > 0

@@ -9,9 +9,9 @@ import type { DashboardDayColumn as DashboardDayColumnType } from '@/features/da
 interface DashboardDayColumnProps {
   day: DashboardDayColumnType;
   onAddPlannedActivity?: (dayUtc: string) => void;
-  onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
-  onDeletePlannedActivity?: (dayUtc: string, lineNo: number) => void;
-  onDeleteCustomActivity?: (dayUtc: string, lineNo: number) => void;
+  onMarkPlannedDone?: (activity: DashboardDayColumnType['planned_activities'][number]) => void;
+  onDeletePlannedActivity?: (activity: DashboardDayColumnType['planned_activities'][number]) => void;
+  onDeleteCustomActivity?: (activity: DashboardDayColumnType['actual_activities'][number]) => void;
   onSelectActivity?: (activityId: string) => void;
   addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
@@ -248,9 +248,7 @@ export function DashboardDayColumn({
                       className="absolute -right-1 -top-1 h-5 w-5 shrink-0 rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.18),transparent_55%),linear-gradient(180deg,rgba(51,65,85,0.4),rgba(15,23,42,0.24))] text-slate-200 shadow-[0_5px_12px_rgba(15,23,42,0.18)] backdrop-blur-md transition-all hover:scale-[1.03] hover:border-rose-300/40 hover:bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.2),transparent_55%),linear-gradient(180deg,rgba(244,63,94,0.18),rgba(127,29,29,0.16))] hover:text-rose-100"
                       onClick={(event) => {
                         event.stopPropagation();
-                        if (activity.day_utc && activity.line_no) {
-                          onDeleteCustomActivity?.(activity.day_utc, activity.line_no);
-                        }
+                        onDeleteCustomActivity?.(activity);
                       }}
                       disabled={deletingCustomActivity}
                       aria-label="Delete custom activity"
@@ -300,7 +298,7 @@ export function DashboardDayColumn({
                 className="absolute -left-1 -top-1 h-5 w-5 shrink-0 rounded-full border border-emerald-300/35 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.24),transparent_55%),linear-gradient(180deg,rgba(16,185,129,0.24),rgba(5,150,105,0.12))] text-emerald-50 shadow-[0_5px_12px_rgba(5,150,105,0.18)] backdrop-blur-md transition-all hover:scale-[1.03] hover:border-emerald-200/50 hover:text-white"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onMarkPlannedDone?.(activity.day_utc, activity.line_no);
+                  onMarkPlannedDone?.(activity);
                 }}
                 disabled={markingPlannedDone}
                 aria-label="Mark planned activity as done"
@@ -313,9 +311,7 @@ export function DashboardDayColumn({
                 className="absolute -right-1 -top-1 h-5 w-5 shrink-0 rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.18),transparent_55%),linear-gradient(180deg,rgba(51,65,85,0.4),rgba(15,23,42,0.24))] text-slate-200 shadow-[0_5px_12px_rgba(15,23,42,0.18)] backdrop-blur-md transition-all hover:scale-[1.03] hover:border-rose-300/40 hover:bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.2),transparent_55%),linear-gradient(180deg,rgba(244,63,94,0.18),rgba(127,29,29,0.16))] hover:text-rose-100"
                 onClick={(event) => {
                   event.stopPropagation();
-                  if (window.confirm('Delete this planned activity?')) {
-                    onDeletePlannedActivity?.(activity.day_utc, activity.line_no);
-                  }
+                  onDeletePlannedActivity?.(activity);
                 }}
                 disabled={deletingPlannedActivity}
                 aria-label="Delete planned activity"

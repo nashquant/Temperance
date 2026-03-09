@@ -6,9 +6,9 @@ import type { DashboardWeekRow } from '@/features/dashboard/types/dashboard';
 interface DashboardWeekCardProps {
   week: DashboardWeekRow;
   onAddPlannedActivity?: (dayUtc: string) => void;
-  onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
-  onDeletePlannedActivity?: (dayUtc: string, lineNo: number) => void;
-  onDeleteCustomActivity?: (dayUtc: string, lineNo: number) => void;
+  onMarkPlannedDone?: (activity: DashboardWeekRow['days'][number]['planned_activities'][number]) => void;
+  onDeletePlannedActivity?: (activity: DashboardWeekRow['days'][number]['planned_activities'][number]) => void;
+  onDeleteCustomActivity?: (activity: DashboardWeekRow['days'][number]['actual_activities'][number]) => void;
   onSelectActivity?: (activityId: string) => void;
   addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
