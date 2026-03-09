@@ -162,15 +162,13 @@ export function DashboardPage(): JSX.Element {
     },
   });
   const customDeleteMutation = useMutation({
-    mutationFn: async ({ activityId }: { activityId: string }) => {
+    mutationFn: async ({ dayUtc, lineNo }: { dayUtc: string; lineNo: number }) => {
       if (!session?.token) throw new Error('Missing auth token');
-      const match = String(activityId).match(/^custom-(\d{4}-\d{2}-\d{2})-(\d+)$/);
-      if (!match) throw new Error('Invalid custom activity id');
       await deleteCustomActivity({
         token: session.token,
         owner: profile?.owner,
-        dayUtc: match[1],
-        lineNo: Number(match[2]),
+        dayUtc,
+        lineNo,
       });
     },
     onSuccess: async () => {
@@ -347,7 +345,7 @@ export function DashboardPage(): JSX.Element {
                     }}
                     onMarkPlannedDone={(dayUtc, lineNo) => plannedDoneMutation.mutate({ dayUtc, lineNo })}
                     onDeletePlannedActivity={(dayUtc, lineNo) => plannedDeleteMutation.mutate({ dayUtc, lineNo })}
-                    onDeleteCustomActivity={(activityId) => customDeleteMutation.mutate({ activityId })}
+                    onDeleteCustomActivity={(dayUtc, lineNo) => customDeleteMutation.mutate({ dayUtc, lineNo })}
                     onSelectActivity={(activityId) => setSelectedActivityId(activityId)}
                     addingPlannedActivity={plannedCreateMutation.isPending}
                     markingPlannedDone={plannedDoneMutation.isPending}

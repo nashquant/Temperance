@@ -8,7 +8,7 @@ interface DashboardWeekCardProps {
   onAddPlannedActivity?: (dayUtc: string) => void;
   onMarkPlannedDone?: (dayUtc: string, lineNo: number) => void;
   onDeletePlannedActivity?: (dayUtc: string, lineNo: number) => void;
-  onDeleteCustomActivity?: (activityId: string) => void;
+  onDeleteCustomActivity?: (dayUtc: string, lineNo: number) => void;
   onSelectActivity?: (activityId: string) => void;
   addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;

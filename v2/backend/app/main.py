@@ -2908,6 +2908,12 @@ def _build_activity_dashboard_payload(
                         "activity_id": _normalize_activity_id(act.get("activity_id")),
                         "sport": sport_raw or "Activity",
                         "is_custom": bool(str(act.get("source") or "").strip().lower() == "custom"),
+                        "day_utc": day.date().isoformat() if bool(str(act.get("source") or "").strip().lower() == "custom") else None,
+                        "line_no": (
+                            _parse_custom_activity_id(_normalize_activity_id(act.get("activity_id")))[1]
+                            if _parse_custom_activity_id(_normalize_activity_id(act.get("activity_id"))) is not None
+                            else None
+                        ),
                         "start_time_utc": str(act.get("start_time_utc") or ""),
                         "start_time_hhmm": (
                             pd.Timestamp(start_local_ts).strftime("%H:%M")

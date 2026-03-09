@@ -1225,7 +1225,7 @@ def delete_custom_activities(
     if not keys:
         return 0
     with closing(get_conn(db_path)) as conn:
-        conn.executemany(
+        cursor = conn.executemany(
             """
             DELETE FROM custom_activities
             WHERE day_utc = ? AND line_no = ?
@@ -1233,7 +1233,7 @@ def delete_custom_activities(
             [(str(day), int(line_no)) for day, line_no in keys],
         )
         conn.commit()
-    return len(keys)
+        return int(cursor.rowcount or 0)
 
 
 def upsert_custom_activities_rows(
