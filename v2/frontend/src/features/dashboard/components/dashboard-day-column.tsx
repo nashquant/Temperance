@@ -245,7 +245,7 @@ export function DashboardDayColumn({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute -right-1 -top-1 h-5 w-5 shrink-0 rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.18),transparent_55%),linear-gradient(180deg,rgba(51,65,85,0.4),rgba(15,23,42,0.24))] text-slate-200 shadow-[0_5px_12px_rgba(15,23,42,0.18)] backdrop-blur-md transition-all hover:scale-[1.03] hover:border-rose-300/40 hover:bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.2),transparent_55%),linear-gradient(180deg,rgba(244,63,94,0.18),rgba(127,29,29,0.16))] hover:text-rose-100"
+                      className="absolute -right-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
                       onClick={(event) => {
                         event.stopPropagation();
                         onDeleteCustomActivity?.(activity);
@@ -253,7 +253,7 @@ export function DashboardDayColumn({
                       disabled={deletingCustomActivity}
                       aria-label="Delete custom activity"
                     >
-                      <X className="h-2.5 w-2.5" />
+                      <X className="h-1.75 w-1.75" />
                     </Button>
                   ) : null}
                   <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
@@ -295,7 +295,7 @@ export function DashboardDayColumn({
               <Button
                 variant="ghost"
                 size="icon"
-                className="absolute -left-1 -top-1 h-5 w-5 shrink-0 rounded-full border border-emerald-300/35 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.24),transparent_55%),linear-gradient(180deg,rgba(16,185,129,0.24),rgba(5,150,105,0.12))] text-emerald-50 shadow-[0_5px_12px_rgba(5,150,105,0.18)] backdrop-blur-md transition-all hover:scale-[1.03] hover:border-emerald-200/50 hover:text-white"
+                className="absolute -left-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
                 onClick={(event) => {
                   event.stopPropagation();
                   onMarkPlannedDone?.(activity);
@@ -303,12 +303,12 @@ export function DashboardDayColumn({
                 disabled={markingPlannedDone}
                 aria-label="Mark planned activity as done"
               >
-                <Check className="h-2.5 w-2.5" />
+                <Check className="h-1.75 w-1.75" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                className="absolute -right-1 -top-1 h-5 w-5 shrink-0 rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.18),transparent_55%),linear-gradient(180deg,rgba(51,65,85,0.4),rgba(15,23,42,0.24))] text-slate-200 shadow-[0_5px_12px_rgba(15,23,42,0.18)] backdrop-blur-md transition-all hover:scale-[1.03] hover:border-rose-300/40 hover:bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.2),transparent_55%),linear-gradient(180deg,rgba(244,63,94,0.18),rgba(127,29,29,0.16))] hover:text-rose-100"
+                className="absolute -right-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
                 onClick={(event) => {
                   event.stopPropagation();
                   onDeletePlannedActivity?.(activity);
@@ -316,7 +316,7 @@ export function DashboardDayColumn({
                 disabled={deletingPlannedActivity}
                 aria-label="Delete planned activity"
               >
-                <X className="h-2.5 w-2.5" />
+                <X className="h-1.75 w-1.75" />
               </Button>
               <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
                 {formatActivityTitle(activity.activity)} <span className="text-muted-foreground">(P)</span>

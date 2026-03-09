@@ -12,6 +12,7 @@ import { ActivitySplitsDrawer } from '@/features/dashboard/components/activity-s
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
 import { getDashboard } from '@/features/dashboard/services/dashboard-api';
+import type { DashboardResponse } from '@/features/dashboard/types/dashboard';
 import {
   deletePlannedActivity,
   ingestPlannedActivities,
@@ -105,6 +106,53 @@ export function DashboardPage(): JSX.Element {
       queryClient.invalidateQueries({ queryKey: ['week-outlook'] }),
       queryClient.invalidateQueries({ queryKey: ['data-extract-status'] }),
     ]);
+  };
+  const patchDashboardCaches = (
+    updater: (payload: DashboardResponse) => DashboardResponse,
+  ) => {
+    queryClient.setQueriesData<DashboardResponse>(
+      { queryKey: ['dashboard', profile?.owner] },
+      (current) => (current ? updater(current) : current),
+    );
+  };
+  const removeCustomActivityLocally = (dayUtc: string, lineNo: number) => {
+    patchDashboardCaches((payload) => ({
+      ...payload,
+      weeks: payload.weeks.map((week) => ({
+        ...week,
+        days: week.days.map((day) =>
+          day.day_utc === dayUtc
+            ? {
+                ...day,
+                actual_activities: day.actual_activities.filter(
+                  (activity) => !(activity.is_custom && activity.day_utc === dayUtc && activity.line_no === lineNo),
+                ),
+              }
+            : day,
+        ),
+      })),
+    }));
+  };
+  const removePlannedActivityLocally = (dayUtc: string, lineNo: number) => {
+    patchDashboardCaches((payload) => ({
+      ...payload,
+      weeks: payload.weeks.map((week) => ({
+        ...week,
+        days: week.days.map((day) =>
+          day.day_utc === dayUtc
+            ? {
+                ...day,
+                planned_activities: day.planned_activities.filter(
+                  (activity) => !(activity.day_utc === dayUtc && activity.line_no === lineNo),
+                ),
+              }
+            : day,
+        ),
+      })),
+    }));
+  };
+  const markPlannedDoneLocally = (dayUtc: string, lineNo: number) => {
+    removePlannedActivityLocally(dayUtc, lineNo);
   };
   const showUndo = (label: string, action: () => Promise<void>) => {
     if (undoTimerRef.current) {
@@ -380,63 +428,57 @@ export function DashboardPage(): JSX.Element {
                       setAddActivityMode(isTodayOrPast(dayUtc) ? 'planned' : 'planned');
                     }}
                     onMarkPlannedDone={(activity) =>
-                      plannedDoneMutation.mutate(
-                        { dayUtc: activity.day_utc, lineNo: activity.line_no },
-                        {
-                          onSuccess: () => {
-                            showUndo(`Marked ${activity.activity} done`, async () => {
-                              if (!session?.token) throw new Error('Missing auth token');
-                              await setPlannedManualDone({
-                                token: session.token,
-                                owner: profile?.owner,
-                                dayUtc: activity.day_utc,
-                                lineNo: activity.line_no,
-                                manualDone: false,
-                              });
-                              await refreshDashboardViews();
-                            });
-                          },
-                        },
-                      )
+                      (() => {
+                        markPlannedDoneLocally(activity.day_utc, activity.line_no);
+                        showUndo(`Marked ${activity.activity} done`, async () => {
+                          if (!session?.token) throw new Error('Missing auth token');
+                          await setPlannedManualDone({
+                            token: session.token,
+                            owner: profile?.owner,
+                            dayUtc: activity.day_utc,
+                            lineNo: activity.line_no,
+                            manualDone: false,
+                          });
+                          await refreshDashboardViews();
+                        });
+                        plannedDoneMutation.mutate({ dayUtc: activity.day_utc, lineNo: activity.line_no }, { onError: () => void refreshDashboardViews() });
+                      })()
                     }
                     onDeletePlannedActivity={(activity) =>
-                      plannedDeleteMutation.mutate(
-                        { dayUtc: activity.day_utc, lineNo: activity.line_no },
-                        {
-                          onSuccess: () => {
-                            showUndo(`Deleted ${activity.activity}`, async () => {
-                              if (!session?.token) throw new Error('Missing auth token');
-                              await ingestPlannedActivities({
-                                token: session.token,
-                                owner: profile?.owner,
-                                entryText: `${activity.day_utc}: ${activity.workout_text}`,
-                              });
-                              await refreshDashboardViews();
-                            });
-                          },
-                        },
-                      )
+                      (() => {
+                        removePlannedActivityLocally(activity.day_utc, activity.line_no);
+                        showUndo(`Deleted ${activity.activity}`, async () => {
+                          if (!session?.token) throw new Error('Missing auth token');
+                          await ingestPlannedActivities({
+                            token: session.token,
+                            owner: profile?.owner,
+                            entryText: `${activity.day_utc}: ${activity.workout_text}`,
+                          });
+                          await refreshDashboardViews();
+                        });
+                        plannedDeleteMutation.mutate({ dayUtc: activity.day_utc, lineNo: activity.line_no }, { onError: () => void refreshDashboardViews() });
+                      })()
                     }
                     onDeleteCustomActivity={(activity) =>
                       activity.day_utc && activity.line_no
-                        ? customDeleteMutation.mutate(
-                            { dayUtc: activity.day_utc, lineNo: activity.line_no },
-                            {
-                              onSuccess: () => {
-                                if (activity.activity_text) {
-                                  showUndo(`Deleted ${activity.sport}`, async () => {
-                                    if (!session?.token) throw new Error('Missing auth token');
-                                    await ingestCustomActivities({
-                                      token: session.token,
-                                      owner: profile?.owner,
-                                      entryText: `${activity.day_utc}: ${activity.activity_text}`,
-                                    });
-                                    await refreshDashboardViews();
-                                  });
-                                }
-                              },
-                            },
-                          )
+                        ? (() => {
+                            removeCustomActivityLocally(activity.day_utc, activity.line_no);
+                            if (activity.activity_text) {
+                              showUndo(`Deleted ${activity.sport}`, async () => {
+                                if (!session?.token) throw new Error('Missing auth token');
+                                await ingestCustomActivities({
+                                  token: session.token,
+                                  owner: profile?.owner,
+                                  entryText: `${activity.day_utc}: ${activity.activity_text}`,
+                                });
+                                await refreshDashboardViews();
+                              });
+                            }
+                            customDeleteMutation.mutate(
+                              { dayUtc: activity.day_utc, lineNo: activity.line_no },
+                              { onError: () => void refreshDashboardViews() },
+                            );
+                          })()
                         : undefined
                     }
                     onSelectActivity={(activityId) => setSelectedActivityId(activityId)}

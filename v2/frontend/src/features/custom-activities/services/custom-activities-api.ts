@@ -52,12 +52,13 @@ export async function updateCustomActivityWorkout(
 }
 
 export async function deleteCustomActivity({ token, owner, dayUtc, lineNo }: BaseParams & { dayUtc: string; lineNo: number }): Promise<void> {
-  const url = new URL(`${API_CONFIG.basePath}${API_CONFIG.endpoints.customActivities}`, window.location.origin);
-  if (owner) url.searchParams.set('owner', owner);
-  url.searchParams.set('day_utc', dayUtc);
-  url.searchParams.set('line_no', String(lineNo));
+  const search = new URLSearchParams({
+    day_utc: dayUtc,
+    line_no: String(lineNo),
+  });
+  if (owner) search.set('owner', owner);
 
-  await apiRequest<unknown>(url.pathname + url.search, {
+  await apiRequest<{ deleted: number }>(`${API_CONFIG.endpoints.customActivities}?${search.toString()}`, {
     method: 'DELETE',
     token,
   });
