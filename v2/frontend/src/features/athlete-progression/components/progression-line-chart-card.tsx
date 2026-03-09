@@ -47,7 +47,7 @@ function ProgressionTooltip({
 }: TooltipProps<ValueType, NameType>): JSX.Element | null {
   if (!active || !payload || payload.length === 0) return null;
   return (
-    <div className="min-w-[168px] rounded-md border border-border/80 bg-background/95 p-2 shadow-xl backdrop-blur">
+    <div className="pointer-events-none min-w-[168px] -translate-x-1/2 -translate-y-[calc(100%+32px)] rounded-md border border-border/80 bg-background/95 p-2 shadow-xl backdrop-blur">
       <p className="mb-1 text-xs font-semibold text-foreground">{String(label || '')}</p>
       <div className="space-y-0.5">
         {payload.map((entry) => (
@@ -117,7 +117,7 @@ export function ProgressionLineChartCard({
                 content={<ProgressionTooltip />}
                 labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
                 cursor={{ stroke: '#94a3b8', strokeOpacity: 0.35 }}
-                position={{ x: 16, y: 16 }}
+                allowEscapeViewBox={{ x: true, y: true }}
               />
               <Legend />
               {mappedOverlays.map((overlay, index) => (

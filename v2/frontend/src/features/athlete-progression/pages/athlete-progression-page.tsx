@@ -122,8 +122,8 @@ export function AthleteProgressionPage(): JSX.Element {
           <Select value={String(days)} onValueChange={(value) => setDays(Number(value))}>
             <SelectTrigger className="w-[130px]"><SelectValue placeholder="Lookback" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="90">90 days</SelectItem>
-              <SelectItem value="180">180 days</SelectItem>
+              <SelectItem value="90">3 months</SelectItem>
+              <SelectItem value="180">6 months</SelectItem>
               <SelectItem value="365">1 year</SelectItem>
               <SelectItem value="730">2 years</SelectItem>
               <SelectItem value="3000">ALL</SelectItem>
