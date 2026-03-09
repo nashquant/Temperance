@@ -2958,8 +2958,10 @@ def _build_planned_activities_payload(
         }
 
     this_week_start = _week_start_monday(pd.Timestamp(datetime.now().astimezone().date())).normalize()
-    horizon_end = this_week_start + pd.Timedelta(days=max(1, int(weeks)) * 7 - 1)
-    in_scope_rows = planned_rows[(planned_rows["day"] >= this_week_start) & (planned_rows["day"] <= horizon_end)].copy()
+    window_weeks = max(1, int(weeks))
+    range_start = this_week_start - pd.Timedelta(days=(window_weeks - 1) * 7)
+    horizon_end = this_week_start + pd.Timedelta(days=window_weeks * 7 - 1)
+    in_scope_rows = planned_rows[(planned_rows["day"] >= range_start) & (planned_rows["day"] <= horizon_end)].copy()
 
     latest_lt_pace = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
     goals = {
