@@ -145,6 +145,9 @@ function deriveCompactTimeLabel(
 }
 
 export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, markingPlannedDone, userTimeZone }: DashboardDayColumnProps): JSX.Element {
+  const activityCount = day.actual_activities.length + day.planned_activities.length;
+  const shouldScrollActivities = activityCount > 4;
+
   return (
     <Card
       className={cn(
@@ -170,7 +173,14 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
 
         <Separator className="bg-border/70" />
 
-        <div className="flex-1 space-y-2 overflow-y-auto pr-0.5">
+        <div
+          className={cn(
+            'flex-1 space-y-2',
+            shouldScrollActivities
+              ? 'overflow-y-auto pr-1 [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.55)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-400/50 hover:[&::-webkit-scrollbar-thumb]:bg-slate-300/70'
+              : 'overflow-visible',
+          )}
+        >
           {day.actual_activities.map((activity) => (
             (() => {
               const timeLabel = deriveCompactTimeLabel(activity, userTimeZone);
