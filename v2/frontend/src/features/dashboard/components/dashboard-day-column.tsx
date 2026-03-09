@@ -30,6 +30,14 @@ const plannedIntensityClasses: Record<string, string> = {
   purple: 'border-violet-400/70 bg-violet-500/5',
 };
 
+const customBorderAccentClasses: Record<string, string> = {
+  green: 'border-slate-400/70 outline-slate-300/55',
+  blue: 'border-sky-400/75 outline-sky-300/55',
+  orange: 'border-amber-400/75 outline-amber-300/55',
+  red: 'border-rose-400/75 outline-rose-300/55',
+  purple: 'border-violet-400/75 outline-violet-300/55',
+};
+
 function fmtMeta(day: DashboardDayColumnType): string[] {
   const line1: string[] = [];
   const line2: string[] = [];
@@ -189,8 +197,9 @@ export function DashboardDayColumn({ day, onMarkPlannedDone, onSelectActivity, m
                   key={activity.activity_id}
                   className={cn(
                     'flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border p-2 text-[12px] transition-colors hover:bg-white/5',
-                    activity.is_custom ? 'border-2 [border-style:dashdot]' : undefined,
+                    activity.is_custom ? 'border-2 border-dashed outline outline-1 outline-offset-[-3px] outline-dotted' : undefined,
                     intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
+                    activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                   )}
                   onClick={() => onSelectActivity?.(activity.activity_id)}
                   role="button"
