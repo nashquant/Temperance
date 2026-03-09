@@ -878,6 +878,18 @@ def _parse_minutes_token(text: str) -> float | None:
     return None
 
 
+def _normalize_activity_id(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    # Guard against float-like ids coming from dataframe coercion, e.g. "21901941858.0".
+    if raw.endswith(".0"):
+        head = raw[:-2]
+        if head.isdigit():
+            return head
+    return raw
+
+
 def _parse_distance_km_token(text: str) -> float | None:
     lower = str(text or "").lower()
     m = re.search(r"(\d+(?:\.\d+)?)\s*km\b", lower)
@@ -2354,7 +2366,7 @@ def _build_activity_dashboard_payload(
                 start_local_ts = pd.to_datetime(act.get("start_local"), errors="coerce")
                 actual_cards.append(
                     {
-                        "activity_id": str(act.get("activity_id") or ""),
+                        "activity_id": _normalize_activity_id(act.get("activity_id")),
                         "sport": sport_raw or "Activity",
                         "start_time_hhmm": (
                             pd.Timestamp(start_local_ts).strftime("%H:%M")
@@ -3953,16 +3965,20 @@ def activity_detail(
         lthr_curve_points=lthr_curve,
         threshold_pace_curve_points=pace_curve,
     )
-    selected = metrics_df[metrics_df["activity_id"].astype(str) == str(activity_id)].head(1)
+    activity_id_norm = _normalize_activity_id(activity_id)
+    selected = metrics_df[
+        metrics_df["activity_id"].astype(str).map(_normalize_activity_id) == activity_id_norm
+    ].head(1)
     if selected.empty:
         raise HTTPException(status_code=404, detail="Activity not found")
 
     table_row = display_table(selected).head(1)
     base = table_row.iloc[0].to_dict() if not table_row.empty else selected.iloc[0].to_dict()
+    selected_activity_id = _normalize_activity_id(base.get("activity_id") or activity_id_norm)
 
     records: list[dict[str, Any]] = []
     if include_records:
-        records_df = get_activity_records_df(db_path, str(activity_id)).head(int(records_limit)).copy()
+        records_df = get_activity_records_df(db_path, selected_activity_id).head(int(records_limit)).copy()
         if not records_df.empty:
             for _, row in records_df.iterrows():
                 records.append(
@@ -3981,7 +3997,7 @@ def activity_detail(
     return {
         "owner": resolved_owner,
         "activity": {
-            "activity_id": str(base.get("activity_id") or activity_id),
+            "activity_id": selected_activity_id,
             "date": str(base.get("date") or ""),
             "start_time_utc": str(base.get("start_time_utc") or ""),
             "sport_type": str(base.get("sport_type") or ""),
@@ -3995,7 +4011,7 @@ def activity_detail(
             "training_load_garmin": round(_safe_float(base.get("training_load_garmin")), 1),
         },
         "records": records,
-        "raw": get_activity_raw(db_path, str(activity_id)) or {},
-        "details": get_activity_detail_raw(db_path, str(activity_id)) or {},
-        "splits": get_activity_splits_raw(db_path, str(activity_id)) or {},
+        "raw": get_activity_raw(db_path, selected_activity_id) or {},
+        "details": get_activity_detail_raw(db_path, selected_activity_id) or {},
+        "splits": get_activity_splits_raw(db_path, selected_activity_id) or {},
     }
