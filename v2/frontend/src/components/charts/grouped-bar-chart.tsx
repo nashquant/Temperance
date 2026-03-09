@@ -71,7 +71,7 @@ function GroupedBarChartComponent({
   );
 
   const getCurrentBarFill = (value: number): string => {
-    if (metric !== 'tss') return '#3b82f6';
+    if (metric !== 'tss' && metric !== 'rtss') return '#3b82f6';
     if (value > 150) return '#a855f7';
     if (value > 120) return '#ef4444';
     if (value > 80) return '#f97316';

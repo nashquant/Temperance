@@ -2759,6 +2759,12 @@ def _build_week_outlook_payload(
     for i in range(7):
         day = ws + pd.Timedelta(days=i)
         cday = compare_ws + pd.Timedelta(days=i) if compare_key != "planned" else day
+        current_tss_v = float(
+            pd.to_numeric(
+                daily_agg.loc[daily_agg["day"] == day, "tss"],
+                errors="coerce",
+            ).fillna(0.0).sum()
+        )
         current_v = float(
             pd.to_numeric(
                 daily_agg.loc[daily_agg["day"] == day, metric_key],
@@ -2787,6 +2793,7 @@ def _build_week_outlook_payload(
                 "day_label": day.strftime("%d %b (%a)"),
                 "current": round(current_v, 1),
                 "compare": round(compare_v, 1),
+                "current_tss": round(current_tss_v, 1),
                 "is_today": bool(day == today),
                 "is_future": bool(day > today),
             }

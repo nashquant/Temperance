@@ -6,6 +6,7 @@ export interface WeeklyOutlookRowRaw {
   day_label?: string;
   current: number;
   compare: number;
+  current_tss?: number;
   is_today: boolean;
   is_future: boolean;
 }
@@ -35,6 +36,7 @@ export interface WeeklyChartRow {
   label: string;
   current: number;
   compare: number;
+  currentTss: number;
   isToday: boolean;
   isFuture: boolean;
 }

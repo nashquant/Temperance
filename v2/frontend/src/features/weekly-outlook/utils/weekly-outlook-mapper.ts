@@ -40,6 +40,7 @@ export function mapWeeklyOutlookResponse(raw: WeeklyOutlookResponseRaw): WeeklyO
       label: formatDayLabel(row.day),
       current: row.current,
       compare: row.compare,
+      currentTss: row.current_tss ?? (metric === 'tss' ? row.current : 0),
       isToday: row.is_today,
       isFuture: row.is_future,
     })),

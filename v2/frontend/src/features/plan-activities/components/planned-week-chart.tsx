@@ -1,4 +1,4 @@
-import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { Card, CardContent } from '@/components/ui/card';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
@@ -28,6 +28,14 @@ function formatValue(value: number, metric: PlannedMetricView): string {
 
 export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.Element {
   const valueLabelFormatter = (value: number) => (value > 0 ? formatValue(value, metric) : '');
+  const getBarFill = (value: number): string => {
+    if (metric !== 'tss' && metric !== 'rtss') return '#34d399';
+    if (value > 150) return '#a855f7';
+    if (value > 120) return '#ef4444';
+    if (value > 80) return '#f97316';
+    if (value > 50) return '#facc15';
+    return '#22c55e';
+  };
 
   return (
     <Card>
@@ -40,6 +48,9 @@ export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.E
               <YAxis tick={{ fontSize: 12 }} label={{ value: metricLabel(metric), angle: -90, position: 'insideLeft' }} />
               <Tooltip formatter={(value: number) => formatValue(value, metric)} />
               <Bar dataKey="value" fill="#34d399" radius={[6, 6, 0, 0]}>
+                {data.map((row) => (
+                  <Cell key={`planned-week-bar-${row.dayLabel}`} fill={getBarFill(row.value)} />
+                ))}
                 <LabelList
                   dataKey="value"
                   position="top"
