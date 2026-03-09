@@ -1504,7 +1504,7 @@ def _planned_daily_metric_map(
         return {}, {}, 0.0
 
     # Week Planner compare bars must represent full planned load for each day.
-    # Do not apply AM/PM expiry or per-day done/open filtering here.
+    # Do not apply AM/PM expiry or manual-done filtering here.
     metrics_for_compare = metrics_rows.copy()
 
     metric_col = "distance_proxy_km" if metric_key == "distance_eqv_km" else metric_key
