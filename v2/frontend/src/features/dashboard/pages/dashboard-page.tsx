@@ -658,16 +658,16 @@ export function DashboardPage(): JSX.Element {
                             slotIndex: index,
                             label: 'Deleted',
                             action: async () => {
-                              if (!session?.token) throw new Error('Missing auth token');
-                              await ingestPlannedActivities({
-                                token: session.token,
-                                owner: profile?.owner,
-                                entryText: `${activity.day_utc}: ${activity.workout_text}`,
-                              });
                               await refreshDashboardViews();
                             },
+                            finalize: async () => {
+                              if (!session?.token) throw new Error('Missing auth token');
+                              await plannedDeleteMutation.mutateAsync(
+                                { dayUtc: activity.day_utc, lineNo: activity.line_no },
+                                { onError: () => void refreshDashboardViews() },
+                              );
+                            },
                           });
-                          plannedDeleteMutation.mutate({ dayUtc: activity.day_utc, lineNo: activity.line_no }, { onError: () => void refreshDashboardViews() });
                         })()
                       }
                       onDeleteCustomActivity={(activity, index) =>
@@ -682,7 +682,7 @@ export function DashboardPage(): JSX.Element {
                                 dayUtc,
                                 lineNo,
                                 slotIndex: index,
-                                label: activityText || 'Deleted custom activity',
+                                label: 'Deleted',
                                 action: async () => {
                                   insertCustomActivityLocally(dayUtc, activity, index);
                                   await refreshDashboardViews();

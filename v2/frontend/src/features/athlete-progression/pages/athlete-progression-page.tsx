@@ -177,7 +177,7 @@ export function AthleteProgressionPage(): JSX.Element {
                 rightAxisLabel="Calories"
                 series={[
                   { key: 'training_load_garmin', label: 'Garmin TL', color: '#60a5fa', yAxisId: 'left' },
-                  { key: 'calories_total', label: 'Total Calories', color: '#f59e0b', yAxisId: 'right' },
+                  { key: 'calories_total', label: 'Calories', color: '#f59e0b', yAxisId: 'right' },
                 ]}
               />
 
@@ -189,7 +189,7 @@ export function AthleteProgressionPage(): JSX.Element {
                   { key: 'zone_low_aerobic_h', label: 'Easy', color: '#60a5fa' },
                   { key: 'zone_moderate_aerobic_h', label: 'Steady', color: '#facc15' },
                   { key: 'zone_high_aerobic_h', label: 'Interval', color: '#ef4444' },
-                  { key: 'zone_total_h', label: 'Total Time', color: '#cbd5e1', dashed: true },
+                  { key: 'zone_total_h', label: 'Total', color: '#cbd5e1', dashed: true },
                 ]}
               />
 
