@@ -240,32 +240,32 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   if (chartData.length === 0) return null;
 
   const svgWidth = 1000;
-  const svgHeight = 136;
-  const margin = { top: 0, right: 10, bottom: 8, left: 10 };
+  const svgHeight = 130;
+  const margin = { top: 5, right: 70, bottom: 5, left: 70 };
   const innerWidth = svgWidth - margin.left - margin.right;
   const innerHeight = svgHeight - margin.top - margin.bottom;
   const ifValues = chartData.map((row) => row.ifPct);
   const rawMinIf = Math.min(...ifValues);
   const rawMaxIf = Math.max(...ifValues);
-  const yMin = Math.min(rawMinIf, 50);
+  const yMin = Math.min(rawMinIf, 45);
   const yMax = Math.max(rawMaxIf, 100);
   const axisY = margin.top + innerHeight;
-  const tickY = axisY + 16;
+  const tickY = axisY +20;
   const totalDuration = chartData.at(-1)?.cumulativeDuration_s ?? 0;
   const elapsedTicks = buildElapsedTicks(totalDuration, chartData.length);
 
   return (
     <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
-      <CardContent className="px-1.5 py-3 sm:px-2">
-        <div className="mb-2 px-1.5 sm:px-2">
+      <CardContent className="px-3 py-2 sm:px-3.5 sm:py-2.5">
+        <div className="mb-1 px-0.5">
           <p className="text-sm font-semibold text-foreground">Splits</p>
         </div>
-        <div ref={containerRef} className="relative h-[108px] w-full" onMouseLeave={() => setTooltip(null)}>
+        <div ref={containerRef} className="relative h-[102px] w-full" onMouseLeave={() => setTooltip(null)}>
           <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="h-full w-full" role="img" aria-label="Splits bar chart">
             {chartData.map((row) => {
               const x = margin.left + innerWidth * row.x0;
               const rawWidth = innerWidth * (row.x1 - row.x0);
-              const width = Math.max(rawWidth - 1.5, 1);
+              const width = Math.max(rawWidth - 4, 0);
               const barHeight = ((row.ifPct - yMin) / Math.max(yMax - yMin, 1)) * innerHeight;
               const y = axisY - barHeight;
               const active = tooltip?.datum.label === row.label;
@@ -277,7 +277,7 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
                     y={y}
                     width={width}
                     height={barHeight}
-                    rx="6"
+                    rx="14"
                     fill={getBarFill(row.type, row.ifPct)}
                     opacity={1}
                     stroke={active ? 'rgba(226,232,240,0.9)' : 'rgba(255,255,255,0.08)'}
