@@ -252,21 +252,24 @@ export function SettingsPage(): JSX.Element {
           <div className="grid gap-3 md:grid-cols-4">
             {(['z1_max', 'z2_max', 'z3_max', 'z4_max'] as const).map((key) => (
               <div key={key} className="space-y-1">
-                <div>
-                  <p className={fieldLabelClassName}>{formatIfZoneLabel(key)}</p>
-                  <p className={fieldHintClassName}>% of threshold</p>
+                <p className={fieldLabelClassName}>{formatIfZoneLabel(key)}</p>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="1"
+                    className="pr-14"
+                    value={Math.round((Number(ifZones[key]) || 0) * 100)}
+                    onChange={(event) =>
+                      setIfZones((previous) => ({
+                        ...previous,
+                        [key]: (Number(event.target.value) || 0) / 100,
+                      }))
+                    }
+                  />
+                  <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300/62">
+                    % LT
+                  </span>
                 </div>
-                <Input
-                  type="number"
-                  step="1"
-                  value={Math.round((Number(ifZones[key]) || 0) * 100)}
-                  onChange={(event) =>
-                    setIfZones((previous) => ({
-                      ...previous,
-                      [key]: (Number(event.target.value) || 0) / 100,
-                    }))
-                  }
-                />
               </div>
             ))}
           </div>
@@ -307,25 +310,33 @@ export function SettingsPage(): JSX.Element {
 
       <Card className={surfaceClassName}>
         <CardContent className="space-y-4 p-4">
-          <p className="text-sm font-medium">Specificity Factors</p>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Specificity Factors</p>
+            <p className="text-xs text-slate-300/62">
+              Specificity factors adjust how much training load to credit when an activity is less specific than your target discipline, especially for x-train sessions.
+            </p>
+          </div>
           <div className="grid gap-3 md:grid-cols-4">
             {(['non_running', 'treadmill', 'elliptical', 'cycling'] as const).map((key) => (
               <div key={key} className="space-y-1">
-                <div>
-                  <p className={fieldLabelClassName}>{formatSpecificityLabel(key)}</p>
-                  <p className={fieldHintClassName}>relative % factor</p>
+                <p className={fieldLabelClassName}>{formatSpecificityLabel(key)}</p>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="1"
+                    className="pr-16"
+                    value={Math.round((Number(specificity[key]) || 0) * 100)}
+                    onChange={(event) =>
+                      setSpecificity((previous) => ({
+                        ...previous,
+                        [key]: (Number(event.target.value) || 0) / 100,
+                      }))
+                    }
+                  />
+                  <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300/62">
+                    % TSS
+                  </span>
                 </div>
-                <Input
-                  type="number"
-                  step="1"
-                  value={Math.round((Number(specificity[key]) || 0) * 100)}
-                  onChange={(event) =>
-                    setSpecificity((previous) => ({
-                      ...previous,
-                      [key]: (Number(event.target.value) || 0) / 100,
-                    }))
-                  }
-                />
               </div>
             ))}
           </div>
