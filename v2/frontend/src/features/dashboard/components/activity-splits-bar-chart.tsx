@@ -262,6 +262,9 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   return (
     <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
       <CardContent className="p-3">
+        <div className="mb-2">
+          <p className="text-sm font-semibold text-foreground">Splits</p>
+        </div>
         <div ref={containerRef} className="relative h-[108px] w-full" onMouseLeave={() => setTooltip(null)}>
           <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="h-full w-full" role="img" aria-label="Splits bar chart">
             {chartData.map((row) => {

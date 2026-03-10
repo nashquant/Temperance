@@ -312,7 +312,7 @@ export function SettingsPage(): JSX.Element {
         <CardContent className="space-y-4 p-4">
           <div className="space-y-1">
             <p className="text-sm font-medium">Specificity Factors</p>
-            <p className="text-xs text-slate-300/62">
+            <p className="text-xs text-muted-foreground">
               Specificity factors adjust how much training load to credit when an activity is less specific than your target discipline, especially for x-train sessions.
             </p>
           </div>

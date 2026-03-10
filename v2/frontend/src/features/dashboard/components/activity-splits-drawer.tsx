@@ -297,6 +297,9 @@ export function ActivitySplitsDrawer({
                 />
 
                 <div className="overflow-hidden rounded-xl border border-white/10 bg-black/15">
+                  <div className="border-b border-white/10 px-3 py-2">
+                    <p className="text-sm font-semibold text-foreground">Splits Breakdown</p>
+                  </div>
                   <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2 text-xs text-slate-300/72">
                     <Clock3 className="h-3 w-3" />
                     <span>{laps.length} split{laps.length === 1 ? '' : 's'}</span>
