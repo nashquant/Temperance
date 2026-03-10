@@ -4680,18 +4680,6 @@ def activity_detail(
             raise HTTPException(status_code=404, detail="Activity not found")
 
         row = selected_custom.iloc[0]
-        parsed_json = row.get("parsed_json")
-        segments: list[dict[str, Any]] = []
-        if isinstance(parsed_json, list):
-            segments = [s for s in parsed_json if isinstance(s, dict)]
-        elif isinstance(parsed_json, str) and parsed_json.strip():
-            try:
-                parsed = json.loads(parsed_json)
-                if isinstance(parsed, list):
-                    segments = [s for s in parsed if isinstance(s, dict)]
-            except Exception:
-                segments = []
-
         day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
         lthr_for_day = float(_curve_value_at(lthr_curve, float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR, day_ts))
         threshold_pace_for_day = float(
@@ -4701,13 +4689,12 @@ def activity_detail(
                 day_ts,
             )
         )
-        if not segments:
-            expanded, _warnings = _expand_planned_segments(
-                str(row.get("activity_text") or ""),
-                lthr_bpm=lthr_for_day,
-                threshold_pace_sec_per_km=threshold_pace_for_day,
-            )
-            segments = [s for s in expanded if isinstance(s, dict)]
+        segments = _segments_from_stored_or_source(
+            parsed_json=row.get("parsed_json"),
+            source_text=str(row.get("activity_text") or ""),
+            lthr_bpm=lthr_for_day,
+            threshold_pace_sec_per_km=threshold_pace_for_day,
+        )
 
         if_thresholds = _load_if_zone_thresholds(db_path)
         specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
@@ -4845,18 +4832,6 @@ def activity_detail(
             raise HTTPException(status_code=404, detail="Activity not found")
 
         row = selected_planned.iloc[0]
-        parsed_json = row.get("parsed_json")
-        segments: list[dict[str, Any]] = []
-        if isinstance(parsed_json, list):
-            segments = [s for s in parsed_json if isinstance(s, dict)]
-        elif isinstance(parsed_json, str) and parsed_json.strip():
-            try:
-                parsed = json.loads(parsed_json)
-                if isinstance(parsed, list):
-                    segments = [s for s in parsed if isinstance(s, dict)]
-            except Exception:
-                segments = []
-
         day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
         lthr_for_day = float(_curve_value_at(lthr_curve, float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR, day_ts))
         threshold_pace_for_day = float(
@@ -4866,13 +4841,12 @@ def activity_detail(
                 day_ts,
             )
         )
-        if not segments:
-            expanded, _warnings = _expand_planned_segments(
-                str(row.get("workout_text") or ""),
-                lthr_bpm=lthr_for_day,
-                threshold_pace_sec_per_km=threshold_pace_for_day,
-            )
-            segments = [s for s in expanded if isinstance(s, dict)]
+        segments = _segments_from_stored_or_source(
+            parsed_json=row.get("parsed_json"),
+            source_text=str(row.get("workout_text") or ""),
+            lthr_bpm=lthr_for_day,
+            threshold_pace_sec_per_km=threshold_pace_for_day,
+        )
 
         if_thresholds = _load_if_zone_thresholds(db_path)
         specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
