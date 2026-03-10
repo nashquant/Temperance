@@ -19,6 +19,7 @@ type ChartDatum = ActivitySplitsBarChartRow & {
   x0: number;
   x1: number;
   pctOfTotal: number;
+  cumulativeDuration_s: number;
 };
 
 type TooltipState = {
@@ -101,6 +102,37 @@ function formatDuration(seconds: number): string {
   return `${minutes}'${String(secs).padStart(2, '0')}"`;
 }
 
+function formatElapsedTick(seconds: number): string {
+  const roundedMinutes = Math.max(0, Math.round((Number(seconds) || 0) / 60));
+  const hours = Math.floor(roundedMinutes / 60);
+  const minutes = roundedMinutes % 60;
+
+  if (hours > 0) {
+    if (minutes === 0) return `${hours}h`;
+    return `${hours}h ${minutes}'`;
+  }
+  return `${roundedMinutes}'`;
+}
+
+function buildElapsedTicks(totalSeconds: number): Array<{ ratio: number; label: string }> {
+  const total = Math.max(0, Number(totalSeconds) || 0);
+  if (total <= 0) return [];
+
+  const segmentCount = total >= 45 * 60 ? 4 : total >= 20 * 60 ? 3 : 2;
+  const ticks: Array<{ ratio: number; label: string }> = [];
+  const seen = new Set<string>();
+
+  for (let index = 1; index <= segmentCount; index += 1) {
+    const ratio = index / segmentCount;
+    const label = formatElapsedTick(total * ratio);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    ticks.push({ ratio, label });
+  }
+
+  return ticks;
+}
+
 function buildChartData(data: ActivitySplitsBarChartRow[]): ChartDatum[] {
   const sanitized = data
     .map((row) => ({
@@ -123,6 +155,7 @@ function buildChartData(data: ActivitySplitsBarChartRow[]): ChartDatum[] {
       x0,
       x1,
       pctOfTotal: totalDuration > 0 ? row.duration_s / totalDuration : 0,
+      cumulativeDuration_s: cumulative,
     };
   });
 }
@@ -176,17 +209,20 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   if (chartData.length === 0) return null;
 
   const svgWidth = 1000;
-  const svgHeight = 220;
-  const margin = { top: 10, right: 10, bottom: 12, left: 10 };
+  const svgHeight = 188;
+  const margin = { top: 12, right: 10, bottom: 30, left: 10 };
   const innerWidth = svgWidth - margin.left - margin.right;
   const innerHeight = svgHeight - margin.top - margin.bottom;
   const yMax = Math.max(100, ...chartData.map((row) => row.ifPct));
   const axisY = margin.top + innerHeight;
+  const tickY = axisY + 16;
+  const totalDuration = chartData.at(-1)?.cumulativeDuration_s ?? 0;
+  const elapsedTicks = buildElapsedTicks(totalDuration);
 
   return (
     <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
       <CardContent className="p-4">
-        <div ref={containerRef} className="relative h-[220px] w-full" onMouseLeave={() => setTooltip(null)}>
+        <div ref={containerRef} className="relative h-[156px] w-full" onMouseLeave={() => setTooltip(null)}>
           <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="h-full w-full" role="img" aria-label="Splits bar chart">
             {chartData.map((row) => {
               const x = margin.left + innerWidth * row.x0;
@@ -218,15 +254,23 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
                       });
                     }}
                   />
-                  <line
-                    x1={x + width}
-                    y1={margin.top}
-                    x2={x + width}
-                    y2={axisY}
-                    stroke="rgba(15,23,42,0.55)"
-                    strokeWidth="1"
-                  />
                 </g>
+              );
+            })}
+            {elapsedTicks.map((tick) => {
+              const x = margin.left + innerWidth * tick.ratio;
+              return (
+                <text
+                  key={`${tick.ratio}-${tick.label}`}
+                  x={x}
+                  y={tickY}
+                  fill="rgba(248,250,252,0.96)"
+                  fontSize="20"
+                  fontWeight="700"
+                  textAnchor={tick.ratio > 0.98 ? 'end' : 'middle'}
+                >
+                  {tick.label}
+                </text>
               );
             })}
           </svg>
