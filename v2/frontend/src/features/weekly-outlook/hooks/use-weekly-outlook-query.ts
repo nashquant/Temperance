@@ -5,11 +5,21 @@ import { getWeeklyOutlook } from '@/features/weekly-outlook/services/weekly-outl
 import type { WeeklyCompare, WeeklyMetric } from '@/features/weekly-outlook/types/weekly-outlook';
 import { mapWeeklyOutlookResponse } from '@/features/weekly-outlook/utils/weekly-outlook-mapper';
 
-export function useWeeklyOutlookQuery(metric: WeeklyMetric, compare: WeeklyCompare) {
+interface UseWeeklyOutlookQueryOptions {
+  enabled?: boolean;
+}
+
+export function useWeeklyOutlookQuery(
+  metric: WeeklyMetric,
+  compare: WeeklyCompare,
+  weekStart?: string,
+  options?: UseWeeklyOutlookQueryOptions,
+) {
   const { session, profile } = useAuth();
+  const enabled = options?.enabled ?? true;
 
   return useQuery({
-    queryKey: ['weekly-outlook', profile?.owner, metric, compare],
+    queryKey: ['weekly-outlook', profile?.owner, metric, compare, weekStart ?? 'current'],
     queryFn: async () => {
       if (!session?.token) {
         throw new Error('Missing auth token');
@@ -20,6 +30,7 @@ export function useWeeklyOutlookQuery(metric: WeeklyMetric, compare: WeeklyCompa
         owner: profile?.owner,
         metric,
         compare,
+        weekStart,
       });
 
       // Distance chart colors are based on day TSS thresholds.
@@ -30,6 +41,7 @@ export function useWeeklyOutlookQuery(metric: WeeklyMetric, compare: WeeklyCompa
           owner: profile?.owner,
           metric: 'tss',
           compare,
+          weekStart,
         });
         const dayTss = new Map(tssRaw.rows.map((row) => [row.day, Number(row.current || 0)]));
         raw.rows = raw.rows.map((row) => ({
@@ -39,6 +51,6 @@ export function useWeeklyOutlookQuery(metric: WeeklyMetric, compare: WeeklyCompa
       }
       return mapWeeklyOutlookResponse(raw);
     },
-    enabled: Boolean(session?.token),
+    enabled: Boolean(session?.token) && enabled,
   });
 }

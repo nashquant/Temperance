@@ -1,5 +1,5 @@
 import { RefreshCcw } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -25,9 +25,19 @@ interface WeeklyOutlookSectionProps {
 export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionProps): JSX.Element {
   const [metric, setMetric] = useState<WeeklyMetric>('tss');
   const [compare, setCompare] = useState<WeeklyCompare>('planned');
+  const [weekView, setWeekView] = useState<'current' | 'previous'>('current');
   const query = useWeeklyOutlookQuery(metric, compare);
+  const previousWeekStart = query.data ? shiftWeekStart(query.data.weekStart, -7) : undefined;
+  const previousQuery = useWeeklyOutlookQuery(metric, compare, previousWeekStart, {
+    enabled: previousWeekStart !== undefined,
+  });
+  const activeQuery = weekView === 'previous' ? previousQuery : query;
+  const displayedData = activeQuery.data;
+  const isEmpty = displayedData !== undefined && displayedData.chartRows.length === 0;
 
-  const isEmpty = query.data !== undefined && query.data.chartRows.length === 0;
+  useEffect(() => {
+    setWeekView('current');
+  }, [metric, compare]);
 
   return (
     <section className="space-y-6">
@@ -44,34 +54,42 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
         <div className="flex flex-wrap items-center gap-2">
           <CompareSelector value={compare} onValueChange={setCompare} />
           <MetricSelector value={metric} onValueChange={setMetric} />
-          <Button variant="outline" onClick={() => void query.refetch()} disabled={query.isFetching}>
+          <Button
+            variant="outline"
+            onClick={() => void Promise.all([query.refetch(), previousQuery.refetch()])}
+            disabled={query.isFetching || previousQuery.isFetching}
+          >
             <RefreshCcw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
         </div>
       </div>
 
-      {query.isLoading ? (
+      {activeQuery.isLoading ? (
         <div className="space-y-4">
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-96 w-full" />
         </div>
       ) : null}
 
-      {query.isError ? (
+      {activeQuery.isError ? (
         <Alert className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300">
           <AlertTitle>Unable to load weekly outlook</AlertTitle>
           <AlertDescription>
-            {query.error instanceof Error ? query.error.message : 'Unexpected error while requesting data.'}
+            {activeQuery.error instanceof Error ? activeQuery.error.message : 'Unexpected error while requesting data.'}
           </AlertDescription>
         </Alert>
       ) : null}
 
-      {!query.isLoading && !query.isError && query.data ? (
+      {!activeQuery.isLoading && !activeQuery.isError && displayedData ? (
         <>
           <div className="flex items-center gap-2">
-            <Badge variant="outline">Week {formatRange(query.data.weekStart, query.data.weekEnd)}</Badge>
-            <Badge variant="secondary">Comparison: {query.data.compareLabel}</Badge>
+            <Badge variant="outline">{`Week: ${formatRange(displayedData.weekStart, displayedData.weekEnd)}`}</Badge>
+            <Badge variant="secondary">
+              {displayedData.compare === 'planned'
+                ? 'Comparison: Planned week'
+                : `Comparison: ${formatRange(displayedData.compareWeekStart, displayedData.compareWeekEnd)}`}
+            </Badge>
           </div>
 
           {isEmpty ? (
@@ -82,12 +100,26 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
             </Card>
           ) : (
             <>
-              <WeeklySummaryCards data={query.data} selectedMetric={metric} />
-              <WeeklyOutlookChartCard data={query.data} metric={metric} />
+              <WeeklySummaryCards data={displayedData} selectedMetric={metric} />
+              <WeeklyOutlookChartCard
+                data={displayedData}
+                metric={metric}
+                weekView={weekView}
+                onWeekViewChange={setWeekView}
+              />
             </>
           )}
         </>
       ) : null}
     </section>
   );
+}
+
+function shiftWeekStart(weekStart: string, days: number): string {
+  const baseDate = new Date(`${weekStart}T00:00:00`);
+  baseDate.setDate(baseDate.getDate() + days);
+  const year = baseDate.getFullYear();
+  const month = `${baseDate.getMonth() + 1}`.padStart(2, '0');
+  const day = `${baseDate.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }

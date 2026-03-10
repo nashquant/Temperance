@@ -25,6 +25,8 @@ export function mapWeeklyOutlookResponse(raw: WeeklyOutlookResponseRaw): WeeklyO
     metric,
     compare: raw.compare,
     compareLabel: toCompareLabel(raw.compare),
+    compareWeekStart: raw.compare_week_start,
+    compareWeekEnd: raw.compare_week_end,
     weekStart: raw.week_start,
     weekEnd: raw.week_end,
     totals: {

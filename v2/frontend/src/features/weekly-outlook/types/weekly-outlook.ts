@@ -45,6 +45,8 @@ export interface WeeklyOutlookViewModel {
   metric: WeeklyMetric;
   compare: WeeklyCompare;
   compareLabel: string;
+  compareWeekStart: string;
+  compareWeekEnd: string;
   chartRows: WeeklyChartRow[];
   weekStart: string;
   weekEnd: string;

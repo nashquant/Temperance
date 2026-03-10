@@ -7,6 +7,7 @@ interface WeeklyOutlookParams {
   owner?: string;
   metric: WeeklyMetric;
   compare?: WeeklyCompare;
+  weekStart?: string;
 }
 
 function metricToApi(metric: WeeklyMetric): 'tss' | 'rtss' | 'distance_eqv_km' {
@@ -20,6 +21,7 @@ export async function getWeeklyOutlook({
   owner,
   metric,
   compare = 'planned',
+  weekStart,
 }: WeeklyOutlookParams): Promise<WeeklyOutlookResponseRaw> {
   const search = new URLSearchParams({
     metric: metricToApi(metric),
@@ -28,6 +30,9 @@ export async function getWeeklyOutlook({
 
   if (owner) {
     search.set('owner', owner);
+  }
+  if (weekStart) {
+    search.set('week_start', weekStart);
   }
 
   return apiRequest<WeeklyOutlookResponseRaw>(`${API_CONFIG.endpoints.weekOutlook}?${search.toString()}`, {
