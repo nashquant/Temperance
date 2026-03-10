@@ -248,8 +248,6 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   const yMin = Math.min(rawMinIf, 45);
   const yMax = Math.max(rawMaxIf, 100);
   const axisY = margin.top + innerHeight;
-  const tickY = axisY + 14;
-  const tickFontSize = 13;
   const totalDuration = chartData.at(-1)?.cumulativeDuration_s ?? 0;
   const elapsedTicks = buildElapsedTicks(totalDuration, chartData.length);
 
@@ -260,7 +258,7 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
           <p className="text-sm font-semibold text-foreground">Splits</p>
         </div>
         <div ref={containerRef} className="relative h-[102px] w-full" onMouseLeave={() => setTooltip(null)}>
-          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="h-full w-full" role="img" aria-label="Splits bar chart">
+          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="absolute inset-x-0 top-0 h-[84px] w-full" role="img" aria-label="Splits bar chart">
             {chartData.map((row) => {
               const x = margin.left + innerWidth * row.x0;
               const rawWidth = innerWidth * (row.x1 - row.x0);
@@ -294,23 +292,24 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
                 </g>
               );
             })}
+          </svg>
+          <div className="absolute inset-x-0 bottom-0 h-4">
             {elapsedTicks.map((tick) => {
-              const x = margin.left + innerWidth * tick.ratio;
+              const leftPct = ((margin.left + innerWidth * tick.ratio) / svgWidth) * 100;
               return (
-                <text
+                <div
                   key={`${tick.ratio}-${tick.label}`}
-                  x={x}
-                  y={tickY}
-                  fill="rgba(248,250,252,0.96)"
-                  fontSize={tickFontSize}
-                  fontWeight="700"
-                  textAnchor={tick.ratio > 0.98 ? 'end' : 'middle'}
+                  className="absolute bottom-0 text-[13px] font-semibold leading-none text-slate-50"
+                  style={{
+                    left: `${leftPct}%`,
+                    transform: tick.ratio > 0.98 ? 'translateX(-100%)' : 'translateX(-50%)',
+                  }}
                 >
                   {tick.label}
-                </text>
+                </div>
               );
             })}
-          </svg>
+          </div>
           <ActivitySplitsBarTooltip tooltip={tooltip} />
         </div>
       </CardContent>
