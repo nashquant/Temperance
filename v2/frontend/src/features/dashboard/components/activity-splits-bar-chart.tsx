@@ -9,6 +9,8 @@ type ActivitySplitsBarChartRow = {
   ifPct: number;
   type: string;
   duration_s: number;
+  distanceLabel?: string;
+  paceLabel?: string;
 };
 
 type ActivitySplitsBarChartProps = {
@@ -194,38 +196,30 @@ function buildChartData(data: ActivitySplitsBarChartRow[]): ChartDatum[] {
 function ActivitySplitsBarTooltip({ tooltip }: { tooltip: TooltipState }): JSX.Element | null {
   if (!tooltip) return null;
   const { datum, x, y } = tooltip;
-  const typeVisual = getTypeVisual(datum.type, datum.ifPct);
-  const TypeIcon = typeVisual.icon;
+  const title = String(datum.type || datum.label || '-').trim() || '-';
 
   return (
     <div
-      className="pointer-events-none absolute z-10 min-w-[180px] rounded-xl border border-sky-300/15 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.98))] p-3 text-xs shadow-2xl backdrop-blur"
+      className="pointer-events-none absolute z-10 min-w-[120px] max-w-[150px] rounded-lg border border-sky-300/12 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.1),transparent_48%),linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.985))] px-2.5 py-2 text-[11px] shadow-[0_14px_28px_rgba(2,6,23,0.3)] backdrop-blur"
       style={{
         left: x,
         top: y,
-        transform: 'translate(-50%, calc(-100% - 10px))',
+        transform: 'translate(-50%, calc(-100% - 6px))',
       }}
     >
-      <p className="mb-2 text-xs font-semibold text-foreground">{datum.label}</p>
-      <div className="space-y-1.5 text-xs">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-slate-300/80">Type</span>
-          <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
-            <TypeIcon className="h-3.5 w-3.5" style={{ color: typeVisual.color }} />
-            <span>{datum.type || '-'}</span>
-          </span>
-        </div>
+      <p className="mb-1.5 truncate text-[10px] font-semibold text-foreground">{title}</p>
+      <div className="space-y-1 text-[9px]">
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-300/80">Duration</span>
           <span className="font-semibold text-foreground">{formatDuration(datum.duration_s)}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <span className="text-slate-300/80">IF</span>
-          <span className="font-semibold text-foreground">{Math.round(datum.ifPct)}%</span>
+          <span className="text-slate-300/80">Dist</span>
+          <span className="font-semibold text-foreground">{datum.distanceLabel || '-'}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <span className="text-slate-300/80">% Total</span>
-          <span className="font-semibold text-foreground">{(datum.pctOfTotal * 100).toFixed(1)}%</span>
+          <span className="text-slate-300/80">Pace</span>
+          <span className="font-semibold text-foreground">{datum.paceLabel || '-'}</span>
         </div>
       </div>
     </div>
@@ -239,8 +233,8 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
 
   if (chartData.length === 0) return null;
 
-  const svgWidth = 1000;
-  const svgHeight = 130;
+  const svgWidth = 900;
+  const svgHeight = 90;
   const margin = { top: 5, right: 70, bottom: 5, left: 70 };
   const innerWidth = svgWidth - margin.left - margin.right;
   const innerHeight = svgHeight - margin.top - margin.bottom;

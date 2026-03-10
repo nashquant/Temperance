@@ -293,6 +293,8 @@ export function ActivitySplitsDrawer({
                     ifPct: Number(lap.if_pct) || 0,
                     type: lap.description || '-',
                     duration_s: Number(lap.duration_seconds) || parseDurationLabelSeconds(lap.duration_label),
+                    distanceLabel: `${Number(useEqv ? lap.distance_eqv_km : lap.distance_km).toFixed(2)} km`,
+                    paceLabel: useEqv ? lap.pace_eqv_label : lap.pace_label,
                   }))}
                 />
 
