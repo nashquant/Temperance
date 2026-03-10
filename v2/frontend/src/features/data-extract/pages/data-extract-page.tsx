@@ -593,25 +593,34 @@ export function DataExtractPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="space-y-3 p-3 text-sm">
-          <div className="grid gap-x-3 gap-y-1 text-xs md:grid-cols-2">
-            <p className="truncate"><span className="text-muted-foreground">DB:</span> {status?.db_path}</p>
-            <p><span className="text-muted-foreground">Garmin creds:</span> {status?.garmin_credentials_available ? 'available' : 'missing'}</p>
-            <p className="truncate"><span className="text-muted-foreground">Import dir:</span> {status?.import_dir}</p>
+      <Card className={surfaceClassName}>
+        <CardContent className="space-y-4 p-4 text-sm">
+          <div className="grid gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-3 text-xs md:grid-cols-2">
+            <p className="truncate rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
+              <span className="text-slate-300/58">DB:</span> {status?.db_path}
+            </p>
+            <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
+              <span className="text-slate-300/58">Garmin creds:</span> {status?.garmin_credentials_available ? 'available' : 'missing'}
+            </p>
+            <p className="truncate rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
+              <span className="text-slate-300/58">Import dir:</span> {status?.import_dir}
+            </p>
             {status?.last_sync ? (
-              <p className="truncate">
-                <span className="text-muted-foreground">Last sync:</span> {status.last_sync.sync_time_utc} | {status.last_sync.source} | {status.last_sync.success ? 'success' : 'failed'}
+              <p className="truncate rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
+                <span className="text-slate-300/58">Last sync:</span> {status.last_sync.sync_time_utc} | {status.last_sync.source} | {status.last_sync.success ? 'success' : 'failed'}
               </p>
             ) : (
-              <p className="text-muted-foreground">No sync has been run yet.</p>
+              <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-300/60">No sync has been run yet.</p>
             )}
           </div>
           <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {Object.entries(status?.counts ?? {}).map(([key, value]) => (
-              <div key={key} className="rounded border border-border/70 bg-muted/20 px-2 py-1.5 text-xs">
-                <p className="truncate text-muted-foreground">{key}</p>
-                <p className="text-sm font-semibold leading-5 text-foreground">{value}</p>
+              <div
+                key={key}
+                className="rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-3 py-2 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+              >
+                <p className="truncate text-slate-300/58">{key}</p>
+                <p className="text-sm font-semibold leading-5 text-slate-100">{value}</p>
               </div>
             ))}
           </div>
