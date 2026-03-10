@@ -112,8 +112,9 @@ function formatElapsedTick(seconds: number): string {
 function buildElapsedTicks(totalSeconds: number, splitCount: number): Array<{ ratio: number; label: string }> {
   const total = Math.max(0, Number(totalSeconds) || 0);
   if (total <= 0) return [];
+  const safeSplitCount = Math.max(1, Math.floor(Number(splitCount) || 0));
 
-  const segmentCount = Math.max(1, Math.min(splitCount, total >= 45 * 60 ? 4 : total >= 20 * 60 ? 3 : 2));
+  const segmentCount = Math.min(safeSplitCount, total >= 45 * 60 ? 4 : total >= 20 * 60 ? 3 : 2);
   const ticks: Array<{ ratio: number; label: string }> = [];
   const seen = new Set<string>();
 
@@ -231,12 +232,13 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   const minSvgWidth = 720;
   const sideMargin = Math.max(36, Math.min(150, 180 - lapCount * 11));
   const svgWidth = Math.max(minSvgWidth, lapCount * perLapWidth + sideMargin * 2);
-  const svgHeight = 90;
-  const margin = { top: 1, right: sideMargin, bottom: 5, left: sideMargin };
+  const svgHeight = 100;
+  const margin = { top: 3, right: sideMargin, bottom: 3, left: sideMargin };
   const innerWidth = svgWidth - margin.left - margin.right;
   const innerHeight = svgHeight - margin.top - margin.bottom;
-  const chartHeightPx = lapCount >= 10 ? 84 : lapCount >= 7 ? 86 : 90;
-  const svgRenderHeightPx = lapCount >= 10 ? 79 : lapCount >= 7 ? 81 : 84;
+  // Keep a stable, larger plot box so bars remain readable even with many splits.
+  const chartHeightPx = 108;
+  const svgRenderHeightPx = 94;
   const ifValues = chartData.map((row) => row.ifPct);
   const rawMinIf = Math.min(...ifValues);
   const rawMaxIf = Math.max(...ifValues);
@@ -245,17 +247,17 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   const axisY = margin.top + innerHeight;
   const axisRenderY = (axisY / svgHeight) * svgRenderHeightPx;
   const labelHeightPx = 11;
-  const desiredLabelGapPx = lapCount >= 18 ? 1 : lapCount >= 10 ? 2 : 3;
-  const maxLabelGapPx = 2;
-  const labelGapPx = Math.min(desiredLabelGapPx, maxLabelGapPx);
-  const labelTopPx = axisRenderY + labelGapPx;
+  // Hard cap: labels should never drift too far below the bars/axis.
+  const desiredLabelGapPx = lapCount >= 16 ? 0 : 1;
+  const maxLabelGapPx = 1;
+  const labelTopPx = axisRenderY + Math.min(desiredLabelGapPx, maxLabelGapPx);
   const containerHeightPx = Math.max(chartHeightPx, Math.ceil(labelTopPx + labelHeightPx));
   const totalDuration = chartData.at(-1)?.cumulativeDuration_s ?? 0;
   const elapsedTicks = buildElapsedTicks(totalDuration, chartData.length);
 
   return (
     <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
-      <CardContent className="px-3 py-2 sm:px-3.5 sm:py-2.5">
+      <CardContent className="px-3 py-3 sm:px-4 sm:py-3.5">
         <div className="mb-1 px-0.5">
           <p className="text-sm font-semibold text-foreground">Splits</p>
         </div>

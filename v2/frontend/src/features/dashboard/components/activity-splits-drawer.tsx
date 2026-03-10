@@ -54,27 +54,22 @@ function formatActivityTitle(raw: string): string {
     .join(' ');
 }
 
-function formatLocalActivityTime(startTimeUtc: string): string {
-  const raw = String(startTimeUtc || '').trim();
-  if (!raw) return '';
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return '';
-  const hour24 = parsed.getHours();
-  const minute = parsed.getMinutes();
-  if (Number.isNaN(hour24) || Number.isNaN(minute)) return '';
-  const suffix = hour24 >= 12 ? 'pm' : 'am';
-  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
-  return `@ ${hour12}:${String(minute).padStart(2, '0')}${suffix}`;
-}
-
-function formatLocalActivityDate(startTimeUtc: string, fallbackDate: string): string {
+function formatLocalActivityDateTime(startTimeUtc: string, fallbackDate: string): string {
   const raw = String(startTimeUtc || '').trim();
   const parsed = raw ? new Date(raw) : new Date(`${String(fallbackDate || '').trim()}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return String(fallbackDate || '').trim();
-  const day = parsed.getDate();
-  const month = parsed.toLocaleDateString('en-US', { month: 'short' });
-  const year = String(parsed.getFullYear()).slice(-2);
-  return `${day}${month}${year}`;
+
+  const datePart = parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timePart = parsed.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${datePart} @${timePart.toLowerCase()}`;
 }
 
 function fmtDurationSeconds(seconds: number): string {
@@ -182,14 +177,16 @@ export function ActivitySplitsDrawer({
     (sourceKind === 'planned' || sourceKind === 'custom') && rawDayUtc && rawLineNo > 0,
   );
   const activityHeaderTitle = formatActivityTitle(String(activity?.sport_type || ''));
-  const activityHeaderDate = formatLocalActivityDate(String(activity?.start_time_utc || ''), String(activity?.date || ''));
-  const activityHeaderTime = formatLocalActivityTime(String(activity?.start_time_utc || ''));
+  const activityHeaderDateTime = formatLocalActivityDateTime(
+    String(activity?.start_time_utc || ''),
+    String(activity?.date || ''),
+  );
   const activitySourceLabel =
     sourceKind === 'planned' ? '(Planned)' : sourceKind === 'custom' ? '(Custom)' : '';
   const activityHeaderMeta =
     sourceKind === 'planned' || sourceKind === 'custom'
       ? [activityHeaderTitle, activitySourceLabel].filter(Boolean).join(' ')
-      : [activityHeaderTitle, activityHeaderDate, activityHeaderTime].filter(Boolean).join(' ');
+      : activityHeaderDateTime;
   const laps = normalizedLapRows(detailQuery.data);
   const useEqv = laps.length > 0 && laps.some((lap) => lap.display_mode === 'eqv');
   const updateMutation = useMutation({
