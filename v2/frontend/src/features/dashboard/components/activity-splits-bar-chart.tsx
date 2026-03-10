@@ -233,9 +233,13 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
 
   if (chartData.length === 0) return null;
 
-  const svgWidth = 900;
+  const lapCount = chartData.length;
+  const perLapWidth = 82;
+  const minSvgWidth = 720;
+  const sideMargin = Math.max(36, Math.min(150, 180 - lapCount * 11));
+  const svgWidth = Math.max(minSvgWidth, lapCount * perLapWidth + sideMargin * 2);
   const svgHeight = 90;
-  const margin = { top: 5, right: 70, bottom: 5, left: 70 };
+  const margin = { top: 1, right: sideMargin, bottom: 5, left: sideMargin };
   const innerWidth = svgWidth - margin.left - margin.right;
   const innerHeight = svgHeight - margin.top - margin.bottom;
   const ifValues = chartData.map((row) => row.ifPct);
@@ -244,7 +248,8 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   const yMin = Math.min(rawMinIf, 45);
   const yMax = Math.max(rawMaxIf, 100);
   const axisY = margin.top + innerHeight;
-  const tickY = axisY +20;
+  const tickY = axisY + 14;
+  const tickFontSize = 13;
   const totalDuration = chartData.at(-1)?.cumulativeDuration_s ?? 0;
   const elapsedTicks = buildElapsedTicks(totalDuration, chartData.length);
 
@@ -297,7 +302,7 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
                   x={x}
                   y={tickY}
                   fill="rgba(248,250,252,0.96)"
-                  fontSize="20"
+                  fontSize={tickFontSize}
                   fontWeight="700"
                   textAnchor={tick.ratio > 0.98 ? 'end' : 'middle'}
                 >
