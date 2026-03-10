@@ -100,12 +100,7 @@ export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.E
             <BarChart data={data} barCategoryGap="25%" margin={{ top: 38, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(125,211,252,0.14)" />
               <XAxis dataKey="dayLabel" tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={{ stroke: 'rgba(148,163,184,0.18)' }} tickLine={false} />
-              <YAxis
-                tick={{ fontSize: 12, fill: '#cbd5e1' }}
-                axisLine={false}
-                tickLine={false}
-                label={{ value: metricLabel(metric), angle: -90, position: 'insideLeft', style: { fill: '#94a3b8' } }}
-              />
+              <YAxis hide axisLine={false} tickLine={false} />
               <Tooltip content={<PlannedWeekTooltip metric={metric} />} cursor={{ fill: 'rgba(56, 189, 248, 0.08)' }} />
               <Bar dataKey="value" fill="#34d399" radius={[6, 6, 0, 0]}>
                 {data.map((row) => (
