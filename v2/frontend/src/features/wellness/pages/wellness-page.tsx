@@ -88,10 +88,10 @@ export function WellnessPage(): JSX.Element {
         <>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Sleep Score</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_sleep_score)}</p></CardContent></Card>
-            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Resting HR</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_resting_hr)}</p></CardContent></Card>
-            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Stress Avg</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_stress_avg)}</p></CardContent></Card>
-            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Training Readiness</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_training_readiness)}</p></CardContent></Card>
-            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Body Battery (End)</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_body_battery_end)}</p></CardContent></Card>
+            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">RHR</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_resting_hr)}</p></CardContent></Card>
+            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Stress</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_stress_avg)}</p></CardContent></Card>
+            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Readiness</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_training_readiness)}</p></CardContent></Card>
+            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Battery (End)</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_body_battery_end)}</p></CardContent></Card>
           </div>
 
           {chartData.length === 0 ? (
@@ -104,7 +104,7 @@ export function WellnessPage(): JSX.Element {
                 yLabel="Score"
                 series={[
                   { key: 'sleep_score', label: 'Sleep Score', color: '#22c55e' },
-                  { key: 'training_readiness', label: 'Training Readiness', color: '#60a5fa' },
+                  { key: 'training_readiness', label: 'Readiness', color: '#60a5fa' },
                 ]}
               />
 
@@ -113,17 +113,17 @@ export function WellnessPage(): JSX.Element {
                 data={chartData}
                 yLabel="Level"
                 series={[
-                  { key: 'stress_avg', label: 'Stress Avg', color: '#f59e0b' },
-                  { key: 'resting_hr', label: 'Resting HR', color: '#ef4444' },
+                  { key: 'stress_avg', label: 'Stress', color: '#f59e0b' },
+                  { key: 'resting_hr', label: 'RHR', color: '#ef4444' },
                 ]}
               />
 
               <ProgressionLineChartCard
-                title="Sleep Architecture (hours)"
+                title="Sleep Patterns"
                 data={chartData}
                 yLabel="Hours"
                 series={[
-                  { key: 'sleep_duration_h', label: 'Sleep Total', color: '#38bdf8', dashed: true },
+                  { key: 'sleep_duration_h', label: 'Total', color: '#38bdf8', dashed: true },
                   { key: 'deep_sleep_h', label: 'Deep', color: '#6366f1' },
                   { key: 'rem_sleep_h', label: 'REM', color: '#a855f7' },
                   { key: 'light_sleep_h', label: 'Light', color: '#22c55e' },
@@ -131,13 +131,13 @@ export function WellnessPage(): JSX.Element {
               />
 
               <ProgressionLineChartCard
-                title="Body Battery & HRV"
+                title="Battery & HRV"
                 data={chartData}
                 yLabel="Index"
                 series={[
-                  { key: 'body_battery_end', label: 'Body Battery End', color: '#22c55e' },
-                  { key: 'body_battery_avg', label: 'Body Battery Avg', color: '#14b8a6' },
-                  { key: 'hrv_status', label: 'HRV Status', color: '#f97316' },
+                  { key: 'body_battery_end', label: 'Battery End', color: '#22c55e' },
+                  { key: 'body_battery_avg', label: 'Battery Avg', color: '#14b8a6' },
+                  { key: 'hrv_status', label: 'HRV', color: '#f97316' },
                 ]}
               />
 
