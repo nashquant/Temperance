@@ -47,6 +47,10 @@ export function AthleteProgressionPage(): JSX.Element {
       };
     });
   }, [aggregation, chartData]);
+  const hasVdotData = useMemo(
+    () => normalizedChartData.some((row) => Number.isFinite(Number(row.vdot)) && Number(row.vdot) > 0),
+    [normalizedChartData],
+  );
 
   return (
     <section className="space-y-6">
@@ -175,6 +179,22 @@ export function AthleteProgressionPage(): JSX.Element {
                   { key: 'zone_total_h', label: 'Total Time', color: '#cbd5e1', dashed: true },
                 ]}
               />
+
+              {hasVdotData ? (
+                <ProgressionLineChartCard
+                  title="VDOT Evolution"
+                  data={normalizedChartData}
+                  yLabel="VDOT"
+                  series={[
+                    { key: 'vdot', label: 'VDOT', color: '#f97316' },
+                  ]}
+                />
+              ) : (
+                <Alert className="border-amber-300 text-amber-700 dark:border-amber-900 dark:text-amber-300">
+                  <AlertTitle>VDOT Evolution</AlertTitle>
+                  <AlertDescription>No eligible activity found in the selected date range. VDOT requires an activity with IF above 100% or TSS above 100.</AlertDescription>
+                </Alert>
+              )}
             </div>
           )}
         </>

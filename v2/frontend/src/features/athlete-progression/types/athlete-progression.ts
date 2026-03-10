@@ -21,6 +21,7 @@ export interface AthleteProgressionPoint {
   injury_risk: number;
   leg_elasticity: number;
   pounding: number;
+  vdot: number | null;
   target_tss: number;
   target_distance_km: number;
 }

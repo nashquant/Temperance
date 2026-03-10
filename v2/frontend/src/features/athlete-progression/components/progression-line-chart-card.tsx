@@ -56,6 +56,7 @@ const INTEGER_LIKE_KEYS = new Set([
   'injury_risk',
   'leg_elasticity',
   'pounding',
+  'vdot',
   'training_load_garmin',
   'calories_total',
   '__target',

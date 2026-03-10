@@ -1001,6 +1001,20 @@ def _vdot_payload_from_lt_pace(lt_pace_sec_per_km: float) -> dict[str, Any]:
     }
 
 
+def _activity_vdot(distance_m: float, duration_s: float) -> float | None:
+    distance = float(distance_m)
+    duration = float(duration_s)
+    if distance <= 0 or duration <= 0:
+        return None
+    race_time_min = duration / 60.0
+    if race_time_min <= 0:
+        return None
+    value = _vdot_from_race(distance, race_time_min)
+    if not math.isfinite(value) or value <= 0:
+        return None
+    return value
+
+
 def _week_start_monday(ts: pd.Timestamp) -> pd.Timestamp:
     return (ts - pd.Timedelta(days=int(ts.weekday()))).normalize()
 
@@ -2624,10 +2638,30 @@ def _build_athlete_progression_payload(
         if col not in filtered.columns:
             filtered[col] = 0.0
         filtered[col] = pd.to_numeric(filtered[col], errors="coerce").fillna(0.0)
+    if "if_proxy" not in filtered.columns:
+        filtered["if_proxy"] = 0.0
+    filtered["if_proxy"] = pd.to_numeric(filtered["if_proxy"], errors="coerce").fillna(0.0)
 
     sport_lower = filtered["sport_type"].fillna("").astype(str).str.lower()
     is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
     filtered["distance_km_running"] = (filtered["distance_m"].where(is_running_like, 0.0) / 1000.0).fillna(0.0)
+    eligible_vdot_mask = (
+        is_running_like
+        & (filtered["distance_m"] > 0)
+        & (filtered["duration_s"] > 0)
+        & ((filtered["if_proxy"] > 1.0) | (filtered["rtss"] > 100.0))
+    )
+    vdot_candidates = filtered.loc[eligible_vdot_mask, ["start_local", "day", "distance_m", "duration_s"]].copy() if "day" in filtered.columns else pd.DataFrame()
+    if not vdot_candidates.empty:
+        vdot_candidates["vdot"] = vdot_candidates.apply(
+            lambda row: _activity_vdot(
+                distance_m=_safe_float(row.get("distance_m")),
+                duration_s=_safe_float(row.get("duration_s")),
+            ),
+            axis=1,
+        )
+        vdot_candidates["vdot"] = pd.to_numeric(vdot_candidates["vdot"], errors="coerce")
+        vdot_candidates = vdot_candidates.dropna(subset=["vdot"]).copy()
 
     daily_agg = (
         filtered.groupby("day", as_index=False)
@@ -2734,10 +2768,30 @@ def _build_athlete_progression_payload(
             )
             .sort_values("period_start")
         )
+        if not vdot_candidates.empty:
+            vdot_candidates["period_start"] = pd.to_datetime(vdot_candidates["day"], errors="coerce").map(_week_start_monday)
+            weekly_vdot = (
+                vdot_candidates.groupby("period_start", as_index=False)
+                .agg(vdot=("vdot", "max"))
+                .sort_values("period_start")
+            )
+            points_df = points_df.merge(weekly_vdot, on="period_start", how="left")
+        else:
+            points_df["vdot"] = pd.NA
         points_df["target_tss"] = daily_tss_target * 7.0
         points_df["target_distance_km"] = daily_distance_target * 7.0
     else:
         points_df = model_df.rename(columns={"day": "period_start"}).copy()
+        if not vdot_candidates.empty:
+            daily_vdot = (
+                vdot_candidates.groupby("day", as_index=False)
+                .agg(vdot=("vdot", "max"))
+                .rename(columns={"day": "period_start"})
+                .sort_values("period_start")
+            )
+            points_df = points_df.merge(daily_vdot, on="period_start", how="left")
+        else:
+            points_df["vdot"] = pd.NA
         points_df["target_tss"] = daily_tss_target
         points_df["target_distance_km"] = daily_distance_target
 
@@ -2775,6 +2829,12 @@ def _build_athlete_progression_payload(
                 "injury_risk": round(_safe_float(row.get("injury_risk")), 3),
                 "leg_elasticity": round(_safe_float(row.get("leg_elasticity")), 3),
                 "pounding": round(_safe_float(row.get("pounding")), 3),
+                "vdot": (
+                    int(round(_safe_float(row.get("vdot"))))
+                    if pd.notna(pd.to_numeric(pd.Series([row.get("vdot")]), errors="coerce").iloc[0])
+                    and _safe_float(row.get("vdot")) > 0
+                    else None
+                ),
                 "target_tss": round(_safe_float(row.get("target_tss")), 3),
                 "target_distance_km": round(_safe_float(row.get("target_distance_km")), 3),
             }
