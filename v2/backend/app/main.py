@@ -10,7 +10,7 @@ import re
 import sqlite3
 import sys
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -647,6 +647,40 @@ def _run_comprehensive_extract_background(
     except Exception as exc:
         _extract_progress_fail(owner, str(exc))
         log_sync(db_path, source="v2_garmin_comprehensive", success=False, message=str(exc))
+
+
+def _resolve_comprehensive_extract_start_day(
+    *,
+    requested_start_day: date,
+    db_path: Path,
+    include_wellness: bool,
+    incremental_only: bool,
+) -> tuple[date, str | None]:
+    if not incremental_only:
+        return requested_start_day, None
+
+    latest = get_latest_activity_time(db_path)
+    latest_recovery = get_latest_recovery_day(db_path) if include_wellness else None
+    anchors = [anchor for anchor in [latest, latest_recovery] if anchor is not None]
+    if not anchors:
+        return requested_start_day, None
+
+    anchor = min(anchors)
+    incremental_anchor_day = (anchor - timedelta(days=2)).date()
+    if requested_start_day < incremental_anchor_day:
+        return (
+            requested_start_day,
+            (
+                f"[config] incremental_anchor={anchor.isoformat()} "
+                f"but honoring explicit earlier start_day={requested_start_day.isoformat()}"
+            ),
+        )
+
+    resolved_start_day = max(requested_start_day, incremental_anchor_day)
+    return (
+        resolved_start_day,
+        f"[config] incremental_anchor={anchor.isoformat()} -> computed_start_day={resolved_start_day.isoformat()}",
+    )
 
 
 def _default_lthr_curve() -> list[dict[str, object]]:
@@ -4647,13 +4681,12 @@ def data_extract_comprehensive(
         raise HTTPException(status_code=400, detail="Invalid start_day. Use YYYY-MM-DD.")
     end_day = datetime.now(timezone.utc).date()
 
-    if bool(payload.incremental_only):
-        latest = get_latest_activity_time(db_path)
-        latest_recovery = get_latest_recovery_day(db_path) if bool(payload.include_wellness) else None
-        anchors = [a for a in [latest, latest_recovery] if a is not None]
-        if anchors:
-            anchor = min(anchors)
-            start_day = max(start_day, (anchor - timedelta(days=2)).date())
+    start_day, incremental_log = _resolve_comprehensive_extract_start_day(
+        requested_start_day=start_day,
+        db_path=db_path,
+        include_wellness=bool(payload.include_wellness),
+        incremental_only=bool(payload.incremental_only),
+    )
 
     existing_progress = _extract_progress_get(resolved_owner)
     if bool(existing_progress.get("running")):
@@ -4664,6 +4697,8 @@ def data_extract_comprehensive(
         resolved_owner,
         f"[config] include_details={bool(payload.include_details)} include_wellness={bool(payload.include_wellness)} incremental_only={bool(payload.incremental_only)}",
     )
+    if incremental_log:
+        _extract_progress_append(resolved_owner, incremental_log)
     worker = threading.Thread(
         target=_run_comprehensive_extract_background,
         kwargs={
