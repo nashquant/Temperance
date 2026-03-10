@@ -114,11 +114,11 @@ function formatElapsedTick(seconds: number): string {
   return `${roundedMinutes}'`;
 }
 
-function buildElapsedTicks(totalSeconds: number): Array<{ ratio: number; label: string }> {
+function buildElapsedTicks(totalSeconds: number, splitCount: number): Array<{ ratio: number; label: string }> {
   const total = Math.max(0, Number(totalSeconds) || 0);
   if (total <= 0) return [];
 
-  const segmentCount = total >= 45 * 60 ? 4 : total >= 20 * 60 ? 3 : 2;
+  const segmentCount = Math.max(1, Math.min(splitCount, total >= 45 * 60 ? 4 : total >= 20 * 60 ? 3 : 2));
   const ticks: Array<{ ratio: number; label: string }> = [];
   const seen = new Set<string>();
 
@@ -133,6 +133,37 @@ function buildElapsedTicks(totalSeconds: number): Array<{ ratio: number; label: 
   return ticks;
 }
 
+function buildIfGuides(values: number[]): number[] {
+  if (values.length === 0) return [];
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const span = Math.max(maxValue - minValue, 1);
+  const roughStep = span / 2;
+
+  let step = 5;
+  if (roughStep > 25) step = 20;
+  else if (roughStep > 12) step = 10;
+
+  const start = Math.ceil(minValue / step) * step;
+  const end = Math.floor(maxValue / step) * step;
+  const guides: number[] = [];
+
+  for (let current = start; current <= end; current += step) {
+    if (current <= 0) continue;
+    guides.push(current);
+  }
+
+  if (guides.length === 0) {
+    const midpoint = Math.round(((minValue + maxValue) / 2) / step) * step;
+    return midpoint > minValue && midpoint < maxValue ? [midpoint] : [];
+  }
+
+  if (guides.length <= 3) return guides;
+
+  const picked = [guides[0], guides[Math.floor((guides.length - 1) / 2)], guides[guides.length - 1]];
+  return [...new Set(picked)];
+}
 function buildChartData(data: ActivitySplitsBarChartRow[]): ChartDatum[] {
   const sanitized = data
     .map((row) => ({
@@ -209,26 +240,35 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   if (chartData.length === 0) return null;
 
   const svgWidth = 1000;
-  const svgHeight = 188;
-  const margin = { top: 12, right: 10, bottom: 30, left: 10 };
+  const svgHeight = 136;
+  const margin = { top: 0, right: 34, bottom: 8, left: 34 };
   const innerWidth = svgWidth - margin.left - margin.right;
   const innerHeight = svgHeight - margin.top - margin.bottom;
-  const yMax = Math.max(100, ...chartData.map((row) => row.ifPct));
+  const ifValues = chartData.map((row) => row.ifPct);
+  const rawMinIf = Math.min(...ifValues);
+  const rawMaxIf = Math.max(...ifValues);
+  const minVisualSpan = 18;
+  const rawSpan = Math.max(rawMaxIf - rawMinIf, 0);
+  const paddedSpan = rawSpan < minVisualSpan ? minVisualSpan : rawSpan;
+  const centerIf = (rawMinIf + rawMaxIf) / 2;
+  const padding = Math.max(0.5, paddedSpan * 0.04);
+  const yMin = Math.max(0, centerIf - paddedSpan / 2 - padding);
+  const yMax = centerIf + paddedSpan / 2 + padding;
   const axisY = margin.top + innerHeight;
   const tickY = axisY + 16;
   const totalDuration = chartData.at(-1)?.cumulativeDuration_s ?? 0;
-  const elapsedTicks = buildElapsedTicks(totalDuration);
+  const elapsedTicks = buildElapsedTicks(totalDuration, chartData.length);
 
   return (
     <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
-      <CardContent className="p-4">
-        <div ref={containerRef} className="relative h-[156px] w-full" onMouseLeave={() => setTooltip(null)}>
+      <CardContent className="p-3">
+        <div ref={containerRef} className="relative h-[108px] w-full" onMouseLeave={() => setTooltip(null)}>
           <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="h-full w-full" role="img" aria-label="Splits bar chart">
             {chartData.map((row) => {
               const x = margin.left + innerWidth * row.x0;
               const rawWidth = innerWidth * (row.x1 - row.x0);
               const width = Math.max(rawWidth - 1.5, 1);
-              const barHeight = (row.ifPct / yMax) * innerHeight;
+              const barHeight = ((row.ifPct - yMin) / Math.max(yMax - yMin, 1)) * innerHeight;
               const y = axisY - barHeight;
               const active = tooltip?.datum.label === row.label;
 
@@ -239,9 +279,9 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
                     y={y}
                     width={width}
                     height={barHeight}
-                    rx="3"
+                    rx="6"
                     fill={getBarFill(row.type, row.ifPct)}
-                    opacity={active ? 1 : 0.95}
+                    opacity={1}
                     stroke={active ? 'rgba(226,232,240,0.9)' : 'rgba(255,255,255,0.08)'}
                     strokeWidth={active ? 1.5 : 1}
                     onMouseMove={(event) => {
