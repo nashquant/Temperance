@@ -247,13 +247,8 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   const ifValues = chartData.map((row) => row.ifPct);
   const rawMinIf = Math.min(...ifValues);
   const rawMaxIf = Math.max(...ifValues);
-  const minVisualSpan = 18;
-  const rawSpan = Math.max(rawMaxIf - rawMinIf, 0);
-  const paddedSpan = rawSpan < minVisualSpan ? minVisualSpan : rawSpan;
-  const centerIf = (rawMinIf + rawMaxIf) / 2;
-  const padding = Math.max(0.5, paddedSpan * 0.04);
-  const yMin = Math.max(0, centerIf - paddedSpan / 2 - padding);
-  const yMax = centerIf + paddedSpan / 2 + padding;
+  const yMin = Math.min(rawMinIf, 50);
+  const yMax = Math.max(rawMaxIf, 100);
   const axisY = margin.top + innerHeight;
   const tickY = axisY + 16;
   const totalDuration = chartData.at(-1)?.cumulativeDuration_s ?? 0;
