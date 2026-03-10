@@ -78,7 +78,7 @@ export function DataExtractPage(): JSX.Element {
       const progress = latest.data?.extract_progress;
       lastProgressLogCountRef.current = Number(progress?.log_count ?? 0);
       setExtractLogs(Array.isArray(progress?.logs) ? progress.logs : []);
-      setResult(response.summary);
+      setResult(`${response.summary} Owner scope: ${profile?.owner ?? '-'}`);
     },
     onError: (error) => {
       setResult(error instanceof Error ? error.message : 'Comprehensive extract failed');
@@ -113,7 +113,7 @@ export function DataExtractPage(): JSX.Element {
       lastFinishedAtRef.current = progress.finished_at;
       const counts = statusQuery.data?.counts ?? {};
       setResult(
-        `Comprehensive extract complete: activities=${safeCount(counts, 'activities')}, details=${safeCount(counts, 'activity_details')}, splits=${safeCount(counts, 'activity_splits')}, sleep=${safeCount(counts, 'sleep_daily')}, wellness=${safeCount(counts, 'wellness_daily')}`,
+        `Comprehensive extract complete for ${profile?.owner ?? '-'}: activities=${safeCount(counts, 'activities')}, details=${safeCount(counts, 'activity_details')}, splits=${safeCount(counts, 'activity_splits')}, sleep=${safeCount(counts, 'sleep_daily')}, wellness=${safeCount(counts, 'wellness_daily')}`,
       );
     }
   }, [safeCount, statusQuery.data]);
@@ -131,9 +131,9 @@ export function DataExtractPage(): JSX.Element {
       await queryClient.invalidateQueries({ queryKey: ['custom-activities'] });
       await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
       if (response.errors.length > 0) {
-        setCustomResult(`Saved ${response.saved_count}. Some entries were skipped.`);
+        setCustomResult(`Saved ${response.saved_count} to ${profile?.owner ?? '-'}. Some entries were skipped.`);
       } else {
-        setCustomResult(`Saved ${response.saved_count} custom activit${response.saved_count === 1 ? 'y' : 'ies'}.`);
+        setCustomResult(`Saved ${response.saved_count} custom activit${response.saved_count === 1 ? 'y' : 'ies'} to ${profile?.owner ?? '-'}.`);
       }
       if (response.saved_count > 0) setCustomEntryText('');
     },
@@ -256,43 +256,50 @@ export function DataExtractPage(): JSX.Element {
 
   const status = statusQuery.data;
   const isAdmin = session?.role === 'admin';
+  const isAdminOwnScope = isAdmin && profile?.owner === profile?.user;
   const extractRunning = Boolean(status?.extract_progress?.running);
 
   return (
     <section className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Data Extract</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Active owner scope: <span className="font-medium text-foreground">{profile?.owner ?? '-'}</span>
+        </p>
       </div>
 
       <Card className={surfaceClassName}>
         <CardContent className="space-y-4 p-5">
           <div className="space-y-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Garmin Extract</p>
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">Comprehensive Garmin Extract</h2>
-                <p className="text-sm text-slate-300/72">Run a full background pull and keep navigating while progress continues.</p>
-              </div>
-              <Button
-                className="h-10 rounded-xl bg-[linear-gradient(180deg,rgba(56,189,248,0.94),rgba(37,99,235,0.9))] px-4 text-white shadow-[0_14px_30px_rgba(37,99,235,0.24)] hover:brightness-105"
-                onClick={() => comprehensiveMutation.mutate()}
-                disabled={comprehensiveMutation.isPending || extractRunning}
-              >
-                {extractRunning || comprehensiveMutation.isPending ? 'Extract running in background...' : 'Run comprehensive extract'}
-              </Button>
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold text-foreground">Comprehensive Garmin Extract</h2>
+              <p className="text-sm text-slate-300/72">Run a full background pull and keep navigating while progress continues.</p>
             </div>
           </div>
 
-          <div className="grid gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:grid-cols-[220px_1fr]">
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Start Day</p>
-              <input
-                className="h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-slate-100 outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
-                type="date"
-                max={todayIso()}
-                value={startDay}
-                onChange={(event) => setStartDay(event.target.value)}
-              />
+          <div className="grid gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:grid-cols-[280px_1fr]">
+            <div className="space-y-2 rounded-[18px] border border-white/8 bg-[linear-gradient(180deg,rgba(2,6,23,0.36),rgba(15,23,42,0.18))] p-3">
+              <div className="space-y-0.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Start Day</p>
+                <p className="text-[11px] text-slate-300/62">Choose where the backfill begins.</p>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-medium text-slate-100 outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                  type="date"
+                  max={todayIso()}
+                  value={startDay}
+                  onChange={(event) => setStartDay(event.target.value)}
+                />
+                <Button
+                  className="h-10 shrink-0 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(30,41,59,0.88),rgba(15,23,42,0.96))] px-4 text-[12px] font-medium text-slate-100 shadow-[0_8px_18px_rgba(2,6,23,0.22)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(51,65,85,0.92),rgba(15,23,42,0.98))]"
+                  onClick={() => comprehensiveMutation.mutate()}
+                  disabled={comprehensiveMutation.isPending || extractRunning}
+                >
+                  {extractRunning || comprehensiveMutation.isPending ? 'Running...' : 'Run extract'}
+                </Button>
+              </div>
             </div>
             <div className="space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Options</p>
@@ -308,7 +315,7 @@ export function DataExtractPage(): JSX.Element {
                   checked={incrementalOnly}
                   onChange={(event) => setIncrementalOnly(event.target.checked)}
                 />
-                Incremental only
+                Incremental
               </label>
                 <label className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-medium transition ${
                   includeDetails
@@ -321,7 +328,7 @@ export function DataExtractPage(): JSX.Element {
                   checked={includeDetails}
                   onChange={(event) => setIncludeDetails(event.target.checked)}
                 />
-                Include details
+                Activities
               </label>
                 <label className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-medium transition ${
                   includeWellness
@@ -334,7 +341,7 @@ export function DataExtractPage(): JSX.Element {
                   checked={includeWellness}
                   onChange={(event) => setIncludeWellness(event.target.checked)}
                 />
-                Include sleep + wellness
+                Recovery
               </label>
             </div>
           </div>
@@ -368,7 +375,7 @@ export function DataExtractPage(): JSX.Element {
       <Card className={surfaceClassName}>
         <CardContent className="space-y-3 p-4">
           <p className="text-sm font-medium">Garmin Credentials</p>
-          {isAdmin ? (
+          {isAdminOwnScope ? (
             <>
               <p className="text-xs text-muted-foreground">
                 Admin account uses server environment credentials (<code>GARMIN_EMAIL</code> / <code>GARMIN_PASSWORD</code>).
@@ -380,7 +387,9 @@ export function DataExtractPage(): JSX.Element {
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
-                Credentials are kept in backend memory only for this user session. They are not saved to the database and will be cleared on backend restart.
+                {isAdmin
+                  ? 'When viewing another owner, provide Garmin credentials for that owner scope. They are kept in backend memory only and cleared on backend restart.'
+                  : 'Credentials are kept in backend memory only for this user session. They are not saved to the database and will be cleared on backend restart.'}
               </p>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1">
@@ -408,7 +417,7 @@ export function DataExtractPage(): JSX.Element {
                   onClick={() => setGarminCredsMutation.mutate({ email: garminEmail.trim(), password: garminPassword })}
                   disabled={setGarminCredsMutation.isPending || !garminEmail.trim() || !garminPassword}
                 >
-                  {setGarminCredsMutation.isPending ? 'Saving...' : 'Save session credentials'}
+                  {setGarminCredsMutation.isPending ? 'Saving...' : isAdmin ? 'Save owner credentials' : 'Save session credentials'}
                 </Button>
                 <Button
                   variant="outline"

@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, Clock3, Flame, HeartPulse, Route, Ruler } from
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { intensityHexFromKey } from '@/features/dashboard/utils/intensity-palette';
 import type { DashboardWeekSummary } from '@/features/dashboard/types/dashboard';
 
 interface DashboardWeekSummaryCardProps {
@@ -30,11 +31,11 @@ function fmtSeconds(seconds: number): string {
 }
 
 const zoneColors: Record<string, string> = {
-  Z1: 'bg-slate-400',
-  Z2: 'bg-sky-500',
-  Z3: 'bg-amber-500',
-  Z4: 'bg-rose-500',
-  Z5: 'bg-violet-500',
+  Z1: intensityHexFromKey('green'),
+  Z2: intensityHexFromKey('blue'),
+  Z3: intensityHexFromKey('orange'),
+  Z4: intensityHexFromKey('red'),
+  Z5: intensityHexFromKey('purple'),
 };
 
 export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summary }: DashboardWeekSummaryCardProps): JSX.Element {
@@ -76,8 +77,11 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
               <span>{zone.zone}</span>
               <div className="h-1.5 w-full overflow-hidden rounded-full border border-border/70 bg-muted/70">
                 <div
-                  className={`h-full rounded-full ${zoneColors[zone.zone] ?? 'bg-slate-500'}`}
-                  style={{ width: `${zone.pct > 0 ? Math.max(3, Math.min(100, zone.pct)) : 0}%` }}
+                  className="h-full rounded-full"
+                  style={{
+                    backgroundColor: zoneColors[zone.zone] ?? intensityHexFromKey('green'),
+                    width: `${zone.pct > 0 ? Math.max(3, Math.min(100, zone.pct)) : 0}%`,
+                  }}
                 />
               </div>
               <span className="text-right">{fmtSeconds(zone.seconds)}</span>

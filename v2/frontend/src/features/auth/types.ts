@@ -15,3 +15,7 @@ export interface MeResponse {
   owner: string;
   auth_enabled: boolean;
 }
+
+export interface OwnersResponse {
+  owners: string[];
+}

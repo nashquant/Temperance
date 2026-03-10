@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Too
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
+import { intensityHexFromThreshold } from '@/features/dashboard/utils/intensity-palette';
 import { formatMetricValue } from '@/features/weekly-outlook/utils/formatters';
 
 interface GroupedBarChartRow {
@@ -17,14 +18,6 @@ interface GroupedBarChartProps {
   metric: 'tss' | 'rtss' | 'distance';
   currentLabel: string;
   compareLabel: string;
-}
-
-function tssThresholdColor(thresholdBasis: number): string {
-  if (thresholdBasis > 150) return '#a855f7';
-  if (thresholdBasis > 120) return '#ef4444';
-  if (thresholdBasis > 80) return '#f97316';
-  if (thresholdBasis > 50) return '#facc15';
-  return '#22c55e';
 }
 
 function GroupedBarTooltip({
@@ -94,7 +87,7 @@ function GroupedBarChartComponent({
   const getCurrentBarFill = (row: GroupedBarChartRow): string => {
     const thresholdBasis = metric === 'distance' ? row.currentTss : row.current;
     if (metric !== 'tss' && metric !== 'rtss' && metric !== 'distance') return '#3b82f6';
-    return tssThresholdColor(thresholdBasis);
+    return intensityHexFromThreshold(thresholdBasis);
   };
 
   return (

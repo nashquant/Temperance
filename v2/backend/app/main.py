@@ -759,7 +759,8 @@ def _runtime_garmin_credentials(owner: str) -> tuple[str, str]:
 
 def _resolve_garmin_credentials(ctx: dict[str, str], owner: str) -> tuple[str, str, str]:
     role = str(ctx.get("role") or "viewer").strip().lower()
-    if role == "admin":
+    current_user = str(ctx.get("user") or "").strip()
+    if role == "admin" and owner == current_user:
         env_email, env_password = _garmin_credentials_from_env()
         if env_email and env_password:
             return env_email, env_password, "env"
@@ -3738,6 +3739,7 @@ def data_extract_status(
     last_sync = get_last_sync(db_path)
     counts = get_table_counts(db_path)
     role = str(ctx.get("role") or "viewer").strip().lower()
+    current_user = str(ctx.get("user") or "").strip()
     runtime_email, runtime_password = _runtime_garmin_credentials(resolved_owner)
     garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
     return {
@@ -3750,6 +3752,8 @@ def data_extract_status(
         "garmin_runtime_credentials_set": bool(runtime_email and runtime_password),
         "garmin_credentials_hint": (
             "Admin uses GARMIN_EMAIL/GARMIN_PASSWORD from environment."
+            if role == "admin" and resolved_owner == current_user
+            else "Provide Garmin credentials for this owner scope (memory only)."
             if role == "admin"
             else "Provide Garmin credentials for this user session (memory only)."
         ),

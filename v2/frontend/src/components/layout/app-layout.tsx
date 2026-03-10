@@ -5,21 +5,23 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import { setGarminCredentials } from '@/features/data-extract/services/data-extract-api';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: BarChart3, disabled: false },
+  { to: '/app/week-planner', label: 'Week Planner', icon: CalendarDays, disabled: false },
   { to: '/app/athlete-progression', label: 'Athlete Progression', icon: BarChart3, disabled: false },
   { to: '/app/wellness', label: 'Wellness', icon: HeartPulse, disabled: false },
-  { to: '/app/week-planner', label: 'Week Planner', icon: CalendarDays, disabled: false },
   { to: '/app/data-extract', label: 'Data Extract', icon: Database, disabled: false },
-  { to: '/app/settings', label: 'Settings', icon: Settings, disabled: false },
+  { to: '/app/settings', label: 'User Settings', icon: Settings, disabled: false },
 ];
 
 export function AppLayout(): JSX.Element {
-  const { logout, profile } = useAuth();
+  const { logout, owners, profile, session, setOwner } = useAuth();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [switchingOwner, setSwitchingOwner] = useState(false);
 
   const headerMeta = (() => {
     const path = location.pathname;
@@ -31,6 +33,28 @@ export function AppLayout(): JSX.Element {
     if (path.startsWith('/app/settings')) return { section: 'Configuration', title: 'Settings' };
     return { section: 'Performance', title: 'Temperance' };
   })();
+
+  const handleOwnerChange = async (nextOwner: string) => {
+    if (!profile || !session?.token) {
+      setOwner(nextOwner);
+      return;
+    }
+    if (nextOwner === profile.owner) return;
+
+    try {
+      setSwitchingOwner(true);
+      await setGarminCredentials({
+        token: session.token,
+        owner: profile.owner,
+        payload: { email: '', password: '' },
+      });
+    } catch {
+      // Swallow credential-clear failures so owner switching still works.
+    } finally {
+      setOwner(nextOwner);
+      setSwitchingOwner(false);
+    }
+  };
 
   return (
     <div className="h-screen overflow-hidden bg-background">
@@ -74,6 +98,23 @@ export function AppLayout(): JSX.Element {
               <p className="font-medium text-foreground">Signed in as</p>
               <p>{profile?.user ?? 'Unknown user'}</p>
             </div>
+            {profile?.role === 'admin' && owners.length > 1 ? (
+              <div className="space-y-1.5">
+                <p className="font-medium text-foreground">Viewing owner</p>
+                <select
+                  value={profile.owner}
+                  onChange={(event) => void handleOwnerChange(event.target.value)}
+                  disabled={switchingOwner}
+                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                >
+                  {owners.map((owner) => (
+                    <option key={owner} value={owner}>
+                      {owner}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <Button variant="outline" size="sm" className="w-full justify-start gap-2" onClick={logout}>
               <LogOut className="h-4 w-4" />
               Sign out
@@ -137,6 +178,23 @@ export function AppLayout(): JSX.Element {
                   <p className="font-medium text-foreground">Signed in as</p>
                   <p>{profile?.user ?? 'Unknown user'}</p>
                 </div>
+                {profile?.role === 'admin' && owners.length > 1 ? (
+                  <div className="space-y-1.5">
+                    <p className="font-medium text-foreground">Viewing owner</p>
+                    <select
+                      value={profile.owner}
+                      onChange={(event) => void handleOwnerChange(event.target.value)}
+                      disabled={switchingOwner}
+                      className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                    >
+                      {owners.map((owner) => (
+                        <option key={owner} value={owner}>
+                          {owner}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
                 <Button variant="outline" size="sm" className="w-full justify-start gap-2" onClick={logout}>
                   <LogOut className="h-4 w-4" />
                   Sign out

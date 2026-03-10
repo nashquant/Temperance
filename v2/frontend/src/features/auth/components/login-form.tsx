@@ -24,7 +24,7 @@ export function LoginForm(): JSX.Element {
 
     try {
       await login({ username, password });
-      navigate('/app/weekly-outlook', { replace: true });
+      navigate('/app/dashboard', { replace: true });
     } catch (submissionError) {
       const message = submissionError instanceof Error ? submissionError.message : 'Unable to sign in';
       setError(message);

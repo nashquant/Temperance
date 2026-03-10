@@ -18,7 +18,7 @@ function RootRedirect(): JSX.Element {
     return <div className="p-8 text-sm text-muted-foreground">Loading session...</div>;
   }
 
-  return <Navigate to={status === 'authenticated' ? '/app/week-planner' : '/login'} replace />;
+  return <Navigate to={status === 'authenticated' ? '/app/dashboard' : '/login'} replace />;
 }
 
 function PlaceholderPage({ title }: { title: string }): JSX.Element {
@@ -47,7 +47,7 @@ export function AppRouter(): JSX.Element {
           <Route path="data-extract" element={<DataExtractPage />} />
           <Route path="activities" element={<Navigate to="/app/data-extract" replace />} />
           <Route path="settings" element={<SettingsPage />} />
-          <Route index element={<Navigate to="week-planner" replace />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
         </Route>
       </Route>
 

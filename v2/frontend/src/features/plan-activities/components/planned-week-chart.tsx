@@ -3,6 +3,7 @@ import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
 import { Card, CardContent } from '@/components/ui/card';
+import { intensityHexFromThreshold } from '@/features/dashboard/utils/intensity-palette';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
 
 interface PlannedWeekChartRow {
@@ -58,11 +59,7 @@ export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.E
         : metric === 'rtss' || metric === 'distance_eqv_km'
           ? row.tssBasis
           : row.value;
-    if (thresholdBasis > 150) return '#a855f7';
-    if (thresholdBasis > 120) return '#ef4444';
-    if (thresholdBasis > 80) return '#f97316';
-    if (thresholdBasis > 50) return '#facc15';
-    return '#22c55e';
+    return intensityHexFromThreshold(thresholdBasis);
   };
 
   return (

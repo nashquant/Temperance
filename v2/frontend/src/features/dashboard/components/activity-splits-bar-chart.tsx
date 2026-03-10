@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
+import { Gauge, Moon, Sparkles, Target, Waves } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
+import { intensityHexFromKey, intensityHexFromThreshold } from '@/features/dashboard/utils/intensity-palette';
 
 type ActivitySplitsBarChartRow = {
   label: string;
@@ -25,12 +27,66 @@ type TooltipState = {
   y: number;
 } | null;
 
-function getBarFill(ifPct: number): string {
-  if (ifPct >= 100) return '#f87171';
-  if (ifPct >= 90) return '#fb923c';
-  if (ifPct >= 80) return '#facc15';
-  if (ifPct >= 65) return '#38bdf8';
-  return '#34d399';
+function getBarFill(type: string, ifPct: number): string {
+  const normalizedType = String(type || '').trim().toLowerCase();
+
+  if (
+    normalizedType.includes('vo2') ||
+    normalizedType.includes('v02') ||
+    normalizedType.includes('vo2max') ||
+    normalizedType.includes('anaerobic')
+  ) {
+    return intensityHexFromKey('purple');
+  }
+  if (normalizedType.includes('threshold') || normalizedType.includes('tempo hard') || normalizedType.includes('hard')) {
+    return intensityHexFromKey('red');
+  }
+  if (normalizedType.includes('steady') || normalizedType.includes('tempo') || normalizedType.includes('mod')) {
+    return intensityHexFromKey('orange');
+  }
+  if (normalizedType.includes('easy') || normalizedType.includes('endurance') || normalizedType.includes('aerobic')) {
+    return intensityHexFromKey('blue');
+  }
+  if (normalizedType.includes('recovery') || normalizedType.includes('recover') || normalizedType.includes('rest')) {
+    return intensityHexFromKey('green');
+  }
+
+  return intensityHexFromThreshold(ifPct);
+}
+
+function getTypeVisual(type: string, ifPct: number): {
+  icon: typeof Moon;
+  color: string;
+} {
+  const normalizedType = String(type || '').trim().toLowerCase();
+
+  if (
+    normalizedType.includes('vo2') ||
+    normalizedType.includes('v02') ||
+    normalizedType.includes('vo2max') ||
+    normalizedType.includes('anaerobic')
+  ) {
+    return { icon: Sparkles, color: intensityHexFromKey('purple') };
+  }
+  if (normalizedType.includes('threshold') || normalizedType.includes('tempo hard') || normalizedType.includes('hard')) {
+    return { icon: Target, color: intensityHexFromKey('red') };
+  }
+  if (normalizedType.includes('steady') || normalizedType.includes('tempo') || normalizedType.includes('mod')) {
+    return { icon: Gauge, color: intensityHexFromKey('orange') };
+  }
+  if (normalizedType.includes('easy') || normalizedType.includes('endurance') || normalizedType.includes('aerobic')) {
+    return { icon: Waves, color: intensityHexFromKey('blue') };
+  }
+  if (normalizedType.includes('recovery') || normalizedType.includes('recover') || normalizedType.includes('rest')) {
+    return { icon: Moon, color: intensityHexFromKey('green') };
+  }
+
+  const fallbackColor = intensityHexFromThreshold(ifPct);
+  if (fallbackColor === intensityHexFromKey('purple')) return { icon: Sparkles, color: fallbackColor };
+  if (fallbackColor === intensityHexFromKey('red')) return { icon: Target, color: fallbackColor };
+  if (fallbackColor === intensityHexFromKey('orange')) return { icon: Gauge, color: fallbackColor };
+  if (fallbackColor === intensityHexFromKey('blue')) return { icon: Waves, color: fallbackColor };
+  return { icon: Moon, color: fallbackColor };
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -74,6 +130,8 @@ function buildChartData(data: ActivitySplitsBarChartRow[]): ChartDatum[] {
 function ActivitySplitsBarTooltip({ tooltip }: { tooltip: TooltipState }): JSX.Element | null {
   if (!tooltip) return null;
   const { datum, x, y } = tooltip;
+  const typeVisual = getTypeVisual(datum.type, datum.ifPct);
+  const TypeIcon = typeVisual.icon;
 
   return (
     <div
@@ -88,7 +146,10 @@ function ActivitySplitsBarTooltip({ tooltip }: { tooltip: TooltipState }): JSX.E
       <div className="space-y-1.5 text-xs">
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-300/80">Type</span>
-          <span className="font-semibold text-foreground">{datum.type || '-'}</span>
+          <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
+            <TypeIcon className="h-3.5 w-3.5" style={{ color: typeVisual.color }} />
+            <span>{datum.type || '-'}</span>
+          </span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-300/80">Duration</span>
@@ -143,7 +204,7 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
                     width={width}
                     height={barHeight}
                     rx="3"
-                    fill={getBarFill(row.ifPct)}
+                    fill={getBarFill(row.type, row.ifPct)}
                     opacity={active ? 1 : 0.95}
                     stroke={active ? 'rgba(226,232,240,0.9)' : 'rgba(255,255,255,0.08)'}
                     strokeWidth={active ? 1.5 : 1}

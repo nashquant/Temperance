@@ -7,7 +7,7 @@ export function LoginPage(): JSX.Element {
   const { status } = useAuth();
 
   if (status === 'authenticated') {
-    return <Navigate to="/app/weekly-outlook" replace />;
+    return <Navigate to="/app/dashboard" replace />;
   }
 
   return (

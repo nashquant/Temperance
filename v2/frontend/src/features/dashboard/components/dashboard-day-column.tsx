@@ -21,27 +21,27 @@ interface DashboardDayColumnProps {
 }
 
 const intensityClasses: Record<string, string> = {
-  green: 'border-slate-400/55 bg-slate-500/10',
-  blue: 'border-sky-500/50 bg-sky-500/10',
-  orange: 'border-amber-500/55 bg-amber-500/10',
-  red: 'border-rose-500/50 bg-rose-500/10',
-  purple: 'border-violet-500/50 bg-violet-500/10',
+  green: 'border-[rgba(143,155,173,0.58)] bg-[rgba(143,155,173,0.14)]',
+  blue: 'border-[rgba(79,179,255,0.58)] bg-[rgba(79,179,255,0.14)]',
+  orange: 'border-[rgba(240,166,58,0.6)] bg-[rgba(240,166,58,0.15)]',
+  red: 'border-[rgba(239,106,106,0.58)] bg-[rgba(239,106,106,0.14)]',
+  purple: 'border-[rgba(139,108,246,0.58)] bg-[rgba(139,108,246,0.14)]',
 };
 
 const plannedIntensityClasses: Record<string, string> = {
-  green: 'border-slate-300/70 bg-slate-500/5',
-  blue: 'border-sky-400/70 bg-sky-500/5',
-  orange: 'border-amber-400/70 bg-amber-500/5',
-  red: 'border-rose-400/70 bg-rose-500/5',
-  purple: 'border-violet-400/70 bg-violet-500/5',
+  green: 'border-[rgba(143,155,173,0.72)] bg-[rgba(143,155,173,0.08)]',
+  blue: 'border-[rgba(79,179,255,0.72)] bg-[rgba(79,179,255,0.08)]',
+  orange: 'border-[rgba(240,166,58,0.74)] bg-[rgba(240,166,58,0.08)]',
+  red: 'border-[rgba(239,106,106,0.72)] bg-[rgba(239,106,106,0.08)]',
+  purple: 'border-[rgba(139,108,246,0.72)] bg-[rgba(139,108,246,0.08)]',
 };
 
 const customBorderAccentClasses: Record<string, string> = {
-  green: 'border-slate-400/70 outline-slate-300/55',
-  blue: 'border-sky-400/75 outline-sky-300/55',
-  orange: 'border-amber-400/75 outline-amber-300/55',
-  red: 'border-rose-400/75 outline-rose-300/55',
-  purple: 'border-violet-400/75 outline-violet-300/55',
+  green: 'border-[rgba(143,155,173,0.74)] outline-[rgba(203,213,225,0.28)]',
+  blue: 'border-[rgba(79,179,255,0.76)] outline-[rgba(125,211,252,0.3)]',
+  orange: 'border-[rgba(240,166,58,0.76)] outline-[rgba(252,211,77,0.3)]',
+  red: 'border-[rgba(239,106,106,0.74)] outline-[rgba(253,164,175,0.3)]',
+  purple: 'border-[rgba(139,108,246,0.74)] outline-[rgba(196,181,253,0.3)]',
 };
 
 function fmtMeta(day: DashboardDayColumnType): string[] {
