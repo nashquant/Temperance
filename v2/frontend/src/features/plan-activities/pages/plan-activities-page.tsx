@@ -199,12 +199,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
       <Card className={surfaceClassName}>
         <CardContent className="space-y-4 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-5">
-          <div className="space-y-1">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Planned Activity</p>
-            <p className="text-sm text-muted-foreground">
-              Enter one or more workout strings. Example: `3Mar26: 80min elliptical @140bpm` or `2026-03-26: 10min run @4:50 + 5x6min @3:40/km`
-            </p>
-          </div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Planned Activity</p>
           <textarea
             className="min-h-[120px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
             placeholder="e.g. 3Mar26: 80min elliptical @140bpm; 2026-03-26: 10min run @4:50 + 5x6min @3:40/km"
@@ -215,7 +210,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
             <p className="text-xs text-muted-foreground">Multiple entries are supported with new lines, `;`, or `,`.</p>
             <div className="flex items-center gap-2">
             <Button onClick={() => ingestMutation.mutate(entryText)} disabled={ingestMutation.isPending || !entryText.trim()}>
-              {ingestMutation.isPending ? 'Saving...' : 'Save planned entry'}
+              {ingestMutation.isPending ? 'Saving...' : 'Save'}
             </Button>
             {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
             </div>
@@ -275,8 +270,8 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
               <Card className={surfaceClassName}>
                 <CardContent className="p-0">
-                  <div className="overflow-x-auto rounded-2xl">
-                    <table className="w-full table-fixed text-sm">
+                  <div className="overflow-x-auto rounded-2xl pb-1">
+                    <table className="min-w-[980px] w-full table-fixed text-sm">
                       <colgroup>
                         <col className="w-[64px]" />
                         <col className="w-[108px]" />
@@ -290,15 +285,15 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                       </colgroup>
                       <thead className="bg-white/5 text-slate-300/72">
                         <tr>
-                          <th className="px-3 py-2 text-left">Done</th>
-                          <th className="px-3 py-2 text-left">Day</th>
-                          <th className="px-3 py-2 text-left">Activity</th>
-                          <th className="px-3 py-2 text-left">Workout</th>
-                          <th className="px-3 py-2 text-right">TSS</th>
-                          <th className="px-3 py-2 text-right">rTSS</th>
-                          <th className="px-3 py-2 text-right">Dist Eqv</th>
-                          <th className="px-3 py-2 text-right">IF</th>
-                          <th className="px-3 py-2 text-center">Actions</th>
+                          <th className="px-2 py-2 text-left sm:px-3">Done</th>
+                          <th className="px-2 py-2 text-left sm:px-3">Day</th>
+                          <th className="px-2 py-2 text-left sm:px-3">Activity</th>
+                          <th className="px-2 py-2 text-left sm:px-3">Workout</th>
+                          <th className="px-2 py-2 text-right sm:px-3">TSS</th>
+                          <th className="px-2 py-2 text-right sm:px-3">rTSS</th>
+                          <th className="px-2 py-2 text-right sm:px-3">Dist Eqv</th>
+                          <th className="px-2 py-2 text-right sm:px-3">IF</th>
+                          <th className="px-2 py-2 text-center sm:px-3">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -306,7 +301,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                           const rowKey = `${row.day_utc}-${row.line_no}`;
                           return (
                             <tr key={rowKey} className="border-t border-white/10">
-                              <td className="px-3 py-2">
+                              <td className="px-2 py-2 sm:px-3">
                                 <input
                                   className="h-4 w-4 accent-sky-400"
                                   type="checkbox"
@@ -320,11 +315,11 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                                   }
                                 />
                               </td>
-                              <td className="px-3 py-2">{dayLabel(row.day_utc)}</td>
-                              <td className="px-3 py-2">{row.activity}</td>
-                              <td className="px-3 py-2">
+                              <td className="px-2 py-2 sm:px-3">{dayLabel(row.day_utc)}</td>
+                              <td className="px-2 py-2 sm:px-3">{row.activity}</td>
+                              <td className="px-2 py-2 sm:px-3">
                                 <input
-                                  className="w-full min-w-0 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                                  className="min-w-[260px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
                                   value={editValues[rowKey] ?? ''}
                                   onChange={(event) => {
                                     setEditValues((previous) => ({ ...previous, [rowKey]: event.target.value }));
@@ -346,11 +341,11 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                                   </p>
                                 ) : null}
                               </td>
-                              <td className="px-3 py-2 text-right">{Math.round(row.tss)}</td>
-                              <td className="px-3 py-2 text-right">{Math.round(row.rtss)}</td>
-                              <td className="px-3 py-2 text-right">{row.distance_eqv_km.toFixed(1)} km</td>
-                              <td className="px-3 py-2 text-right">{row.if_proxy_pct.toFixed(0)}%</td>
-                              <td className="px-3 py-2 text-right">
+                              <td className="px-2 py-2 text-right sm:px-3">{Math.round(row.tss)}</td>
+                              <td className="px-2 py-2 text-right sm:px-3">{Math.round(row.rtss)}</td>
+                              <td className="px-2 py-2 text-right sm:px-3">{row.distance_eqv_km.toFixed(1)} km</td>
+                              <td className="px-2 py-2 text-right sm:px-3">{row.if_proxy_pct.toFixed(0)}%</td>
+                              <td className="px-2 py-2 text-right sm:px-3">
                                 <div className="flex justify-end gap-1.5">
                                   <Button
                                     variant="ghost"
