@@ -85,6 +85,10 @@ SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 APP_TIMEZONE_NAME = str(os.getenv("TEMPERANCE_TIMEZONE") or os.getenv("TZ") or "America/Sao_Paulo").strip() or "America/Sao_Paulo"
+AUTO_SYNC_ENABLED = str(os.getenv("TEMPERANCE_AUTO_SYNC_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+AUTO_SYNC_INTERVAL_SECONDS = max(60, int(str(os.getenv("TEMPERANCE_AUTO_SYNC_INTERVAL_SECONDS", "900") or "900")))
+AUTO_SYNC_OWNER = str(os.getenv("TEMPERANCE_AUTO_SYNC_OWNER", "admin") or "admin").strip() or "admin"
+AUTO_SYNC_DAYS_BACK = max(1, min(int(str(os.getenv("TEMPERANCE_AUTO_SYNC_DAYS_BACK", "2") or "2")), 7))
 
 
 def _now_app_local() -> pd.Timestamp:
@@ -179,6 +183,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def _startup_auto_sync() -> None:
+    _start_auto_sync_thread()
+
+
+@app.on_event("shutdown")
+def _shutdown_auto_sync() -> None:
+    _stop_auto_sync_thread()
 
 
 def _auth_enabled() -> bool:
@@ -395,6 +409,9 @@ _EXTRACT_PROGRESS_LOCK = threading.Lock()
 _EXTRACT_PROGRESS_BY_OWNER: dict[str, dict[str, Any]] = {}
 _GARMIN_RUNTIME_CREDENTIALS_LOCK = threading.Lock()
 _GARMIN_RUNTIME_CREDENTIALS_BY_OWNER: dict[str, dict[str, str]] = {}
+_AUTO_SYNC_LOCK = threading.Lock()
+_AUTO_SYNC_THREAD: threading.Thread | None = None
+_AUTO_SYNC_STOP_EVENT = threading.Event()
 
 
 def _utc_now_iso() -> str:
@@ -775,6 +792,111 @@ def _resolve_garmin_credentials(ctx: dict[str, str], owner: str) -> tuple[str, s
     if runtime_email and runtime_password:
         return runtime_email, runtime_password, "session"
     return "", "", "missing"
+
+
+def _run_quick_activity_sync(
+    db_path: Path,
+    garmin_email: str,
+    garmin_password: str,
+    *,
+    days_back: int,
+    source_label: str,
+    credentials_source: str,
+) -> dict[str, Any]:
+    latest = get_latest_activity_time(db_path)
+    rows = fetch_garmin_runs(
+        email=garmin_email,
+        password=garmin_password,
+        days_back=max(1, int(days_back)),
+        since_utc=latest,
+    )
+    changed = upsert_activities(db_path, rows)
+    total_rows = len(rows)
+    message = f"total_rows={total_rows}"
+    log_sync(db_path, source=source_label, success=True, message=message)
+    return {
+        "success": True,
+        "messages": [],
+        "total_rows": total_rows,
+        "details": {
+            "garmin": {
+                "profile": "quick",
+                "rows": total_rows,
+                "db_changes": int(changed),
+                "credentials_source": credentials_source,
+                "days_back": max(1, int(days_back)),
+                "since_utc": latest.isoformat() if latest is not None else None,
+            }
+        },
+    }
+
+
+def _run_auto_sync_once() -> None:
+    owner = AUTO_SYNC_OWNER
+    if not owner:
+        return
+    if not _AUTO_SYNC_LOCK.acquire(blocking=False):
+        return
+    try:
+        if _extract_progress_get(owner).get("running"):
+            return
+        db_path = _db_path_for_owner(owner)
+        ctx = {"user": owner, "role": "admin"}
+        garmin_email, garmin_password, credentials_source = _resolve_garmin_credentials(ctx, owner)
+        if not (garmin_email and garmin_password):
+            log_sync(
+                db_path,
+                source="v2_sync_garmin_auto_quick",
+                success=False,
+                message="Garmin credentials missing for autosync.",
+            )
+            return
+        _run_quick_activity_sync(
+            db_path,
+            garmin_email,
+            garmin_password,
+            days_back=AUTO_SYNC_DAYS_BACK,
+            source_label="v2_sync_garmin_auto_quick",
+            credentials_source=credentials_source,
+        )
+    except Exception as exc:
+        try:
+            log_sync(
+                _db_path_for_owner(owner),
+                source="v2_sync_garmin_auto_quick",
+                success=False,
+                message=str(exc),
+            )
+        except Exception:
+            pass
+    finally:
+        _AUTO_SYNC_LOCK.release()
+
+
+def _auto_sync_loop() -> None:
+    while not _AUTO_SYNC_STOP_EVENT.is_set():
+        _run_auto_sync_once()
+        if _AUTO_SYNC_STOP_EVENT.wait(AUTO_SYNC_INTERVAL_SECONDS):
+            break
+
+
+def _start_auto_sync_thread() -> None:
+    global _AUTO_SYNC_THREAD
+    if not AUTO_SYNC_ENABLED or _AUTO_SYNC_THREAD is not None:
+        return
+    _AUTO_SYNC_STOP_EVENT.clear()
+    _AUTO_SYNC_THREAD = threading.Thread(
+        target=_auto_sync_loop,
+        name="temperance-auto-sync",
+        daemon=True,
+    )
+    _AUTO_SYNC_THREAD.start()
+
+
+def _stop_auto_sync_thread() -> None:
+    global _AUTO_SYNC_THREAD
+    _AUTO_SYNC_STOP_EVENT.set()
+    _AUTO_SYNC_THREAD = None
 
 
 def _lt_target_from_regression(lt_pace_sec_per_km: float, value_index: int) -> float:
@@ -3955,6 +4077,12 @@ def data_extract_status(
         "db_path": str(db_path),
         "counts": counts,
         "last_sync": last_sync,
+        "auto_sync": {
+            "enabled": AUTO_SYNC_ENABLED,
+            "interval_seconds": AUTO_SYNC_INTERVAL_SECONDS,
+            "owner": AUTO_SYNC_OWNER,
+            "days_back": AUTO_SYNC_DAYS_BACK,
+        },
         "garmin_credentials_available": bool(garmin_email and garmin_password),
         "garmin_credentials_source": garmin_source,
         "garmin_runtime_credentials_set": bool(runtime_email and runtime_password),
@@ -4030,63 +4158,74 @@ def data_extract_sync(
     messages: list[str] = []
     details: dict[str, Any] = {}
     total_rows = 0
+    sync_completed = False
+    sync_logged = False
     garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
-    latest = get_latest_activity_time(db_path)
 
     if source in {"garmin_api", "both"}:
-        if not (garmin_email and garmin_password):
+        if not _AUTO_SYNC_LOCK.acquire(blocking=False):
+            messages.append("Garmin sync already running. Try again shortly.")
+            details["garmin"] = {"skipped": True, "reason": "sync_in_progress"}
+        elif not (garmin_email and garmin_password):
             messages.append("Garmin credentials missing. Add credentials for the active owner scope.")
             details["garmin"] = {"skipped": True, "reason": "credentials_missing"}
         else:
-            if profile == "quick":
-                rows = fetch_garmin_runs(
-                    email=garmin_email,
-                    password=garmin_password,
-                    days_back=days_back,
-                    since_utc=latest,
-                )
-                changed = upsert_activities(db_path, rows)
-                total_rows += len(rows)
-                details["garmin"] = {"profile": "quick", "rows": len(rows), "db_changes": int(changed), "credentials_source": garmin_source}
-            else:
-                deep_start = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
-                extract = fetch_garmin_comprehensive(
-                    email=garmin_email,
-                    password=garmin_password,
-                    start_day=deep_start,
-                    end_day=datetime.now(timezone.utc).date(),
-                    include_activity_details=True,
-                    include_splits=True,
-                    include_wellness=True,
-                    raw_export_dir=None,
-                    progress_cb=None,
-                )
-                n_a = upsert_activities(db_path, extract.activities)
-                n_d = upsert_activity_details(db_path, extract.activity_details)
-                n_r = upsert_activity_records(db_path, extract.activity_records)
-                n_sp = upsert_activity_splits(db_path, extract.activity_splits)
-                n_s = upsert_sleep_daily(db_path, extract.sleep_daily)
-                n_w = upsert_wellness_daily(db_path, extract.wellness_daily)
-                total_rows += len(extract.activities)
-                details["garmin"] = {
-                    "profile": "deep",
-                    "credentials_source": garmin_source,
-                    "activities": len(extract.activities),
-                    "details": len(extract.activity_details),
-                    "records": len(extract.activity_records),
-                    "splits": len(extract.activity_splits),
-                    "sleep": len(extract.sleep_daily),
-                    "wellness": len(extract.wellness_daily),
-                    "errors": extract.errors[:20],
-                    "db_changes": {
-                        "activities": int(n_a),
-                        "details": int(n_d),
-                        "records": int(n_r),
-                        "splits": int(n_sp),
-                        "sleep": int(n_s),
-                        "wellness": int(n_w),
-                    },
-                }
+            try:
+                if profile == "quick":
+                    sync_result = _run_quick_activity_sync(
+                        db_path,
+                        garmin_email,
+                        garmin_password,
+                        days_back=days_back,
+                        source_label=f"v2_sync_{source}_{profile}",
+                        credentials_source=garmin_source,
+                    )
+                    total_rows += int(sync_result.get("total_rows") or 0)
+                    details["garmin"] = dict(sync_result.get("details") or {}).get("garmin") or {}
+                    sync_completed = True
+                    sync_logged = True
+                else:
+                    deep_start = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
+                    extract = fetch_garmin_comprehensive(
+                        email=garmin_email,
+                        password=garmin_password,
+                        start_day=deep_start,
+                        end_day=datetime.now(timezone.utc).date(),
+                        include_activity_details=True,
+                        include_splits=True,
+                        include_wellness=True,
+                        raw_export_dir=None,
+                        progress_cb=None,
+                    )
+                    n_a = upsert_activities(db_path, extract.activities)
+                    n_d = upsert_activity_details(db_path, extract.activity_details)
+                    n_r = upsert_activity_records(db_path, extract.activity_records)
+                    n_sp = upsert_activity_splits(db_path, extract.activity_splits)
+                    n_s = upsert_sleep_daily(db_path, extract.sleep_daily)
+                    n_w = upsert_wellness_daily(db_path, extract.wellness_daily)
+                    total_rows += len(extract.activities)
+                    details["garmin"] = {
+                        "profile": "deep",
+                        "credentials_source": garmin_source,
+                        "activities": len(extract.activities),
+                        "details": len(extract.activity_details),
+                        "records": len(extract.activity_records),
+                        "splits": len(extract.activity_splits),
+                        "sleep": len(extract.sleep_daily),
+                        "wellness": len(extract.wellness_daily),
+                        "errors": extract.errors[:20],
+                        "db_changes": {
+                            "activities": int(n_a),
+                            "details": int(n_d),
+                            "records": int(n_r),
+                            "splits": int(n_sp),
+                            "sleep": int(n_s),
+                            "wellness": int(n_w),
+                        },
+                    }
+                    sync_completed = True
+            finally:
+                _AUTO_SYNC_LOCK.release()
 
     if source in {"file_import", "both"}:
         import_dir = Path(load_config().import_dir) if hasattr(load_config(), "import_dir") else (TEMPERANCE_SRC / "data" / "import")
@@ -4095,9 +4234,10 @@ def data_extract_sync(
         total_rows += len(rows)
         details["file_import"] = {"rows": len(rows), "db_changes": int(changed), "import_dir": str(import_dir)}
 
-    success = total_rows > 0 or any("missing" in m.lower() for m in messages)
+    success = sync_completed or total_rows > 0 or any("missing" in m.lower() for m in messages)
     msg = " | ".join(messages) if messages else f"total_rows={total_rows}"
-    log_sync(db_path, source=f"v2_sync_{source}_{profile}", success=success, message=msg)
+    if not sync_logged:
+        log_sync(db_path, source=f"v2_sync_{source}_{profile}", success=success, message=msg)
     return {"success": success, "messages": messages, "total_rows": total_rows, "details": details}
 
 

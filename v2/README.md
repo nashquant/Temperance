@@ -20,6 +20,32 @@ pip install -r requirements.txt
 
 Backend health check: `http://127.0.0.1:8000/health`
 
+## Embedded activity auto-sync
+
+The v2 backend can run a lightweight embedded Garmin auto-sync thread inside the backend process. This is intended for frequent incremental activity pulls only, not deep extraction.
+
+Set these environment variables before starting the backend:
+
+```bash
+export GARMIN_EMAIL="you@example.com"
+export GARMIN_PASSWORD="your_password"
+export TEMPERANCE_AUTO_SYNC_ENABLED=1
+export TEMPERANCE_AUTO_SYNC_INTERVAL_SECONDS=900
+export TEMPERANCE_AUTO_SYNC_OWNER="admin"
+export TEMPERANCE_AUTO_SYNC_DAYS_BACK=2
+```
+
+Behavior:
+
+- Runs inside the backend process as one daemon thread.
+- Sleeps between runs; no separate worker process is spawned.
+- Pulls Garmin quick activity sync only.
+- No wellness, no details, no FIT parsing.
+- Looks back only at today + previous day (`TEMPERANCE_AUTO_SYNC_DAYS_BACK=2` by default).
+- Skips if another Garmin sync is already running.
+
+Check `/api/v1/data-extract/status` to confirm the active auto-sync config and latest sync log.
+
 ## Run v2 frontend
 
 ```bash
