@@ -15,6 +15,17 @@ import { ProgressionLineChartCard } from '@/features/athlete-progression/compone
 import { useAthleteProgressionQuery } from '@/features/athlete-progression/hooks/use-athlete-progression-query';
 import type { ProgressionAggregation } from '@/features/athlete-progression/types/athlete-progression';
 
+const PROGRESSION_CHART_COLORS = {
+  blue: '#60a5fa',
+  blueAlt: '#60a5fa',
+  blueDeep: '#c4b5fd',
+  blueSoft: '#60a5fa',
+  purpleSoft: '#c4b5fd',
+  gray: '#f87171',
+  graySoft: '#cbd5e1',
+  grayDeep: '#dc2626',
+} as const;
+
 function formatDay(iso: string, aggregation: ProgressionAggregation): string {
   const d = new Date(`${iso}T00:00:00`);
   if (Number.isNaN(d.getTime())) return iso;
@@ -121,8 +132,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 targetKey="stress_target_tss"
                 targetLabel={aggregation === 'weekly' ? 'Weekly Target' : 'Daily Target'}
                 series={[
-                  { key: 'tss', label: 'TSS', color: '#60a5fa' },
-                  { key: 'rtss', label: 'rTSS', color: '#f59e0b' },
+                  { key: 'tss', label: 'TSS', color: PROGRESSION_CHART_COLORS.blue },
+                  { key: 'rtss', label: 'rTSS', color: PROGRESSION_CHART_COLORS.gray },
                 ]}
               />
 
@@ -133,8 +144,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 targetKey="pounding_target_tss"
                 targetLabel="Daily Target"
                 series={[
-                  { key: 'leg_elasticity', label: 'Bounce', color: '#22c55e' },
-                  { key: 'pounding', label: 'Pounding', color: '#ef4444' },
+                  { key: 'leg_elasticity', label: 'Bounce', color: PROGRESSION_CHART_COLORS.blueAlt },
+                  { key: 'pounding', label: 'Pounding', color: PROGRESSION_CHART_COLORS.grayDeep },
                 ]}
               />
 
@@ -145,8 +156,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 targetKey="target_distance_km"
                 targetLabel="Distance Target"
                 series={[
-                  { key: 'distance_km', label: 'Distance', color: '#38bdf8' },
-                  { key: 'distance_eqv_km', label: 'Dist Eqv', color: '#22c55e' },
+                  { key: 'distance_km', label: 'Distance', color: PROGRESSION_CHART_COLORS.blueAlt },
+                  { key: 'distance_eqv_km', label: 'Dist Eqv', color: PROGRESSION_CHART_COLORS.purpleSoft },
                 ]}
               />
 
@@ -155,8 +166,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 data={normalizedChartData}
                 yLabel="Load"
                 series={[
-                  { key: 'fitness', label: 'Fitness', color: '#22c55e' },
-                  { key: 'fatigue', label: 'Fatigue', color: '#ef4444' },
+                  { key: 'fitness', label: 'Fitness', color: PROGRESSION_CHART_COLORS.blue },
+                  { key: 'fatigue', label: 'Fatigue', color: PROGRESSION_CHART_COLORS.grayDeep },
                 ]}
               />
 
@@ -165,8 +176,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 data={normalizedChartData}
                 yLabel="Risk"
                 series={[
-                  { key: 'overreach', label: 'Overreach', color: '#60a5fa' },
-                  { key: 'injury_risk', label: 'Injury Risk', color: '#ef4444' },
+                  { key: 'overreach', label: 'Overreach', color: PROGRESSION_CHART_COLORS.blue },
+                  { key: 'injury_risk', label: 'Injury Risk', color: PROGRESSION_CHART_COLORS.grayDeep },
                 ]}
               />
 
@@ -176,8 +187,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 yLabel="Training Load"
                 rightAxisLabel="Calories"
                 series={[
-                  { key: 'training_load_garmin', label: 'Garmin TL', color: '#60a5fa', yAxisId: 'left' },
-                  { key: 'calories_total', label: 'Calories', color: '#f59e0b', yAxisId: 'right' },
+                  { key: 'training_load_garmin', label: 'Garmin TL', color: PROGRESSION_CHART_COLORS.blue, yAxisId: 'left' },
+                  { key: 'calories_total', label: 'Calories', color: PROGRESSION_CHART_COLORS.gray, yAxisId: 'right' },
                 ]}
               />
 
@@ -186,10 +197,10 @@ export function AthleteProgressionPage(): JSX.Element {
                 data={normalizedChartData}
                 yLabel="Hours"
                 series={[
-                  { key: 'zone_low_aerobic_h', label: 'Easy', color: '#60a5fa' },
-                  { key: 'zone_moderate_aerobic_h', label: 'Steady', color: '#facc15' },
-                  { key: 'zone_high_aerobic_h', label: 'Interval', color: '#ef4444' },
-                  { key: 'zone_total_h', label: 'Total', color: '#cbd5e1', dashed: true },
+                  { key: 'zone_low_aerobic_h', label: 'Easy', color: PROGRESSION_CHART_COLORS.blueSoft },
+                  { key: 'zone_moderate_aerobic_h', label: 'Steady', color: PROGRESSION_CHART_COLORS.gray },
+                  { key: 'zone_high_aerobic_h', label: 'Interval', color: PROGRESSION_CHART_COLORS.blueDeep },
+                  { key: 'zone_total_h', label: 'Total', color: PROGRESSION_CHART_COLORS.graySoft, dashed: true },
                 ]}
               />
 
@@ -199,8 +210,8 @@ export function AthleteProgressionPage(): JSX.Element {
                   data={normalizedChartData}
                   yLabel="VDOT"
                   series={[
-                    { key: 'vdot', label: 'VDOT', color: '#94a3b8', dashed: true, strokeOpacity: 0.3, dotOpacity: 0.25, strokeWidth: 1.5 },
-                    { key: 'vdot_max', label: 'VDOT Max', color: '#f97316', strokeWidth: 3 },
+                    { key: 'vdot', label: 'VDOT', color: PROGRESSION_CHART_COLORS.gray, dashed: true, strokeOpacity: 0.3, dotOpacity: 0.25, strokeWidth: 1.5 },
+                    { key: 'vdot_max', label: 'VDOT Max', color: PROGRESSION_CHART_COLORS.blue, strokeWidth: 3 },
                   ]}
                 />
               ) : (

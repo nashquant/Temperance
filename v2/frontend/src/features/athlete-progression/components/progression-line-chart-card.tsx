@@ -269,7 +269,7 @@ export function ProgressionLineChartCard({
                   type="monotone"
                   dataKey="__target"
                   yAxisId="left"
-                  stroke="#f59e0b"
+                  stroke="#cbd5e1"
                   strokeOpacity={0.92}
                   strokeWidth={1.4}
                   strokeDasharray="5 5"

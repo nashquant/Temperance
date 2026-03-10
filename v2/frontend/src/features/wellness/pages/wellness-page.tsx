@@ -9,6 +9,17 @@ import { ProgressionLineChartCard } from '@/features/athlete-progression/compone
 import { useWellnessQuery } from '@/features/wellness/hooks/use-wellness-query';
 import type { WellnessAggregation } from '@/features/wellness/types';
 
+const WELLNESS_CHART_COLORS = {
+  blue: '#60a5fa',
+  blueAlt: '#60a5fa',
+  blueDeep: '#c4b5fd',
+  blueSoft: '#60a5fa',
+  purpleSoft: '#c4b5fd',
+  gray: '#f87171',
+  graySoft: '#cbd5e1',
+  grayDeep: '#dc2626',
+} as const;
+
 function formatDay(iso: string, aggregation: WellnessAggregation): string {
   const d = new Date(`${iso}T00:00:00`);
   if (Number.isNaN(d.getTime())) return iso;
@@ -143,8 +154,8 @@ export function WellnessPage(): JSX.Element {
                 data={chartData}
                 yLabel="Score"
                 series={[
-                  { key: 'sleep_score', label: 'Sleep Score', color: '#22c55e' },
-                  { key: 'training_readiness', label: 'Readiness', color: '#60a5fa' },
+                  { key: 'sleep_score', label: 'Sleep Score', color: WELLNESS_CHART_COLORS.blue },
+                  { key: 'training_readiness', label: 'Readiness', color: WELLNESS_CHART_COLORS.gray },
                 ]}
               />
 
@@ -153,8 +164,8 @@ export function WellnessPage(): JSX.Element {
                 data={chartData}
                 yLabel="Level"
                 series={[
-                  { key: 'stress_avg', label: 'Stress', color: '#f59e0b' },
-                  { key: 'resting_hr', label: 'RHR', color: '#ef4444' },
+                  { key: 'stress_avg', label: 'Stress', color: WELLNESS_CHART_COLORS.grayDeep },
+                  { key: 'resting_hr', label: 'RHR', color: WELLNESS_CHART_COLORS.blueAlt },
                 ]}
               />
 
@@ -163,10 +174,10 @@ export function WellnessPage(): JSX.Element {
                 data={chartData}
                 yLabel="Hours"
                 series={[
-                  { key: 'sleep_duration_h', label: 'Total', color: '#38bdf8', dashed: true },
-                  { key: 'deep_sleep_h', label: 'Deep', color: '#6366f1' },
-                  { key: 'rem_sleep_h', label: 'REM', color: '#a855f7' },
-                  { key: 'light_sleep_h', label: 'Light', color: '#22c55e' },
+                  { key: 'sleep_duration_h', label: 'Total', color: WELLNESS_CHART_COLORS.graySoft, dashed: true },
+                  { key: 'deep_sleep_h', label: 'Deep', color: WELLNESS_CHART_COLORS.blue },
+                  { key: 'rem_sleep_h', label: 'REM', color: WELLNESS_CHART_COLORS.purpleSoft },
+                  { key: 'light_sleep_h', label: 'Light', color: WELLNESS_CHART_COLORS.gray },
                 ]}
               />
 
@@ -175,9 +186,9 @@ export function WellnessPage(): JSX.Element {
                 data={chartData}
                 yLabel="Index"
                 series={[
-                  { key: 'body_battery_end', label: 'Battery End', color: '#22c55e' },
-                  { key: 'body_battery_avg', label: 'Battery Avg', color: '#14b8a6' },
-                  { key: 'hrv_status', label: 'HRV', color: '#f97316' },
+                  { key: 'body_battery_end', label: 'Battery End', color: WELLNESS_CHART_COLORS.blue },
+                  { key: 'body_battery_avg', label: 'Battery Avg', color: WELLNESS_CHART_COLORS.purpleSoft },
+                  { key: 'hrv_status', label: 'HRV', color: WELLNESS_CHART_COLORS.gray },
                 ]}
               />
 
@@ -187,8 +198,8 @@ export function WellnessPage(): JSX.Element {
                 yLabel="Steps"
                 rightAxisLabel="Calories"
                 series={[
-                  { key: 'steps', label: 'Steps', color: '#60a5fa', yAxisId: 'left' },
-                  { key: 'calories_total', label: 'Calories', color: '#f59e0b', yAxisId: 'right' },
+                  { key: 'steps', label: 'Steps', color: WELLNESS_CHART_COLORS.blue, yAxisId: 'left' },
+                  { key: 'calories_total', label: 'Calories', color: WELLNESS_CHART_COLORS.gray, yAxisId: 'right' },
                 ]}
               />
             </div>
