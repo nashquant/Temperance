@@ -195,7 +195,7 @@ export function AthleteProgressionPage(): JSX.Element {
                 <Alert className="border-amber-300 text-amber-700 dark:border-amber-900 dark:text-amber-300">
                   <AlertTitle>VDOT Evolution</AlertTitle>
                   <AlertDescription>
-                    No eligible activity found in this range. VDOT needs a single running/treadmill activity with distance and duration, and IF above 80%.
+                    No eligible activity found in this range. VDOT needs a single running/treadmill activity with distance and duration, and IF above 90%.
                     {vdotEligibility
                       ? ` Max single-activity IF: ${Math.round(Number(vdotEligibility.max_single_activity_if_pct || 0))}% · max single-activity rTSS: ${Math.round(Number(vdotEligibility.max_single_activity_rtss || 0))}.`
                       : ''}

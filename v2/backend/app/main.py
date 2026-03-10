@@ -2698,7 +2698,7 @@ def _build_athlete_progression_payload(
     filtered["distance_km_running"] = (filtered["distance_m"].where(is_running_like, 0.0) / 1000.0).fillna(0.0)
     eligible_vdot_mask = (
         running_like_with_distance_duration
-        & (filtered["if_proxy"] > 0.80)
+        & (filtered["if_proxy"] > 0.90)
     )
     vdot_candidates = filtered.loc[eligible_vdot_mask, ["start_local", "day", "distance_m", "duration_s"]].copy() if "day" in filtered.columns else pd.DataFrame()
     if not vdot_candidates.empty:
@@ -3433,7 +3433,7 @@ def _build_activity_dashboard_payload(
                 eqv_pace = _safe_float(act.get("pace_proxy_sec_per_km"))
                 vdot_value = (
                     _activity_vdot(distance_m=_safe_float(act.get("distance_m")), duration_s=_safe_float(act.get("duration_s")))
-                    if is_running and if_proxy > 0.80 and _safe_float(act.get("distance_m")) > 0 and _safe_float(act.get("duration_s")) > 0
+                    if is_running and if_proxy > 0.90 and _safe_float(act.get("distance_m")) > 0 and _safe_float(act.get("duration_s")) > 0
                     else None
                 )
                 start_local_ts = pd.to_datetime(act.get("start_local"), errors="coerce")
@@ -4329,7 +4329,7 @@ def vdot_view(
             (sport_lower.str.contains("run") | sport_lower.str.contains("treadmill"))
             & (metrics_df["distance_m"] > 0)
             & (metrics_df["duration_s"] > 0)
-            & (metrics_df["if_proxy"] > 0.80)
+            & (metrics_df["if_proxy"] > 0.90)
         )
         observed_candidates = metrics_df.loc[eligible_mask, ["distance_m", "duration_s", "start_time_utc"]].copy()
         if not observed_candidates.empty:

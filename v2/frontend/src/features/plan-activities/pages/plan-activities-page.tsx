@@ -187,6 +187,25 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
     });
   }, [effectiveWeek, metric, selectedRows]);
 
+  const goalItems = query.data
+    ? [
+        { label: 'TSS Goal', value: Math.round(query.data.goals.tss).toString() },
+        { label: 'rTSS Goal', value: Math.round(query.data.goals.rtss).toString() },
+        { label: 'Distance Goal', value: `${Math.round(query.data.goals.distance_eqv_km)} km` },
+      ]
+    : [];
+
+  const selectedWeekItems = selectedWeekMeta
+    ? [
+        { label: 'Week', value: selectedWeekMeta.week_label },
+        { label: 'Activities', value: String(selectedWeekMeta.planned_activities) },
+        { label: 'Duration', value: `${selectedWeekMeta.duration_h.toFixed(1)}h` },
+        { label: 'TSS', value: String(Math.round(selectedWeekMeta.tss)) },
+        { label: 'rTSS', value: String(Math.round(selectedWeekMeta.rtss)) },
+        { label: 'Dist Eqv', value: `${selectedWeekMeta.distance_eqv_km.toFixed(1)} km` },
+      ]
+    : [];
+
   return (
     <section className="space-y-6">
       <div>
@@ -198,11 +217,26 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       </div>
 
       {!query.isLoading && !query.isError && query.data ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">TSS goal: {Math.round(query.data.goals.tss)}</Badge>
-          <Badge variant="outline">rTSS goal: {Math.round(query.data.goals.rtss)}</Badge>
-          <Badge variant="outline">Distance goal: {Math.round(query.data.goals.distance_eqv_km)} km</Badge>
-        </div>
+        <>
+          <Card className={`${surfaceClassName} sm:hidden`}>
+            <CardContent className="grid gap-2 p-4">
+              {goalItems.map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.label}</p>
+                  <p className="text-sm font-semibold text-slate-50">{item.value}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+          <div className="hidden flex-wrap items-center gap-2 sm:flex">
+            <Badge variant="outline">TSS goal: {Math.round(query.data.goals.tss)}</Badge>
+            <Badge variant="outline">rTSS goal: {Math.round(query.data.goals.rtss)}</Badge>
+            <Badge variant="outline">Distance goal: {Math.round(query.data.goals.distance_eqv_km)} km</Badge>
+          </div>
+        </>
       ) : null}
 
       <Card className={surfaceClassName}>
@@ -248,7 +282,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               </Card>
           ) : (
             <>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
                 <PlannedWeekSelector weeks={weeks} value={effectiveWeek} onValueChange={(next) => setSelectedWeek(next)} />
                 <PlannedMetricSelector value={metric} onValueChange={setMetric} />
               </div>
@@ -256,7 +290,18 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               {selectedWeekMeta ? (
                 <Card className={surfaceClassName}>
                   <CardContent className="p-4">
-                    <div className="grid gap-3 md:grid-cols-6">
+                    <div className="grid gap-2 md:hidden">
+                      {selectedWeekItems.map((item) => (
+                        <div
+                          key={item.label}
+                          className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5"
+                        >
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.label}</p>
+                          <p className="text-sm font-semibold text-slate-50 text-right">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="hidden gap-3 md:grid md:grid-cols-6">
                       <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Week</p><p className="font-medium text-foreground">{selectedWeekMeta.week_label}</p></div>
                       <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Activities</p><p className="font-medium text-foreground">{selectedWeekMeta.planned_activities}</p></div>
                       <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Duration</p><p className="font-medium text-foreground">{selectedWeekMeta.duration_h.toFixed(1)}h</p></div>

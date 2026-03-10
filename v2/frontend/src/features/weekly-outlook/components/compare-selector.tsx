@@ -8,10 +8,12 @@ interface CompareSelectorProps {
 
 export function CompareSelector({ value, onValueChange }: CompareSelectorProps): JSX.Element {
   return (
-    <div className="flex items-center gap-3">
-      <p className="text-sm text-muted-foreground">Compare</p>
+    <div className="grid w-full gap-1.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74 sm:text-sm sm:font-normal sm:tracking-normal sm:text-muted-foreground">
+        Compare
+      </p>
       <Select value={value} onValueChange={(next) => onValueChange(next as WeeklyCompare)}>
-        <SelectTrigger className="w-[220px]">
+        <SelectTrigger className="w-full sm:w-[220px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
