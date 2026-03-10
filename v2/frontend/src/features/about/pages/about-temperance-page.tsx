@@ -17,10 +17,10 @@ const aboutBlocks: AboutBlock[] = [
     title: 'The Philosophy',
     summary: 'Temperance means balance, restraint, and good judgment',
     body: [
-      'Built for runners who also use cross-training, it helps make training load more coherent and easier to interpret.',
-      
-      'Adaptation requires sufficient load, but injury risk rises when mechanical stress outpaces tissue capacity. For endurance athletes, the real problem is not maximizing training load, but regulating it intelligently.',
-      
+      'Built for runners who also rely on cross-training, Temperance makes training load easier to interpret and more coherent across modalities.',
+
+      'Adaptation depends on sufficient load, but injury risk rises when mechanical stress outpaces tissue capacity. For endurance athletes, the challenge is not simply to do more, but to regulate load intelligently.',
+
       'Most training systems measure load through physiological signals such as heart rate, pace, power, or perceived exertion, capturing the aerobic stimulus of training. But runners are constrained by more than metabolism alone. They are also limited by mechanical tolerance - the capacity of bones, tendons, muscles, and connective tissue to absorb and adapt to stress on a slower and often less forgiving timeline.',
       
       'By measuring intensity relative to your personal thresholds, Temperance gives context to the work you do. And by separating total stress from running-specific stress, it recognizes a simple truth: not all load is created equal.',
