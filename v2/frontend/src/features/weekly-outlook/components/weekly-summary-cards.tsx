@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { type WeeklyMetric, type WeeklyOutlookViewModel } from '@/features/weekly-outlook/types/weekly-outlook';
 import { formatMetricValue } from '@/features/weekly-outlook/utils/formatters';
 
@@ -14,9 +14,6 @@ export function WeeklySummaryCards({ data, selectedMetric }: WeeklySummaryCardsP
     comparisonDeltaPct === null ? null : `${comparisonDeltaPct > 0 ? '+' : ''}${comparisonDeltaPct}%`;
   const surfaceClassName =
     'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
-  const titleClassName = 'text-sm text-slate-300/80';
-  const valueClassName = 'text-2xl font-semibold text-foreground';
-  const metaClassName = 'mt-1 text-xs text-slate-300/70';
   const summaryItems = [
     {
       title: 'Current week total',
@@ -71,22 +68,22 @@ export function WeeklySummaryCards({ data, selectedMetric }: WeeklySummaryCardsP
         </CardContent>
       </Card>
 
-      <div className="hidden gap-4 md:grid md:grid-cols-2 xl:grid-cols-4">
-        {summaryItems.map((item) => (
-          <Card key={item.title} className={surfaceClassName}>
-            <CardHeader className="pb-3">
-              <CardTitle className={titleClassName}>{item.title}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className={valueClassName}>
-                {item.value}
-                {item.valueSuffix ? <span className="ml-2 text-base font-medium text-slate-300/72">{item.valueSuffix}</span> : null}
-              </p>
-              {item.meta ? <p className={metaClassName}>{item.meta}</p> : null}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <Card className={`${surfaceClassName} hidden md:block`}>
+        <CardContent className="p-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {summaryItems.map((item) => (
+              <div key={item.title} className="rounded-xl border border-white/10 bg-black/15 p-3">
+                <p className="text-xs text-slate-300/72">{item.title}</p>
+                <p className="font-medium text-foreground">
+                  {item.value}
+                  {item.valueSuffix ? <span className="ml-2 text-sm font-medium text-slate-300/72">{item.valueSuffix}</span> : null}
+                </p>
+                {item.meta ? <p className="mt-1 text-xs text-slate-300/70">{item.meta}</p> : null}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </>
   );
 }
