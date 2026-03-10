@@ -3548,6 +3548,13 @@ def _build_activity_dashboard_payload(
                     "distance_km": round(week_distance_km, 1),
                     "distance_eqv_km": round(week_distance_eqv, 1),
                     "calories": round(week_calories, 0),
+                    "vdot_max": (
+                        int(round(_safe_float(week_daily_model.get("vdot_max"))))
+                        if isinstance(week_daily_model, dict)
+                        and pd.notna(pd.to_numeric(pd.Series([week_daily_model.get("vdot_max")]), errors="coerce").iloc[0])
+                        and _safe_float(week_daily_model.get("vdot_max")) > 0
+                        else None
+                    ),
                     "tss": round(week_tss, 1),
                     "rtss": round(week_rtss, 1),
                     "fitness": (

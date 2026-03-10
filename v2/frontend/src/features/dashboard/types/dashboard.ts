@@ -9,6 +9,7 @@ export interface DashboardWeekSummary {
   distance_km: number;
   distance_eqv_km: number;
   calories: number;
+  vdot_max: number | null;
   tss: number;
   rtss: number;
   fitness: number | null;
