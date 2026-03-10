@@ -267,14 +267,20 @@ export function DashboardPage(): JSX.Element {
     setUndoState(nextUndoState);
     window.requestAnimationFrame(() => setUndoVisible(true));
     undoTimerRef.current = window.setTimeout(() => {
-      const pendingFinalize = undoStateRef.current?.id === id ? undoStateRef.current.finalize : null;
+      if (undoStateRef.current?.id !== id) {
+        undoTimerRef.current = null;
+        return;
+      }
       setUndoVisible(false);
       undoDismissTimerRef.current = window.setTimeout(() => {
-        if (pendingFinalize) {
-          void pendingFinalize();
+        const pending = undoStateRef.current;
+        if (!pending || pending.id !== id) {
+          undoDismissTimerRef.current = null;
+          return;
         }
-        if (undoStateRef.current?.id === id) {
-          undoStateRef.current = null;
+        undoStateRef.current = null;
+        if (pending.finalize) {
+          void pending.finalize();
         }
         setUndoState((current) => (current?.id === id ? null : current));
         undoDismissTimerRef.current = null;
@@ -304,11 +310,9 @@ export function DashboardPage(): JSX.Element {
       window.clearTimeout(undoDismissTimerRef.current);
       undoDismissTimerRef.current = null;
     }
+    undoStateRef.current = null;
     setUndoVisible(false);
-    window.setTimeout(() => {
-      undoStateRef.current = null;
-      setUndoState(null);
-    }, 180);
+    window.setTimeout(() => setUndoState(null), 180);
     await pending.action?.();
   };
   const plannedDoneMutation = useMutation({
@@ -664,10 +668,6 @@ export function DashboardPage(): JSX.Element {
                               const dayUtc = activity.day_utc;
                               const lineNo = activity.line_no;
                               const activityText = String(activity.activity_text ?? '').trim();
-                              const deletePromise = customDeleteMutation.mutateAsync(
-                                { dayUtc, lineNo },
-                                { onError: () => void refreshDashboardViews() },
-                              );
                               removeCustomActivityLocally(dayUtc, lineNo);
                               showUndo({
                                 lane: 'actual',
@@ -677,6 +677,7 @@ export function DashboardPage(): JSX.Element {
                                 label: activityText || 'Deleted custom activity',
                                 action: async () => {
                                   insertCustomActivityLocally(dayUtc, activity, index);
+                                  await refreshDashboardViews();
                                 },
                                 finalize: async () => {
                                   if (!session?.token) throw new Error('Missing auth token');
