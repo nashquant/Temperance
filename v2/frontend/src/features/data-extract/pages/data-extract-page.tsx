@@ -445,10 +445,6 @@ export function DataExtractPage(): JSX.Element {
         <CardContent className="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-3 sm:space-y-4 sm:p-5">
           <div className="space-y-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Custom Activity</p>
-            <p className="text-sm text-muted-foreground">
-              Use <code>[date]:[activity]</code>. Date formats like <code>3Mar26</code>, <code>2026-03-26</code>, or <code>26/03/2026</code>.
-              You can add multiple entries separated by new line, <code>;</code>, or <code>,</code>.
-            </p>
           </div>
           <textarea
             className="min-h-[104px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20 sm:min-h-[120px] sm:py-3"

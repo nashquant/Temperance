@@ -23,6 +23,7 @@ interface SeriesConfig {
   dashed?: boolean;
   strokeOpacity?: number;
   dotOpacity?: number;
+  strokeWidth?: number;
 }
 
 interface Props {
@@ -254,7 +255,7 @@ export function ProgressionLineChartCard({
                   dataKey={item.key}
                   name={item.label}
                   stroke={item.color}
-                  strokeWidth={2}
+                  strokeWidth={item.strokeWidth ?? 2}
                   yAxisId={item.yAxisId ?? 'left'}
                   strokeDasharray={item.dashed ? '5 5' : undefined}
                   strokeOpacity={item.strokeOpacity}
