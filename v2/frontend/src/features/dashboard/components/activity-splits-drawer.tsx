@@ -17,6 +17,7 @@ interface ActivitySplitsDrawerProps {
   activityId: string | null;
   open: boolean;
   onClose: () => void;
+  userTimeZone?: string;
 }
 
 type DrawerLapRow = {
@@ -54,21 +55,63 @@ function formatActivityTitle(raw: string): string {
     .join(' ');
 }
 
-function formatLocalActivityDateTime(startTimeUtc: string, fallbackDate: string): string {
-  const raw = String(startTimeUtc || '').trim();
-  const parsed = raw ? new Date(raw) : new Date(`${String(fallbackDate || '').trim()}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return String(fallbackDate || '').trim();
+function _parseGarminDateTime(raw: unknown, asUtc: boolean): Date | null {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  const normalized = text.includes('T') ? text : text.replace(' ', 'T');
+  const withZone = asUtc && !/[zZ]|[+-]\d{2}:\d{2}$/.test(normalized) ? `${normalized}Z` : normalized;
+  const parsed = new Date(withZone);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
-  const datePart = parsed.toLocaleDateString('en-US', {
+function _isMidnight(date: Date): boolean {
+  return date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0;
+}
+
+function _resolveActivityDateTime(
+  startTimeUtc: string,
+  fallbackDate: string,
+  raw?: Record<string, unknown>,
+): Date | null {
+  const fromActivityUtc = _parseGarminDateTime(startTimeUtc, false);
+  const fromRawGmt =
+    _parseGarminDateTime(raw?.startTimeGMT, true) ||
+    _parseGarminDateTime(raw?.start_time_gmt, true) ||
+    _parseGarminDateTime(raw?.start_time_utc, true);
+  const fromRawLocal =
+    _parseGarminDateTime(raw?.startTimeLocal, false) ||
+    _parseGarminDateTime(raw?.start_time_local, false);
+  const fromFallbackDate = _parseGarminDateTime(`${String(fallbackDate || '').trim()}T00:00:00`, false);
+
+  if (fromActivityUtc && !(_isMidnight(fromActivityUtc) && (fromRawGmt || fromRawLocal))) {
+    return fromActivityUtc;
+  }
+  return fromRawGmt || fromRawLocal || fromActivityUtc || fromFallbackDate;
+}
+
+function formatLocalActivityDateTime(
+  startTimeUtc: string,
+  fallbackDate: string,
+  raw?: Record<string, unknown>,
+  userTimeZone?: string,
+): string {
+  const parsed = _resolveActivityDateTime(startTimeUtc, fallbackDate, raw);
+  if (!parsed) return String(fallbackDate || '').trim();
+  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const tz = String(userTimeZone || '').trim() || browserTz;
+
+  const datePart = new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-  });
-  const timePart = parsed.toLocaleTimeString('en-US', {
+    timeZone: tz,
+  }).format(parsed);
+  const timePart = new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
-  });
+    timeZone: tz,
+  }).format(parsed);
   return `${datePart} @${timePart.toLowerCase()}`;
 }
 
@@ -157,6 +200,7 @@ export function ActivitySplitsDrawer({
   activityId,
   open,
   onClose,
+  userTimeZone,
 }: ActivitySplitsDrawerProps): JSX.Element | null {
   const { session, profile } = useAuth();
   const detailQuery = useActivityDetailQuery(open && activityId ? activityId : null);
@@ -180,6 +224,8 @@ export function ActivitySplitsDrawer({
   const activityHeaderDateTime = formatLocalActivityDateTime(
     String(activity?.start_time_utc || ''),
     String(activity?.date || ''),
+    raw,
+    userTimeZone,
   );
   const activitySourceLabel =
     sourceKind === 'planned' ? '(Planned)' : sourceKind === 'custom' ? '(Custom)' : '';

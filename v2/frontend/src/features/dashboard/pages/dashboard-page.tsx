@@ -565,6 +565,7 @@ export function DashboardPage(): JSX.Element {
         activityId={selectedActivityId}
         open={Boolean(selectedActivityId)}
         onClose={() => setSelectedActivityId(null)}
+        userTimeZone={userTimeZone}
       />
       {addActivityDayUtc ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
