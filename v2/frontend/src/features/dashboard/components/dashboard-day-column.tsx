@@ -18,6 +18,7 @@ interface DashboardDayColumnProps {
   deletingPlannedActivity?: boolean;
   deletingCustomActivity?: boolean;
   userTimeZone?: string;
+  compactMobile?: boolean;
 }
 
 const intensityClasses: Record<string, string> = {
@@ -170,6 +171,7 @@ export function DashboardDayColumn({
   deletingPlannedActivity,
   deletingCustomActivity,
   userTimeZone,
+  compactMobile = false,
 }: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
   const shouldScrollActivities = activityCount > 3;
@@ -177,14 +179,20 @@ export function DashboardDayColumn({
   return (
     <Card
       className={cn(
-        'rounded-xl border-border/80 bg-card/75 shadow-sm lg:h-[430px]',
+        'rounded-xl border-border/80 bg-card/75 shadow-sm',
+        compactMobile ? 'w-[240px] shrink-0 min-h-[340px]' : 'lg:h-[430px]',
         day.is_today ? 'border-primary/70' : undefined,
       )}
     >
-      <CardContent className="flex h-full flex-col gap-2 p-2.5">
+      <CardContent className={cn('flex h-full flex-col', compactMobile ? 'gap-1.5 p-2' : 'gap-2 p-2.5')}>
         <div className="space-y-1">
           <div className="flex min-h-[24px] items-center">
-            <p className={cn('text-[13px] font-semibold leading-5', day.is_today ? 'text-primary' : 'text-foreground')}>
+            <p
+              className={cn(
+                compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[13px] font-semibold leading-5',
+                day.is_today ? 'text-primary' : 'text-foreground',
+              )}
+            >
               {day.day_label}
             </p>
             {!day.is_past ? (
@@ -200,7 +208,12 @@ export function DashboardDayColumn({
               </Button>
             ) : null}
           </div>
-          <div className="min-h-[50px] space-y-0.5 text-[12px] leading-[1.3] text-muted-foreground">
+          <div
+            className={cn(
+              'space-y-0.5 text-muted-foreground',
+              compactMobile ? 'min-h-[40px] text-[11px] leading-[1.25]' : 'min-h-[50px] text-[12px] leading-[1.3]',
+            )}
+          >
             {fmtMeta(day).map((line) => (
               <p key={line} className="truncate">
                 {line}
@@ -215,7 +228,7 @@ export function DashboardDayColumn({
           className={cn(
             'flex-1 space-y-2',
             shouldScrollActivities
-              ? 'overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+              ? 'overflow-visible lg:overflow-y-auto lg:pr-1 lg:[scrollbar-width:none] lg:[-ms-overflow-style:none] lg:[&::-webkit-scrollbar]:hidden'
               : 'overflow-visible',
           )}
         >
@@ -226,7 +239,8 @@ export function DashboardDayColumn({
                 <div
                   key={activity.activity_id}
                   className={cn(
-                    'relative flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border p-2 text-[12px] transition-colors hover:bg-white/5',
+                    'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
+                    compactMobile ? 'h-[88px] p-1.5 text-[11px]' : 'h-[102px] p-2 text-[12px]',
                     activity.is_custom ? 'border-2 border-dashed outline outline-1 outline-offset-[-3px] outline-dotted' : undefined,
                     intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
                     activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
@@ -256,18 +270,18 @@ export function DashboardDayColumn({
                       <X className="h-1.75 w-1.75" />
                     </Button>
                   ) : null}
-                  <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
+                  <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
                     {formatActivityTitle(activity.sport)}
                     {activity.is_custom ? '(C)' : ''}
                     {!activity.is_custom && timeLabel ? ` ${timeLabel}` : ''}
                   </p>
-                  <p className="mt-0.5 line-clamp-2 text-[10.5px] font-medium leading-[1.24] tracking-[0.01em] text-slate-300/92">
+                  <p className={cn('mt-0.5 line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
                     {compactLine([activity.duration_label, activity.distance_label])}
                   </p>
-                  <p className="line-clamp-2 text-[10.5px] font-medium leading-[1.24] tracking-[0.01em] text-slate-300/92">
+                  <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
                     {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
                   </p>
-                  <p className="mt-auto truncate text-[11px] font-semibold leading-4 text-foreground/95">
+                  <p className={cn('mt-auto truncate font-semibold text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
                     TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
                   </p>
                 </div>
@@ -279,7 +293,8 @@ export function DashboardDayColumn({
             <div
               key={`${activity.day_utc}-${activity.line_no}`}
               className={cn(
-                'relative flex h-[102px] cursor-pointer flex-col overflow-hidden rounded-lg border-2 border-dashed px-2.5 pb-2.5 pt-2 text-[12px] transition-colors hover:bg-white/5',
+                'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border-2 border-dashed transition-colors hover:bg-white/5',
+                compactMobile ? 'h-[88px] px-2 pb-2 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
                 plannedIntensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
               )}
               onClick={() => onSelectActivity?.(activity.activity_id)}
@@ -318,23 +333,23 @@ export function DashboardDayColumn({
               >
                 <X className="h-1.75 w-1.75" />
               </Button>
-              <p className="truncate text-[13px] font-semibold leading-5 text-foreground">
+              <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
                 {formatActivityTitle(activity.activity)} <span className="text-muted-foreground">(P)</span>
               </p>
-              <p className="line-clamp-2 text-[10.5px] font-medium leading-[1.24] tracking-[0.01em] text-slate-300/92">
+              <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
                 {compactLine([activity.duration_label, `${Math.round(activity.distance_eqv_km)} kmeq`])}
               </p>
-              <p className="line-clamp-2 text-[10.5px] font-medium leading-[1.24] tracking-[0.01em] text-slate-300/92">
+              <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
                 {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
               </p>
-              <p className="mt-auto truncate text-[11px] font-semibold leading-4 tracking-[0.02em] text-foreground/95">
+              <p className={cn('mt-auto truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
                 TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
               </p>
             </div>
           ))}
 
           {day.actual_activities.length === 0 && day.planned_activities.length === 0 && day.is_past ? (
-            <div className="rounded-lg border border-border/70 bg-muted/25 p-2 text-center text-[12px] text-muted-foreground">
+            <div className={cn('rounded-lg border border-border/70 bg-muted/25 p-2 text-center text-muted-foreground', compactMobile ? 'text-[11px]' : 'text-[12px]')}>
               <p className="font-semibold text-foreground">Rest Day</p>
               <p>Rest is part of training.</p>
             </div>

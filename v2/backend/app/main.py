@@ -1050,6 +1050,23 @@ def _parse_distance_km_token(text: str) -> float | None:
     return km if km > 0 else None
 
 
+def _parse_repeated_distance_token(text: str) -> tuple[int, float] | None:
+    lower = str(text or "").lower()
+    match = re.search(r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(km|m)\b", lower)
+    if not match:
+        return None
+    reps = int(match.group(1))
+    distance_value = float(match.group(2))
+    unit = str(match.group(3))
+    if unit == "m":
+        distance_km = distance_value / 1000.0
+    else:
+        distance_km = distance_value
+    if reps <= 0 or distance_km <= 0:
+        return None
+    return reps, distance_km
+
+
 def _parse_bpm_token(text: str) -> float | None:
     lower = str(text or "").lower()
     m = re.search(r"@\s*(\d+(?:\.\d+)?)\s*bpm", lower)
@@ -1280,6 +1297,45 @@ def _expand_planned_segments(
             last_kind = kind
             continue
 
+        repeated_distance = _parse_repeated_distance_token(chunk)
+        if repeated_distance is not None:
+            reps, rep_distance_km = repeated_distance
+            if not is_running_like:
+                warnings.append(
+                    f"Distance-only reps require running/treadmill with pace in: `{chunk}` (non-running should use time + bpm/%IF)."
+                )
+                continue
+            if pace is None and tss_input is not None and tss_input > 0 and threshold_pace_value > 0:
+                total_distance_km = rep_distance_km * float(max(reps, 1))
+                pace = (total_distance_km * (threshold_pace_value**2) * 100.0) / (3600.0 * float(tss_input))
+                if pace > 0:
+                    if_input = threshold_pace_value / pace
+                    if_input_source = "tss_derived"
+            if pace is None or pace <= 0:
+                warnings.append(f"Distance-based reps require pace in: `{chunk}` (add `@4:50/km`)")
+                continue
+            rep_minutes = (rep_distance_km * pace) / 60.0
+            if rep_minutes <= 0:
+                warnings.append(f"Could not derive duration from repeated distance in: `{chunk}`")
+                continue
+            per_rep_tss = (float(tss_input) / float(max(reps, 1))) if tss_input else None
+            for _ in range(max(reps, 0)):
+                segments.append(
+                    {
+                        "kind": kind,
+                        "duration_min": rep_minutes,
+                        "avg_hr_bpm": bpm,
+                        "pace_s_per_km": pace,
+                        "if_input": if_input,
+                        "if_input_source": if_input_source,
+                        "tss_target": per_rep_tss,
+                        "time_hint": line_time_hint,
+                        "source": chunk,
+                    }
+                )
+            last_kind = kind
+            continue
+
         minutes = _parse_minutes_token(chunk)
         if minutes is None:
             distance_km = _parse_distance_km_token(chunk)
@@ -1337,6 +1393,35 @@ def _expand_planned_segments(
         )
         last_kind = kind
     return segments, warnings
+
+
+def _segments_from_stored_or_source(
+    parsed_json: Any,
+    source_text: str,
+    lthr_bpm: float | None = None,
+    threshold_pace_sec_per_km: float | None = None,
+) -> list[dict[str, Any]]:
+    source_segments: list[dict[str, Any]] = []
+    expanded, _warnings = _expand_planned_segments(
+        str(source_text or ""),
+        lthr_bpm=lthr_bpm,
+        threshold_pace_sec_per_km=threshold_pace_sec_per_km,
+    )
+    source_segments = [s for s in expanded if isinstance(s, dict)]
+    if source_segments:
+        return source_segments
+
+    stored_segments: list[dict[str, Any]] = []
+    if isinstance(parsed_json, list):
+        stored_segments = [s for s in parsed_json if isinstance(s, dict)]
+    elif isinstance(parsed_json, str) and parsed_json.strip():
+        try:
+            parsed = json.loads(parsed_json)
+            if isinstance(parsed, list):
+                stored_segments = [s for s in parsed if isinstance(s, dict)]
+        except Exception:
+            stored_segments = []
+    return stored_segments
 
 
 def _planned_segment_metrics(
