@@ -4,19 +4,35 @@ const glossaryItems = [
   {
     term: 'TSS',
     points: [
-      'Proxy for general aerobic fitness load.',
+      'Estimate of overall training load, not a direct measure of fitness.',
       '`TSS = duration_h × IF^2 × 100 × specificity_factor`.',
-      'Useful for tracking broader training stress across sessions.',
-      'Temperance applies the specificity factor so x-train load can be adjusted before contributing to TSS.',
+      'Useful for tracking internal aerobic and metabolic stress across sessions.',
+      'Temperance applies the specificity factor so cross-training can still contribute, but usually with less running-specific credit.',
     ],
   },
   {
     term: 'rTSS',
     points: [
-      'More running-specific proxy for mechanical load.',
+      'More running-specific estimate of load, using running intensity and duration.',
       '`rTSS = duration_h × rIF^2 × 100`.',
-      'Does not accumulate the same way with x-train sessions.',
-      'Use caution with high rTSS, because it can signal heavier mechanical stress.',
+      'Usually maps better to running-specific mechanical stress than generic TSS.',
+      'Use caution with sharp rTSS jumps, because tissues often fail from sudden running spikes before aerobic fitness has time to catch up.',
+    ],
+  },
+  {
+    term: 'VDOT',
+    points: [
+      'Daniels running-performance score, often described as an effective VO2 max for pacing and race equivalence.',
+      'It reflects race performance, running economy, and how much of your aerobic capacity you can actually use.',
+      'Two runners can share a similar VO2 max but have different VDOT values if their economy or threshold durability differs.',
+    ],
+  },
+  {
+    term: 'VO2 max',
+    points: [
+      'Maximum rate at which you can take in, transport, and use oxygen during hard exercise.',
+      'Important for endurance potential, but not the full story for running performance.',
+      'Threshold, economy, durability, and pacing still matter, which is why VO2 max and VDOT should not be treated as interchangeable.',
     ],
   },
   {
@@ -94,11 +110,30 @@ const faqItems = [
   {
     question: 'How should I think about TSS and rTSS progression?',
     points: [
-      'TSS tolerance depends on the athlete: elite runners can usually absorb more total TSS than newer athletes.',
-      'A weekly target should match your current training level, not the load of a much fitter athlete.',
-      'Build TSS gradually toward the target so fitness can rise without drifting into unnecessary overreach.',
-      'Be especially careful with weekly jumps in rTSS, because mechanical load tends to matter more for injury risk.',
-      'If you want to progress safely, increase load progressively rather than stacking large TSS or rTSS jumps in a single week.',
+      'TSS helps describe total training load, while rTSS is the more useful warning sign when running-specific stress rises too fast.',
+      'A bigger TSS week is not automatically better: load only works when you can absorb it and recover from it.',
+      'Build both metrics from your own recent baseline, not from the numbers of a fitter athlete.',
+      'Short blocks of heavy training can be productive if recovery is planned, but repeated high-load weeks without recovery can turn functional overreach into non-functional overreach.',
+      'For injury risk, watch sudden spikes in running load even more than the headline weekly total. Recent running data suggests a single run that is more than about 10% longer than your longest run in the prior 30 days already raises overuse-injury risk.',
+      'If TSS is rising mostly from cross-training while rTSS stays stable, you may be building aerobic support with less musculoskeletal cost. If rTSS is rising aggressively, be more conservative.',
+    ],
+  },
+  {
+    question: 'What is overreach, and when is it a problem?',
+    points: [
+      'Functional overreaching is a short-term drop in freshness or performance that can be useful if followed by enough recovery.',
+      'Non-functional overreaching is when the load-recovery balance stays off for too long and performance keeps drifting down instead of rebounding.',
+      'Warning signs are not just tired legs: watch for unusual irritability, poor sleep, flat sessions, lingering soreness, illness, or paces that feel much harder than normal.',
+      'Temperance can help you spot the pattern, but no single metric diagnoses overtraining. Use the charts together with how you are actually responding.',
+    ],
+  },
+  {
+    question: 'How should I think about VDOT and VO2 max?',
+    points: [
+      'VO2 max is your aerobic ceiling. VDOT is a practical running-performance model that also reflects economy and sustainable race execution.',
+      'That means VDOT is often more useful for setting training paces, while VO2 max is more useful for understanding aerobic potential.',
+      'Do not chase VO2 max workouts year-round. They are effective, but they are also some of the most demanding sessions you can do and should sit on top of a stable aerobic base.',
+      'If your VDOT rises while VO2 max barely changes, that can still be real progress because threshold pace, economy, and durability often improve first.',
     ],
   },
 ];
