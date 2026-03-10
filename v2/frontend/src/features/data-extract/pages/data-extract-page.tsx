@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { CompactDateInput } from '@/components/ui/compact-date-input';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -18,19 +19,13 @@ import { runComprehensiveExtract, setGarminCredentials } from '@/features/data-e
 import { PlannedMetricSelector } from '@/features/plan-activities/components/planned-metric-selector';
 import { PlannedWeekChart } from '@/features/plan-activities/components/planned-week-chart';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { queryClient } from '@/lib/query-client';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-type GarminLookbackPreset = '1m' | '3m' | '6m' | '1y' | '2y';
-
-function startDayFromPreset(preset: GarminLookbackPreset): string {
+function startDayFromPreset(monthsBack: number): string {
   const now = new Date();
   const start = new Date(now);
-  if (preset === '1m') start.setMonth(start.getMonth() - 1);
-  if (preset === '3m') start.setMonth(start.getMonth() - 3);
-  if (preset === '6m') start.setMonth(start.getMonth() - 6);
-  if (preset === '1y') start.setFullYear(start.getFullYear() - 1);
-  if (preset === '2y') start.setFullYear(start.getFullYear() - 2);
+  start.setMonth(start.getMonth() - monthsBack);
   return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
 }
 
@@ -43,10 +38,10 @@ export function DataExtractPage(): JSX.Element {
   const statusQuery = useDataExtractStatusQuery();
   const customActivitiesQuery = useCustomActivitiesQuery();
 
-  const [lookbackPreset, setLookbackPreset] = useState<GarminLookbackPreset>('1m');
+  const [extractStartDay, setExtractStartDay] = useState(() => startDayFromPreset(1));
   const [incrementalOnly, setIncrementalOnly] = useState(true);
   const [includeDetails, setIncludeDetails] = useState(true);
-  const [includeWellness, setIncludeWellness] = useState(false);
+  const [includeWellness, setIncludeWellness] = useState(true);
   const [customEntryText, setCustomEntryText] = useState('');
   const [customSelectedWeek, setCustomSelectedWeek] = useState('');
   const [customMetric, setCustomMetric] = useState<PlannedMetricView>('tss');
@@ -74,7 +69,7 @@ export function DataExtractPage(): JSX.Element {
         token: session.token,
         owner: profile?.owner,
         payload: {
-          start_day: startDayFromPreset(lookbackPreset),
+          start_day: extractStartDay,
           incremental_only: incrementalOnly,
           include_details: includeDetails,
           include_wellness: includeWellness,
@@ -290,78 +285,69 @@ export function DataExtractPage(): JSX.Element {
         <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-5">
           <h2 className="text-lg font-semibold text-foreground">Garmin Sync</h2>
 
-          <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:gap-3 sm:p-3 lg:grid-cols-[280px_1fr]">
-            <div className="space-y-2 rounded-[18px] border border-white/8 bg-[linear-gradient(180deg,rgba(2,6,23,0.36),rgba(15,23,42,0.18))] p-2.5 sm:p-3">
-              <div className="space-y-0.5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Lookback</p>
-                <p className="text-[11px] text-slate-300/62">Choose how far back Garmin Sync should pull.</p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Select value={lookbackPreset} onValueChange={(value) => setLookbackPreset(value as GarminLookbackPreset)}>
-                  <SelectTrigger className="h-9 flex-1 sm:h-10">
-                    <SelectValue placeholder="Choose lookback" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1m">Last 1 month</SelectItem>
-                    <SelectItem value="3m">Last 3 months</SelectItem>
-                    <SelectItem value="6m">Last 6 months</SelectItem>
-                    <SelectItem value="1y">Last 1 year</SelectItem>
-                    <SelectItem value="2y">Last 2 years</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  className={`${controlButtonClassName} w-full sm:w-auto`}
-                  onClick={() => comprehensiveMutation.mutate()}
-                  disabled={comprehensiveMutation.isPending || extractRunning}
-                >
-                  {extractRunning || comprehensiveMutation.isPending ? 'Running...' : 'Run extract'}
-                </Button>
-              </div>
+          <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:p-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:contents">
+            <div className="min-w-[180px] flex-1 sm:max-w-[220px]">
+              <CompactDateInput
+                value={extractStartDay}
+                onChange={setExtractStartDay}
+                mobileInputClassName="h-9 rounded-xl border-white/10 bg-black/10 px-3 text-[13px]"
+                desktopInputClassName="h-10 rounded-xl"
+                buttonClassName="h-9 w-9 rounded-xl"
+              />
             </div>
-            <div className="space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Options</p>
-              <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                <label className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-medium transition sm:h-10 sm:px-3.5 ${
-                  incrementalOnly
-                    ? 'border-sky-300/28 bg-sky-400/12 text-sky-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
-                    : 'border-white/10 bg-black/15 text-slate-200/88 hover:bg-white/8'
-                }`}>
+            <Button
+              className={`${controlButtonClassName} w-full rounded-xl sm:w-auto`}
+              onClick={() => comprehensiveMutation.mutate()}
+              disabled={comprehensiveMutation.isPending || extractRunning}
+            >
+              {extractRunning || comprehensiveMutation.isPending ? 'Running...' : 'Run extract'}
+            </Button>
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+            <label className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2.5 text-[11px] font-semibold transition sm:h-10 sm:px-3.5 sm:text-xs ${
+              includeDetails
+                ? 'bg-[linear-gradient(180deg,rgba(56,189,248,0.22),rgba(14,165,233,0.08))] text-sky-100 ring-1 ring-sky-300/26 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+                : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))] text-slate-200/84 ring-1 ring-white/7 hover:bg-white/6'
+            }`}>
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${includeDetails ? 'bg-sky-200 shadow-[0_0_0_3px_rgba(125,211,252,0.12)]' : 'bg-slate-500/70'}`} />
                 <input
-                  className="h-3.5 w-3.5 accent-blue-500"
-                  type="checkbox"
-                  checked={incrementalOnly}
-                  onChange={(event) => setIncrementalOnly(event.target.checked)}
-                />
-                Incremental
-              </label>
-                <label className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-medium transition sm:h-10 sm:px-3.5 ${
-                  includeDetails
-                    ? 'border-sky-300/28 bg-sky-400/12 text-sky-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
-                    : 'border-white/10 bg-black/15 text-slate-200/88 hover:bg-white/8'
-                }`}>
-                <input
-                  className="h-3.5 w-3.5 accent-blue-500"
+                  className="sr-only"
                   type="checkbox"
                   checked={includeDetails}
                   onChange={(event) => setIncludeDetails(event.target.checked)}
                 />
                 Activities
               </label>
-                <label className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-medium transition sm:h-10 sm:px-3.5 ${
-                  includeWellness
-                    ? 'border-sky-300/28 bg-sky-400/12 text-sky-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
-                    : 'border-white/10 bg-black/15 text-slate-200/88 hover:bg-white/8'
-                }`}>
+            <label className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2.5 text-[11px] font-semibold transition sm:h-10 sm:px-3.5 sm:text-xs ${
+              includeWellness
+                ? 'bg-[linear-gradient(180deg,rgba(56,189,248,0.22),rgba(14,165,233,0.08))] text-sky-100 ring-1 ring-sky-300/26 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+                : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))] text-slate-200/84 ring-1 ring-white/7 hover:bg-white/6'
+            }`}>
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${includeWellness ? 'bg-sky-200 shadow-[0_0_0_3px_rgba(125,211,252,0.12)]' : 'bg-slate-500/70'}`} />
                 <input
-                  className="h-3.5 w-3.5 accent-blue-500"
+                  className="sr-only"
                   type="checkbox"
                   checked={includeWellness}
                   onChange={(event) => setIncludeWellness(event.target.checked)}
                 />
-                Recovery
+                Wellness
+              </label>
+            <label className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2.5 text-[11px] font-semibold transition sm:h-10 sm:px-3.5 sm:text-xs ${
+              incrementalOnly
+                ? 'bg-[linear-gradient(180deg,rgba(56,189,248,0.22),rgba(14,165,233,0.08))] text-sky-100 ring-1 ring-sky-300/26 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+                : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))] text-slate-200/84 ring-1 ring-white/7 hover:bg-white/6'
+            }`}>
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${incrementalOnly ? 'bg-sky-200 shadow-[0_0_0_3px_rgba(125,211,252,0.12)]' : 'bg-slate-500/70'}`} />
+                <input
+                  className="sr-only"
+                  type="checkbox"
+                  checked={incrementalOnly}
+                  onChange={(event) => setIncrementalOnly(event.target.checked)}
+                />
+                Incremental
               </label>
             </div>
-          </div>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/15 p-2">
             <div className="mb-1 flex items-center justify-between gap-2">

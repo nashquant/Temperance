@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { CalendarDays } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { CompactDateInput } from '@/components/ui/compact-date-input';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -79,49 +79,6 @@ function formatSpecificityLabel(key: keyof SpecificityProfile): string {
 }
 
 const mobileCurveFieldLabelClassName = 'text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-300/58 sm:hidden';
-
-function CurveDateInput({ value, onChange }: { value: string; onChange: (next: string) => void }): JSX.Element {
-  const pickerRef = useRef<HTMLInputElement | null>(null);
-
-  const openPicker = () => {
-    const input = pickerRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
-    if (!input) return;
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-      return;
-    }
-    input.focus();
-    input.click();
-  };
-
-  return (
-    <>
-      <div className="flex items-center gap-1.5 sm:hidden">
-        <Input
-          type="text"
-          inputMode="numeric"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="YYYY-MM-DD"
-          className="h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px]"
-        />
-        <Button type="button" variant="outline" size="sm" className="h-8 w-8 shrink-0 px-0" onClick={openPicker} aria-label="Open date picker">
-          <CalendarDays className="h-3.5 w-3.5" />
-        </Button>
-        <input
-          ref={pickerRef}
-          type="date"
-          tabIndex={-1}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="sr-only"
-          aria-hidden="true"
-        />
-      </div>
-      <Input type="date" value={value} onChange={(event) => onChange(event.target.value)} className="hidden h-10 sm:block" />
-    </>
-  );
-}
 
 export function SettingsPage(): JSX.Element {
   const surfaceClassName =
@@ -419,11 +376,13 @@ export function SettingsPage(): JSX.Element {
               <div key={row.id} className="grid gap-1.5 rounded-lg border border-white/8 bg-black/10 p-1.5 sm:gap-2 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 md:grid-cols-[1fr_1fr_auto]">
                 <div className="space-y-0.5">
                   <p className={mobileCurveFieldLabelClassName}>Date</p>
-                  <CurveDateInput
+                  <CompactDateInput
                     value={row.date}
                     onChange={(next) =>
                       setLthrRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, date: next } : item)))
                     }
+                    mobileInputClassName="h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px]"
+                    desktopInputClassName="h-10"
                   />
                 </div>
                 <div className="space-y-0.5">
@@ -474,11 +433,13 @@ export function SettingsPage(): JSX.Element {
               <div key={row.id} className="grid gap-1.5 rounded-lg border border-white/8 bg-black/10 p-1.5 sm:gap-2 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 md:grid-cols-[1fr_1fr_auto]">
                 <div className="space-y-0.5">
                   <p className={mobileCurveFieldLabelClassName}>Date</p>
-                  <CurveDateInput
+                  <CompactDateInput
                     value={row.date}
                     onChange={(next) =>
                       setPaceRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, date: next } : item)))
                     }
+                    mobileInputClassName="h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px]"
+                    desktopInputClassName="h-10"
                   />
                 </div>
                 <div className="space-y-0.5">
