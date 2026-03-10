@@ -58,6 +58,7 @@ export interface SettingsResponse {
   owner: string;
   db_path: string;
   if_zone_thresholds: IfZoneThresholds;
+  vdot_lookback_days: number;
   specificity_profile: SpecificityProfile;
   lthr_curve: LthrCurvePoint[];
   lt_pace_curve: LtPaceCurvePoint[];
@@ -66,6 +67,7 @@ export interface SettingsResponse {
 
 export interface UpdateSettingsRequest {
   if_zone_thresholds?: IfZoneThresholds;
+  vdot_lookback_days?: number;
   specificity_profile?: SpecificityProfile;
   lthr_curve?: LthrCurvePoint[];
   lt_pace_curve?: LtPaceCurvePoint[];

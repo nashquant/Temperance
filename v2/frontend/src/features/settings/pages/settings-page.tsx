@@ -71,8 +71,7 @@ function formatPace(seconds: number): string {
 }
 
 function formatIfZoneLabel(key: 'z1_max' | 'z2_max' | 'z3_max' | 'z4_max'): string {
-  const zone = key.replace('_max', '').toUpperCase().replace('Z', 'Zone ');
-  return `${zone} Ceiling`;
+  return `Top ${key.replace('_max', '').toUpperCase()}`;
 }
 
 function formatSpecificityLabel(key: keyof SpecificityProfile): string {
@@ -98,6 +97,7 @@ export function SettingsPage(): JSX.Element {
   const vdotQuery = useVdotQuery();
 
   const [ifZones, setIfZones] = useState({ z1_max: 0.7, z2_max: 0.8, z3_max: 0.9, z4_max: 1.0 });
+  const [vdotLookbackDays, setVdotLookbackDays] = useState(200);
   const [specificity, setSpecificity] = useState<SpecificityProfile>({ non_running: 0.8, treadmill: 1.0, elliptical: 0.8, cycling: 0.8 });
   const [lthrRows, setLthrRows] = useState<LthrDraftRow[]>([]);
   const [paceRows, setPaceRows] = useState<LtPaceDraftRow[]>([]);
@@ -107,6 +107,7 @@ export function SettingsPage(): JSX.Element {
   useEffect(() => {
     if (!query.data) return;
     setIfZones(query.data.if_zone_thresholds);
+    setVdotLookbackDays(Number(query.data.vdot_lookback_days) || 200);
     setSpecificity(query.data.specificity_profile);
     setLthrRows(
       query.data.lthr_curve.map((row) => ({ id: rowId(), date: row.date, lthr_bpm: Number(row.lthr_bpm) || 0 })),
@@ -349,8 +350,8 @@ export function SettingsPage(): JSX.Element {
       <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
         <Card className={surfaceClassName}>
           <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-4">
-            <p className="text-sm font-medium">IF Zones (%)</p>
-            <div className="grid gap-2 sm:gap-3 md:grid-cols-4">
+            <p className="text-sm font-medium">Stress Zones and VDOT</p>
+            <div className="grid gap-2 sm:gap-3 lg:grid-cols-5">
               {(['z1_max', 'z2_max', 'z3_max', 'z4_max'] as const).map((key) => (
                 <div key={key} className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
                   <p className={fieldLabelClassName}>{formatIfZoneLabel(key)}</p>
@@ -373,8 +374,30 @@ export function SettingsPage(): JSX.Element {
                   </div>
                 </div>
               ))}
+              <div className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 lg:w-[96px] lg:justify-self-end">
+                <p className={fieldLabelClassName}>VDOT Days</p>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="3650"
+                    step="1"
+                    className="h-9 rounded-lg border-white/10 bg-black/15 sm:h-10 sm:rounded-md sm:border-input sm:bg-transparent"
+                    value={Math.round(Number(vdotLookbackDays) || 0)}
+                    onChange={(event) => setVdotLookbackDays(Number(event.target.value) || 0)}
+                  />
+                </div>
+              </div>
             </div>
-            <Button className={`${controlButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ if_zone_thresholds: ifZones })} disabled={saveMutation.isPending}>Save IF Zones</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                className={`${controlButtonClassName} w-full sm:w-auto`}
+                onClick={() => saveMutation.mutate({ if_zone_thresholds: ifZones, vdot_lookback_days: vdotLookbackDays })}
+                disabled={saveMutation.isPending}
+              >
+                Save
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -405,7 +428,7 @@ export function SettingsPage(): JSX.Element {
                 </div>
               ))}
             </div>
-            <Button className={`${controlButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save Specificity</Button>
+            <Button className={`${controlButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save</Button>
           </CardContent>
         </Card>
       </div>
@@ -467,7 +490,7 @@ export function SettingsPage(): JSX.Element {
                 </div>
               ))}
             </div>
-            <Button className={`${controlButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save LTHR Curve</Button>
+            <Button className={`${controlButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save</Button>
           </CardContent>
         </Card>
 
@@ -539,7 +562,7 @@ export function SettingsPage(): JSX.Element {
               }}
               disabled={saveMutation.isPending}
             >
-              Save LT Pace Curve
+              Save
             </Button>
           </CardContent>
         </Card>

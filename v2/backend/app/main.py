@@ -98,10 +98,12 @@ def _now_app_local() -> pd.Timestamp:
         now_local = pd.Timestamp(datetime.now().astimezone())
         return now_local.tz_localize(None) if now_local.tzinfo is not None else now_local
 SETTINGS_KEY_IF_ZONE_THRESHOLDS = "if_zone_thresholds_v1"
+SETTINGS_KEY_VDOT_LOOKBACK_DAYS = "vdot_lookback_days_v1"
 TOKEN_TTL_S = int(os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60))
 MAX_PLANNED_ENTRY_CHARS = 4000
 MAX_PLANNED_ENTRIES_PER_SAVE = 40
 CUSTOM_ACTIVITIES_LIMIT = 5000
+DEFAULT_VDOT_LOOKBACK_DAYS = 200
 LT_PACE_TO_WEEKLY_TARGET_POINTS = [
     (300.0, 67.0, 364.0),
     (270.0, 81.0, 396.0),
@@ -149,6 +151,7 @@ class CustomActivityUpdateRequest(BaseModel):
 
 class UpdateSettingsRequest(BaseModel):
     if_zone_thresholds: dict[str, float] | None = None
+    vdot_lookback_days: int | None = None
     specificity_profile: dict[str, float] | None = None
     lthr_curve: list[dict[str, Any]] | None = None
     lt_pace_curve: list[dict[str, Any]] | None = None
@@ -674,6 +677,21 @@ def _normalize_if_zone_thresholds(payload: dict[str, object] | None) -> dict[str
     out["z3_max"] = float(min(max(out["z3_max"], out["z2_max"] + 0.01), 3.0))
     out["z4_max"] = float(min(max(out["z4_max"], out["z3_max"] + 0.01), 3.0))
     return out
+
+
+def _normalize_vdot_lookback_days(value: object | None) -> int:
+    try:
+        parsed = int(value) if value is not None else DEFAULT_VDOT_LOOKBACK_DAYS
+    except Exception:
+        parsed = DEFAULT_VDOT_LOOKBACK_DAYS
+    return max(1, min(parsed, 3650))
+
+
+def _load_vdot_lookback_days(db_path: Path) -> int:
+    raw = get_setting(db_path, SETTINGS_KEY_VDOT_LOOKBACK_DAYS)
+    if raw is None:
+        return DEFAULT_VDOT_LOOKBACK_DAYS
+    return _normalize_vdot_lookback_days(raw)
 
 
 def _normalize_lthr_curve(rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -2561,6 +2579,14 @@ def _build_athlete_progression_payload(
     aggregation: str,
     owner: str,
 ) -> dict[str, Any]:
+    empty_vdot_eligibility = {
+        "running_like_activities": 0,
+        "running_like_with_distance_duration": 0,
+        "eligible_candidates_before_vdot": 0,
+        "eligible_candidates_after_vdot": 0,
+        "max_single_activity_if_pct": 0.0,
+        "max_single_activity_rtss": 0.0,
+    }
     injury_rows: list[dict[str, str]] = []
     raw_injury = get_setting(db_path, SETTINGS_KEY_INJURY_WINDOWS)
     if raw_injury:
@@ -2594,6 +2620,7 @@ def _build_athlete_progression_payload(
             },
             "points": [],
             "injury_windows": injury_rows,
+            "vdot_eligibility": empty_vdot_eligibility,
         }
 
     filtered = _filter_metrics_by_activity(metrics_df, activity_filter)
@@ -2613,6 +2640,7 @@ def _build_athlete_progression_payload(
             },
             "points": [],
             "injury_windows": injury_rows,
+            "vdot_eligibility": empty_vdot_eligibility,
         }
 
     filtered = filtered.copy()
@@ -2644,12 +2672,11 @@ def _build_athlete_progression_payload(
 
     sport_lower = filtered["sport_type"].fillna("").astype(str).str.lower()
     is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
+    running_like_with_distance_duration = is_running_like & (filtered["distance_m"] > 0) & (filtered["duration_s"] > 0)
     filtered["distance_km_running"] = (filtered["distance_m"].where(is_running_like, 0.0) / 1000.0).fillna(0.0)
     eligible_vdot_mask = (
-        is_running_like
-        & (filtered["distance_m"] > 0)
-        & (filtered["duration_s"] > 0)
-        & ((filtered["if_proxy"] > 1.0) | (filtered["rtss"] > 100.0))
+        running_like_with_distance_duration
+        & (filtered["if_proxy"] > 0.80)
     )
     vdot_candidates = filtered.loc[eligible_vdot_mask, ["start_local", "day", "distance_m", "duration_s"]].copy() if "day" in filtered.columns else pd.DataFrame()
     if not vdot_candidates.empty:
@@ -2662,6 +2689,14 @@ def _build_athlete_progression_payload(
         )
         vdot_candidates["vdot"] = pd.to_numeric(vdot_candidates["vdot"], errors="coerce")
         vdot_candidates = vdot_candidates.dropna(subset=["vdot"]).copy()
+    vdot_eligibility = {
+        "running_like_activities": int(is_running_like.sum()),
+        "running_like_with_distance_duration": int(running_like_with_distance_duration.sum()),
+        "eligible_candidates_before_vdot": int(eligible_vdot_mask.sum()),
+        "eligible_candidates_after_vdot": int(len(vdot_candidates.index)),
+        "max_single_activity_if_pct": round(float(filtered["if_proxy"].max() * 100.0), 1),
+        "max_single_activity_rtss": round(float(filtered["rtss"].max()), 1),
+    }
 
     daily_agg = (
         filtered.groupby("day", as_index=False)
@@ -2703,6 +2738,7 @@ def _build_athlete_progression_payload(
             },
             "points": [],
             "injury_windows": injury_rows,
+            "vdot_eligibility": vdot_eligibility,
         }
 
     day_index = pd.date_range(start=min_day, end=max_day, freq="D")
@@ -2710,6 +2746,23 @@ def _build_athlete_progression_payload(
     model_df = model_df.merge(daily_agg, on="day", how="left")
     for col in [c for c in model_df.columns if c != "day"]:
         model_df[col] = pd.to_numeric(model_df[col], errors="coerce").fillna(0.0)
+    vdot_lookback_days = _load_vdot_lookback_days(db_path)
+    if not vdot_candidates.empty:
+        daily_vdot = (
+            vdot_candidates.groupby("day", as_index=False)
+            .agg(vdot=("vdot", "max"))
+            .sort_values("day")
+        )
+        model_df = model_df.merge(daily_vdot, on="day", how="left")
+        model_df["vdot"] = pd.to_numeric(model_df.get("vdot"), errors="coerce")
+        model_df["vdot_max"] = (
+            pd.to_numeric(model_df.get("vdot"), errors="coerce")
+            .rolling(window=vdot_lookback_days, min_periods=1)
+            .max()
+        )
+    else:
+        model_df["vdot"] = pd.NA
+        model_df["vdot_max"] = pd.NA
 
     pace_curve = _load_curve_points(
         db_path=db_path,
@@ -2765,33 +2818,15 @@ def _build_athlete_progression_payload(
                 injury_risk=("injury_risk", "mean"),
                 leg_elasticity=("leg_elasticity", "mean"),
                 pounding=("pounding", "mean"),
+                vdot=("vdot", "max"),
+                vdot_max=("vdot_max", "max"),
             )
             .sort_values("period_start")
         )
-        if not vdot_candidates.empty:
-            vdot_candidates["period_start"] = pd.to_datetime(vdot_candidates["day"], errors="coerce").map(_week_start_monday)
-            weekly_vdot = (
-                vdot_candidates.groupby("period_start", as_index=False)
-                .agg(vdot=("vdot", "max"))
-                .sort_values("period_start")
-            )
-            points_df = points_df.merge(weekly_vdot, on="period_start", how="left")
-        else:
-            points_df["vdot"] = pd.NA
         points_df["target_tss"] = daily_tss_target * 7.0
         points_df["target_distance_km"] = daily_distance_target * 7.0
     else:
         points_df = model_df.rename(columns={"day": "period_start"}).copy()
-        if not vdot_candidates.empty:
-            daily_vdot = (
-                vdot_candidates.groupby("day", as_index=False)
-                .agg(vdot=("vdot", "max"))
-                .rename(columns={"day": "period_start"})
-                .sort_values("period_start")
-            )
-            points_df = points_df.merge(daily_vdot, on="period_start", how="left")
-        else:
-            points_df["vdot"] = pd.NA
         points_df["target_tss"] = daily_tss_target
         points_df["target_distance_km"] = daily_distance_target
 
@@ -2835,6 +2870,12 @@ def _build_athlete_progression_payload(
                     and _safe_float(row.get("vdot")) > 0
                     else None
                 ),
+                "vdot_max": (
+                    int(round(_safe_float(row.get("vdot_max"))))
+                    if pd.notna(pd.to_numeric(pd.Series([row.get("vdot_max")]), errors="coerce").iloc[0])
+                    and _safe_float(row.get("vdot_max")) > 0
+                    else None
+                ),
                 "target_tss": round(_safe_float(row.get("target_tss")), 3),
                 "target_distance_km": round(_safe_float(row.get("target_distance_km")), 3),
             }
@@ -2852,6 +2893,7 @@ def _build_athlete_progression_payload(
         "summary": summary,
         "points": points,
         "injury_windows": injury_rows,
+        "vdot_eligibility": vdot_eligibility,
     }
 
 
@@ -4110,6 +4152,7 @@ def settings_view(
     except Exception:
         if_payload = None
     if_thresholds = _normalize_if_zone_thresholds(if_payload)
+    vdot_lookback_days = _load_vdot_lookback_days(db_path)
 
     spec_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
 
@@ -4148,6 +4191,7 @@ def settings_view(
         "owner": resolved_owner,
         "db_path": str(db_path),
         "if_zone_thresholds": if_thresholds,
+        "vdot_lookback_days": vdot_lookback_days,
         "specificity_profile": spec_profile,
         "lthr_curve": lthr_rows,
         "lt_pace_curve": pace_rows,
@@ -4171,6 +4215,11 @@ def settings_update(
         normalized = _normalize_if_zone_thresholds(payload.if_zone_thresholds)
         save_setting(db_path, SETTINGS_KEY_IF_ZONE_THRESHOLDS, _settings_json(normalized))
         updated.append("if_zone_thresholds")
+
+    if payload.vdot_lookback_days is not None:
+        normalized = _normalize_vdot_lookback_days(payload.vdot_lookback_days)
+        save_setting(db_path, SETTINGS_KEY_VDOT_LOOKBACK_DAYS, str(int(normalized)))
+        updated.append("vdot_lookback_days")
 
     if payload.specificity_profile is not None:
         fallback = _safe_float(payload.specificity_profile.get("non_running")) if isinstance(payload.specificity_profile, dict) else 0.8

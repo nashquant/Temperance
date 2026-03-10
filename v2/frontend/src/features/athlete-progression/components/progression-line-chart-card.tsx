@@ -21,6 +21,8 @@ interface SeriesConfig {
   color: string;
   yAxisId?: 'left' | 'right';
   dashed?: boolean;
+  strokeOpacity?: number;
+  dotOpacity?: number;
 }
 
 interface Props {
@@ -57,6 +59,7 @@ const INTEGER_LIKE_KEYS = new Set([
   'leg_elasticity',
   'pounding',
   'vdot',
+  'vdot_max',
   'training_load_garmin',
   'calories_total',
   '__target',
@@ -252,10 +255,11 @@ export function ProgressionLineChartCard({
                   name={item.label}
                   stroke={item.color}
                   strokeWidth={2}
-                  dot={{ r: 2.5, strokeWidth: 1, fill: item.color }}
-                  activeDot={{ r: 4 }}
                   yAxisId={item.yAxisId ?? 'left'}
                   strokeDasharray={item.dashed ? '5 5' : undefined}
+                  strokeOpacity={item.strokeOpacity}
+                  dot={{ r: 2.5, strokeWidth: 1, fill: item.color, fillOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1, strokeOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1 }}
+                  activeDot={{ r: 4, fill: item.color, fillOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1, strokeOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1 }}
                   connectNulls
                 />
               ))}

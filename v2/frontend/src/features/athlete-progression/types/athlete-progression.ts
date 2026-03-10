@@ -22,6 +22,7 @@ export interface AthleteProgressionPoint {
   leg_elasticity: number;
   pounding: number;
   vdot: number | null;
+  vdot_max: number | null;
   target_tss: number;
   target_distance_km: number;
 }
@@ -44,4 +45,12 @@ export interface AthleteProgressionResponse {
     rtss: number;
   };
   points: AthleteProgressionPoint[];
+  vdot_eligibility?: {
+    running_like_activities: number;
+    running_like_with_distance_duration: number;
+    eligible_candidates_before_vdot: number;
+    eligible_candidates_after_vdot: number;
+    max_single_activity_if_pct: number;
+    max_single_activity_rtss: number;
+  };
 }

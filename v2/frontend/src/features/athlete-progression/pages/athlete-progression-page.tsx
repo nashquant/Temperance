@@ -48,9 +48,10 @@ export function AthleteProgressionPage(): JSX.Element {
     });
   }, [aggregation, chartData]);
   const hasVdotData = useMemo(
-    () => normalizedChartData.some((row) => Number.isFinite(Number(row.vdot)) && Number(row.vdot) > 0),
+    () => normalizedChartData.some((row) => Number.isFinite(Number(row.vdot_max ?? row.vdot)) && Number(row.vdot_max ?? row.vdot) > 0),
     [normalizedChartData],
   );
+  const vdotEligibility = query.data?.vdot_eligibility;
 
   return (
     <section className="space-y-6">
@@ -186,13 +187,19 @@ export function AthleteProgressionPage(): JSX.Element {
                   data={normalizedChartData}
                   yLabel="VDOT"
                   series={[
-                    { key: 'vdot', label: 'VDOT', color: '#f97316' },
+                    { key: 'vdot_max', label: 'VDOT Max', color: '#f97316' },
+                    { key: 'vdot', label: 'VDOT', color: '#94a3b8', dashed: true, strokeOpacity: 0.6, dotOpacity: 0.45 },
                   ]}
                 />
               ) : (
                 <Alert className="border-amber-300 text-amber-700 dark:border-amber-900 dark:text-amber-300">
                   <AlertTitle>VDOT Evolution</AlertTitle>
-                  <AlertDescription>No eligible activity found in the selected date range. VDOT requires an activity with IF above 100% or TSS above 100.</AlertDescription>
+                  <AlertDescription>
+                    No eligible activity found in this range. VDOT needs a single running/treadmill activity with distance and duration, and IF above 80%.
+                    {vdotEligibility
+                      ? ` Max single-activity IF: ${Math.round(Number(vdotEligibility.max_single_activity_if_pct || 0))}% · max single-activity rTSS: ${Math.round(Number(vdotEligibility.max_single_activity_rtss || 0))}.`
+                      : ''}
+                  </AlertDescription>
                 </Alert>
               )}
             </div>
