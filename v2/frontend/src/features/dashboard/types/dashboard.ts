@@ -31,6 +31,7 @@ export interface DashboardActivityCard {
   distance_label: string;
   hr_label: string;
   pace_label: string;
+  vdot?: number | null;
   if_pct: number;
   tss: number;
   rtss: number;

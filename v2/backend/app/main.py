@@ -3412,6 +3412,11 @@ def _build_activity_dashboard_payload(
                 hr = _safe_float(act.get("avg_hr"))
                 avg_pace = _safe_float(act.get("avg_pace_s_per_km"))
                 eqv_pace = _safe_float(act.get("pace_proxy_sec_per_km"))
+                vdot_value = (
+                    _activity_vdot(distance_m=_safe_float(act.get("distance_m")), duration_s=_safe_float(act.get("duration_s")))
+                    if is_running and if_proxy > 0.80 and _safe_float(act.get("distance_m")) > 0 and _safe_float(act.get("duration_s")) > 0
+                    else None
+                )
                 start_local_ts = pd.to_datetime(act.get("start_local"), errors="coerce")
                 actual_cards.append(
                     {
@@ -3443,6 +3448,7 @@ def _build_activity_dashboard_payload(
                             if is_running
                             else _format_pace_short(eqv_pace if eqv_pace > 0 else None)
                         ),
+                        "vdot": round(float(vdot_value), 0) if vdot_value is not None and math.isfinite(float(vdot_value)) else None,
                         "if_pct": round(if_proxy * 100.0, 1),
                         "tss": round(tss, 1),
                         "rtss": round(rtss, 1),

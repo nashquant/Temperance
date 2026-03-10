@@ -301,6 +301,11 @@ export function DashboardDayColumn({
                   <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
                     {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
                   </p>
+                  {activity.vdot != null ? (
+                    <p className={cn('line-clamp-1 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
+                      {`VDOT ${Math.round(activity.vdot)}`}
+                    </p>
+                  ) : null}
                   <p className={cn('mt-auto truncate font-semibold text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
                     TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
                   </p>
