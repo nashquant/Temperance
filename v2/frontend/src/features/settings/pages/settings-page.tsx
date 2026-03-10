@@ -5,12 +5,11 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useSettingsQuery } from '@/features/settings/hooks/use-settings-query';
 import { updateSettings } from '@/features/settings/services/settings-api';
-import type { InjuryWindow, LthrCurvePoint, LtPaceCurvePoint, SpecificityProfile } from '@/features/settings/types/settings';
+import type { LthrCurvePoint, LtPaceCurvePoint, SpecificityProfile } from '@/features/settings/types/settings';
 import { queryClient } from '@/lib/query-client';
 
 interface LthrDraftRow {
@@ -23,14 +22,6 @@ interface LtPaceDraftRow {
   id: string;
   date: string;
   pace_input: string;
-}
-
-interface InjuryDraftRow {
-  id: string;
-  label: string;
-  start: string;
-  end: string;
-  severity: 'injury' | 'light_injury';
 }
 
 function rowId(): string {
@@ -76,9 +67,23 @@ function formatPace(seconds: number): string {
   return `${mm}:${String(ss).padStart(2, '0')}/km`;
 }
 
+function formatIfZoneLabel(key: 'z1_max' | 'z2_max' | 'z3_max' | 'z4_max'): string {
+  const zone = key.replace('_max', '').toUpperCase().replace('Z', 'Zone ');
+  return `${zone} Ceiling`;
+}
+
+function formatSpecificityLabel(key: keyof SpecificityProfile): string {
+  if (key === 'non_running') return 'Non-Running';
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
 export function SettingsPage(): JSX.Element {
   const surfaceClassName =
     'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
+  const controlButtonClassName =
+    'h-10 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(30,41,59,0.88),rgba(15,23,42,0.96))] px-4 text-[12px] font-medium text-slate-100 shadow-[0_8px_18px_rgba(2,6,23,0.22)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(51,65,85,0.92),rgba(15,23,42,0.98))]';
+  const fieldLabelClassName = 'mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74';
+  const fieldHintClassName = 'text-[11px] text-slate-300/58';
   const { session, profile } = useAuth();
   const query = useSettingsQuery();
 
@@ -86,7 +91,6 @@ export function SettingsPage(): JSX.Element {
   const [specificity, setSpecificity] = useState<SpecificityProfile>({ non_running: 0.8, treadmill: 1.0, elliptical: 0.8, cycling: 0.8 });
   const [lthrRows, setLthrRows] = useState<LthrDraftRow[]>([]);
   const [paceRows, setPaceRows] = useState<LtPaceDraftRow[]>([]);
-  const [injuryRows, setInjuryRows] = useState<InjuryDraftRow[]>([]);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -101,15 +105,6 @@ export function SettingsPage(): JSX.Element {
         id: rowId(),
         date: row.date,
         pace_input: secondsToPaceInput(Number(row.lt_pace_sec_per_km) || 0),
-      })),
-    );
-    setInjuryRows(
-      query.data.injury_windows.map((row) => ({
-        id: rowId(),
-        label: row.label,
-        start: row.start,
-        end: row.end,
-        severity: row.severity,
       })),
     );
   }, [query.data]);
@@ -157,18 +152,8 @@ export function SettingsPage(): JSX.Element {
     }
     pace.sort((a, b) => a.date.localeCompare(b.date));
 
-    const injury: InjuryWindow[] = injuryRows
-      .filter((row) => row.label.trim() && row.start && row.end)
-      .map((row) => ({
-        label: row.label.trim(),
-        start: row.start,
-        end: row.end,
-        severity: row.severity,
-      }))
-      .sort((a, b) => a.start.localeCompare(b.start));
-
-    return { lthr, pace, injury, paceError };
-  }, [injuryRows, lthrRows, paceRows]);
+    return { lthr, pace, paceError };
+  }, [lthrRows, paceRows]);
 
   const zoneGuide = useMemo(() => {
     const sortedLthr = [...lthrRows]
@@ -266,8 +251,11 @@ export function SettingsPage(): JSX.Element {
           <p className="text-sm font-medium">IF Zones (%)</p>
           <div className="grid gap-3 md:grid-cols-4">
             {(['z1_max', 'z2_max', 'z3_max', 'z4_max'] as const).map((key) => (
-              <div key={key}>
-                <p className="mb-1 text-xs text-muted-foreground">{key} (%)</p>
+              <div key={key} className="space-y-1">
+                <div>
+                  <p className={fieldLabelClassName}>{formatIfZoneLabel(key)}</p>
+                  <p className={fieldHintClassName}>% of threshold</p>
+                </div>
                 <Input
                   type="number"
                   step="1"
@@ -282,7 +270,7 @@ export function SettingsPage(): JSX.Element {
               </div>
             ))}
           </div>
-          <Button onClick={() => saveMutation.mutate({ if_zone_thresholds: ifZones })} disabled={saveMutation.isPending}>Save IF Zones</Button>
+          <Button className={controlButtonClassName} onClick={() => saveMutation.mutate({ if_zone_thresholds: ifZones })} disabled={saveMutation.isPending}>Save IF Zones</Button>
         </CardContent>
       </Card>
 
@@ -322,8 +310,11 @@ export function SettingsPage(): JSX.Element {
           <p className="text-sm font-medium">Specificity Factors</p>
           <div className="grid gap-3 md:grid-cols-4">
             {(['non_running', 'treadmill', 'elliptical', 'cycling'] as const).map((key) => (
-              <div key={key}>
-                <p className="mb-1 text-xs text-muted-foreground">{key.replace('_', ' ')} (%)</p>
+              <div key={key} className="space-y-1">
+                <div>
+                  <p className={fieldLabelClassName}>{formatSpecificityLabel(key)}</p>
+                  <p className={fieldHintClassName}>relative % factor</p>
+                </div>
                 <Input
                   type="number"
                   step="1"
@@ -338,7 +329,7 @@ export function SettingsPage(): JSX.Element {
               </div>
             ))}
           </div>
-          <Button onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save Specificity</Button>
+          <Button className={controlButtonClassName} onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save Specificity</Button>
         </CardContent>
       </Card>
 
@@ -384,7 +375,7 @@ export function SettingsPage(): JSX.Element {
               </div>
             ))}
           </div>
-          <Button onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save LTHR Curve</Button>
+          <Button className={controlButtonClassName} onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save LTHR Curve</Button>
         </CardContent>
       </Card>
 
@@ -432,6 +423,7 @@ export function SettingsPage(): JSX.Element {
           </div>
           {parsedCurves.paceError ? <p className="text-xs text-red-400">{parsedCurves.paceError}</p> : null}
           <Button
+            className={controlButtonClassName}
             onClick={() => {
               if (parsedCurves.paceError) {
                 setSaveMsg(parsedCurves.paceError);
@@ -446,78 +438,6 @@ export function SettingsPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Card className={surfaceClassName}>
-        <CardContent className="space-y-3 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">Injury Overlays</p>
-            <Button
-              variant="outline"
-              onClick={() =>
-                setInjuryRows((previous) => [
-                  ...previous,
-                  { id: rowId(), label: '', start: '', end: '', severity: 'light_injury' },
-                ])
-              }
-              disabled={saveMutation.isPending}
-            >
-              Add row
-            </Button>
-          </div>
-          <div className="space-y-2">
-            {injuryRows.map((row) => (
-              <div key={row.id} className="grid gap-2 md:grid-cols-[1.2fr_1fr_1fr_1fr_auto]">
-                <Input
-                  value={row.label}
-                  onChange={(event) =>
-                    setInjuryRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, label: event.target.value } : item)))
-                  }
-                  placeholder="Label"
-                />
-                <Input
-                  type="date"
-                  value={row.start}
-                  onChange={(event) =>
-                    setInjuryRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, start: event.target.value } : item)))
-                  }
-                />
-                <Input
-                  type="date"
-                  value={row.end}
-                  onChange={(event) =>
-                    setInjuryRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, end: event.target.value } : item)))
-                  }
-                />
-                <Select
-                  value={row.severity}
-                  onValueChange={(value) =>
-                    setInjuryRows((previous) =>
-                      previous.map((item) =>
-                        item.id === row.id ? { ...item, severity: value as 'injury' | 'light_injury' } : item,
-                      ),
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="light_injury">Light injury</SelectItem>
-                    <SelectItem value="injury">Injury</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="outline"
-                  onClick={() => setInjuryRows((previous) => previous.filter((item) => item.id !== row.id))}
-                  disabled={saveMutation.isPending}
-                >
-                  Remove
-                </Button>
-              </div>
-            ))}
-          </div>
-          <Button onClick={() => saveMutation.mutate({ injury_windows: parsedCurves.injury })} disabled={saveMutation.isPending}>Save Injury Overlays</Button>
-        </CardContent>
-      </Card>
     </section>
   );
 }

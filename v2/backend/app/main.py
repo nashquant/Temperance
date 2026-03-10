@@ -3751,7 +3751,7 @@ def data_extract_status(
         "garmin_credentials_source": garmin_source,
         "garmin_runtime_credentials_set": bool(runtime_email and runtime_password),
         "garmin_credentials_hint": (
-            "Admin uses GARMIN_EMAIL/GARMIN_PASSWORD from environment."
+            "Using configured Garmin credentials for this owner scope."
             if role == "admin" and resolved_owner == current_user
             else "Provide Garmin credentials for this owner scope (memory only)."
             if role == "admin"
@@ -3771,25 +3771,34 @@ def data_extract_credentials(
     ctx = _auth_context(authorization)
     resolved_owner = _resolve_owner(ctx, owner)
     role = str(ctx.get("role") or "viewer").strip().lower()
+    current_user = str(ctx.get("user") or "").strip()
 
-    if role == "admin":
+    if role == "admin" and resolved_owner == current_user:
         env_email, env_password = _garmin_credentials_from_env()
         return {
             "updated": False,
             "source": "env" if (env_email and env_password) else "missing",
-            "message": "Admin uses GARMIN_EMAIL/GARMIN_PASSWORD from environment.",
+            "message": "Using configured Garmin credentials for this owner scope.",
         }
 
     email = str(payload.email or "").strip()
     password = str(payload.password or "").strip()
     if not email and not password:
         _clear_runtime_garmin_credentials(resolved_owner)
-        return {"updated": True, "source": "missing", "message": "Session credentials cleared."}
+        return {
+            "updated": True,
+            "source": "missing",
+            "message": "Owner credentials cleared from memory." if role == "admin" else "Session credentials cleared.",
+        }
     if not email or not password:
         raise HTTPException(status_code=400, detail="Both email and password are required.")
 
     _set_runtime_garmin_credentials(resolved_owner, email=email, password=password)
-    return {"updated": True, "source": "session", "message": "Session credentials saved in memory only."}
+    return {
+        "updated": True,
+        "source": "session",
+        "message": "Owner credentials saved in memory only." if role == "admin" else "Session credentials saved in memory only.",
+    }
 
 
 @app.post("/api/v1/data-extract/sync")
@@ -3818,7 +3827,7 @@ def data_extract_sync(
 
     if source in {"garmin_api", "both"}:
         if not (garmin_email and garmin_password):
-            messages.append("Garmin credentials missing. Set session credentials (viewer) or GARMIN_EMAIL/GARMIN_PASSWORD (admin).")
+            messages.append("Garmin credentials missing. Add credentials for the active owner scope.")
             details["garmin"] = {"skipped": True, "reason": "credentials_missing"}
         else:
             if profile == "quick":
@@ -3897,7 +3906,7 @@ def data_extract_comprehensive(
     if not (garmin_email and garmin_password):
         raise HTTPException(
             status_code=400,
-            detail="Garmin credentials missing. Set session credentials (viewer) or GARMIN_EMAIL/GARMIN_PASSWORD (admin).",
+            detail="Garmin credentials missing. Add credentials for the active owner scope.",
         )
 
     try:
