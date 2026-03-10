@@ -30,6 +30,18 @@ function currentMonthStartIso(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
+function formatStartDayDisplay(isoDay: string): string {
+  const value = String(isoDay || '').trim();
+  if (!value) return '';
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(parsed);
+}
+
 export function DataExtractPage(): JSX.Element {
   const surfaceClassName =
     'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
@@ -293,9 +305,12 @@ export function DataExtractPage(): JSX.Element {
                 <p className="text-[11px] text-slate-300/62">Choose where the backfill begins.</p>
               </div>
               <div className="flex items-center gap-2">
-                <label className="min-w-0 flex-1">
+                <label className="relative min-w-0 flex-1">
+                  <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center px-3 text-sm font-medium text-slate-100">
+                    {formatStartDayDisplay(startDay)}
+                  </span>
                   <input
-                    className="h-10 w-full rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] px-3 text-sm text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none transition [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-datetime-edit]:text-slate-100 [&::-webkit-datetime-edit-fields-wrapper]:text-slate-100 [&::-webkit-datetime-edit-month-field]:text-slate-100 [&::-webkit-datetime-edit-day-field]:text-slate-100 [&::-webkit-datetime-edit-year-field]:text-slate-100 focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] px-3 text-sm text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none transition [color-scheme:dark] opacity-100 focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-datetime-edit]:opacity-0 [&::-webkit-datetime-edit-fields-wrapper]:opacity-0 [&::-webkit-date-and-time-value]:opacity-0"
                     type="date"
                     max={todayIso()}
                     value={startDay}
