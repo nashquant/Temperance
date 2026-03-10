@@ -253,7 +253,18 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               <Card className={surfaceClassName}>
                 <CardContent className="p-0">
                   <div className="overflow-x-auto rounded-2xl">
-                    <table className="w-full text-sm">
+                    <table className="w-full table-fixed text-sm">
+                      <colgroup>
+                        <col className="w-[64px]" />
+                        <col className="w-[108px]" />
+                        <col className="w-[120px]" />
+                        <col className="w-auto" />
+                        <col className="w-[82px]" />
+                        <col className="w-[82px]" />
+                        <col className="w-[104px]" />
+                        <col className="w-[74px]" />
+                        <col className="w-[148px]" />
+                      </colgroup>
                       <thead className="bg-white/5 text-slate-300/72">
                         <tr>
                           <th className="px-3 py-2 text-left">Done</th>
@@ -264,7 +275,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                           <th className="px-3 py-2 text-right">rTSS</th>
                           <th className="px-3 py-2 text-right">Dist Eqv</th>
                           <th className="px-3 py-2 text-right">IF</th>
-                          <th className="px-3 py-2 text-right">Actions</th>
+                          <th className="px-3 py-2 text-center">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -290,7 +301,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                               <td className="px-3 py-2">{row.activity}</td>
                               <td className="px-3 py-2">
                                 <input
-                                  className="w-full min-w-[320px] rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                                  className="w-full min-w-0 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
                                   value={editValues[rowKey] ?? ''}
                                   onChange={(event) =>
                                     setEditValues((previous) => ({ ...previous, [rowKey]: event.target.value }))
@@ -302,11 +313,11 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                               <td className="px-3 py-2 text-right">{row.distance_eqv_km.toFixed(1)} km</td>
                               <td className="px-3 py-2 text-right">{row.if_proxy_pct.toFixed(0)}%</td>
                               <td className="px-3 py-2 text-right">
-                                <div className="flex justify-end gap-1">
+                                <div className="flex justify-end gap-1.5">
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="text-slate-200 hover:bg-white/10 hover:text-white"
+                                    className="px-2.5 text-slate-200 hover:bg-white/10 hover:text-white"
                                     onClick={() =>
                                       workoutUpdateMutation.mutate({
                                         dayUtc: row.day_utc,
@@ -321,7 +332,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="text-slate-300 hover:bg-rose-500/12 hover:text-rose-100"
+                                    className="px-2.5 text-slate-300 hover:bg-rose-500/12 hover:text-rose-100"
                                     onClick={() => {
                                       if (window.confirm('Delete this planned activity?')) {
                                         deleteMutation.mutate({ dayUtc: row.day_utc, lineNo: row.line_no });

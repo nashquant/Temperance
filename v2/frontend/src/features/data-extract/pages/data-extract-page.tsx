@@ -47,8 +47,7 @@ export function DataExtractPage(): JSX.Element {
   const [result, setResult] = useState<string | null>(null);
   const [customResult, setCustomResult] = useState<string | null>(null);
   const [garminCredResult, setGarminCredResult] = useState<string | null>(null);
-  const [editingCustomKey, setEditingCustomKey] = useState<string | null>(null);
-  const [editingCustomText, setEditingCustomText] = useState('');
+  const [customEditValues, setCustomEditValues] = useState<Record<string, string>>({});
   const [extractLogs, setExtractLogs] = useState<string[]>([]);
   const lastProgressLogCountRef = useRef(0);
   const lastFinishedAtRef = useRef<string | null>(null);
@@ -174,8 +173,6 @@ export function DataExtractPage(): JSX.Element {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['custom-activities'] });
       await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
-      setEditingCustomKey(null);
-      setEditingCustomText('');
     },
     onError: (error) => {
       setCustomResult(error instanceof Error ? error.message : 'Unable to update custom activity.');
@@ -237,6 +234,14 @@ export function DataExtractPage(): JSX.Element {
       return { dayLabel, value: total, tssBasis };
     });
   }, [customMetric, customRowsForWeek, selectedCustomWeek]);
+
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    customRowsForWeek.forEach((row) => {
+      next[`${row.day_utc}-${row.line_no}`] = row.activity_text;
+    });
+    setCustomEditValues(next);
+  }, [customRowsForWeek]);
 
   if (statusQuery.isLoading) {
     return (
@@ -500,99 +505,83 @@ export function DataExtractPage(): JSX.Element {
           ) : null}
 
           {isAdmin ? (
-            <div className="overflow-x-auto rounded border">
+            <div className="overflow-x-auto rounded-2xl">
               <table className="w-full table-fixed text-sm">
                 <colgroup>
-                  <col className="w-[104px]" />
-                  <col className="w-[112px]" />
+                  <col className="w-[108px]" />
+                  <col className="w-[120px]" />
                   <col className="w-auto" />
-                  <col className="w-[128px]" />
-                  <col className="w-[128px]" />
-                  <col className="w-[156px]" />
+                  <col className="w-[82px]" />
+                  <col className="w-[82px]" />
+                  <col className="w-[104px]" />
+                  <col className="w-[74px]" />
+                  <col className="w-[148px]" />
                 </colgroup>
-                <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+                <thead className="bg-white/5 text-left text-slate-300/72">
                   <tr>
-                    <th className="px-2 py-2">Day</th>
-                    <th className="px-2 py-2">Activity</th>
-                    <th className="px-2 py-2">Text</th>
-                    <th className="px-2 py-2">Pace · IF</th>
-                    <th className="px-2 py-2">TSS · rTSS</th>
-                    <th className="px-2 py-2">Actions</th>
+                    <th className="px-3 py-2 text-left">Day</th>
+                    <th className="px-3 py-2 text-left">Activity</th>
+                    <th className="px-3 py-2 text-left">Workout</th>
+                    <th className="px-3 py-2 text-right">TSS</th>
+                    <th className="px-3 py-2 text-right">rTSS</th>
+                    <th className="px-3 py-2 text-right">Dist Eqv</th>
+                    <th className="px-3 py-2 text-right">IF</th>
+                    <th className="px-3 py-2 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {customRowsForWeek.map((row) => (
-                    <tr key={`${row.day_utc}-${row.line_no}`} className="border-t">
-                      <td className="px-2 py-2">{row.day_utc}</td>
-                      <td className="px-2 py-2">{row.activity}</td>
-                      <td className="px-2 py-2">
-                        {editingCustomKey === `${row.day_utc}-${row.line_no}` ? (
-                          <textarea
-                            className="min-h-[68px] w-full resize-y rounded-md border border-input bg-transparent px-2 py-1 text-xs leading-5 break-words whitespace-pre-wrap"
-                            value={editingCustomText}
-                            onChange={(event) => setEditingCustomText(event.target.value)}
-                          />
-                        ) : (
-                          <div className="max-w-full whitespace-normal break-words text-xs leading-5 text-foreground/90">
-                            {row.activity_text}
-                          </div>
-                        )}
+                  {customRowsForWeek.map((row) => {
+                    const rowKey = `${row.day_utc}-${row.line_no}`;
+                    return (
+                    <tr key={rowKey} className="border-t border-white/10">
+                      <td className="px-3 py-2">{row.day_utc}</td>
+                      <td className="px-3 py-2">{row.activity}</td>
+                      <td className="px-3 py-2">
+                        <input
+                          className="w-full min-w-0 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                          value={customEditValues[rowKey] ?? ''}
+                          onChange={(event) =>
+                            setCustomEditValues((previous) => ({ ...previous, [rowKey]: event.target.value }))
+                          }
+                        />
                       </td>
-                      <td className="px-2 py-2">{row.pace_label} · IF {Math.round(row.if_proxy_pct)}%</td>
-                      <td className="px-2 py-2">TSS {Math.round(row.tss)} · rTSS {Math.round(row.rtss)}</td>
-                      <td className="space-x-2 px-2 py-2">
-                        {editingCustomKey === `${row.day_utc}-${row.line_no}` ? (
-                          <>
-                            <Button
-                              onClick={() =>
-                                customUpdateMutation.mutate({
-                                  dayUtc: row.day_utc,
-                                  lineNo: row.line_no,
-                                  activityText: editingCustomText,
-                                })
-                              }
-                              disabled={customUpdateMutation.isPending || !editingCustomText.trim()}
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                setEditingCustomKey(null);
-                                setEditingCustomText('');
-                              }}
-                              disabled={customUpdateMutation.isPending}
-                            >
-                              Cancel
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                setEditingCustomKey(`${row.day_utc}-${row.line_no}`);
-                                setEditingCustomText(row.activity_text);
-                              }}
-                              disabled={customDeleteMutation.isPending || customUpdateMutation.isPending}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => customDeleteMutation.mutate({ dayUtc: row.day_utc, lineNo: row.line_no })}
-                              disabled={customDeleteMutation.isPending || customUpdateMutation.isPending}
-                            >
-                              Delete
-                            </Button>
-                          </>
-                        )}
+                      <td className="px-3 py-2 text-right">{Math.round(row.tss)}</td>
+                      <td className="px-3 py-2 text-right">{Math.round(row.rtss)}</td>
+                      <td className="px-3 py-2 text-right">{row.distance_eqv_km.toFixed(1)} km</td>
+                      <td className="px-3 py-2 text-right">{row.if_proxy_pct.toFixed(0)}%</td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex justify-end gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="px-2.5 text-slate-200 hover:bg-white/10 hover:text-white"
+                            onClick={() =>
+                              customUpdateMutation.mutate({
+                                dayUtc: row.day_utc,
+                                lineNo: row.line_no,
+                                activityText: customEditValues[rowKey] ?? row.activity_text,
+                              })
+                            }
+                            disabled={customUpdateMutation.isPending || !String(customEditValues[rowKey] ?? '').trim()}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="px-2.5 text-slate-300 hover:bg-rose-500/12 hover:text-rose-100"
+                            onClick={() => customDeleteMutation.mutate({ dayUtc: row.day_utc, lineNo: row.line_no })}
+                            disabled={customDeleteMutation.isPending || customUpdateMutation.isPending}
+                          >
+                            Delete
+                          </Button>
+                        </div>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                   {!customActivitiesQuery.isLoading && customRowsForWeek.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-2 py-3 text-center text-xs text-muted-foreground">
+                      <td colSpan={8} className="px-3 py-6 text-center text-sm text-slate-300/60">
                         No custom activities in the selected week.
                       </td>
                     </tr>
