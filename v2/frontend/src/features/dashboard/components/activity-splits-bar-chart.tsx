@@ -106,13 +106,6 @@ function formatDuration(seconds: number): string {
 
 function formatElapsedTick(seconds: number): string {
   const roundedMinutes = Math.max(0, Math.round((Number(seconds) || 0) / 60));
-  const hours = Math.floor(roundedMinutes / 60);
-  const minutes = roundedMinutes % 60;
-
-  if (hours > 0) {
-    if (minutes === 0) return `${hours}h`;
-    return `${hours}h ${minutes}'`;
-  }
   return `${roundedMinutes}'`;
 }
 
@@ -242,6 +235,9 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   const margin = { top: 1, right: sideMargin, bottom: 5, left: sideMargin };
   const innerWidth = svgWidth - margin.left - margin.right;
   const innerHeight = svgHeight - margin.top - margin.bottom;
+  const chartHeightPx = lapCount >= 10 ? 84 : lapCount >= 7 ? 86 : 90;
+  const svgRenderHeightPx = lapCount >= 10 ? 79 : lapCount >= 7 ? 81 : 84;
+  const labelTopPx = svgRenderHeightPx-10;
   const ifValues = chartData.map((row) => row.ifPct);
   const rawMinIf = Math.min(...ifValues);
   const rawMaxIf = Math.max(...ifValues);
@@ -257,8 +253,8 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
         <div className="mb-1 px-0.5">
           <p className="text-sm font-semibold text-foreground">Splits</p>
         </div>
-        <div ref={containerRef} className="relative h-[92px] w-full" onMouseLeave={() => setTooltip(null)}>
-          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="absolute inset-x-0 top-0 h-[82px] w-full" role="img" aria-label="Splits bar chart">
+        <div ref={containerRef} className="relative w-full" style={{ height: `${chartHeightPx}px` }} onMouseLeave={() => setTooltip(null)}>
+          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="absolute inset-x-0 top-0 w-full" style={{ height: `${svgRenderHeightPx}px` }} role="img" aria-label="Splits bar chart">
             {chartData.map((row) => {
               const x = margin.left + innerWidth * row.x0;
               const rawWidth = innerWidth * (row.x1 - row.x0);
@@ -294,8 +290,9 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
             })}
           </svg>
           <div
-            className="absolute bottom-[2px] h-3"
+            className="absolute h-3"
             style={{
+              top: `${labelTopPx}px`,
               left: `${(margin.left / svgWidth) * 100}%`,
               right: `${(margin.right / svgWidth) * 100}%`,
             }}
