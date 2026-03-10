@@ -1,7 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
-import { RotateCcw } from 'lucide-react';
-
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -66,6 +64,16 @@ function currentWeekStartIso(): string {
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function formatLongDate(dayUtc: string): string {
+  const parsed = new Date(`${dayUtc}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return dayUtc;
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(parsed);
 }
 
 export function DashboardPage(): JSX.Element {
@@ -741,19 +749,7 @@ export function DashboardPage(): JSX.Element {
           <div className="relative z-10 w-full max-w-xl rounded-2xl border border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
             <div className="space-y-1">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Activity</p>
-              <h3 className="text-lg font-semibold text-foreground">{addActivityDayUtc}</h3>
-              <p className="text-sm text-muted-foreground">
-                {addActivityMode === 'planned'
-                  ? 'Enter the planned workout string for this date.'
-                  : 'Enter the custom activity string for this date.'}{' '}
-                Example: `80min elliptical @140bpm` or `10min run @4:50 + 5x6min @3:40/km`
-              </p>
-              {isBeforeCurrentWeek ? (
-                <p className="text-xs text-muted-foreground">For dates before the current week, only custom activities can be added.</p>
-              ) : null}
-              {!isBeforeCurrentWeek && !canAddCustomForComposer ? (
-                <p className="text-xs text-muted-foreground">Custom activities can only be added for today or past dates.</p>
-              ) : null}
+              <h3 className="text-lg font-semibold text-foreground">{formatLongDate(addActivityDayUtc)}</h3>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -829,38 +825,12 @@ export function DashboardPage(): JSX.Element {
                     }}
                     disabled={plannedCreateMutation.isPending || !addActivityText.trim()}
                   >
-                    {plannedCreateMutation.isPending ? 'Saving...' : `Save ${addActivityMode} activity`}
+                    {plannedCreateMutation.isPending ? 'Saving...' : 'Save'}
                   </Button>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      ) : null}
-      {undoState ? (
-        <div
-          className={`fixed bottom-5 right-5 z-50 w-full max-w-[320px] transition-all duration-200 ${
-            undoVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
-          }`}
-        >
-        <div className="rounded-2xl border border-white/8 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.1),transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.9),rgba(2,6,23,0.96))] p-2.5 shadow-[0_16px_36px_rgba(2,6,23,0.28)] backdrop-blur">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/64">Dashboard Action</p>
-              <p className="truncate text-[13px] text-slate-100/92">{undoState.label}</p>
-            </div>
-            <Button
-              variant="outline"
-              className="shrink-0 rounded-xl border-white/8 bg-white/5 text-slate-100 hover:bg-white/10"
-              onClick={async () => {
-                await handleUndo();
-              }}
-            >
-              <RotateCcw className="mr-2 h-3.5 w-3.5 text-sky-200/80" />
-              Undo
-            </Button>
-          </div>
-        </div>
         </div>
       ) : null}
     </section>
