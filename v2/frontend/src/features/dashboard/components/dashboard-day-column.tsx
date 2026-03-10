@@ -180,7 +180,7 @@ export function DashboardDayColumn({
     <Card
       className={cn(
         'rounded-xl border-border/80 bg-card/75 shadow-sm',
-        compactMobile ? 'w-[240px] shrink-0 min-h-[340px]' : 'md:min-h-[340px] lg:h-[430px]',
+        compactMobile ? 'w-[240px] shrink-0 min-h-[340px]' : 'sm:min-h-[340px] lg:h-[430px]',
         day.is_today ? 'border-primary/70' : undefined,
       )}
     >
@@ -228,7 +228,7 @@ export function DashboardDayColumn({
           className={cn(
             'flex-1 space-y-2',
             shouldScrollActivities
-              ? 'overflow-visible md:overflow-y-auto md:pr-1 md:[scrollbar-width:none] md:[-ms-overflow-style:none] md:[&::-webkit-scrollbar]:hidden lg:overflow-y-auto'
+              ? 'overflow-visible sm:overflow-y-auto sm:pr-1 sm:[scrollbar-width:none] sm:[-ms-overflow-style:none] sm:[&::-webkit-scrollbar]:hidden'
               : 'overflow-visible',
           )}
         >

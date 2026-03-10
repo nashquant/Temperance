@@ -113,7 +113,7 @@ export function DashboardWeekCard({
     <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(56,189,248,0.45),rgba(168,85,247,0.26),rgba(245,158,11,0.3))] p-[1px] shadow-[0_10px_30px_rgba(2,6,23,0.5)]">
       <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_8%_10%,rgba(56,189,248,0.1),transparent_40%),radial-gradient(circle_at_88%_90%,rgba(168,85,247,0.11),transparent_45%)] shadow-inner">
         <CardContent className="p-1.5">
-          <div className="space-y-1.5 md:hidden">
+          <div className="space-y-1.5 sm:hidden">
             <MobileWeekSummary week={week} />
             <div className="-mx-1.5 overflow-x-auto px-1.5 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               <div className="flex gap-2">
@@ -138,7 +138,7 @@ export function DashboardWeekCard({
             </div>
           </div>
 
-          <div className="hidden gap-1.5 md:grid md:grid-cols-1 lg:grid-cols-[1.15fr_repeat(7,minmax(0,1fr))] md:items-start">
+          <div className="hidden gap-1.5 sm:grid lg:grid-cols-[1.15fr_repeat(7,minmax(0,1fr))] sm:items-start">
             <DashboardWeekSummaryCard
               weekNumber={week.week_number}
               weekStart={shortDay(week.week_start)}
