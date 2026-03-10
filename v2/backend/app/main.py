@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 TEMPERANCE_SRC = Path(__file__).resolve().parents[3] / "temperance"
@@ -3554,6 +3555,11 @@ def _build_planned_activities_payload(
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/")
+def root_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/v2/", status_code=307)
 
 
 @app.post("/api/v1/auth/login")

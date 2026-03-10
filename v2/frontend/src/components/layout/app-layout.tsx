@@ -59,8 +59,8 @@ export function AppLayout(): JSX.Element {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-background">
-      <div className="grid h-full md:grid-cols-[250px_1fr]">
+    <div className="min-h-[100dvh] overflow-hidden bg-background">
+      <div className="grid min-h-[100dvh] md:grid-cols-[250px_1fr]">
         <aside className="sticky top-0 hidden h-screen overflow-y-auto border-r bg-card/50 p-4 md:block md:p-6">
           <div className="mb-6 flex items-center justify-between">
             <h1 className="text-lg font-semibold">Temperance</h1>
@@ -132,7 +132,7 @@ export function AppLayout(): JSX.Element {
               onClick={() => setMobileNavOpen(false)}
               aria-label="Close navigation"
             />
-            <aside className="relative h-full w-[260px] overflow-y-auto border-r bg-card/95 p-4 shadow-2xl backdrop-blur">
+            <aside className="relative h-full w-[85vw] max-w-[300px] overflow-y-auto border-r bg-card/95 p-4 shadow-2xl backdrop-blur">
               <div className="mb-6 flex items-center justify-between">
                 <h1 className="text-lg font-semibold">Temperance</h1>
                 <Button
@@ -206,12 +206,12 @@ export function AppLayout(): JSX.Element {
           </div>
         ) : null}
 
-        <div className="flex h-screen min-h-0 flex-col overflow-hidden">
-          <header className="sticky top-0 z-20 border-b bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-            <div className="mx-auto flex w-full max-w-7xl items-center justify-between">
-              <div>
+        <div className="flex min-h-[100dvh] min-w-0 flex-col overflow-hidden">
+          <header className="sticky top-0 z-20 border-b bg-background/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4">
+            <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3">
+              <div className="min-w-0">
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">{headerMeta.section}</p>
-                <h2 className="text-xl font-semibold">{headerMeta.title}</h2>
+                <h2 className="truncate text-lg font-semibold sm:text-xl">{headerMeta.title}</h2>
               </div>
               <Button
                 variant="outline"
@@ -225,7 +225,7 @@ export function AppLayout(): JSX.Element {
             </div>
           </header>
           <main className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-7xl px-6 py-6">
+            <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
               <Outlet />
             </div>
           </main>

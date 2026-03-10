@@ -143,14 +143,14 @@ Useful commands:
 ```
 
 Defaults:
-- Streamlit: `http://127.0.0.1:8504`
 - Public host label: `https://app.temperance-rtl.work`
+- Public v2 app: `https://app.temperance-rtl.work/v2`
 - Named Cloudflare tunnel: `temperance`
 
 Optional overrides (before `install`/`restart`):
 
 ```bash
-PORT=8504 CLOUDFLARE_TUNNEL=temperance TUNNEL_HOSTNAME=app.temperance-rtl.work ./scripts/install_keepalive.sh restart
+CLOUDFLARE_TUNNEL=temperance TUNNEL_HOSTNAME=app.temperance-rtl.work ./scripts/install_keepalive.sh restart
 ```
 
 ## Auto-update from Git main (hourly)
