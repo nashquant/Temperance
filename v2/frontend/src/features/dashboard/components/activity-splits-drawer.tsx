@@ -292,6 +292,7 @@ export function ActivitySplitsDrawer({
                     label: `L${lap.lap}`,
                     ifPct: Number(lap.if_pct) || 0,
                     type: lap.description || '-',
+                    duration_s: Number(lap.duration_seconds) || parseDurationLabelSeconds(lap.duration_label),
                   }))}
                 />
 
