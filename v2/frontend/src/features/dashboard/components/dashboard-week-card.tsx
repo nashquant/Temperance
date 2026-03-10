@@ -34,6 +34,14 @@ function shortDay(iso: string): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
 }
 
+function shortDayWithYear(iso: string): string {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 function fmtNumber(value: number | null): string {
   if (value === null || Number.isNaN(value)) return '-';
   return Math.round(value).toString();
@@ -56,7 +64,7 @@ function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
               Week {week.week_number}
             </Badge>
             <p className="text-sm font-medium text-foreground">
-              {shortDay(week.week_start)} - {shortDay(week.week_end)}
+              {shortDay(week.week_start)} - {shortDayWithYear(week.week_end)}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-right">
@@ -184,7 +192,7 @@ export function DashboardWeekCard({
             <DashboardWeekSummaryCard
               weekNumber={week.week_number}
               weekStart={shortDay(week.week_start)}
-              weekEnd={shortDay(week.week_end)}
+              weekEnd={shortDayWithYear(week.week_end)}
               summary={week.summary}
             />
             {week.days.map((day) => (

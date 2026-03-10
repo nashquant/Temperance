@@ -28,14 +28,17 @@ export function formatRange(startIso: string, endIso: string): string {
   const end = safeDateFromIso(endIso);
   if (!start || !end) return 'Current week';
 
+  const sameYear = start.getFullYear() === end.getFullYear();
   const formattedStart = new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
   }).format(start);
 
   const formattedEnd = new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
   }).format(end);
 
   return `${formattedStart} - ${formattedEnd}`;
