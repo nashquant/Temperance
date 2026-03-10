@@ -314,46 +314,64 @@ export function SettingsPage(): JSX.Element {
               </div>
               {!vdotQuery.isLoading && !vdotQuery.isError && vdotQuery.data?.observed_max ? (
                 <>
-                  <div className="overflow-hidden rounded-xl border border-white/10 bg-black/15 sm:hidden">
-                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 px-3 py-2.5 text-[12px] leading-5">
-                      <p className="font-semibold text-slate-300/72">VDOT Max</p>
-                      <p className="text-right font-semibold text-slate-50">{Math.round(vdotQuery.data.observed_max.vdot)}</p>
-                      <p className="font-semibold text-slate-300/72">Pred LT pace</p>
-                      <p className="text-right font-semibold text-slate-50">{vdotQuery.data.observed_max.pred_lt_pace_label}</p>
-                      <p className="font-semibold text-slate-300/72">10K</p>
-                      <p className="text-right font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents['10k'].pace_label}</p>
-                      <p className="font-semibold text-slate-300/72">HMP</p>
-                      <p className="text-right font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents.half_marathon.pace_label}</p>
-                      <p className="font-semibold text-slate-300/72">MP</p>
-                      <p className="text-right font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents.marathon.pace_label}</p>
-                      <p className="font-semibold text-slate-300/72">Source Date</p>
-                      <p className="text-right font-semibold text-slate-50">{vdotQuery.data.observed_max.source_date || '-'}</p>
+                  <div className="rounded-xl border border-sky-300/12 bg-[linear-gradient(180deg,rgba(14,26,40,0.92),rgba(3,7,18,0.96))] p-3 sm:hidden">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">VDOT snapshot</p>
+                        <p className="mt-1 text-xs text-slate-300/66">Current top effort and equivalent race paces.</p>
+                      </div>
+                      <div className="min-w-[72px] rounded-xl border border-sky-300/14 bg-sky-400/8 px-3 py-2 text-center">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">VDOT Max</p>
+                        <p className="mt-1 text-2xl font-semibold leading-none text-slate-50">{Math.round(vdotQuery.data.observed_max.vdot)}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-lg border border-white/8 bg-black/15 px-3 py-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-300/58">Pred LT pace</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-50">{vdotQuery.data.observed_max.pred_lt_pace_label}</p>
+                      </div>
+                      <div className="rounded-lg border border-white/8 bg-black/15 px-3 py-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-300/58">10K</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents['10k'].pace_label}</p>
+                      </div>
+                      <div className="rounded-lg border border-white/8 bg-black/15 px-3 py-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-300/58">HMP</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents.half_marathon.pace_label}</p>
+                      </div>
+                      <div className="rounded-lg border border-white/8 bg-black/15 px-3 py-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-300/58">MP</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents.marathon.pace_label}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 rounded-lg border border-white/8 bg-black/15 px-3 py-2.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-300/58">Source Date</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-50">{vdotQuery.data.observed_max.source_date || '-'}</p>
                     </div>
                   </div>
-                  <div className="hidden gap-2 sm:grid sm:grid-cols-6">
-                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                  <div className="hidden gap-2 sm:grid sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+                    <div className="rounded-xl border border-sky-300/12 bg-[linear-gradient(180deg,rgba(14,26,40,0.92),rgba(3,7,18,0.96))] px-3 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">VDOT Max</p>
-                      <p className="mt-1 text-lg font-semibold text-slate-50">{Math.round(vdotQuery.data.observed_max.vdot)}</p>
+                      <p className="mt-1 text-2xl font-semibold leading-none text-slate-50">{Math.round(vdotQuery.data.observed_max.vdot)}</p>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">Pred LT pace</p>
-                      <p className="mt-1 text-lg font-semibold text-slate-50">{vdotQuery.data.observed_max.pred_lt_pace_label}</p>
+                      <p className="mt-1 break-words text-base font-semibold text-slate-50 xl:text-lg">{vdotQuery.data.observed_max.pred_lt_pace_label}</p>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">10K</p>
-                      <p className="mt-1 text-lg font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents['10k'].pace_label}</p>
+                      <p className="mt-1 break-words text-base font-semibold text-slate-50 xl:text-lg">{vdotQuery.data.observed_max.equivalents['10k'].pace_label}</p>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">HMP</p>
-                      <p className="mt-1 text-lg font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents.half_marathon.pace_label}</p>
+                      <p className="mt-1 break-words text-base font-semibold text-slate-50 xl:text-lg">{vdotQuery.data.observed_max.equivalents.half_marathon.pace_label}</p>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">MP</p>
-                      <p className="mt-1 text-lg font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents.marathon.pace_label}</p>
+                      <p className="mt-1 break-words text-base font-semibold text-slate-50 xl:text-lg">{vdotQuery.data.observed_max.equivalents.marathon.pace_label}</p>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">Source Date</p>
-                      <p className="mt-1 text-lg font-semibold text-slate-50">{vdotQuery.data.observed_max.source_date || '-'}</p>
+                      <p className="mt-1 break-words text-base font-semibold text-slate-50 xl:text-lg">{vdotQuery.data.observed_max.source_date || '-'}</p>
                     </div>
                   </div>
                 </>

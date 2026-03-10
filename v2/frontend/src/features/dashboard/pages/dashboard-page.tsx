@@ -558,23 +558,26 @@ export function DashboardPage(): JSX.Element {
                         })()
                       }
                       onDeleteCustomActivity={(activity) =>
-                        activity.day_utc && activity.line_no
+                        typeof activity.day_utc === 'string' && typeof activity.line_no === 'number'
                           ? (() => {
+                              const activityText = String(activity.activity_text ?? '').trim();
                               removeCustomActivityLocally(activity.day_utc, activity.line_no);
-                              if (activity.activity_text) {
-                                showUndo({
-                                  label: 'Deleted',
-                                  action: async () => {
-                                    if (!session?.token) throw new Error('Missing auth token');
-                                    await ingestCustomActivities({
-                                      token: session.token,
-                                      owner: profile?.owner,
-                                      entryText: `${activity.day_utc}: ${activity.activity_text}`,
-                                    });
+                              showUndo({
+                                label: activityText ? `Deleted: ${activityText}` : 'Deleted custom activity',
+                                action: async () => {
+                                  if (!session?.token) throw new Error('Missing auth token');
+                                  if (!activityText) {
                                     await refreshDashboardViews();
-                                  },
-                                });
-                              }
+                                    return;
+                                  }
+                                  await ingestCustomActivities({
+                                    token: session.token,
+                                    owner: profile?.owner,
+                                    entryText: `${activity.day_utc}: ${activityText}`,
+                                  });
+                                  await refreshDashboardViews();
+                                },
+                              });
                               customDeleteMutation.mutate(
                                 { dayUtc: activity.day_utc, lineNo: activity.line_no },
                                 { onError: () => void refreshDashboardViews() },
