@@ -833,6 +833,34 @@ def get_activity_raw(db_path: Path, activity_id: str) -> dict[str, Any] | None:
     return json.loads(row["raw_json"]) if row["raw_json"] else {}
 
 
+def get_activity_local_start_map(db_path: Path, activity_ids: list[str]) -> dict[str, str]:
+    ids = [str(activity_id or "").strip() for activity_id in activity_ids if str(activity_id or "").strip()]
+    if not ids:
+        return {}
+
+    placeholders = ", ".join(["?"] * len(ids))
+    with closing(get_conn(db_path)) as conn:
+        rows = conn.execute(
+            f"SELECT activity_id, raw_json FROM activities WHERE activity_id IN ({placeholders})",
+            ids,
+        ).fetchall()
+
+    out: dict[str, str] = {}
+    for row in rows:
+        activity_id = str(row["activity_id"] or "").strip()
+        raw = row["raw_json"]
+        if not activity_id or not raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            continue
+        local_start = str(payload.get("startTimeLocal") or "").strip()
+        if local_start:
+            out[activity_id] = local_start
+    return out
+
+
 def get_activity_detail_raw(db_path: Path, activity_id: str) -> dict[str, Any] | None:
     with closing(get_conn(db_path)) as conn:
         row = conn.execute(

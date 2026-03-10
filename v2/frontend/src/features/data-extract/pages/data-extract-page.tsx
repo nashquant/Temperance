@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
-import { CalendarDays } from 'lucide-react';
-
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -30,19 +28,6 @@ function todayIso(): string {
 function currentMonthStartIso(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-}
-
-function formatFriendlyDate(isoDay: string): string {
-  const value = String(isoDay || '').trim();
-  if (!value) return 'Select date';
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(parsed);
 }
 
 export function DataExtractPage(): JSX.Element {
@@ -307,17 +292,10 @@ export function DataExtractPage(): JSX.Element {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Start Day</p>
                 <p className="text-[11px] text-slate-300/62">Choose where the backfill begins.</p>
               </div>
-              <div className="flex gap-2">
-                <label className="group flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-sky-300/40 focus-within:ring-2 focus-within:ring-sky-300/20">
-                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/20 text-sky-200/78 transition group-focus-within:border-sky-300/30 group-focus-within:text-sky-100">
-                    <CalendarDays className="h-3.5 w-3.5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-100">{formatFriendlyDate(startDay)}</p>
-                    <p className="text-[11px] text-slate-300/52">Tap to change</p>
-                  </div>
+              <div className="flex items-center gap-2">
+                <label className="min-w-0 flex-1">
                   <input
-                    className="h-10 w-[132px] rounded-lg border border-white/10 bg-black/20 px-2 text-[11px] font-medium text-slate-300/78 outline-none transition [color-scheme:dark] focus:border-sky-300/40"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] px-3 text-sm text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none transition [color-scheme:dark] focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
                     type="date"
                     max={todayIso()}
                     value={startDay}
@@ -624,39 +602,41 @@ export function DataExtractPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Card className={surfaceClassName}>
-        <CardContent className="space-y-4 p-4 text-sm">
-          <div className="grid gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-3 text-xs md:grid-cols-2">
-            <p className="truncate rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
-              <span className="text-slate-300/58">DB:</span> {status?.db_path}
-            </p>
-            <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
-              <span className="text-slate-300/58">Garmin creds:</span> {status?.garmin_credentials_available ? 'available' : 'missing'}
-            </p>
-            <p className="truncate rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
-              <span className="text-slate-300/58">Import dir:</span> {status?.import_dir}
-            </p>
-            {status?.last_sync ? (
+      {isAdmin ? (
+        <Card className={surfaceClassName}>
+          <CardContent className="space-y-4 p-4 text-sm">
+            <div className="grid gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-3 text-xs md:grid-cols-2">
               <p className="truncate rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
-                <span className="text-slate-300/58">Last sync:</span> {status.last_sync.sync_time_utc} | {status.last_sync.source} | {status.last_sync.success ? 'success' : 'failed'}
+                <span className="text-slate-300/58">DB:</span> {status?.db_path}
               </p>
-            ) : (
-              <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-300/60">No sync has been run yet.</p>
-            )}
-          </div>
-          <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {Object.entries(status?.counts ?? {}).map(([key, value]) => (
-              <div
-                key={key}
-                className="rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-3 py-2 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-              >
-                <p className="truncate text-slate-300/58">{key}</p>
-                <p className="text-sm font-semibold leading-5 text-slate-100">{value}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
+                <span className="text-slate-300/58">Garmin creds:</span> {status?.garmin_credentials_available ? 'available' : 'missing'}
+              </p>
+              <p className="truncate rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
+                <span className="text-slate-300/58">Import dir:</span> {status?.import_dir}
+              </p>
+              {status?.last_sync ? (
+                <p className="truncate rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
+                  <span className="text-slate-300/58">Last sync:</span> {status.last_sync.sync_time_utc} | {status.last_sync.source} | {status.last_sync.success ? 'success' : 'failed'}
+                </p>
+              ) : (
+                <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-300/60">No sync has been run yet.</p>
+              )}
+            </div>
+            <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {Object.entries(status?.counts ?? {}).map(([key, value]) => (
+                <div
+                  key={key}
+                  className="rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-3 py-2 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                >
+                  <p className="truncate text-slate-300/58">{key}</p>
+                  <p className="text-sm font-semibold leading-5 text-slate-100">{value}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
     </section>
   );
 }

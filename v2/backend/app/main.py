@@ -48,6 +48,7 @@ from db import (  # noqa: E402
     get_latest_activity_time,
     get_latest_recovery_day,
     get_activity_detail_raw,
+    get_activity_local_start_map,
     get_activity_splits_raw,
     get_activity_raw,
     get_activity_records_df,
@@ -2616,7 +2617,18 @@ def _build_activity_dashboard_payload(
         }
 
     metrics_df = metrics_df.copy()
-    metrics_df["start_local"] = pd.to_datetime(metrics_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
+    local_start_map = get_activity_local_start_map(
+        db_path=db_path,
+        activity_ids=metrics_df.get("activity_id", pd.Series(dtype=object)).astype(str).tolist(),
+    )
+    metrics_df["start_local"] = (
+        metrics_df.get("activity_id", pd.Series(index=metrics_df.index, dtype=object))
+        .astype(str)
+        .map(local_start_map)
+    )
+    metrics_df["start_local"] = pd.to_datetime(metrics_df["start_local"], errors="coerce").fillna(
+        pd.to_datetime(metrics_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
+    )
     metrics_df = metrics_df.dropna(subset=["start_local"]).copy()
     metrics_df["day"] = metrics_df["start_local"].dt.normalize()
     sport_lower = metrics_df["sport_type"].fillna("").astype(str).str.lower()
