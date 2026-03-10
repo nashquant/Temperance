@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import { ActivitySplitsBarChart } from '@/features/dashboard/components/activity-splits-bar-chart';
 import { useActivityDetailQuery } from '@/features/dashboard/hooks/use-activity-detail-query';
 import type { ActivityDetailResponse } from '@/features/dashboard/types/activity-detail';
 import { updateCustomActivityWorkout } from '@/features/custom-activities/services/custom-activities-api';
@@ -41,14 +42,6 @@ function fmtDurationSeconds(seconds: number): string {
   return `${m}m ${s}s`;
 }
 
-function fmtDurationTick(seconds: number): string {
-  const total = Math.max(0, Math.round(Number(seconds) || 0));
-  const minutes = Math.floor(total / 60);
-  const secs = total % 60;
-  if (secs === 0) return `${minutes}'`;
-  return `${minutes}'${String(secs).padStart(2, '0')}"`;
-}
-
 function paceLabelFromSpeed(speed: number): string {
   const numeric = Number(speed) || 0;
   if (numeric <= 0) return '-';
@@ -61,6 +54,20 @@ function paceLabelFromSpeed(speed: number): string {
 function parseDurationLabelSeconds(label: string): number {
   const raw = String(label || '').trim().toLowerCase();
   if (!raw) return 0;
+  const quotedMatch = raw.match(/^(?:(\d+)\s*h\s*)?(?:(\d+)\s*')?\s*(?:(\d+)\s*")?$/);
+  if (quotedMatch) {
+    const hours = Number(quotedMatch[1] || 0);
+    const minutes = Number(quotedMatch[2] || 0);
+    const seconds = Number(quotedMatch[3] || 0);
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+  const colonMatch = raw.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+  if (colonMatch) {
+    const hours = Number(colonMatch[1] || 0);
+    const minutes = Number(colonMatch[2] || 0);
+    const seconds = Number(colonMatch[3] || 0);
+    return hours * 3600 + minutes * 60 + seconds;
+  }
   const hourMatch = raw.match(/(\d+)\s*h/);
   const minuteMatch = raw.match(/(\d+)\s*m/);
   const secondMatch = raw.match(/(\d+)\s*s/);
@@ -68,14 +75,6 @@ function parseDurationLabelSeconds(label: string): number {
   const minutes = Number(minuteMatch?.[1] || 0);
   const seconds = Number(secondMatch?.[1] || 0);
   return hours * 3600 + minutes * 60 + seconds;
-}
-
-function splitBarColor(ifPct: number): string {
-  if (ifPct >= 100) return '#f43f5e';
-  if (ifPct >= 90) return '#f97316';
-  if (ifPct >= 80) return '#facc15';
-  if (ifPct >= 65) return '#38bdf8';
-  return '#22c55e';
 }
 
 function normalizedLapRows(detail: ActivityDetailResponse | undefined): DrawerLapRow[] {
@@ -140,20 +139,6 @@ export function ActivitySplitsDrawer({
   );
   const laps = normalizedLapRows(detailQuery.data);
   const useEqv = laps.length > 0 && laps.some((lap) => lap.display_mode === 'eqv');
-  const totalDurationSeconds = laps.reduce(
-    (sum, lap) => sum + (Number(lap.duration_seconds) || parseDurationLabelSeconds(lap.duration_label)),
-    0,
-  );
-  const splitChartData = laps.map((lap) => {
-    const durationSeconds = Number(lap.duration_seconds) || parseDurationLabelSeconds(lap.duration_label);
-    return {
-      lap_label: `Lap ${lap.lap}`,
-      if_pct: Number(lap.if_pct) || 0,
-      duration_label: lap.duration_label,
-      duration_seconds: durationSeconds,
-      duration_ratio: totalDurationSeconds > 0 ? durationSeconds / totalDurationSeconds : 1 / Math.max(laps.length, 1),
-    };
-  });
   const updateMutation = useMutation({
     mutationFn: async (nextText: string) => {
       if (!session?.token) throw new Error('Missing auth token');
@@ -302,48 +287,13 @@ export function ActivitySplitsDrawer({
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="overflow-hidden rounded-xl border border-white/10 bg-black/15 p-3">
-                  <p className="mb-3 text-sm font-semibold text-foreground">Splits</p>
-                  <div className="rounded-[20px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_52%),linear-gradient(180deg,rgba(2,6,23,0.82),rgba(15,23,42,0.6))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                    <div className="h-[220px] overflow-hidden rounded-2xl border border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-1.5 pb-1.5 pt-6">
-                      <div className="flex h-full items-end overflow-hidden">
-                      {splitChartData.map((row, index) => {
-                        const heightPct = Math.max(16, Math.min(100, row.if_pct));
-                        return (
-                          <div
-                            key={row.lap_label}
-                            className="group flex h-full items-end"
-                            style={{
-                              width: `${row.duration_ratio * 100}%`,
-                              minWidth: 0,
-                              flex: `0 0 ${row.duration_ratio * 100}%`,
-                            }}
-                            title={`${row.lap_label} · ${row.duration_label} · IF ${Math.round(row.if_pct)}%`}
-                          >
-                            <div
-                              className="relative w-full overflow-hidden rounded-sm border-t border-white/10 shadow-[0_10px_24px_rgba(2,6,23,0.22)] transition-all duration-150 group-hover:brightness-110"
-                              style={{
-                                height: `${heightPct}%`,
-                                background: `linear-gradient(180deg, rgba(255,255,255,0.18), ${splitBarColor(row.if_pct)})`,
-                                borderTopLeftRadius: index === 0 ? '10px' : '2px',
-                                borderBottomLeftRadius: index === 0 ? '10px' : '2px',
-                                borderTopRightRadius: index === splitChartData.length - 1 ? '10px' : '2px',
-                                borderBottomRightRadius: index === splitChartData.length - 1 ? '10px' : '2px',
-                              }}
-                            >
-                              <div className="absolute inset-x-0 top-0 h-4 bg-white/12" />
-                              <div className="absolute inset-y-0 right-0 w-px bg-white/12" />
-                              <div className="pointer-events-none absolute inset-x-1 bottom-1 opacity-0 transition-opacity group-hover:opacity-100">
-                                <p className="truncate text-[10px] font-semibold text-white/92">{row.lap_label.replace('Lap ', 'L')}</p>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <ActivitySplitsBarChart
+                  data={laps.map((lap) => ({
+                    label: `L${lap.lap}`,
+                    ifPct: Number(lap.if_pct) || 0,
+                    type: lap.description || '-',
+                  }))}
+                />
 
                 <div className="overflow-hidden rounded-xl border border-white/10 bg-black/15">
                   <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2 text-xs text-slate-300/72">
