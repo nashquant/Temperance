@@ -38,7 +38,7 @@ export function DataExtractPage(): JSX.Element {
   const surfaceClassName =
     'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
   const controlButtonClassName =
-    'h-10 shrink-0 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(30,41,59,0.88),rgba(15,23,42,0.96))] px-4 text-[12px] font-medium text-slate-100 shadow-[0_8px_18px_rgba(2,6,23,0.22)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(51,65,85,0.92),rgba(15,23,42,0.98))]';
+    'h-9 shrink-0 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(30,41,59,0.88),rgba(15,23,42,0.96))] px-3 text-[12px] font-medium text-slate-100 shadow-[0_8px_18px_rgba(2,6,23,0.22)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(51,65,85,0.92),rgba(15,23,42,0.98))] sm:h-10 sm:px-4';
   const { session, profile } = useAuth();
   const statusQuery = useDataExtractStatusQuery();
   const customActivitiesQuery = useCustomActivitiesQuery();
@@ -278,7 +278,7 @@ export function DataExtractPage(): JSX.Element {
   const extractRunning = Boolean(status?.extract_progress?.running);
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-4 sm:space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Data Extract</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -287,18 +287,18 @@ export function DataExtractPage(): JSX.Element {
       </div>
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-4 p-5">
+        <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-5">
           <h2 className="text-lg font-semibold text-foreground">Garmin Sync</h2>
 
-          <div className="grid gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:grid-cols-[280px_1fr]">
-            <div className="space-y-2 rounded-[18px] border border-white/8 bg-[linear-gradient(180deg,rgba(2,6,23,0.36),rgba(15,23,42,0.18))] p-3">
+          <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:gap-3 sm:p-3 lg:grid-cols-[280px_1fr]">
+            <div className="space-y-2 rounded-[18px] border border-white/8 bg-[linear-gradient(180deg,rgba(2,6,23,0.36),rgba(15,23,42,0.18))] p-2.5 sm:p-3">
               <div className="space-y-0.5">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Lookback</p>
                 <p className="text-[11px] text-slate-300/62">Choose how far back Garmin Sync should pull.</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Select value={lookbackPreset} onValueChange={(value) => setLookbackPreset(value as GarminLookbackPreset)}>
-                  <SelectTrigger className="h-10 flex-1">
+                  <SelectTrigger className="h-9 flex-1 sm:h-10">
                     <SelectValue placeholder="Choose lookback" />
                   </SelectTrigger>
                   <SelectContent>
@@ -310,7 +310,7 @@ export function DataExtractPage(): JSX.Element {
                   </SelectContent>
                 </Select>
                 <Button
-                  className={controlButtonClassName}
+                  className={`${controlButtonClassName} w-full sm:w-auto`}
                   onClick={() => comprehensiveMutation.mutate()}
                   disabled={comprehensiveMutation.isPending || extractRunning}
                 >
@@ -320,8 +320,8 @@ export function DataExtractPage(): JSX.Element {
             </div>
             <div className="space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Options</p>
-              <div className="flex flex-wrap gap-2">
-                <label className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-medium transition ${
+              <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                <label className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-medium transition sm:h-10 sm:px-3.5 ${
                   incrementalOnly
                     ? 'border-sky-300/28 bg-sky-400/12 text-sky-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
                     : 'border-white/10 bg-black/15 text-slate-200/88 hover:bg-white/8'
@@ -334,7 +334,7 @@ export function DataExtractPage(): JSX.Element {
                 />
                 Incremental
               </label>
-                <label className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-medium transition ${
+                <label className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-medium transition sm:h-10 sm:px-3.5 ${
                   includeDetails
                     ? 'border-sky-300/28 bg-sky-400/12 text-sky-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
                     : 'border-white/10 bg-black/15 text-slate-200/88 hover:bg-white/8'
@@ -347,7 +347,7 @@ export function DataExtractPage(): JSX.Element {
                 />
                 Activities
               </label>
-                <label className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-medium transition ${
+                <label className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-medium transition sm:h-10 sm:px-3.5 ${
                   includeWellness
                     ? 'border-sky-300/28 bg-sky-400/12 text-sky-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
                     : 'border-white/10 bg-black/15 text-slate-200/88 hover:bg-white/8'
@@ -364,10 +364,11 @@ export function DataExtractPage(): JSX.Element {
           </div>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/15 p-2">
-            <div className="mb-1 flex items-center justify-between">
+            <div className="mb-1 flex items-center justify-between gap-2">
               <p className="text-xs font-medium text-muted-foreground">Extraction logs</p>
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => setExtractLogs([])}
                 disabled={extractRunning || comprehensiveMutation.isPending || extractLogs.length === 0}
               >
@@ -390,7 +391,7 @@ export function DataExtractPage(): JSX.Element {
       </Card>
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-3 p-4">
+        <CardContent className="space-y-3 p-3 sm:p-4">
           <p className="text-sm font-medium">Garmin Credentials</p>
           {isAdminOwnScope ? (
             <>
@@ -405,7 +406,7 @@ export function DataExtractPage(): JSX.Element {
                   ? `When viewing ${profile?.owner ?? 'another owner'}, provide that user's Garmin credentials here. Running extract will ingest into ${profile?.owner ?? 'that'} database, and these credentials stay in memory only.`
                   : 'Credentials are kept in backend memory only for this user session. They are not saved to the database and will be cleared on backend restart.'}
               </p>
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-2 sm:gap-3 md:grid-cols-2">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Garmin email</p>
                   <Input
@@ -426,9 +427,9 @@ export function DataExtractPage(): JSX.Element {
                   />
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <Button
-                  className={controlButtonClassName}
+                  className={`${controlButtonClassName} w-full sm:w-auto`}
                   onClick={() => setGarminCredsMutation.mutate({ email: garminEmail.trim(), password: garminPassword })}
                   disabled={setGarminCredsMutation.isPending || !garminEmail.trim() || !garminPassword}
                 >
@@ -436,6 +437,7 @@ export function DataExtractPage(): JSX.Element {
                 </Button>
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={() => setGarminCredsMutation.mutate({ email: '', password: '' })}
                   disabled={setGarminCredsMutation.isPending}
                 >
@@ -454,7 +456,7 @@ export function DataExtractPage(): JSX.Element {
       {result ? <p className="text-sm text-muted-foreground">{result}</p> : null}
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-4 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-5">
+        <CardContent className="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-3 sm:space-y-4 sm:p-5">
           <div className="space-y-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Custom Activity</p>
             <p className="text-sm text-muted-foreground">
@@ -463,16 +465,16 @@ export function DataExtractPage(): JSX.Element {
             </p>
           </div>
           <textarea
-            className="min-h-[120px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+            className="min-h-[104px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20 sm:min-h-[120px] sm:py-3"
             value={customEntryText}
             onChange={(event) => setCustomEntryText(event.target.value)}
             placeholder="e.g. 3Mar26: 80min elliptical @140bpm; 2026-03-26: 10min run @4:50 + 5x6min @3:40/km"
           />
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <p className="text-xs text-muted-foreground">This keeps the existing custom-activity save flow, just with the newer composer styling.</p>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button
-                className={controlButtonClassName}
+                className={`${controlButtonClassName} w-full sm:w-auto`}
                 onClick={() => customIngestMutation.mutate()}
                 disabled={customIngestMutation.isPending || !customEntryText.trim()}
               >
@@ -489,7 +491,7 @@ export function DataExtractPage(): JSX.Element {
                   value={selectedCustomWeek?.week_start ?? ''}
                   onValueChange={(value) => setCustomSelectedWeek(value)}
                 >
-                  <SelectTrigger className="w-[220px]">
+                  <SelectTrigger className="h-9 w-full sm:h-10 sm:w-[220px]">
                     <SelectValue placeholder="Select week" />
                   </SelectTrigger>
                   <SelectContent>
@@ -611,8 +613,8 @@ export function DataExtractPage(): JSX.Element {
 
       {isAdmin ? (
         <Card className={surfaceClassName}>
-          <CardContent className="space-y-4 p-4 text-sm">
-            <div className="grid gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-3 text-xs md:grid-cols-2">
+          <CardContent className="space-y-3 p-3 text-sm sm:space-y-4 sm:p-4">
+            <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2.5 text-xs sm:gap-3 sm:p-3 md:grid-cols-2">
               <p className="truncate rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
                 <span className="text-slate-300/58">DB:</span> {status?.db_path}
               </p>
@@ -630,7 +632,7 @@ export function DataExtractPage(): JSX.Element {
                 <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-300/60">No sync has been run yet.</p>
               )}
             </div>
-            <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {Object.entries(status?.counts ?? {}).map(([key, value]) => (
                 <div
                   key={key}

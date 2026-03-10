@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { CalendarDays } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -77,11 +78,56 @@ function formatSpecificityLabel(key: keyof SpecificityProfile): string {
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
+const mobileCurveFieldLabelClassName = 'text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-300/58 sm:hidden';
+
+function CurveDateInput({ value, onChange }: { value: string; onChange: (next: string) => void }): JSX.Element {
+  const pickerRef = useRef<HTMLInputElement | null>(null);
+
+  const openPicker = () => {
+    const input = pickerRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    if (!input) return;
+    if (typeof input.showPicker === 'function') {
+      input.showPicker();
+      return;
+    }
+    input.focus();
+    input.click();
+  };
+
+  return (
+    <>
+      <div className="flex items-center gap-1.5 sm:hidden">
+        <Input
+          type="text"
+          inputMode="numeric"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="YYYY-MM-DD"
+          className="h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px]"
+        />
+        <Button type="button" variant="outline" size="sm" className="h-8 w-8 shrink-0 px-0" onClick={openPicker} aria-label="Open date picker">
+          <CalendarDays className="h-3.5 w-3.5" />
+        </Button>
+        <input
+          ref={pickerRef}
+          type="date"
+          tabIndex={-1}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="sr-only"
+          aria-hidden="true"
+        />
+      </div>
+      <Input type="date" value={value} onChange={(event) => onChange(event.target.value)} className="hidden h-10 sm:block" />
+    </>
+  );
+}
+
 export function SettingsPage(): JSX.Element {
   const surfaceClassName =
     'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
   const controlButtonClassName =
-    'h-10 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(30,41,59,0.88),rgba(15,23,42,0.96))] px-4 text-[12px] font-medium text-slate-100 shadow-[0_8px_18px_rgba(2,6,23,0.22)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(51,65,85,0.92),rgba(15,23,42,0.98))]';
+    'h-9 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(30,41,59,0.88),rgba(15,23,42,0.96))] px-3 text-[12px] font-medium text-slate-100 shadow-[0_8px_18px_rgba(2,6,23,0.22)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(51,65,85,0.92),rgba(15,23,42,0.98))] sm:h-10 sm:px-4';
   const fieldLabelClassName = 'mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74';
   const fieldHintClassName = 'text-[11px] text-slate-300/58';
   const { session, profile } = useAuth();
@@ -239,7 +285,7 @@ export function SettingsPage(): JSX.Element {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-4 sm:space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
       </div>
@@ -247,17 +293,17 @@ export function SettingsPage(): JSX.Element {
       {saveMsg ? <p className="text-sm text-muted-foreground">{saveMsg}</p> : null}
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-4 p-4">
+        <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-4">
           <p className="text-sm font-medium">IF Zones (%)</p>
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-2 sm:gap-3 md:grid-cols-4">
             {(['z1_max', 'z2_max', 'z3_max', 'z4_max'] as const).map((key) => (
-              <div key={key} className="space-y-1">
+              <div key={key} className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
                 <p className={fieldLabelClassName}>{formatIfZoneLabel(key)}</p>
                 <div className="relative">
                   <Input
                     type="number"
                     step="1"
-                    className="pr-14"
+                    className="h-9 rounded-lg border-white/10 bg-black/15 pr-14 sm:h-10 sm:rounded-md sm:border-input sm:bg-transparent"
                     value={Math.round((Number(ifZones[key]) || 0) * 100)}
                     onChange={(event) =>
                       setIfZones((previous) => ({
@@ -273,17 +319,28 @@ export function SettingsPage(): JSX.Element {
               </div>
             ))}
           </div>
-          <Button className={controlButtonClassName} onClick={() => saveMutation.mutate({ if_zone_thresholds: ifZones })} disabled={saveMutation.isPending}>Save IF Zones</Button>
+          <Button className={`${controlButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ if_zone_thresholds: ifZones })} disabled={saveMutation.isPending}>Save IF Zones</Button>
         </CardContent>
       </Card>
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-3 p-4">
+        <CardContent className="space-y-2.5 p-3 sm:space-y-3 sm:p-4">
           <p className="text-sm font-medium">IF Zones Guide</p>
-          <p className="text-xs text-muted-foreground">
-            Using latest values as of {zoneGuide.latestLthrDate || '-'} (LTHR {Math.round(zoneGuide.latestLthr)} bpm, LT pace {zoneGuide.latestPace || '-'}). Current thresholds: {zoneGuide.thresholdsText}.
-          </p>
-          <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/15">
+          <div className="grid gap-1.5 sm:hidden">
+            {zoneGuide.rows.map((row) => (
+              <div key={row.zone} className="rounded-lg border border-white/10 bg-black/15 px-3 py-2">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">{row.zone}</p>
+                  <p className="text-[11px] text-slate-300/72">{row.ifRange}</p>
+                </div>
+                <div className="grid gap-1 text-[11px] leading-4 text-slate-200/86">
+                  <p>HR: {row.hrRange}</p>
+                  <p>Pace: {row.paceRange}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto rounded-xl border border-white/10 bg-black/15 sm:block">
             <table className="w-full text-sm">
               <thead className="bg-white/5 text-left text-xs text-slate-300/72">
                 <tr>
@@ -309,22 +366,22 @@ export function SettingsPage(): JSX.Element {
       </Card>
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-4 p-4">
+        <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-4">
           <div className="space-y-1">
             <p className="text-sm font-medium">Specificity Factors</p>
             <p className="text-xs text-muted-foreground">
               Specificity factors adjust how much training load to credit when an activity is less specific than your target discipline, especially for x-train sessions.
             </p>
           </div>
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-2 sm:gap-3 md:grid-cols-4">
             {(['non_running', 'treadmill', 'elliptical', 'cycling'] as const).map((key) => (
-              <div key={key} className="space-y-1">
+              <div key={key} className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
                 <p className={fieldLabelClassName}>{formatSpecificityLabel(key)}</p>
                 <div className="relative">
                   <Input
                     type="number"
                     step="1"
-                    className="pr-16"
+                    className="h-9 rounded-lg border-white/10 bg-black/15 pr-16 sm:h-10 sm:rounded-md sm:border-input sm:bg-transparent"
                     value={Math.round((Number(specificity[key]) || 0) * 100)}
                     onChange={(event) =>
                       setSpecificity((previous) => ({
@@ -340,16 +397,17 @@ export function SettingsPage(): JSX.Element {
               </div>
             ))}
           </div>
-          <Button className={controlButtonClassName} onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save Specificity</Button>
+          <Button className={`${controlButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save Specificity</Button>
         </CardContent>
       </Card>
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-3 p-4">
-          <div className="flex items-center justify-between">
+        <CardContent className="space-y-3 p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-medium">LTHR Curve</p>
             <Button
               variant="outline"
+              size="sm"
               onClick={() => setLthrRows((previous) => [...previous, { id: rowId(), date: '', lthr_bpm: 0 }])}
               disabled={saveMutation.isPending}
             >
@@ -358,26 +416,34 @@ export function SettingsPage(): JSX.Element {
           </div>
           <div className="space-y-2">
             {lthrRows.map((row) => (
-              <div key={row.id} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
-                <Input
-                  type="date"
-                  value={row.date}
-                  onChange={(event) =>
-                    setLthrRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, date: event.target.value } : item)))
-                  }
-                />
-                <Input
-                  type="number"
-                  step="1"
-                  min={0}
-                  value={row.lthr_bpm}
-                  onChange={(event) =>
-                    setLthrRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, lthr_bpm: Number(event.target.value) } : item)))
-                  }
-                  placeholder="LTHR bpm"
-                />
+              <div key={row.id} className="grid gap-1.5 rounded-lg border border-white/8 bg-black/10 p-1.5 sm:gap-2 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 md:grid-cols-[1fr_1fr_auto]">
+                <div className="space-y-0.5">
+                  <p className={mobileCurveFieldLabelClassName}>Date</p>
+                  <CurveDateInput
+                    value={row.date}
+                    onChange={(next) =>
+                      setLthrRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, date: next } : item)))
+                    }
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <p className={mobileCurveFieldLabelClassName}>LTHR</p>
+                  <Input
+                    className="h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px] sm:h-10 sm:rounded-md sm:border-input sm:bg-transparent sm:px-3 sm:text-sm"
+                    type="number"
+                    step="1"
+                    min={0}
+                    value={row.lthr_bpm}
+                    onChange={(event) =>
+                      setLthrRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, lthr_bpm: Number(event.target.value) } : item)))
+                    }
+                    placeholder="LTHR bpm"
+                  />
+                </div>
                 <Button
                   variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-[11px] sm:h-9 sm:px-3 sm:text-sm"
                   onClick={() => setLthrRows((previous) => previous.filter((item) => item.id !== row.id))}
                   disabled={saveMutation.isPending}
                 >
@@ -386,16 +452,17 @@ export function SettingsPage(): JSX.Element {
               </div>
             ))}
           </div>
-          <Button className={controlButtonClassName} onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save LTHR Curve</Button>
+          <Button className={`${controlButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save LTHR Curve</Button>
         </CardContent>
       </Card>
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-3 p-4">
-          <div className="flex items-center justify-between">
+        <CardContent className="space-y-3 p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-medium">LT Pace Curve</p>
             <Button
               variant="outline"
+              size="sm"
               onClick={() => setPaceRows((previous) => [...previous, { id: rowId(), date: '', pace_input: '' }])}
               disabled={saveMutation.isPending}
             >
@@ -404,26 +471,34 @@ export function SettingsPage(): JSX.Element {
           </div>
           <div className="space-y-2">
             {paceRows.map((row) => (
-              <div key={row.id} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
-                <Input
-                  type="date"
-                  value={row.date}
-                  onChange={(event) =>
-                    setPaceRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, date: event.target.value } : item)))
-                  }
-                />
-                <Input
-                  type="text"
-                  value={row.pace_input}
-                  onChange={(event) =>
-                    setPaceRows((previous) =>
-                      previous.map((item) => (item.id === row.id ? { ...item, pace_input: event.target.value } : item)),
-                    )
-                  }
-                  placeholder="e.g. 3:30 or 210"
-                />
+              <div key={row.id} className="grid gap-1.5 rounded-lg border border-white/8 bg-black/10 p-1.5 sm:gap-2 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 md:grid-cols-[1fr_1fr_auto]">
+                <div className="space-y-0.5">
+                  <p className={mobileCurveFieldLabelClassName}>Date</p>
+                  <CurveDateInput
+                    value={row.date}
+                    onChange={(next) =>
+                      setPaceRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, date: next } : item)))
+                    }
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <p className={mobileCurveFieldLabelClassName}>LT Pace</p>
+                  <Input
+                    className="h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px] sm:h-10 sm:rounded-md sm:border-input sm:bg-transparent sm:px-3 sm:text-sm"
+                    type="text"
+                    value={row.pace_input}
+                    onChange={(event) =>
+                      setPaceRows((previous) =>
+                        previous.map((item) => (item.id === row.id ? { ...item, pace_input: event.target.value } : item)),
+                      )
+                    }
+                    placeholder="e.g. 3:30 or 210"
+                  />
+                </div>
                 <Button
                   variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-[11px] sm:h-9 sm:px-3 sm:text-sm"
                   onClick={() => setPaceRows((previous) => previous.filter((item) => item.id !== row.id))}
                   disabled={saveMutation.isPending}
                 >
@@ -434,7 +509,7 @@ export function SettingsPage(): JSX.Element {
           </div>
           {parsedCurves.paceError ? <p className="text-xs text-red-400">{parsedCurves.paceError}</p> : null}
           <Button
-            className={controlButtonClassName}
+            className={`${controlButtonClassName} w-full sm:w-auto`}
             onClick={() => {
               if (parsedCurves.paceError) {
                 setSaveMsg(parsedCurves.paceError);
