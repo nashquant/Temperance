@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CompareSelector } from '@/features/weekly-outlook/components/compare-selector';
-import { MetricSelector } from '@/features/weekly-outlook/components/metric-selector';
 import { WeeklyOutlookChartCard } from '@/features/weekly-outlook/components/weekly-outlook-chart-card';
 import { WeeklySummaryCards } from '@/features/weekly-outlook/components/weekly-summary-cards';
 import { useWeeklyOutlookQuery } from '@/features/weekly-outlook/hooks/use-weekly-outlook-query';
@@ -51,7 +50,7 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
           </div>
         ) : null}
 
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           {embedded ? null : (
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Weekly Outlook</h1>
@@ -63,7 +62,6 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
 
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
             <CompareSelector value={compare} onValueChange={setCompare} />
-            <MetricSelector value={metric} onValueChange={setMetric} />
           </div>
         </div>
       </div>
@@ -98,6 +96,7 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
               <WeeklyOutlookChartCard
                 data={displayedData}
                 metric={metric}
+                onMetricChange={setMetric}
                 weekView={weekView}
                 onWeekViewChange={setWeekView}
               />

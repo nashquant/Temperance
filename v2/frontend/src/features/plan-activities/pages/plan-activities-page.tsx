@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { PlannedMetricSelector } from '@/features/plan-activities/components/planned-metric-selector';
 import { PlannedWeekChart } from '@/features/plan-activities/components/planned-week-chart';
 import { PlannedWeekSelector } from '@/features/plan-activities/components/planned-week-selector';
 import { usePlanActivitiesQuery } from '@/features/plan-activities/hooks/use-plan-activities-query';
@@ -284,7 +283,6 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
             <>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
                 <PlannedWeekSelector weeks={weeks} value={effectiveWeek} onValueChange={(next) => setSelectedWeek(next)} />
-                <PlannedMetricSelector value={metric} onValueChange={setMetric} />
               </div>
 
               {selectedWeekMeta ? (
@@ -313,7 +311,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                 </Card>
               ) : null}
 
-              <PlannedWeekChart data={chartRows} metric={metric} />
+              <PlannedWeekChart data={chartRows} metric={metric} onMetricChange={setMetric} />
 
               <Card className={surfaceClassName}>
                 <CardContent className="p-0">

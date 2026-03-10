@@ -1,4 +1,4 @@
-export type PlannedMetricView = 'tss' | 'rtss' | 'distance_eqv_km' | 'if_proxy_pct';
+export type PlannedMetricView = 'tss' | 'rtss' | 'distance_eqv_km';
 
 export interface PlannedWeekSummary {
   week_start: string;

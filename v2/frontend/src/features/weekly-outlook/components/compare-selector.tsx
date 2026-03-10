@@ -19,9 +19,6 @@ export function CompareSelector({ value, onValueChange }: CompareSelectorProps):
         <SelectContent>
           <SelectItem value="planned">Planned week</SelectItem>
           <SelectItem value="previous_week">Previous week</SelectItem>
-          <SelectItem value="two_weeks_ago">Two weeks ago</SelectItem>
-          <SelectItem value="three_weeks_ago">Three weeks ago</SelectItem>
-          <SelectItem value="four_weeks_ago">Four weeks ago</SelectItem>
         </SelectContent>
       </Select>
     </div>

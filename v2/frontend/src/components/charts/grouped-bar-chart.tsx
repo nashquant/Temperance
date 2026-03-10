@@ -18,6 +18,7 @@ interface GroupedBarChartProps {
   metric: 'tss' | 'rtss' | 'distance';
   currentLabel: string;
   compareLabel: string;
+  heightClassName?: string;
 }
 
 function GroupedBarValueLabel({
@@ -100,6 +101,7 @@ function GroupedBarChartComponent({
   metric,
   currentLabel,
   compareLabel,
+  heightClassName = 'h-[360px]',
 }: GroupedBarChartProps): JSX.Element {
   const comparePatternId = useId().replace(/:/g, '');
 
@@ -118,7 +120,7 @@ function GroupedBarChartComponent({
   };
 
   return (
-    <div className="h-[360px] w-full">
+    <div className={`${heightClassName} w-full`}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} barGap={4} barCategoryGap="20%" margin={{ top: 34, right: 8, left: 0, bottom: 0 }}>
           <defs>

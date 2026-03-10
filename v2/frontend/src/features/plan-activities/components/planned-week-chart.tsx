@@ -4,6 +4,7 @@ import type { NameType, ValueType } from 'recharts/types/component/DefaultToolti
 
 import { Card, CardContent } from '@/components/ui/card';
 import { intensityHexFromThreshold } from '@/features/dashboard/utils/intensity-palette';
+import { PlannedMetricSelector } from '@/features/plan-activities/components/planned-metric-selector';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
 
 interface PlannedWeekChartRow {
@@ -15,18 +16,17 @@ interface PlannedWeekChartRow {
 interface PlannedWeekChartProps {
   data: PlannedWeekChartRow[];
   metric: PlannedMetricView;
+  onMetricChange?: (value: PlannedMetricView) => void;
 }
 
 function metricLabel(metric: PlannedMetricView): string {
   if (metric === 'rtss') return 'rTSS';
   if (metric === 'distance_eqv_km') return 'Dist Eqv (km)';
-  if (metric === 'if_proxy_pct') return 'IF (%)';
   return 'TSS';
 }
 
 function formatValue(value: number, metric: PlannedMetricView): string {
   if (metric === 'distance_eqv_km') return `${value.toFixed(1)} km`;
-  if (metric === 'if_proxy_pct') return `${value.toFixed(0)}%`;
   return `${Math.round(value)}`;
 }
 
@@ -81,7 +81,7 @@ function PlannedWeekTooltip({
   );
 }
 
-export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.Element {
+export function PlannedWeekChart({ data, metric, onMetricChange }: PlannedWeekChartProps): JSX.Element {
   const getBarFill = (row: PlannedWeekChartRow): string => {
     const thresholdBasis =
       metric === 'tss'
@@ -94,7 +94,12 @@ export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.E
 
   return (
     <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
-      <CardContent className="px-4 pb-4 pt-6">
+      <CardContent className="px-4 pb-4 pt-5">
+        {onMetricChange ? (
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <PlannedMetricSelector value={metric} onValueChange={onMetricChange} showLabel={false} compact />
+          </div>
+        ) : null}
         <div className="h-[220px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} barCategoryGap="25%" margin={{ top: 38, right: 8, left: 0, bottom: 0 }}>
