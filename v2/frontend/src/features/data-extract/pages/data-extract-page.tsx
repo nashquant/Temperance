@@ -39,6 +39,7 @@ export function DataExtractPage(): JSX.Element {
   const customActivitiesQuery = useCustomActivitiesQuery();
 
   const [extractStartDay, setExtractStartDay] = useState(() => startDayFromPreset(1));
+  const [extractStartDayExplicit, setExtractStartDayExplicit] = useState(false);
   const [incrementalOnly, setIncrementalOnly] = useState(true);
   const [includeDetails, setIncludeDetails] = useState(true);
   const [includeWellness, setIncludeWellness] = useState(true);
@@ -69,6 +70,7 @@ export function DataExtractPage(): JSX.Element {
         owner: profile?.owner,
         payload: {
           start_day: extractStartDay,
+          explicit_start_day: extractStartDayExplicit,
           incremental_only: incrementalOnly,
           include_details: includeDetails,
           include_wellness: includeWellness,
@@ -284,7 +286,10 @@ export function DataExtractPage(): JSX.Element {
             <div className="min-w-[180px] flex-1 sm:max-w-[220px]">
               <CompactDateInput
                 value={extractStartDay}
-                onChange={setExtractStartDay}
+                onChange={(next) => {
+                  setExtractStartDay(next);
+                  setExtractStartDayExplicit(true);
+                }}
                 mobileInputClassName="h-9 rounded-xl border-white/10 bg-black/10 px-3 text-[13px]"
                 desktopInputClassName="h-10 rounded-xl"
                 buttonClassName="h-9 w-9 rounded-xl"

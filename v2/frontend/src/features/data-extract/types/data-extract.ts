@@ -50,6 +50,7 @@ export interface SyncResponse {
 
 export interface ComprehensiveExtractRequest {
   start_day: string;
+  explicit_start_day: boolean;
   incremental_only: boolean;
   include_details: boolean;
   include_wellness: boolean;
