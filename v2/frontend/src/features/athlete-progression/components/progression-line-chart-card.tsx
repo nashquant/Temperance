@@ -33,6 +33,49 @@ interface Props {
   rightAxisLabel?: string;
 }
 
+const INTEGER_LIKE_KEYS = new Set([
+  'tss',
+  'rtss',
+  'stress_target_tss',
+  'pounding_target_tss',
+  'fitness',
+  'fatigue',
+  'overreach',
+  'injury_risk',
+  'leg_elasticity',
+  'pounding',
+  'training_load_garmin',
+  'calories_total',
+  '__target',
+]);
+
+const HOUR_LIKE_KEYS = new Set([
+  'zone_low_aerobic_h',
+  'zone_moderate_aerobic_h',
+  'zone_high_aerobic_h',
+  'zone_total_h',
+]);
+
+function shouldUseIntegerFormat(dataKey: string): boolean {
+  return INTEGER_LIKE_KEYS.has(String(dataKey || ''));
+}
+
+function shouldUseHourFormat(dataKey: string): boolean {
+  return HOUR_LIKE_KEYS.has(String(dataKey || ''));
+}
+
+function formatHourLikeValue(value: number): string {
+  if (value >= 1) return `${value.toFixed(1)}h`;
+  return `${Math.round(value * 60)}'`;
+}
+
+function formatProgressionValue(value: unknown, dataKey?: string): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return String(value ?? '-');
+  if (shouldUseHourFormat(String(dataKey || ''))) return formatHourLikeValue(numeric);
+  return shouldUseIntegerFormat(String(dataKey || '')) ? String(Math.round(numeric)) : numeric.toFixed(2);
+}
+
 function ProgressionTooltip({
   active,
   label,
@@ -51,7 +94,7 @@ function ProgressionTooltip({
             </span>
             <span className="text-muted-foreground">: </span>
             <span className="font-semibold" style={{ color: String(entry.color || '#e2e8f0') }}>
-              {typeof entry.value === 'number' ? entry.value.toFixed(2) : String(entry.value ?? '-')}
+              {formatProgressionValue(entry.value, String(entry.dataKey || ''))}
             </span>
           </p>
         ))}
@@ -69,6 +112,23 @@ export function ProgressionLineChartCard({
   targetLabel,
   rightAxisLabel,
 }: Props): JSX.Element {
+  const leftAxisUsesIntegers = series
+    .filter((item) => (item.yAxisId ?? 'left') === 'left')
+    .every((item) => shouldUseIntegerFormat(item.key))
+    && (!targetKey || shouldUseIntegerFormat(targetKey));
+  const rightAxisUsesIntegers = rightAxisLabel
+    ? series
+        .filter((item) => item.yAxisId === 'right')
+        .every((item) => shouldUseIntegerFormat(item.key))
+    : false;
+  const leftAxisUsesHourFormat = series
+    .filter((item) => (item.yAxisId ?? 'left') === 'left')
+    .every((item) => shouldUseHourFormat(item.key));
+  const rightAxisUsesHourFormat = rightAxisLabel
+    ? series
+        .filter((item) => item.yAxisId === 'right')
+        .every((item) => shouldUseHourFormat(item.key))
+    : false;
   const targetValue = targetKey
     ? (() => {
         for (let i = data.length - 1; i >= 0; i -= 1) {
@@ -114,10 +174,37 @@ export function ProgressionLineChartCard({
                 tickLine={false}
                 tickFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
               />
-              <YAxis yAxisId="left" tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={false} tickLine={false}>
+              <YAxis
+                yAxisId="left"
+                tick={{ fontSize: 12, fill: '#cbd5e1' }}
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={(value) => {
+                  const numeric = Number(value);
+                  if (!Number.isFinite(numeric)) return String(value);
+                  if (leftAxisUsesHourFormat) return formatHourLikeValue(numeric);
+                  if (leftAxisUsesIntegers) return String(Math.round(numeric));
+                  return String(value);
+                }}
+              >
                 <Label value={yLabel} angle={-90} position="insideLeft" style={{ textAnchor: 'middle', fill: '#94a3b8' }} />
               </YAxis>
-              {rightAxisLabel ? <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={false} tickLine={false} /> : null}
+              {rightAxisLabel ? (
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tick={{ fontSize: 12, fill: '#cbd5e1' }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(value) => {
+                    const numeric = Number(value);
+                    if (!Number.isFinite(numeric)) return String(value);
+                    if (rightAxisUsesHourFormat) return formatHourLikeValue(numeric);
+                    if (rightAxisUsesIntegers) return String(Math.round(numeric));
+                    return String(value);
+                  }}
+                />
+              ) : null}
               <Tooltip
                 content={<ProgressionTooltip />}
                 labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
