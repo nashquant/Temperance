@@ -407,16 +407,12 @@ export function DashboardPage(): JSX.Element {
                 <div className="flex justify-end">
                   <div className="w-full max-w-[220px]">
                     <Select value={selectedYearWindow} onValueChange={setSelectedYearWindow}>
-                      <SelectTrigger className="border-border/70 bg-card/80 text-foreground shadow-none [background-image:none] hover:border-border hover:bg-card focus:ring-1 focus:ring-white/10">
+                      <SelectTrigger className="w-full max-w-[220px]">
                         <SelectValue placeholder="Select year window" />
                       </SelectTrigger>
-                      <SelectContent className="border-border/70 bg-card text-foreground [background-image:none] shadow-[0_16px_40px_rgba(2,6,23,0.3)]">
+                      <SelectContent>
                         {Array.from({ length: totalYearWindows }).map((_, index) => (
-                          <SelectItem
-                            key={index}
-                            value={String(index)}
-                            className="text-foreground/90 focus:bg-white/8 focus:text-foreground data-[state=checked]:bg-white/8 data-[state=checked]:text-foreground"
-                          >
+                          <SelectItem key={index} value={String(index)}>
                             {index === 0 ? 'Latest year' : `${index}-${index + 1} years ago`}
                           </SelectItem>
                         ))}

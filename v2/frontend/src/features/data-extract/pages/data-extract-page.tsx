@@ -298,7 +298,7 @@ export function DataExtractPage(): JSX.Element {
               </div>
               <div className="flex items-center gap-2">
                 <Select value={lookbackPreset} onValueChange={(value) => setLookbackPreset(value as GarminLookbackPreset)}>
-                  <SelectTrigger className="h-10 flex-1 rounded-xl border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                  <SelectTrigger className="h-10 flex-1">
                     <SelectValue placeholder="Choose lookback" />
                   </SelectTrigger>
                   <SelectContent>

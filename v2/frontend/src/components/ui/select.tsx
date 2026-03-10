@@ -14,14 +14,14 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-10 w-full items-center justify-between rounded-xl border border-white/10 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_55%),linear-gradient(180deg,rgba(15,23,42,0.84),rgba(2,6,23,0.92))] px-3 py-2 text-sm text-slate-100 shadow-[0_10px_24px_rgba(2,6,23,0.18),inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors focus:outline-none focus:ring-2 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:opacity-60',
+      'flex h-10 w-full items-center justify-between rounded-xl border border-border/70 bg-card/80 px-3 py-2 text-sm text-foreground shadow-none transition-colors hover:border-border hover:bg-card focus:outline-none focus:ring-1 focus:ring-white/10 disabled:cursor-not-allowed disabled:opacity-60',
       className,
     )}
     {...props}
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 text-slate-300/70" />
+      <ChevronDown className="h-4 w-4 text-muted-foreground" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));
@@ -35,7 +35,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        'z-50 min-w-[10rem] overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] text-slate-100 shadow-[0_20px_40px_rgba(2,6,23,0.42)] backdrop-blur',
+        'z-50 min-w-[10rem] overflow-hidden rounded-2xl border border-border/70 bg-card text-foreground shadow-[0_16px_40px_rgba(2,6,23,0.3)] backdrop-blur',
         className,
       )}
       {...props}
@@ -53,14 +53,14 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-default select-none items-center rounded-xl py-2 pl-8 pr-3 text-sm text-slate-200/92 outline-none transition-colors focus:bg-white/10 focus:text-white data-[state=checked]:bg-sky-500/12 data-[state=checked]:text-sky-100',
+      'relative flex w-full cursor-default select-none items-center rounded-xl py-2 pl-8 pr-3 text-sm text-foreground/90 outline-none transition-colors focus:bg-white/8 focus:text-foreground data-[state=checked]:bg-white/8 data-[state=checked]:text-foreground',
       className,
     )}
     {...props}
   >
     <span className="absolute left-2.5 flex h-3.5 w-3.5 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
-        <Check className="h-4 w-4 text-sky-300" />
+        <Check className="h-4 w-4 text-foreground/80" />
       </SelectPrimitive.ItemIndicator>
     </span>
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
