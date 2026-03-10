@@ -21,25 +21,17 @@ import type { PlannedMetricView } from '@/features/plan-activities/types/plan-ac
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { queryClient } from '@/lib/query-client';
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+type GarminLookbackPreset = '1m' | '3m' | '6m' | '1y' | '2y';
 
-function currentMonthStartIso(): string {
+function startDayFromPreset(preset: GarminLookbackPreset): string {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-}
-
-function formatStartDayDisplay(isoDay: string): string {
-  const value = String(isoDay || '').trim();
-  if (!value) return '';
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(parsed);
+  const start = new Date(now);
+  if (preset === '1m') start.setMonth(start.getMonth() - 1);
+  if (preset === '3m') start.setMonth(start.getMonth() - 3);
+  if (preset === '6m') start.setMonth(start.getMonth() - 6);
+  if (preset === '1y') start.setFullYear(start.getFullYear() - 1);
+  if (preset === '2y') start.setFullYear(start.getFullYear() - 2);
+  return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
 }
 
 export function DataExtractPage(): JSX.Element {
@@ -51,7 +43,7 @@ export function DataExtractPage(): JSX.Element {
   const statusQuery = useDataExtractStatusQuery();
   const customActivitiesQuery = useCustomActivitiesQuery();
 
-  const [startDay, setStartDay] = useState(currentMonthStartIso);
+  const [lookbackPreset, setLookbackPreset] = useState<GarminLookbackPreset>('1m');
   const [incrementalOnly, setIncrementalOnly] = useState(true);
   const [includeDetails, setIncludeDetails] = useState(true);
   const [includeWellness, setIncludeWellness] = useState(false);
@@ -82,7 +74,7 @@ export function DataExtractPage(): JSX.Element {
         token: session.token,
         owner: profile?.owner,
         payload: {
-          start_day: startDay,
+          start_day: startDayFromPreset(lookbackPreset),
           incremental_only: incrementalOnly,
           include_details: includeDetails,
           include_wellness: includeWellness,
@@ -301,22 +293,22 @@ export function DataExtractPage(): JSX.Element {
           <div className="grid gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:grid-cols-[280px_1fr]">
             <div className="space-y-2 rounded-[18px] border border-white/8 bg-[linear-gradient(180deg,rgba(2,6,23,0.36),rgba(15,23,42,0.18))] p-3">
               <div className="space-y-0.5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Start Day</p>
-                <p className="text-[11px] text-slate-300/62">Choose where the backfill begins.</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/74">Lookback</p>
+                <p className="text-[11px] text-slate-300/62">Choose how far back Garmin Sync should pull.</p>
               </div>
               <div className="flex items-center gap-2">
-                <label className="relative min-w-0 flex-1">
-                  <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center px-3 text-sm font-medium text-slate-100">
-                    {formatStartDayDisplay(startDay)}
-                  </span>
-                  <input
-                    className="h-10 w-full rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] px-3 text-sm text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none transition [color-scheme:dark] opacity-100 focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-datetime-edit]:opacity-0 [&::-webkit-datetime-edit-fields-wrapper]:opacity-0 [&::-webkit-date-and-time-value]:opacity-0"
-                    type="date"
-                    max={todayIso()}
-                    value={startDay}
-                    onChange={(event) => setStartDay(event.target.value)}
-                  />
-                </label>
+                <Select value={lookbackPreset} onValueChange={(value) => setLookbackPreset(value as GarminLookbackPreset)}>
+                  <SelectTrigger className="h-10 flex-1 rounded-xl border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                    <SelectValue placeholder="Choose lookback" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1m">Last 1 month</SelectItem>
+                    <SelectItem value="3m">Last 3 months</SelectItem>
+                    <SelectItem value="6m">Last 6 months</SelectItem>
+                    <SelectItem value="1y">Last 1 year</SelectItem>
+                    <SelectItem value="2y">Last 2 years</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Button
                   className={controlButtonClassName}
                   onClick={() => comprehensiveMutation.mutate()}
