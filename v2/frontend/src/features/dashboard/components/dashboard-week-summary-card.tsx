@@ -39,6 +39,41 @@ const zoneColors: Record<string, string> = {
   Z5: intensityHexFromKey('purple'),
 };
 
+const summaryToneClassNames = {
+  vdot: {
+    icon: 'text-sky-300/90',
+    value: 'text-sky-100/92',
+  },
+  time: {
+    icon: 'text-cyan-300/90',
+    value: 'text-cyan-100/92',
+  },
+  distance: {
+    icon: 'text-emerald-300/90',
+    value: 'text-emerald-100/92',
+  },
+  equivalent: {
+    icon: 'text-lime-300/90',
+    value: 'text-lime-100/92',
+  },
+  calories: {
+    icon: 'text-amber-300/90',
+    value: 'text-amber-100/92',
+  },
+  stress: {
+    icon: 'text-blue-300/90',
+    value: 'text-blue-100/92',
+  },
+  fitness: {
+    icon: 'text-rose-300/90',
+    value: 'text-rose-100/92',
+  },
+  risk: {
+    icon: 'text-orange-300/90',
+    value: 'text-orange-100/92',
+  },
+} as const;
+
 export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summary }: DashboardWeekSummaryCardProps): JSX.Element {
   return (
     <Card className="rounded-xl border-border/80 bg-card/80 shadow-sm lg:h-[430px]">
@@ -53,29 +88,25 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
         </div>
 
         <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-0.5">
-          <div className="col-span-2 mb-1 rounded-lg border border-sky-300/12 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_65%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] px-2.5 py-2 shadow-[0_10px_24px_rgba(2,6,23,0.18)]">
-            <div className="flex items-center justify-between gap-2">
-              <p className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold leading-[1.28] tracking-[0.01em] text-sky-100/92">
-                <Gauge className="h-3.5 w-3.5 text-sky-300/90" />
-                Current VDOT Max
-              </p>
-              <p className="text-right text-sm font-semibold tabular-nums text-sky-50">{fmtNumber(summary.vdot_max)}</p>
-            </div>
-          </div>
-          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Clock3 className="h-3 w-3" />Time</p>
-          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtDuration(summary.duration_h)}</p>
-          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Route className="h-3 w-3" />Dist</p>
-          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.distance_km)} km</p>
-          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Ruler className="h-3 w-3" />Eqv</p>
-          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.distance_eqv_km)} km</p>
-          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Flame className="h-3 w-3" />kcal</p>
-          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.calories)}</p>
-          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Activity className="h-3 w-3" />TSS | rTSS</p>
-          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
-          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><HeartPulse className="h-3 w-3" />Fit | Fatg</p>
-          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.fitness)} | {fmtNumber(summary.fatigue)}</p>
-          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><AlertTriangle className="h-3 w-3" />Ovr | Risk</p>
-          <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92">
+            <Gauge className={`h-3 w-3 ${summaryToneClassNames.vdot.icon}`} />
+            VDOT Max
+          </p>
+          <p className={`text-right text-[11px] font-semibold tabular-nums ${summaryToneClassNames.vdot.value}`}>{fmtNumber(summary.vdot_max)}</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Clock3 className={`h-3 w-3 ${summaryToneClassNames.time.icon}`} />Time</p>
+          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.time.value}`}>{fmtDuration(summary.duration_h)}</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Route className={`h-3 w-3 ${summaryToneClassNames.distance.icon}`} />Dist</p>
+          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.distance.value}`}>{fmtNumber(summary.distance_km)} km</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Ruler className={`h-3 w-3 ${summaryToneClassNames.equivalent.icon}`} />Eqv</p>
+          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.equivalent.value}`}>{fmtNumber(summary.distance_eqv_km)} km</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Flame className={`h-3 w-3 ${summaryToneClassNames.calories.icon}`} />kcal</p>
+          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.calories.value}`}>{fmtNumber(summary.calories)}</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Activity className={`h-3 w-3 ${summaryToneClassNames.stress.icon}`} />TSS | rTSS</p>
+          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><HeartPulse className={`h-3 w-3 ${summaryToneClassNames.fitness.icon}`} />Fit | Fatg</p>
+          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.fitness.value}`}>{fmtNumber(summary.fitness)} | {fmtNumber(summary.fatigue)}</p>
+          <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><AlertTriangle className={`h-3 w-3 ${summaryToneClassNames.risk.icon}`} />Ovr | Risk</p>
+          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.risk.value}`}>{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
         </div>
 
         <Separator className="bg-border/70" />
