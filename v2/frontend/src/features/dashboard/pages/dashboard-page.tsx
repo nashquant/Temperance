@@ -323,6 +323,39 @@ export function DashboardPage(): JSX.Element {
     });
   }, [displayWeeks]);
 
+  const dashboardRows = useMemo(() => {
+    if (sortedWeeks.length === 0) return [];
+
+    const rows: Array<
+      | { type: 'week'; week: (typeof sortedWeeks)[number] }
+      | { type: 'gap'; key: string; gapWeeks: number }
+    > = [];
+
+    for (let index = 0; index < sortedWeeks.length; index += 1) {
+      const week = sortedWeeks[index];
+      rows.push({ type: 'week', week });
+
+      const nextWeek = sortedWeeks[index + 1];
+      if (!nextWeek) continue;
+
+      const currentTs = Date.parse(`${week.week_start}T00:00:00`);
+      const nextTs = Date.parse(`${nextWeek.week_start}T00:00:00`);
+      if (Number.isNaN(currentTs) || Number.isNaN(nextTs)) continue;
+
+      const diffDays = Math.round((currentTs - nextTs) / (1000 * 60 * 60 * 24));
+      const gapWeeks = Math.max(0, Math.round(diffDays / 7) - 1);
+      if (gapWeeks > 0) {
+        rows.push({
+          type: 'gap',
+          key: `${week.week_start}-${nextWeek.week_start}`,
+          gapWeeks,
+        });
+      }
+    }
+
+    return rows;
+  }, [sortedWeeks]);
+
   const totalYearWindows = useMemo(() => {
     const weeksTotal = Math.max(Number(query.data?.weeks_total ?? 0), 0);
     return Math.max(1, Math.ceil(weeksTotal / dashboardYearWindowWeeks));
@@ -451,111 +484,123 @@ export function DashboardPage(): JSX.Element {
                   </div>
                 </div>
               ) : null}
-              {sortedWeeks.map((week) => (
-                <div
-                  key={week.week_start}
-                  ref={(node) => {
-                    weekRefs.current[week.week_start] = node;
-                  }}
-                >
-                  <DashboardWeekCard
-                    week={week}
-                    onAddPlannedActivity={(dayUtc) => {
-                      setAddActivityDayUtc(dayUtc);
-                      setAddActivityText('');
-                      setAddActivityMode('planned');
-                      setAddActivityResult(null);
+              {dashboardRows.map((row) =>
+                row.type === 'gap' ? (
+                  <div
+                    key={row.key}
+                    className="flex items-center justify-center py-1"
+                    aria-label={`${row.gapWeeks} week gap`}
+                  >
+                    <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs font-semibold tracking-[0.2em] text-slate-300/70">
+                      (...)
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    key={row.week.week_start}
+                    ref={(node) => {
+                      weekRefs.current[row.week.week_start] = node;
                     }}
-                    onMarkPlannedDone={(activity, index) =>
-                      (() => {
-                        markPlannedDoneLocally(activity.day_utc, activity.line_no);
-                        showUndo({
-                          dayUtc: activity.day_utc,
-                          lineNo: activity.line_no,
-                          slotIndex: index,
-                          label: 'Marked',
-                          action: async () => {
-                            if (!session?.token) throw new Error('Missing auth token');
-                            await setPlannedManualDone({
-                              token: session.token,
-                              owner: profile?.owner,
-                              dayUtc: activity.day_utc,
-                              lineNo: activity.line_no,
-                              manualDone: false,
-                            });
-                            await refreshDashboardViews();
-                          },
-                        });
-                        plannedDoneMutation.mutate({ dayUtc: activity.day_utc, lineNo: activity.line_no }, { onError: () => void refreshDashboardViews() });
-                      })()
-                    }
-                    onDeletePlannedActivity={(activity, index) =>
-                      (() => {
-                        removePlannedActivityLocally(activity.day_utc, activity.line_no);
-                        showUndo({
-                          dayUtc: activity.day_utc,
-                          lineNo: activity.line_no,
-                          slotIndex: index,
-                          label: 'Deleted',
-                          action: async () => {
-                            if (!session?.token) throw new Error('Missing auth token');
-                            await ingestPlannedActivities({
-                              token: session.token,
-                              owner: profile?.owner,
-                              entryText: `${activity.day_utc}: ${activity.workout_text}`,
-                            });
-                            await refreshDashboardViews();
-                          },
-                        });
-                        plannedDeleteMutation.mutate({ dayUtc: activity.day_utc, lineNo: activity.line_no }, { onError: () => void refreshDashboardViews() });
-                      })()
-                    }
-                    onDeleteCustomActivity={(activity) =>
-                      activity.day_utc && activity.line_no
-                        ? (() => {
-                            removeCustomActivityLocally(activity.day_utc, activity.line_no);
-                            if (activity.activity_text) {
-                              showUndo({
-                                label: 'Deleted',
-                                action: async () => {
-                                  if (!session?.token) throw new Error('Missing auth token');
-                                  await ingestCustomActivities({
-                                    token: session.token,
-                                    owner: profile?.owner,
-                                    entryText: `${activity.day_utc}: ${activity.activity_text}`,
-                                  });
-                                  await refreshDashboardViews();
-                                },
+                  >
+                    <DashboardWeekCard
+                      week={row.week}
+                      onAddPlannedActivity={(dayUtc) => {
+                        setAddActivityDayUtc(dayUtc);
+                        setAddActivityText('');
+                        setAddActivityMode('planned');
+                        setAddActivityResult(null);
+                      }}
+                      onMarkPlannedDone={(activity, index) =>
+                        (() => {
+                          markPlannedDoneLocally(activity.day_utc, activity.line_no);
+                          showUndo({
+                            dayUtc: activity.day_utc,
+                            lineNo: activity.line_no,
+                            slotIndex: index,
+                            label: 'Marked',
+                            action: async () => {
+                              if (!session?.token) throw new Error('Missing auth token');
+                              await setPlannedManualDone({
+                                token: session.token,
+                                owner: profile?.owner,
+                                dayUtc: activity.day_utc,
+                                lineNo: activity.line_no,
+                                manualDone: false,
                               });
+                              await refreshDashboardViews();
+                            },
+                          });
+                          plannedDoneMutation.mutate({ dayUtc: activity.day_utc, lineNo: activity.line_no }, { onError: () => void refreshDashboardViews() });
+                        })()
+                      }
+                      onDeletePlannedActivity={(activity, index) =>
+                        (() => {
+                          removePlannedActivityLocally(activity.day_utc, activity.line_no);
+                          showUndo({
+                            dayUtc: activity.day_utc,
+                            lineNo: activity.line_no,
+                            slotIndex: index,
+                            label: 'Deleted',
+                            action: async () => {
+                              if (!session?.token) throw new Error('Missing auth token');
+                              await ingestPlannedActivities({
+                                token: session.token,
+                                owner: profile?.owner,
+                                entryText: `${activity.day_utc}: ${activity.workout_text}`,
+                              });
+                              await refreshDashboardViews();
+                            },
+                          });
+                          plannedDeleteMutation.mutate({ dayUtc: activity.day_utc, lineNo: activity.line_no }, { onError: () => void refreshDashboardViews() });
+                        })()
+                      }
+                      onDeleteCustomActivity={(activity) =>
+                        activity.day_utc && activity.line_no
+                          ? (() => {
+                              removeCustomActivityLocally(activity.day_utc, activity.line_no);
+                              if (activity.activity_text) {
+                                showUndo({
+                                  label: 'Deleted',
+                                  action: async () => {
+                                    if (!session?.token) throw new Error('Missing auth token');
+                                    await ingestCustomActivities({
+                                      token: session.token,
+                                      owner: profile?.owner,
+                                      entryText: `${activity.day_utc}: ${activity.activity_text}`,
+                                    });
+                                    await refreshDashboardViews();
+                                  },
+                                });
+                              }
+                              customDeleteMutation.mutate(
+                                { dayUtc: activity.day_utc, lineNo: activity.line_no },
+                                { onError: () => void refreshDashboardViews() },
+                              );
+                            })()
+                          : undefined
+                      }
+                      onSelectActivity={(activityId) => setSelectedActivityId(activityId)}
+                      addingPlannedActivity={plannedCreateMutation.isPending}
+                      markingPlannedDone={plannedDoneMutation.isPending}
+                      deletingPlannedActivity={plannedDeleteMutation.isPending}
+                      deletingCustomActivity={customDeleteMutation.isPending}
+                      userTimeZone={userTimeZone}
+                      undoPlannedActivity={
+                        undoState?.dayUtc && typeof undoState.lineNo === 'number' && typeof undoState.slotIndex === 'number'
+                          ? {
+                              dayUtc: undoState.dayUtc,
+                              lineNo: undoState.lineNo,
+                              slotIndex: undoState.slotIndex,
+                              label: undoState.label,
                             }
-                            customDeleteMutation.mutate(
-                              { dayUtc: activity.day_utc, lineNo: activity.line_no },
-                              { onError: () => void refreshDashboardViews() },
-                            );
-                          })()
-                        : undefined
-                    }
-                    onSelectActivity={(activityId) => setSelectedActivityId(activityId)}
-                    addingPlannedActivity={plannedCreateMutation.isPending}
-                    markingPlannedDone={plannedDoneMutation.isPending}
-                    deletingPlannedActivity={plannedDeleteMutation.isPending}
-                    deletingCustomActivity={customDeleteMutation.isPending}
-                    userTimeZone={userTimeZone}
-                    undoPlannedActivity={
-                      undoState?.dayUtc && typeof undoState.lineNo === 'number' && typeof undoState.slotIndex === 'number'
-                        ? {
-                            dayUtc: undoState.dayUtc,
-                            lineNo: undoState.lineNo,
-                            slotIndex: undoState.slotIndex,
-                            label: undoState.label,
-                          }
-                        : null
-                    }
-                    undoVisible={undoVisible}
-                    onUndoPlannedActivity={() => void handleUndo()}
-                  />
-                </div>
-              ))}
+                          : null
+                      }
+                      undoVisible={undoVisible}
+                      onUndoPlannedActivity={() => void handleUndo()}
+                    />
+                  </div>
+                ),
+              )}
               {query.data.has_more_weeks ? <div ref={loadMoreRef} className="h-8 w-full" aria-hidden="true" /> : null}
             </div>
           )}

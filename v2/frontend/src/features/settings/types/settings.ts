@@ -55,6 +55,8 @@ export interface VdotResponse {
   observed_max?: {
     vdot: number;
     source_date: string;
+    pred_lt_pace_sec_per_km: number;
+    pred_lt_pace_label: string;
     equivalents: {
       '10k': VdotEquivalent;
       half_marathon: VdotEquivalent;

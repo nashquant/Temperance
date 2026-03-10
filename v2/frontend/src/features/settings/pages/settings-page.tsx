@@ -313,10 +313,14 @@ export function SettingsPage(): JSX.Element {
                 </table>
               </div>
               {!vdotQuery.isLoading && !vdotQuery.isError && vdotQuery.data?.observed_max ? (
-                <div className="grid gap-2 sm:grid-cols-5">
+                <div className="grid gap-2 sm:grid-cols-6">
                   <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">VDOT Max</p>
                     <p className="mt-1 text-lg font-semibold text-slate-50">{Math.round(vdotQuery.data.observed_max.vdot)}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">Pred LT pace</p>
+                    <p className="mt-1 text-lg font-semibold text-slate-50">{vdotQuery.data.observed_max.pred_lt_pace_label}</p>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">10K</p>

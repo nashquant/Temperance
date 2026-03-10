@@ -1006,6 +1006,25 @@ def _vdot_equivalents(vdot: float) -> dict[str, Any]:
     return equivalents
 
 
+def _lt_pace_sec_per_km_from_vdot(vdot: float) -> float:
+    target_vdot = max(float(vdot), 1e-6)
+    frac = _daniels_fraction_of_vo2max(60.0)
+    target_vo2 = target_vdot * frac
+    low = 1.0
+    high = 1000.0
+    for _ in range(80):
+        mid = (low + high) / 2.0
+        estimate = _daniels_velocity_vo2(mid)
+        if estimate < target_vo2:
+            low = mid
+        else:
+            high = mid
+    velocity_m_per_min = (low + high) / 2.0
+    if velocity_m_per_min <= 0:
+        return 0.0
+    return 1000.0 / velocity_m_per_min * 60.0
+
+
 def _vdot_payload_from_lt_pace(lt_pace_sec_per_km: float) -> dict[str, Any]:
     threshold_pace = max(float(lt_pace_sec_per_km), 1.0)
     threshold_distance_m = (3600.0 / threshold_pace) * 1000.0
@@ -4339,10 +4358,13 @@ def vdot_view(
                 best = observed_candidates.iloc[0]
                 best_vdot = float(best.get("vdot") or 0.0)
                 best_ts = pd.to_datetime(best.get("start_time_utc"), utc=True, errors="coerce")
+                pred_lt_pace_sec = _lt_pace_sec_per_km_from_vdot(best_vdot)
                 observed_max = {
                     "vdot": round(best_vdot, 2),
                     "source_date": best_ts.date().isoformat() if pd.notna(best_ts) else "",
                     "window_days": int(vdot_lookback_days),
+                    "pred_lt_pace_sec_per_km": round(pred_lt_pace_sec, 2),
+                    "pred_lt_pace_label": f"{_format_mmss(pred_lt_pace_sec)}/km" if pred_lt_pace_sec > 0 else "-",
                     "equivalents": _vdot_equivalents(best_vdot),
                 }
 
