@@ -33,6 +33,50 @@ type DrawerLapRow = {
   display_mode: 'running' | 'eqv';
 };
 
+function formatActivityTitle(raw: string): string {
+  const cleaned = String(raw || '').trim();
+  if (!cleaned) return 'Activity';
+
+  const normalized = cleaned.toLowerCase();
+  if (normalized.includes('strength')) return 'Lift';
+  if (normalized.includes('swim')) return 'Swim';
+  if (normalized.includes('cycl')) return 'Bike';
+  if (normalized === 'run' || normalized === 'running' || normalized.includes(' run')) return 'Run';
+  if (normalized === 'treadmill_running' || normalized === 'treadmill run' || normalized === 'treadmillrunning') {
+    return 'Tready';
+  }
+
+  return cleaned
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function formatLocalActivityTime(startTimeUtc: string): string {
+  const raw = String(startTimeUtc || '').trim();
+  if (!raw) return '';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const hour24 = parsed.getHours();
+  const minute = parsed.getMinutes();
+  if (Number.isNaN(hour24) || Number.isNaN(minute)) return '';
+  const suffix = hour24 >= 12 ? 'pm' : 'am';
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `@ ${hour12}:${String(minute).padStart(2, '0')}${suffix}`;
+}
+
+function formatLocalActivityDate(startTimeUtc: string, fallbackDate: string): string {
+  const raw = String(startTimeUtc || '').trim();
+  const parsed = raw ? new Date(raw) : new Date(`${String(fallbackDate || '').trim()}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return String(fallbackDate || '').trim();
+  const day = parsed.getDate();
+  const month = parsed.toLocaleDateString('en-US', { month: 'short' });
+  const year = String(parsed.getFullYear()).slice(-2);
+  return `${day}${month}${year}`;
+}
+
 function fmtDurationSeconds(seconds: number): string {
   const total = Math.max(0, Math.round(Number(seconds) || 0));
   const h = Math.floor(total / 3600);
@@ -137,6 +181,15 @@ export function ActivitySplitsDrawer({
   const canEditGeneratedText = Boolean(
     (sourceKind === 'planned' || sourceKind === 'custom') && rawDayUtc && rawLineNo > 0,
   );
+  const activityHeaderTitle = formatActivityTitle(String(activity?.sport_type || ''));
+  const activityHeaderDate = formatLocalActivityDate(String(activity?.start_time_utc || ''), String(activity?.date || ''));
+  const activityHeaderTime = formatLocalActivityTime(String(activity?.start_time_utc || ''));
+  const activitySourceLabel =
+    sourceKind === 'planned' ? '(Planned)' : sourceKind === 'custom' ? '(Custom)' : '';
+  const activityHeaderMeta =
+    sourceKind === 'planned' || sourceKind === 'custom'
+      ? [activityHeaderTitle, activitySourceLabel].filter(Boolean).join(' ')
+      : [activityHeaderTitle, activityHeaderDate, activityHeaderTime].filter(Boolean).join(' ');
   const laps = normalizedLapRows(detailQuery.data);
   const useEqv = laps.length > 0 && laps.some((lap) => lap.display_mode === 'eqv');
   const updateMutation = useMutation({
@@ -198,11 +251,8 @@ export function ActivitySplitsDrawer({
       <div className="h-full w-full max-w-[620px] overflow-y-auto border-l border-sky-300/12 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.99))] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
         <div className="mb-4 flex items-start justify-between gap-3 border-b border-white/8 pb-4">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Activity Details</p>
-            <h3 className="text-lg font-semibold text-foreground">Splits</h3>
-            <p className="text-sm text-slate-300/72">
-              {activity?.sport_type || '-'} {activity?.date ? `· ${activity.date}` : ''}
-            </p>
+            <h3 className="text-lg font-semibold text-foreground">{activityHeaderTitle}</h3>
+            <p className="text-sm text-slate-300/72">{activityHeaderMeta}</p>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close panel" className="text-slate-300/80 hover:text-white">
             <X className="h-4 w-4" />

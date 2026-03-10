@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useId, useMemo } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
@@ -73,8 +73,15 @@ function GroupedBarTooltip({
           <div key={`${entry.name}-${entry.dataKey}`} className="flex items-center justify-between gap-3 text-xs">
             <div className="flex min-w-0 items-center gap-2">
               <span
-                className="inline-block h-2 w-2 shrink-0 rounded-full"
-                style={{ backgroundColor: color }}
+                className="inline-block h-2.5 w-2.5 shrink-0 rounded-[3px] border border-white/15"
+                style={
+                  isCurrent
+                    ? { backgroundColor: color }
+                    : {
+                        backgroundColor: `${color}33`,
+                        backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 3px, transparent 3px 6px)`,
+                      }
+                }
               />
               <span className="truncate" style={{ color }}>{String(entry.name || '-')}</span>
             </div>
@@ -94,7 +101,7 @@ function GroupedBarChartComponent({
   currentLabel,
   compareLabel,
 }: GroupedBarChartProps): JSX.Element {
-  const axisLabel = metric === 'distance' ? 'Distance (km)' : metric === 'rtss' ? 'rTSS' : 'TSS';
+  const comparePatternId = useId().replace(/:/g, '');
 
   const series = useMemo(
     () => [
@@ -114,18 +121,37 @@ function GroupedBarChartComponent({
     <div className="h-[360px] w-full">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} barGap={4} barCategoryGap="20%" margin={{ top: 34, right: 8, left: 0, bottom: 0 }}>
+          <defs>
+            <pattern id={comparePatternId} patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(135)">
+              <rect width="10" height="10" fill={series[1].fill} fillOpacity="0.18" />
+              <line x1="0" y1="0" x2="0" y2="10" stroke={series[1].fill} strokeOpacity="0.62" strokeWidth="3" />
+            </pattern>
+          </defs>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(125,211,252,0.14)" />
           <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={{ stroke: 'rgba(148,163,184,0.18)' }} tickLine={false} />
-          <YAxis tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={false} tickLine={false} label={{ value: axisLabel, angle: -90, position: 'insideLeft', style: { fill: '#94a3b8' } }} />
+          <YAxis hide axisLine={false} tickLine={false} />
           <Tooltip
-            content={<GroupedBarTooltip metric={metric} getCurrentBarFill={getCurrentBarFill} compareFill={series[1].fill} />}
+            content={
+              <GroupedBarTooltip
+                metric={metric}
+                getCurrentBarFill={getCurrentBarFill}
+                compareFill={series[1].fill}
+              />
+            }
             cursor={{ fill: 'rgba(56, 189, 248, 0.08)' }}
           />
           {series.map((item) => (
             <Bar key={item.dataKey} dataKey={item.dataKey} name={item.name} fill={item.fill} radius={[6, 6, 0, 0]}>
               {item.dataKey === 'current'
                 ? data.map((row) => <Cell key={`${row.label}-current`} fill={getCurrentBarFill(row)} />)
-                : null}
+                : data.map((row) => (
+                    <Cell
+                      key={`${row.label}-compare`}
+                      fill={`url(#${comparePatternId})`}
+                      stroke="rgba(226,232,240,0.22)"
+                      strokeWidth={1}
+                    />
+                  ))}
               <LabelList
                 dataKey={item.dataKey}
                 position="top"

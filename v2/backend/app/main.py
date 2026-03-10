@@ -5235,6 +5235,7 @@ def activity_detail(
 
     table_row = display_table(selected).head(1)
     base = table_row.iloc[0].to_dict() if not table_row.empty else selected.iloc[0].to_dict()
+    selected_base = selected.iloc[0].to_dict()
     selected_activity_id = _normalize_activity_id(base.get("activity_id") or activity_id_norm)
 
     records: list[dict[str, Any]] = []
@@ -5367,9 +5368,9 @@ def activity_detail(
         "owner": resolved_owner,
         "activity": {
             "activity_id": selected_activity_id,
-            "date": str(base.get("date") or ""),
-            "start_time_utc": str(base.get("start_time_utc") or ""),
-            "sport_type": str(base.get("sport_type") or ""),
+            "date": str(base.get("date") or selected_base.get("date") or ""),
+            "start_time_utc": str(base.get("start_time_utc") or selected_base.get("start_time_utc") or ""),
+            "sport_type": str(base.get("sport_type") or selected_base.get("sport_type") or ""),
             "distance_km": round(_safe_float(base.get("distance_km")), 2),
             "duration_min": round(_safe_float(base.get("duration_min")), 1),
             "avg_pace_display": str(base.get("avg_pace_display") or "-"),
