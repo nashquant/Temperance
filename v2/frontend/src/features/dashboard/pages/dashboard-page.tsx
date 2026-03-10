@@ -12,7 +12,7 @@ import { ActivitySplitsDrawer } from '@/features/dashboard/components/activity-s
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
 import { getDashboard } from '@/features/dashboard/services/dashboard-api';
-import type { DashboardResponse } from '@/features/dashboard/types/dashboard';
+import type { DashboardActivityCard, DashboardResponse } from '@/features/dashboard/types/dashboard';
 import {
   deletePlannedActivity,
   ingestPlannedActivities,
@@ -57,6 +57,17 @@ function isTodayOrPast(dayUtc: string): boolean {
   return selected.getTime() <= today.getTime();
 }
 
+function currentWeekStartIso(): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayOffset = (today.getDay() + 6) % 7;
+  today.setDate(today.getDate() - dayOffset);
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function DashboardPage(): JSX.Element {
   const dashboardPageSize = 10;
   const dashboardYearWindowWeeks = 52;
@@ -71,6 +82,7 @@ export function DashboardPage(): JSX.Element {
   const [addActivityResult, setAddActivityResult] = useState<string | null>(null);
   const [undoState, setUndoState] = useState<{
     id: number;
+    lane: 'planned' | 'actual';
     dayUtc?: string;
     lineNo?: number;
     slotIndex?: number;
@@ -101,6 +113,26 @@ export function DashboardPage(): JSX.Element {
     () => Boolean(addActivityDayUtc && isTodayOrPast(addActivityDayUtc)),
     [addActivityDayUtc],
   );
+  const composerCurrentWeekStart = useMemo(() => currentWeekStartIso(), []);
+  const isBeforeCurrentWeek = useMemo(() => {
+    if (!addActivityDayUtc) return false;
+    return addActivityDayUtc < composerCurrentWeekStart;
+  }, [addActivityDayUtc, composerCurrentWeekStart]);
+  const canAddPlannedForComposer = useMemo(
+    () => Boolean(addActivityDayUtc) && !isBeforeCurrentWeek,
+    [addActivityDayUtc, isBeforeCurrentWeek],
+  );
+
+  useEffect(() => {
+    if (!addActivityDayUtc) return;
+    if (isBeforeCurrentWeek && addActivityMode !== 'custom') {
+      setAddActivityMode('custom');
+      return;
+    }
+    if (!canAddCustomForComposer && addActivityMode === 'custom') {
+      setAddActivityMode('planned');
+    }
+  }, [addActivityDayUtc, addActivityMode, canAddCustomForComposer, isBeforeCurrentWeek]);
   const refreshDashboardViews = async () => {
     await Promise.all([
       query.refetch(),
@@ -137,6 +169,40 @@ export function DashboardPage(): JSX.Element {
       })),
     }));
   };
+  const insertCustomActivityLocally = (
+    dayUtc: string,
+    activity: DashboardActivityCard,
+    slotIndex: number,
+  ) => {
+    patchDashboardCaches((payload) => ({
+      ...payload,
+      weeks: payload.weeks.map((week) => ({
+        ...week,
+        days: week.days.map((day) => {
+          if (day.day_utc !== dayUtc) return day;
+          const nextActivities = [...day.actual_activities];
+          const existingIndex = nextActivities.findIndex(
+            (current) =>
+              current.activity_id === activity.activity_id
+              || (
+                current.is_custom
+                && current.day_utc === activity.day_utc
+                && current.line_no === activity.line_no
+              ),
+          );
+          if (existingIndex >= 0) {
+            nextActivities.splice(existingIndex, 1);
+          }
+          const insertionIndex = Math.max(0, Math.min(slotIndex, nextActivities.length));
+          nextActivities.splice(insertionIndex, 0, activity);
+          return {
+            ...day,
+            actual_activities: nextActivities,
+          };
+        }),
+      })),
+    }));
+  };
   const removePlannedActivityLocally = (dayUtc: string, lineNo: number) => {
     patchDashboardCaches((payload) => ({
       ...payload,
@@ -164,12 +230,14 @@ export function DashboardPage(): JSX.Element {
     dayUtc,
     lineNo,
     slotIndex,
+    lane,
   }: {
     label: string;
     action: () => Promise<void>;
     dayUtc?: string;
     lineNo?: number;
     slotIndex?: number;
+    lane: 'planned' | 'actual';
   }) => {
     if (undoTimerRef.current) {
       window.clearTimeout(undoTimerRef.current);
@@ -178,7 +246,7 @@ export function DashboardPage(): JSX.Element {
       window.clearTimeout(undoDismissTimerRef.current);
     }
     const id = Date.now();
-    setUndoState({ id, dayUtc, lineNo, slotIndex, label, action });
+    setUndoState({ id, lane, dayUtc, lineNo, slotIndex, label, action });
     window.requestAnimationFrame(() => setUndoVisible(true));
     undoTimerRef.current = window.setTimeout(() => {
       setUndoVisible(false);
@@ -510,13 +578,14 @@ export function DashboardPage(): JSX.Element {
                       onAddPlannedActivity={(dayUtc) => {
                         setAddActivityDayUtc(dayUtc);
                         setAddActivityText('');
-                        setAddActivityMode('planned');
+                        setAddActivityMode(dayUtc < composerCurrentWeekStart ? 'custom' : 'planned');
                         setAddActivityResult(null);
                       }}
                       onMarkPlannedDone={(activity, index) =>
                         (() => {
                           markPlannedDoneLocally(activity.day_utc, activity.line_no);
                           showUndo({
+                            lane: 'planned',
                             dayUtc: activity.day_utc,
                             lineNo: activity.line_no,
                             slotIndex: index,
@@ -540,6 +609,7 @@ export function DashboardPage(): JSX.Element {
                         (() => {
                           removePlannedActivityLocally(activity.day_utc, activity.line_no);
                           showUndo({
+                            lane: 'planned',
                             dayUtc: activity.day_utc,
                             lineNo: activity.line_no,
                             slotIndex: index,
@@ -557,15 +627,30 @@ export function DashboardPage(): JSX.Element {
                           plannedDeleteMutation.mutate({ dayUtc: activity.day_utc, lineNo: activity.line_no }, { onError: () => void refreshDashboardViews() });
                         })()
                       }
-                      onDeleteCustomActivity={(activity) =>
+                      onDeleteCustomActivity={(activity, index) =>
                         typeof activity.day_utc === 'string' && typeof activity.line_no === 'number'
                           ? (() => {
+                              const dayUtc = activity.day_utc;
+                              const lineNo = activity.line_no;
                               const activityText = String(activity.activity_text ?? '').trim();
-                              removeCustomActivityLocally(activity.day_utc, activity.line_no);
+                              const deletePromise = customDeleteMutation.mutateAsync(
+                                { dayUtc, lineNo },
+                                { onError: () => void refreshDashboardViews() },
+                              );
+                              removeCustomActivityLocally(dayUtc, lineNo);
                               showUndo({
-                                label: activityText ? `Deleted: ${activityText}` : 'Deleted custom activity',
+                                lane: 'actual',
+                                dayUtc,
+                                lineNo,
+                                slotIndex: index,
+                                label: activityText || 'Deleted custom activity',
                                 action: async () => {
                                   if (!session?.token) throw new Error('Missing auth token');
+                                  insertCustomActivityLocally(dayUtc, activity, index);
+                                  await deletePromise.catch(async () => {
+                                    await refreshDashboardViews();
+                                    return undefined;
+                                  });
                                   if (!activityText) {
                                     await refreshDashboardViews();
                                     return;
@@ -573,15 +658,11 @@ export function DashboardPage(): JSX.Element {
                                   await ingestCustomActivities({
                                     token: session.token,
                                     owner: profile?.owner,
-                                    entryText: `${activity.day_utc}: ${activityText}`,
+                                    entryText: `${dayUtc}: ${activityText}`,
                                   });
                                   await refreshDashboardViews();
                                 },
                               });
-                              customDeleteMutation.mutate(
-                                { dayUtc: activity.day_utc, lineNo: activity.line_no },
-                                { onError: () => void refreshDashboardViews() },
-                              );
                             })()
                           : undefined
                       }
@@ -591,9 +672,10 @@ export function DashboardPage(): JSX.Element {
                       deletingPlannedActivity={plannedDeleteMutation.isPending}
                       deletingCustomActivity={customDeleteMutation.isPending}
                       userTimeZone={userTimeZone}
-                      undoPlannedActivity={
+                      undoActivity={
                         undoState?.dayUtc && typeof undoState.lineNo === 'number' && typeof undoState.slotIndex === 'number'
                           ? {
+                              lane: undoState.lane,
                               dayUtc: undoState.dayUtc,
                               lineNo: undoState.lineNo,
                               slotIndex: undoState.slotIndex,
@@ -602,7 +684,7 @@ export function DashboardPage(): JSX.Element {
                           : null
                       }
                       undoVisible={undoVisible}
-                      onUndoPlannedActivity={() => void handleUndo()}
+                      onUndoActivity={() => void handleUndo()}
                     />
                   </div>
                 ),
@@ -642,7 +724,10 @@ export function DashboardPage(): JSX.Element {
                   : 'Enter the custom activity string for this date.'}{' '}
                 Example: `80min elliptical @140bpm` or `10min run @4:50 + 5x6min @3:40/km`
               </p>
-              {!canAddCustomForComposer ? (
+              {isBeforeCurrentWeek ? (
+                <p className="text-xs text-muted-foreground">For dates before the current week, only custom activities can be added.</p>
+              ) : null}
+              {!isBeforeCurrentWeek && !canAddCustomForComposer ? (
                 <p className="text-xs text-muted-foreground">Custom activities can only be added for today or past dates.</p>
               ) : null}
             </div>
@@ -660,7 +745,7 @@ export function DashboardPage(): JSX.Element {
                     setAddActivityMode('planned');
                     setAddActivityResult(null);
                   }}
-                  disabled={plannedCreateMutation.isPending}
+                  disabled={plannedCreateMutation.isPending || !canAddPlannedForComposer}
                 >
                   Planned
                 </button>

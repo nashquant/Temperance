@@ -31,14 +31,15 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
   const activeQuery = weekView === 'previous' ? previousQuery : query;
   const displayedData = activeQuery.data;
   const isEmpty = displayedData !== undefined && displayedData.chartRows.length === 0;
+  const showEmbeddedHeaderRow = !embedded || !displayedData;
 
   useEffect(() => {
     setWeekView('current');
   }, [metric, compare]);
 
   return (
-    <section className="space-y-6">
-      <div className="space-y-4">
+    <section className={embedded ? 'space-y-4' : 'space-y-6'}>
+      <div className={embedded ? 'space-y-3' : 'space-y-4'}>
         {!activeQuery.isLoading && !activeQuery.isError && displayedData ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
@@ -53,22 +54,24 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
           </div>
         ) : null}
 
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          {embedded ? null : (
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Weekly Outlook</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Compare current week performance against plan or historical benchmark.
-              </p>
-            </div>
-          )}
+        {showEmbeddedHeaderRow ? (
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            {embedded ? null : (
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">Weekly Outlook</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Compare current week performance against plan or historical benchmark.
+                </p>
+              </div>
+            )}
 
-          {!displayedData ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-              <CompareSelector value={compare} onValueChange={setCompare} />
-            </div>
-          ) : null}
-        </div>
+            {!displayedData ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+                <CompareSelector value={compare} onValueChange={setCompare} />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {activeQuery.isLoading ? (

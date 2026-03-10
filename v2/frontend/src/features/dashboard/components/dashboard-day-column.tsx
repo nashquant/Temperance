@@ -11,7 +11,7 @@ interface DashboardDayColumnProps {
   onAddPlannedActivity?: (dayUtc: string) => void;
   onMarkPlannedDone?: (activity: DashboardDayColumnType['planned_activities'][number], index: number) => void;
   onDeletePlannedActivity?: (activity: DashboardDayColumnType['planned_activities'][number], index: number) => void;
-  onDeleteCustomActivity?: (activity: DashboardDayColumnType['actual_activities'][number]) => void;
+  onDeleteCustomActivity?: (activity: DashboardDayColumnType['actual_activities'][number], index: number) => void;
   onSelectActivity?: (activityId: string) => void;
   addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
@@ -19,14 +19,15 @@ interface DashboardDayColumnProps {
   deletingCustomActivity?: boolean;
   userTimeZone?: string;
   compactMobile?: boolean;
-  undoPlannedActivity?: {
+  undoActivity?: {
     dayUtc: string;
     lineNo: number;
     slotIndex: number;
     label: string;
+    lane: 'planned' | 'actual';
   } | null;
   undoVisible?: boolean;
-  onUndoPlannedActivity?: () => void;
+  onUndoActivity?: () => void;
 }
 
 const intensityClasses: Record<string, string> = {
@@ -180,20 +181,25 @@ export function DashboardDayColumn({
   deletingCustomActivity,
   userTimeZone,
   compactMobile = false,
-  undoPlannedActivity,
+  undoActivity,
   undoVisible = false,
-  onUndoPlannedActivity,
+  onUndoActivity,
 }: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
   const shouldScrollActivities = activityCount > 3;
+  const actualCards: Array<
+    | { type: 'activity'; activity: DashboardDayColumnType['actual_activities'][number]; index: number }
+    | { type: 'undo'; slotIndex: number }
+  > = day.actual_activities.map((activity, index) => ({ type: 'activity', activity, index }));
   const plannedCards: Array<
     | { type: 'activity'; activity: DashboardDayColumnType['planned_activities'][number]; index: number }
     | { type: 'undo'; slotIndex: number }
   > = day.planned_activities.map((activity, index) => ({ type: 'activity', activity, index }));
 
-  if (undoPlannedActivity && undoPlannedActivity.dayUtc === day.day_utc) {
-    const insertionIndex = Math.max(0, Math.min(undoPlannedActivity.slotIndex, plannedCards.length));
-    plannedCards.splice(insertionIndex, 0, { type: 'undo', slotIndex: undoPlannedActivity.slotIndex });
+  if (undoActivity && undoActivity.dayUtc === day.day_utc) {
+    const laneCards = undoActivity.lane === 'actual' ? actualCards : plannedCards;
+    const insertionIndex = Math.max(0, Math.min(undoActivity.slotIndex, laneCards.length));
+    laneCards.splice(insertionIndex, 0, { type: 'undo', slotIndex: undoActivity.slotIndex });
   }
 
   return (
@@ -215,18 +221,16 @@ export function DashboardDayColumn({
             >
               {day.day_label}
             </p>
-            {!day.is_past ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="ml-auto h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
-                onClick={() => onAddPlannedActivity?.(day.day_utc)}
-                disabled={addingPlannedActivity}
-                aria-label={`Add planned activity for ${day.day_label}`}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            ) : null}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
+              onClick={() => onAddPlannedActivity?.(day.day_utc)}
+              disabled={addingPlannedActivity}
+              aria-label={`Add activity for ${day.day_label}`}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
           </div>
           <div
             className={cn(
@@ -252,8 +256,33 @@ export function DashboardDayColumn({
               : 'overflow-visible',
           )}
         >
-          {day.actual_activities.map((activity) => (
+          {actualCards.map((item) =>
+            item.type === 'undo' ? (
+              <div
+                key={`undo-actual-${day.day_utc}-${undoActivity?.lineNo ?? item.slotIndex}`}
+                className={cn(
+                  'relative flex flex-col overflow-hidden rounded-lg border-2 border-dashed border-sky-300/35 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),rgba(15,23,42,0.45)] transition-all duration-200',
+                  compactMobile ? 'h-[88px] px-2 pb-2 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
+                  undoVisible ? 'opacity-100' : 'opacity-85',
+                )}
+              >
+                <p className={cn('font-semibold text-sky-100', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
+                  {undoActivity?.label ?? 'Activity removed'}
+                </p>
+                <div className="mt-auto">
+                  <Button
+                    variant="outline"
+                    className="h-7 rounded-lg border-sky-300/25 bg-sky-300/8 px-2.5 text-[11px] font-medium text-sky-100 hover:bg-sky-300/14"
+                    onClick={onUndoActivity}
+                  >
+                    <RotateCcw className="mr-1.5 h-3 w-3" />
+                    Undo
+                  </Button>
+                </div>
+              </div>
+            ) : (
             (() => {
+              const activity = item.activity;
               const timeLabel = activity.is_custom ? '' : deriveCompactTimeLabel(activity, userTimeZone);
               return (
                 <div
@@ -282,7 +311,7 @@ export function DashboardDayColumn({
                       className="absolute -right-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
                       onClick={(event) => {
                         event.stopPropagation();
-                        onDeleteCustomActivity?.(activity);
+                        onDeleteCustomActivity?.(activity, item.index);
                       }}
                       disabled={deletingCustomActivity}
                       aria-label="Delete custom activity"
@@ -317,7 +346,7 @@ export function DashboardDayColumn({
           {plannedCards.map((item) =>
             item.type === 'undo' ? (
               <div
-                key={`undo-${day.day_utc}-${undoPlannedActivity?.lineNo ?? item.slotIndex}`}
+                key={`undo-planned-${day.day_utc}-${undoActivity?.lineNo ?? item.slotIndex}`}
                 className={cn(
                   'relative flex flex-col overflow-hidden rounded-lg border-2 border-dashed border-sky-300/35 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),rgba(15,23,42,0.45)] transition-all duration-200',
                   compactMobile ? 'h-[88px] px-2 pb-2 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
@@ -325,13 +354,13 @@ export function DashboardDayColumn({
                 )}
               >
                 <p className={cn('font-semibold text-sky-100', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
-                  {undoPlannedActivity?.label ?? 'Activity removed'}
+                  {undoActivity?.label ?? 'Activity removed'}
                 </p>
                 <div className="mt-auto">
                   <Button
                     variant="outline"
                     className="h-7 rounded-lg border-sky-300/25 bg-sky-300/8 px-2.5 text-[11px] font-medium text-sky-100 hover:bg-sky-300/14"
-                    onClick={onUndoPlannedActivity}
+                    onClick={onUndoActivity}
                   >
                     <RotateCcw className="mr-1.5 h-3 w-3" />
                     Undo

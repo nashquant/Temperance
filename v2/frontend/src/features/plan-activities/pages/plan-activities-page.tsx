@@ -44,6 +44,15 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   const [ingestResult, setIngestResult] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [rowSaveResults, setRowSaveResults] = useState<Record<string, { tone: 'error' | 'success'; message: string }>>({});
+  const sanitizedRows = useMemo(
+    () =>
+      (query.data?.rows ?? []).filter((row) => {
+        const workoutText = String(row.workout_text ?? '').trim();
+        const activityLabel = String(row.activity ?? '').trim();
+        return workoutText.length > 0 || activityLabel.length > 0;
+      }),
+    [query.data?.rows],
+  );
 
   const refetchPlan = async () => {
     await queryClient.invalidateQueries({ queryKey: ['plan-activities'] });
@@ -147,15 +156,15 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   const selectedWeekMeta = weeks.find((week) => week.week_start === effectiveWeek);
 
   const selectedRows = useMemo(() => {
-    if (!query.data || !effectiveWeek) return [];
-    return query.data.rows.filter((row) => {
+    if (!effectiveWeek) return [];
+    return sanitizedRows.filter((row) => {
       const day = new Date(`${row.day_utc}T00:00:00`);
       const start = new Date(`${effectiveWeek}T00:00:00`);
       const end = new Date(start);
       end.setDate(end.getDate() + 6);
       return day >= start && day <= end;
     });
-  }, [effectiveWeek, query.data]);
+  }, [effectiveWeek, sanitizedRows]);
 
   useEffect(() => {
     const next: Record<string, string> = {};
