@@ -1,9 +1,9 @@
-import { useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { CalendarDays } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { normalizeCompactDateInput } from '@/lib/date-input';
 
 interface CompactDateInputProps {
   value: string;
@@ -22,17 +22,27 @@ export function CompactDateInput({
   desktopInputClassName,
   buttonClassName,
 }: CompactDateInputProps): JSX.Element {
-  const pickerRef = useRef<HTMLInputElement | null>(null);
+  const [draftValue, setDraftValue] = useState(value);
 
-  const openPicker = () => {
-    const input = pickerRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
-    if (!input) return;
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
+  useEffect(() => {
+    setDraftValue(value);
+  }, [value]);
+
+  const normalizedValue = normalizeCompactDateInput(value) ?? '';
+  const normalizeAndCommit = (): void => {
+    const normalized = normalizeCompactDateInput(draftValue);
+    if (normalized) {
+      setDraftValue(normalized);
+      if (normalized !== value) {
+        onChange(normalized);
+      }
       return;
     }
-    input.focus();
-    input.click();
+    const trimmed = draftValue.trim();
+    setDraftValue(trimmed);
+    if (trimmed !== value) {
+      onChange(trimmed);
+    }
   };
 
   return (
@@ -40,31 +50,35 @@ export function CompactDateInput({
       <div className="flex items-center gap-1.5 sm:hidden">
         <Input
           type="text"
-          inputMode="numeric"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
+          inputMode="text"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          value={draftValue}
+          onChange={(event) => setDraftValue(event.target.value)}
+          onBlur={normalizeAndCommit}
           placeholder={placeholder}
           className={cn('h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px]', mobileInputClassName)}
         />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={cn('h-8 w-8 shrink-0 px-0', buttonClassName)}
-          onClick={openPicker}
+        <label
+          className={cn(
+            'relative inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-input bg-background text-foreground shadow-sm',
+            buttonClassName,
+          )}
           aria-label="Open date picker"
         >
-          <CalendarDays className="h-3.5 w-3.5" />
-        </Button>
-        <input
-          ref={pickerRef}
-          type="date"
-          tabIndex={-1}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="sr-only"
-          aria-hidden="true"
-        />
+          <CalendarDays className="pointer-events-none h-3.5 w-3.5" />
+          <input
+            type="date"
+            value={normalizedValue}
+            onChange={(event) => {
+              setDraftValue(event.target.value);
+              onChange(event.target.value);
+            }}
+            className="absolute inset-0 z-0 h-full min-h-0 w-full min-w-0 cursor-pointer appearance-none opacity-0"
+            aria-label="Select date"
+          />
+        </label>
       </div>
       <Input
         type="date"

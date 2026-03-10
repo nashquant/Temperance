@@ -22,6 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
+from v2.backend.app.date_parsing import parse_supported_day_value
+
 TEMPERANCE_SRC = Path(__file__).resolve().parents[3] / "temperance"
 if str(TEMPERANCE_SRC) not in sys.path:
     sys.path.insert(0, str(TEMPERANCE_SRC))
@@ -45,9 +47,11 @@ from db import (  # noqa: E402
     delete_planned_activities,
     init_db,
     get_custom_activities_df,
+    get_activity_days,
     get_last_sync,
     get_latest_activity_time,
     get_latest_recovery_day,
+    get_recovery_days,
     get_activity_detail_raw,
     get_activity_local_start_map,
     get_activity_splits_raw,
@@ -602,6 +606,8 @@ def _run_comprehensive_extract_background(
     end_day: date,
     include_details: bool,
     include_wellness: bool,
+    target_activity_days: set[date] | None,
+    target_wellness_days: set[date] | None,
 ) -> None:
     try:
         extract = fetch_garmin_comprehensive(
@@ -614,6 +620,8 @@ def _run_comprehensive_extract_background(
             include_wellness=bool(include_wellness),
             raw_export_dir=None,
             progress_cb=lambda evt: _extract_progress_event(owner, evt),
+            target_activity_days=target_activity_days,
+            target_wellness_days=target_wellness_days,
         )
         _extract_progress_append(
             owner,
@@ -649,29 +657,60 @@ def _run_comprehensive_extract_background(
         log_sync(db_path, source="v2_garmin_comprehensive", success=False, message=str(exc))
 
 
-def _resolve_comprehensive_extract_start_day(
+def _iter_date_range(start_day: date, end_day: date) -> list[date]:
+    if end_day < start_day:
+        return []
+    days: list[date] = []
+    current = start_day
+    while current <= end_day:
+        days.append(current)
+        current += timedelta(days=1)
+    return days
+
+
+def _plan_comprehensive_extract_dates(
     *,
     requested_start_day: date,
     db_path: Path,
     include_wellness: bool,
     incremental_only: bool,
-) -> tuple[date, str | None]:
-    if not incremental_only:
-        return requested_start_day, None
+    end_day: date,
+) -> tuple[date, set[date], set[date], list[str]]:
+    two_days_ago = end_day - timedelta(days=2)
+    effective_start_day = min(requested_start_day, two_days_ago)
+    requested_days = set(_iter_date_range(effective_start_day, end_day))
+    latest_window_days = set(_iter_date_range(two_days_ago, end_day))
 
-    latest = get_latest_activity_time(db_path)
-    latest_recovery = get_latest_recovery_day(db_path) if include_wellness else None
-    anchors = [anchor for anchor in [latest, latest_recovery] if anchor is not None]
-    if not anchors:
-        return requested_start_day, None
+    activity_target_days = set(requested_days)
+    wellness_target_days = set(requested_days) if include_wellness else set()
+    logs = [
+        f"[config] requested_start_day={requested_start_day.isoformat()} two_days_ago={two_days_ago.isoformat()} -> effective_start_day={effective_start_day.isoformat()}",
+    ]
 
-    anchor = min(anchors)
-    incremental_anchor_day = (anchor - timedelta(days=2)).date()
-    resolved_start_day = max(requested_start_day, incremental_anchor_day)
-    return (
-        resolved_start_day,
-        f"[config] incremental_anchor={anchor.isoformat()} -> computed_start_day={resolved_start_day.isoformat()}",
+    if incremental_only:
+        existing_activity_days = get_activity_days(db_path)
+        activity_target_days = (requested_days - existing_activity_days) | latest_window_days
+        logs.append(
+            f"[config] incremental activities: requested_days={len(requested_days)} existing_activity_days={len(existing_activity_days)} always_refresh_days={len(latest_window_days)} target_activity_days={len(activity_target_days)}"
+        )
+        if include_wellness:
+            existing_recovery_days = get_recovery_days(db_path)
+            wellness_target_days = (requested_days - existing_recovery_days) | latest_window_days
+            logs.append(
+                f"[config] incremental wellness: requested_days={len(requested_days)} existing_recovery_days={len(existing_recovery_days)} always_refresh_days={len(latest_window_days)} target_wellness_days={len(wellness_target_days)}"
+            )
+    else:
+        logs.append(
+            f"[config] full fetch: requested_days={len(requested_days)} activity_days={len(activity_target_days)}"
+            + (f" wellness_days={len(wellness_target_days)}" if include_wellness else "")
+        )
+
+    combined_target_days = set(activity_target_days) | set(wellness_target_days)
+    fetch_start_day = min(combined_target_days) if combined_target_days else effective_start_day
+    logs.append(
+        f"[config] computed_start_day={fetch_start_day.isoformat()} target_activity_days={len(activity_target_days)} target_wellness_days={len(wellness_target_days)}"
     )
+    return fetch_start_day, activity_target_days, wellness_target_days, logs
 
 
 def _default_lthr_curve() -> list[dict[str, object]]:
@@ -1478,14 +1517,10 @@ def _parse_dated_activity_entry(text: str) -> tuple[pd.Timestamp | None, str, st
             base_local = pd.Timestamp(datetime.now().astimezone().date())
             date_value = base_local + pd.Timedelta(days=offset_days)
 
-    for fmt in ("%d%b%y", "%Y-%m-%d", "%d/%m/%Y"):
-        if date_value is not None:
-            break
-        try:
-            date_value = pd.Timestamp(datetime.strptime(date_text, fmt))
-            break
-        except Exception:
-            continue
+    if date_value is None:
+        parsed_day = parse_supported_day_value(date_text)
+        if parsed_day is not None:
+            date_value = pd.Timestamp(parsed_day)
     if date_value is None:
         return None, activity_text, (
             "Invalid date format. Use one of: `today`, `tomorrow`, `yesterday`, `T`, `T+1`, `T-1`, "
@@ -4666,17 +4701,17 @@ def data_extract_comprehensive(
             detail="Garmin credentials missing. Add credentials for the active owner scope.",
         )
 
-    try:
-        start_day = datetime.fromisoformat(str(payload.start_day)).date()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid start_day. Use YYYY-MM-DD.")
+    start_day = parse_supported_day_value(payload.start_day)
+    if start_day is None:
+        raise HTTPException(status_code=400, detail="Invalid start_day. Use `3Mar26`, `YYYY-MM-DD`, or `DD/MM/YYYY`.")
     end_day = datetime.now(timezone.utc).date()
 
-    start_day, incremental_log = _resolve_comprehensive_extract_start_day(
+    start_day, target_activity_days, target_wellness_days, planning_logs = _plan_comprehensive_extract_dates(
         requested_start_day=start_day,
         db_path=db_path,
         include_wellness=bool(payload.include_wellness),
         incremental_only=bool(payload.incremental_only),
+        end_day=end_day,
     )
 
     existing_progress = _extract_progress_get(resolved_owner)
@@ -4688,8 +4723,19 @@ def data_extract_comprehensive(
         resolved_owner,
         f"[config] include_details={bool(payload.include_details)} include_wellness={bool(payload.include_wellness)} incremental_only={bool(payload.incremental_only)}",
     )
-    if incremental_log:
-        _extract_progress_append(resolved_owner, incremental_log)
+    for line in planning_logs:
+        _extract_progress_append(resolved_owner, line)
+    if not target_activity_days and not target_wellness_days:
+        summary = "No missing dates to fetch."
+        _extract_progress_append(resolved_owner, "[done] No missing dates to fetch.")
+        _extract_progress_finish(resolved_owner, summary, [])
+        return {
+            "success": True,
+            "start_day": start_day.isoformat(),
+            "end_day": end_day.isoformat(),
+            "summary": summary,
+            "errors": [],
+        }
     worker = threading.Thread(
         target=_run_comprehensive_extract_background,
         kwargs={
@@ -4701,6 +4747,8 @@ def data_extract_comprehensive(
             "end_day": end_day,
             "include_details": bool(payload.include_details),
             "include_wellness": bool(payload.include_wellness),
+            "target_activity_days": target_activity_days,
+            "target_wellness_days": target_wellness_days,
         },
         daemon=True,
     )
