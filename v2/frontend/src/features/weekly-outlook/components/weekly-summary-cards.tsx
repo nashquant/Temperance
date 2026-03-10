@@ -17,65 +17,76 @@ export function WeeklySummaryCards({ data, selectedMetric }: WeeklySummaryCardsP
   const titleClassName = 'text-sm text-slate-300/80';
   const valueClassName = 'text-2xl font-semibold text-foreground';
   const metaClassName = 'mt-1 text-xs text-slate-300/70';
+  const summaryItems = [
+    {
+      title: 'Current week total',
+      value: formatMetricValue(data.totals.current, selectedMetric),
+      meta: null,
+    },
+    {
+      title: 'Comparison total',
+      value: formatMetricValue(data.totals.compare, selectedMetric),
+      valueSuffix: comparisonDeltaLabel ? `(${comparisonDeltaLabel})` : null,
+      meta: data.compareLabel,
+    },
+    {
+      title: 'Remaining to go',
+      value: data.compare === 'planned' ? formatMetricValue(data.totals.remainingToGo, selectedMetric) : '-',
+      meta:
+        data.compare === 'planned' && data.totals.estimatedFatigueEow !== null
+          ? `Estimated fatigue EoW: ${Math.round(data.totals.estimatedFatigueEow)} TSS`
+          : null,
+    },
+    {
+      title: 'Goal progress',
+      value: `${data.totals.progressPct}%`,
+      meta:
+        data.compare === 'planned'
+          ? data.totals.projectedFinish !== null
+            ? `Projected: ${formatMetricValue(data.totals.projectedFinish, selectedMetric)}`
+            : 'Projection not available'
+          : null,
+    },
+  ];
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <Card className={surfaceClassName}>
-        <CardHeader className="pb-3">
-          <CardTitle className={titleClassName}>Current week total</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className={valueClassName}>{formatMetricValue(data.totals.current, selectedMetric)}</p>
+    <>
+      <Card className={`${surfaceClassName} md:hidden`}>
+        <CardContent className="grid gap-2 p-4">
+          {summaryItems.map((item) => (
+            <div
+              key={item.title}
+              className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.title}</p>
+                <p className="text-lg font-semibold text-slate-50 text-right">
+                  {item.value}
+                  {item.valueSuffix ? <span className="ml-1 text-sm font-medium text-slate-300/72">{item.valueSuffix}</span> : null}
+                </p>
+              </div>
+              {item.meta ? <p className="mt-1 text-[11px] text-slate-300/66">{item.meta}</p> : null}
+            </div>
+          ))}
         </CardContent>
       </Card>
 
-      <Card className={surfaceClassName}>
-        <CardHeader className="pb-3">
-          <CardTitle className={titleClassName}>Comparison total</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className={valueClassName}>
-            {formatMetricValue(data.totals.compare, selectedMetric)}
-            {comparisonDeltaLabel ? (
-              <span className="ml-2 text-base font-medium text-slate-300/72">({comparisonDeltaLabel})</span>
-            ) : null}
-          </p>
-          <p className={metaClassName}>{data.compareLabel}</p>
-        </CardContent>
-      </Card>
-
-      <Card className={surfaceClassName}>
-        <CardHeader className="pb-3">
-          <CardTitle className={titleClassName}>Remaining to go</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className={valueClassName}>
-            {data.compare === 'planned' ? formatMetricValue(data.totals.remainingToGo, selectedMetric) : '-'}
-          </p>
-          {data.compare === 'planned' && data.totals.estimatedFatigueEow !== null ? (
-            <p className={metaClassName}>
-              {`Estimated fatigue EoW: ${Math.round(data.totals.estimatedFatigueEow)} TSS`}
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card className={surfaceClassName}>
-        <CardHeader className="pb-3">
-          <CardTitle className={titleClassName}>Goal progress</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className={valueClassName}>{data.totals.progressPct}%</p>
-          {data.compare === 'planned' ? (
-            <p className={metaClassName}>
-              {data.totals.projectedFinish !== null
-                ? `Projected: ${formatMetricValue(data.totals.projectedFinish, selectedMetric)}`
-                : 'Projection not available'}
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
-
-    </div>
+      <div className="hidden gap-4 md:grid md:grid-cols-2 xl:grid-cols-4">
+        {summaryItems.map((item) => (
+          <Card key={item.title} className={surfaceClassName}>
+            <CardHeader className="pb-3">
+              <CardTitle className={titleClassName}>{item.title}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className={valueClassName}>
+                {item.value}
+                {item.valueSuffix ? <span className="ml-2 text-base font-medium text-slate-300/72">{item.valueSuffix}</span> : null}
+              </p>
+              {item.meta ? <p className={metaClassName}>{item.meta}</p> : null}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </>
   );
 }

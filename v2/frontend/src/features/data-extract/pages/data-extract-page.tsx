@@ -596,7 +596,29 @@ export function DataExtractPage(): JSX.Element {
       {isAdmin ? (
         <Card className={surfaceClassName}>
           <CardContent className="space-y-3 p-3 text-sm sm:space-y-4 sm:p-4">
-            <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2.5 text-xs sm:gap-3 sm:p-3 md:grid-cols-2">
+            <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2.5 text-xs md:hidden">
+              <div className="rounded-xl border border-white/8 bg-black/15 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">DB</p>
+                <p className="mt-1 break-all text-slate-200/88">{status?.db_path}</p>
+              </div>
+              <div className="rounded-xl border border-white/8 bg-black/15 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">Garmin Creds</p>
+                <p className="mt-1 text-slate-200/88">{status?.garmin_credentials_available ? 'available' : 'missing'}</p>
+              </div>
+              <div className="rounded-xl border border-white/8 bg-black/15 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">Import Dir</p>
+                <p className="mt-1 break-all text-slate-200/88">{status?.import_dir}</p>
+              </div>
+              <div className="rounded-xl border border-white/8 bg-black/15 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">Last Sync</p>
+                <p className="mt-1 text-slate-200/88">
+                  {status?.last_sync
+                    ? `${status.last_sync.sync_time_utc} | ${status.last_sync.source} | ${status.last_sync.success ? 'success' : 'failed'}`
+                    : 'No sync has been run yet.'}
+                </p>
+              </div>
+            </div>
+            <div className="hidden gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2.5 text-xs sm:gap-3 sm:p-3 md:grid md:grid-cols-2">
               <p className="truncate rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-200/88">
                 <span className="text-slate-300/58">DB:</span> {status?.db_path}
               </p>
@@ -614,7 +636,18 @@ export function DataExtractPage(): JSX.Element {
                 <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-slate-300/60">No sync has been run yet.</p>
               )}
             </div>
-            <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            <div className="grid gap-2 md:hidden">
+              {Object.entries(status?.counts ?? {}).map(([key, value]) => (
+                <div
+                  key={key}
+                  className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                >
+                  <p className="pr-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">{key}</p>
+                  <p className="text-sm font-semibold leading-5 text-slate-100">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="hidden gap-1.5 grid-cols-2 sm:grid-cols-2 md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {Object.entries(status?.counts ?? {}).map(([key, value]) => (
                 <div
                   key={key}

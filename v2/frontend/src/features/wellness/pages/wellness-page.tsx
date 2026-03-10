@@ -37,6 +37,23 @@ export function WellnessPage(): JSX.Element {
     }));
   }, [aggregation, query.data?.points]);
 
+  const summaryItems = useMemo(
+    () => [
+      { label: 'Sleep Score', value: fmt(query.data?.summary.latest_sleep_score) },
+      { label: 'RHR', value: fmt(query.data?.summary.latest_resting_hr) },
+      { label: 'Stress', value: fmt(query.data?.summary.latest_stress_avg) },
+      { label: 'Readiness', value: fmt(query.data?.summary.latest_training_readiness) },
+      { label: 'Battery (End)', value: fmt(query.data?.summary.latest_body_battery_end) },
+    ],
+    [
+      query.data?.summary.latest_body_battery_end,
+      query.data?.summary.latest_resting_hr,
+      query.data?.summary.latest_sleep_score,
+      query.data?.summary.latest_stress_avg,
+      query.data?.summary.latest_training_readiness,
+    ],
+  );
+
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -80,12 +97,29 @@ export function WellnessPage(): JSX.Element {
 
       {!query.isLoading && !query.isError && query.data ? (
         <>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Sleep Score</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_sleep_score)}</p></CardContent></Card>
-            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">RHR</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_resting_hr)}</p></CardContent></Card>
-            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Stress</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_stress_avg)}</p></CardContent></Card>
-            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Readiness</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_training_readiness)}</p></CardContent></Card>
-            <Card className={surfaceClassName}><CardContent className="p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">Battery (End)</p><p className="mt-2 text-2xl font-semibold text-slate-50">{fmt(query.data.summary.latest_body_battery_end)}</p></CardContent></Card>
+          <Card className={`${surfaceClassName} md:hidden`}>
+            <CardContent className="grid gap-2 p-4">
+              {summaryItems.map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.label}</p>
+                  <p className="text-lg font-semibold text-slate-50">{item.value}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <div className="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-5">
+            {summaryItems.map((item) => (
+              <Card key={item.label} className={surfaceClassName}>
+                <CardContent className="p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">{item.label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-50">{item.value}</p>
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
           {chartData.length === 0 ? (

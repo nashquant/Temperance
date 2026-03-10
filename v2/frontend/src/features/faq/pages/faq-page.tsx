@@ -129,7 +129,19 @@ export function FaqPage(): JSX.Element {
         <Card className={surfaceClassName}>
           <CardContent className="space-y-3 p-4">
             <p className="text-sm font-semibold text-foreground">Core Metrics</p>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-2 md:hidden">
+              {glossaryItems.map((item) => (
+                <div key={item.term} className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.term}</p>
+                  <ul className="mt-1.5 space-y-1 text-sm leading-6 text-slate-300/72">
+                    {item.points.map((point) => (
+                      <li key={point}>- {point}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            <div className="hidden gap-3 md:grid md:grid-cols-2">
               {glossaryItems.map((item) => (
                 <div key={item.term} className="rounded-xl border border-white/10 bg-black/15 p-3">
                   <p className="text-sm font-semibold text-foreground">{item.term}</p>
@@ -144,18 +156,35 @@ export function FaqPage(): JSX.Element {
           </CardContent>
         </Card>
 
-        {faqItems.map((item) => (
-          <Card key={item.question} className={surfaceClassName}>
-            <CardContent className="space-y-2 p-4">
-              <p className="text-sm font-semibold text-foreground">{item.question}</p>
-              <ul className="space-y-1 text-sm leading-6 text-slate-300/72">
-                {item.points.map((point) => (
-                  <li key={point}>- {point}</li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        ))}
+        <Card className={`${surfaceClassName} md:hidden`}>
+          <CardContent className="grid gap-2 p-4">
+            {faqItems.map((item) => (
+              <div key={item.question} className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.question}</p>
+                <ul className="mt-1.5 space-y-1 text-sm leading-6 text-slate-300/72">
+                  {item.points.map((point) => (
+                    <li key={point}>- {point}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <div className="hidden space-y-3 md:block">
+          {faqItems.map((item) => (
+            <Card key={item.question} className={surfaceClassName}>
+              <CardContent className="space-y-2 p-4">
+                <p className="text-sm font-semibold text-foreground">{item.question}</p>
+                <ul className="space-y-1 text-sm leading-6 text-slate-300/72">
+                  {item.points.map((point) => (
+                    <li key={point}>- {point}</li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     </section>
   );
