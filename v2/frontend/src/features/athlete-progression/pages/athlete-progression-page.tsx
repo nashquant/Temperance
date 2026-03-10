@@ -131,26 +131,26 @@ export function AthleteProgressionPage(): JSX.Element {
               />
 
               <ProgressionLineChartCard
-                title="Leg Elasticity vs Pounding"
+                title="Bounce vs Pounding"
                 data={normalizedChartData}
                 yLabel="Load"
                 targetKey="pounding_target_tss"
                 targetLabel="Daily Target"
                 series={[
-                  { key: 'leg_elasticity', label: 'Leg Elasticity', color: '#22c55e' },
+                  { key: 'leg_elasticity', label: 'Bounce', color: '#22c55e' },
                   { key: 'pounding', label: 'Pounding', color: '#ef4444' },
                 ]}
               />
 
               <ProgressionLineChartCard
-                title="Distance vs Distance Eqv"
+                title="Distance vs Dist Eqv"
                 data={normalizedChartData}
                 yLabel="km"
                 targetKey="target_distance_km"
                 targetLabel="Distance Target"
                 series={[
                   { key: 'distance_km', label: 'Distance', color: '#38bdf8' },
-                  { key: 'distance_eqv_km', label: 'Distance Eqv', color: '#22c55e' },
+                  { key: 'distance_eqv_km', label: 'Dist Eqv', color: '#22c55e' },
                 ]}
               />
 
@@ -175,24 +175,24 @@ export function AthleteProgressionPage(): JSX.Element {
               />
 
               <ProgressionLineChartCard
-                title="Garmin Training Load vs Total Calories"
+                title="Garmin TL vs Total Calories"
                 data={normalizedChartData}
                 yLabel="Training Load"
                 rightAxisLabel="Calories"
                 series={[
-                  { key: 'training_load_garmin', label: 'Garmin Training Load', color: '#60a5fa', yAxisId: 'left' },
+                  { key: 'training_load_garmin', label: 'Garmin TL', color: '#60a5fa', yAxisId: 'left' },
                   { key: 'calories_total', label: 'Total Calories', color: '#f59e0b', yAxisId: 'right' },
                 ]}
               />
 
               <ProgressionLineChartCard
-                title="HR Zone Time (hours)"
+                title="Time in Zones"
                 data={normalizedChartData}
                 yLabel="Hours"
                 series={[
-                  { key: 'zone_low_aerobic_h', label: 'Low Aerobic', color: '#60a5fa' },
-                  { key: 'zone_moderate_aerobic_h', label: 'Moderate Aerobic', color: '#facc15' },
-                  { key: 'zone_high_aerobic_h', label: 'High Aerobic', color: '#ef4444' },
+                  { key: 'zone_low_aerobic_h', label: 'Easy', color: '#60a5fa' },
+                  { key: 'zone_moderate_aerobic_h', label: 'Steady', color: '#facc15' },
+                  { key: 'zone_high_aerobic_h', label: 'Interval', color: '#ef4444' },
                   { key: 'zone_total_h', label: 'Total Time', color: '#cbd5e1', dashed: true },
                 ]}
               />

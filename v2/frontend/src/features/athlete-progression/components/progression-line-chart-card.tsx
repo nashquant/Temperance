@@ -93,6 +93,18 @@ function formatProgressionValue(value: unknown, dataKey?: string): string {
   return shouldUseIntegerFormat(String(dataKey || '')) ? String(Math.round(numeric)) : numeric.toFixed(2);
 }
 
+function formatTooltipDateLabel(value: string): string {
+  const raw = String(value || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return raw;
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date);
+}
+
 function ProgressionTooltip({
   active,
   label,
@@ -101,19 +113,21 @@ function ProgressionTooltip({
   const visiblePayload = (payload ?? []).filter((entry) => String(entry.dataKey || '') !== '__target');
   if (!active || visiblePayload.length === 0) return null;
   return (
-    <div className="pointer-events-none min-w-[168px] -translate-x-1/2 -translate-y-[calc(100%+32px)] rounded-xl border border-sky-300/15 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.98))] p-2 shadow-xl backdrop-blur">
-      <p className="mb-1 text-xs font-semibold text-foreground">{String(label || '')}</p>
-      <div className="space-y-0.5">
+    <div
+      className="pointer-events-none inline-block w-fit max-w-[132px] rounded-lg border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] px-2 py-1.5 shadow-[0_10px_26px_rgba(2,6,23,0.26)] backdrop-blur"
+      style={{ transform: 'translate(calc(-50% - 20px), calc(-100% - 32px))' }}
+    >
+      <p className="mb-1 whitespace-nowrap text-[11px] font-semibold text-slate-100">{formatTooltipDateLabel(String(label || ''))}</p>
+      <div className="space-y-1">
         {visiblePayload.map((entry) => (
-          <p key={`${entry.name}-${entry.dataKey}`} className="text-xs">
-            <span className="font-medium" style={{ color: String(entry.color || '#cbd5e1') }}>
+          <div key={`${entry.name}-${entry.dataKey}`} className="flex items-center justify-between gap-2 text-[10px] leading-4">
+            <span className="truncate font-medium" style={{ color: String(entry.color || '#cbd5e1') }}>
               {entry.name}
             </span>
-            <span className="text-muted-foreground">: </span>
-            <span className="font-semibold" style={{ color: String(entry.color || '#e2e8f0') }}>
+            <span className="shrink-0 font-semibold" style={{ color: String(entry.color || '#e2e8f0') }}>
               {formatProgressionValue(entry.value, String(entry.dataKey || ''))}
             </span>
-          </p>
+          </div>
         ))}
       </div>
     </div>

@@ -19,6 +19,7 @@ function fmtNumber(value: number | null): string {
 }
 
 function fmtDuration(hours: number): string {
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
   return `${hours.toFixed(1)}h`;
 }
 
