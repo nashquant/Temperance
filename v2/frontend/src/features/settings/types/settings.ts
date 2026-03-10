@@ -52,6 +52,15 @@ export interface VdotResponse {
     half_marathon: VdotEquivalent;
     marathon: VdotEquivalent;
   };
+  observed_max?: {
+    vdot: number;
+    source_date: string;
+    equivalents: {
+      '10k': VdotEquivalent;
+      half_marathon: VdotEquivalent;
+      marathon: VdotEquivalent;
+    };
+  } | null;
 }
 
 export interface SettingsResponse {

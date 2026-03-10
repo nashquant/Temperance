@@ -987,10 +987,7 @@ def _format_hhmmss(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}"
 
 
-def _vdot_payload_from_lt_pace(lt_pace_sec_per_km: float) -> dict[str, Any]:
-    threshold_pace = max(float(lt_pace_sec_per_km), 1.0)
-    threshold_distance_m = (3600.0 / threshold_pace) * 1000.0
-    vdot = _vdot_from_race(threshold_distance_m, 60.0)
+def _vdot_equivalents(vdot: float) -> dict[str, Any]:
     equivalents: dict[str, Any] = {}
     for key, distance_m in {
         "10k": 10000.0,
@@ -1006,7 +1003,13 @@ def _vdot_payload_from_lt_pace(lt_pace_sec_per_km: float) -> dict[str, Any]:
             "pace_sec_per_km": round(pace_sec_per_km, 2),
             "pace_label": f"{_format_mmss(pace_sec_per_km)}/km",
         }
+    return equivalents
 
+
+def _vdot_payload_from_lt_pace(lt_pace_sec_per_km: float) -> dict[str, Any]:
+    threshold_pace = max(float(lt_pace_sec_per_km), 1.0)
+    threshold_distance_m = (3600.0 / threshold_pace) * 1000.0
+    vdot = _vdot_from_race(threshold_distance_m, 60.0)
     return {
         "vdot": round(vdot, 2),
         "threshold_assumption": {
@@ -1015,7 +1018,7 @@ def _vdot_payload_from_lt_pace(lt_pace_sec_per_km: float) -> dict[str, Any]:
             "lt_pace_sec_per_km": round(threshold_pace, 2),
             "lt_pace_label": f"{_format_mmss(threshold_pace)}/km",
         },
-        "equivalents": equivalents,
+        "equivalents": _vdot_equivalents(vdot),
     }
 
 
@@ -4280,10 +4283,54 @@ def vdot_view(
         lt_pace = float(lt_pace_curve[-1][1])
 
     payload = _vdot_payload_from_lt_pace(lt_pace)
+
+    observed_max: dict[str, Any] | None = None
+    metrics_df = _metrics_for_filters(
+        db_path=db_path,
+        days=3650,
+        start_day=None,
+        end_day=None,
+        sport=None,
+    )
+    if not metrics_df.empty:
+        metrics_df = metrics_df.copy()
+        metrics_df["distance_m"] = pd.to_numeric(metrics_df.get("distance_m"), errors="coerce").fillna(0.0)
+        metrics_df["duration_s"] = pd.to_numeric(metrics_df.get("duration_s"), errors="coerce").fillna(0.0)
+        metrics_df["if_proxy"] = pd.to_numeric(metrics_df.get("if_proxy"), errors="coerce").fillna(0.0)
+        metrics_df["start_time_utc"] = pd.to_datetime(metrics_df.get("start_time_utc"), utc=True, errors="coerce")
+        sport_lower = metrics_df.get("sport_type", pd.Series(index=metrics_df.index, dtype=object)).fillna("").astype(str).str.lower()
+        eligible_mask = (
+            (sport_lower.str.contains("run") | sport_lower.str.contains("treadmill"))
+            & (metrics_df["distance_m"] > 0)
+            & (metrics_df["duration_s"] > 0)
+            & (metrics_df["if_proxy"] > 0.80)
+        )
+        observed_candidates = metrics_df.loc[eligible_mask, ["distance_m", "duration_s", "start_time_utc"]].copy()
+        if not observed_candidates.empty:
+            observed_candidates["vdot"] = observed_candidates.apply(
+                lambda row: _activity_vdot(
+                    distance_m=_safe_float(row.get("distance_m")),
+                    duration_s=_safe_float(row.get("duration_s")),
+                ),
+                axis=1,
+            )
+            observed_candidates["vdot"] = pd.to_numeric(observed_candidates["vdot"], errors="coerce")
+            observed_candidates = observed_candidates.dropna(subset=["vdot"]).sort_values(["vdot", "start_time_utc"], ascending=[False, False])
+            if not observed_candidates.empty:
+                best = observed_candidates.iloc[0]
+                best_vdot = float(best.get("vdot") or 0.0)
+                best_ts = pd.to_datetime(best.get("start_time_utc"), utc=True, errors="coerce")
+                observed_max = {
+                    "vdot": round(best_vdot, 2),
+                    "source_date": best_ts.date().isoformat() if pd.notna(best_ts) else "",
+                    "equivalents": _vdot_equivalents(best_vdot),
+                }
+
     payload.update(
         {
             "owner": resolved_owner,
             "as_of": source_date,
+            "observed_max": observed_max,
         }
     )
     return payload

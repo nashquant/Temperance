@@ -187,8 +187,8 @@ export function AthleteProgressionPage(): JSX.Element {
                   data={normalizedChartData}
                   yLabel="VDOT"
                   series={[
-                    { key: 'vdot_max', label: 'VDOT Max', color: '#f97316' },
                     { key: 'vdot', label: 'VDOT', color: '#94a3b8', dashed: true, strokeOpacity: 0.6, dotOpacity: 0.45 },
+                    { key: 'vdot_max', label: 'VDOT Max', color: '#f97316' },
                   ]}
                 />
               ) : (

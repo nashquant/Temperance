@@ -102,7 +102,7 @@ export function SettingsPage(): JSX.Element {
   const [lthrRows, setLthrRows] = useState<LthrDraftRow[]>([]);
   const [paceRows, setPaceRows] = useState<LtPaceDraftRow[]>([]);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [showIfZonesGuide, setShowIfZonesGuide] = useState(false);
+  const [showIfZonesGuide, setShowIfZonesGuide] = useState(true);
 
   useEffect(() => {
     if (!query.data) return;
@@ -187,36 +187,37 @@ export function SettingsPage(): JSX.Element {
     const hrAt = (fraction: number) => Math.round(lthr * fraction);
     const paceAt = (fraction: number) => (fraction > 0 ? ltPaceSec / fraction : 0);
     const pct = (fraction: number) => Math.round(fraction * 100);
+    const bpm = (value: number) => `${value} bpm`;
 
     const rows = [
       {
         zone: 'Z1',
         ifRange: `< ${pct(z1)}%`,
-        hrRange: `< ${hrAt(z1)}`,
+        hrRange: `< ${bpm(hrAt(z1))}`,
         paceRange: `> ${formatPace(paceAt(z1))}`,
       },
       {
         zone: 'Z2',
         ifRange: `${pct(z1)}% - <${pct(z2)}%`,
-        hrRange: `${hrAt(z1)}-${hrAt(z2)}`,
+        hrRange: `${bpm(hrAt(z1))} - ${bpm(hrAt(z2))}`,
         paceRange: `${formatPace(paceAt(z2))} - ${formatPace(paceAt(z1))}`,
       },
       {
         zone: 'Z3',
         ifRange: `${pct(z2)}% - <${pct(z3)}%`,
-        hrRange: `${hrAt(z2)}-${hrAt(z3)}`,
+        hrRange: `${bpm(hrAt(z2))} - ${bpm(hrAt(z3))}`,
         paceRange: `${formatPace(paceAt(z3))} - ${formatPace(paceAt(z2))}`,
       },
       {
         zone: 'Z4',
         ifRange: `${pct(z3)}% - <${pct(z4)}%`,
-        hrRange: `${hrAt(z3)}-${hrAt(z4)}`,
+        hrRange: `${bpm(hrAt(z3))} - ${bpm(hrAt(z4))}`,
         paceRange: `${formatPace(paceAt(z4))} - ${formatPace(paceAt(z3))}`,
       },
       {
         zone: 'Z5',
         ifRange: `>= ${pct(z4)}%`,
-        hrRange: `> ${hrAt(z4)}`,
+        hrRange: `> ${bpm(hrAt(z4))}`,
         paceRange: `< ${formatPace(paceAt(z4))}`,
       },
     ];
@@ -258,41 +259,10 @@ export function SettingsPage(): JSX.Element {
 
       {saveMsg ? <p className="text-sm text-muted-foreground">{saveMsg}</p> : null}
 
-      {!vdotQuery.isLoading && !vdotQuery.isError && vdotQuery.data ? (
-        <Card className={surfaceClassName}>
-          <CardContent className="space-y-3 p-3 sm:p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-medium">VDOT</p>
-              <p className="text-[11px] text-slate-300/62">
-                LT pace {vdotQuery.data.threshold_assumption.lt_pace_label} as of {vdotQuery.data.as_of}
-              </p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-4">
-              <div className="rounded-xl border border-white/8 bg-black/10 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">VDOT</p>
-                <p className="mt-1 text-xl font-semibold text-slate-50">{vdotQuery.data.vdot.toFixed(1)}</p>
-              </div>
-              <div className="rounded-xl border border-white/8 bg-black/10 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">10K Pace</p>
-                <p className="mt-1 text-xl font-semibold text-slate-50">{vdotQuery.data.equivalents['10k'].pace_label}</p>
-              </div>
-              <div className="rounded-xl border border-white/8 bg-black/10 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">HMP</p>
-                <p className="mt-1 text-xl font-semibold text-slate-50">{vdotQuery.data.equivalents.half_marathon.pace_label}</p>
-              </div>
-              <div className="rounded-xl border border-white/8 bg-black/10 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">MP</p>
-                <p className="mt-1 text-xl font-semibold text-slate-50">{vdotQuery.data.equivalents.marathon.pace_label}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
       <Card className={surfaceClassName}>
         <CardContent className="space-y-2.5 p-3 sm:space-y-3 sm:p-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium">IF Zones Guide</p>
+            <p className="text-sm font-medium">Temperance Guide</p>
             <Button
               type="button"
               variant="outline"
@@ -325,9 +295,9 @@ export function SettingsPage(): JSX.Element {
                   <thead className="bg-white/5 text-left text-xs text-slate-300/72">
                     <tr>
                       <th className="px-3 py-2">Zone</th>
-                      <th className="px-3 py-2">IF Range</th>
-                      <th className="px-3 py-2">Suggested HR (bpm)</th>
-                      <th className="px-3 py-2">Suggested Pace</th>
+                      <th className="px-3 py-2">% LT</th>
+                      <th className="px-3 py-2">HR Bands</th>
+                      <th className="px-3 py-2">Pace Bands</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -342,6 +312,30 @@ export function SettingsPage(): JSX.Element {
                   </tbody>
                 </table>
               </div>
+              {!vdotQuery.isLoading && !vdotQuery.isError && vdotQuery.data?.observed_max ? (
+                <div className="grid gap-2 sm:grid-cols-5">
+                  <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">VDOT Max</p>
+                    <p className="mt-1 text-lg font-semibold text-slate-50">{Math.round(vdotQuery.data.observed_max.vdot)}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">10K</p>
+                    <p className="mt-1 text-lg font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents['10k'].pace_label}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">HMP</p>
+                    <p className="mt-1 text-lg font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents.half_marathon.pace_label}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">MP</p>
+                    <p className="mt-1 text-lg font-semibold text-slate-50">{vdotQuery.data.observed_max.equivalents.marathon.pace_label}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">Source Date</p>
+                    <p className="mt-1 text-lg font-semibold text-slate-50">{vdotQuery.data.observed_max.source_date || '-'}</p>
+                  </div>
+                </div>
+              ) : null}
             </>
           ) : null}
         </CardContent>
