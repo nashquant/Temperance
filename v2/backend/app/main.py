@@ -166,6 +166,7 @@ class SyncRequest(BaseModel):
 
 class ComprehensiveExtractRequest(BaseModel):
     start_day: str
+    explicit_start_day: bool = False
     incremental_only: bool = True
     include_details: bool = True
     include_wellness: bool = False
@@ -652,6 +653,7 @@ def _run_comprehensive_extract_background(
 def _resolve_comprehensive_extract_start_day(
     *,
     requested_start_day: date,
+    explicit_start_day: bool,
     db_path: Path,
     include_wellness: bool,
     incremental_only: bool,
@@ -667,7 +669,7 @@ def _resolve_comprehensive_extract_start_day(
 
     anchor = min(anchors)
     incremental_anchor_day = (anchor - timedelta(days=2)).date()
-    if requested_start_day < incremental_anchor_day:
+    if explicit_start_day and requested_start_day < incremental_anchor_day:
         return (
             requested_start_day,
             (
@@ -679,7 +681,10 @@ def _resolve_comprehensive_extract_start_day(
     resolved_start_day = max(requested_start_day, incremental_anchor_day)
     return (
         resolved_start_day,
-        f"[config] incremental_anchor={anchor.isoformat()} -> computed_start_day={resolved_start_day.isoformat()}",
+        (
+            f"[config] incremental_anchor={anchor.isoformat()} -> computed_start_day={resolved_start_day.isoformat()}"
+            + ("" if explicit_start_day else " (using incremental window because start_day was not explicitly changed)")
+        ),
     )
 
 
@@ -832,12 +837,12 @@ def _resolve_garmin_credentials(ctx: dict[str, str], owner: str) -> tuple[str, s
     role = str(ctx.get("role") or "viewer").strip().lower()
     current_user = str(ctx.get("user") or "").strip()
     if role == "admin" and owner == current_user:
-        env_email, env_password = _garmin_credentials_from_env()
-        if env_email and env_password:
-            return env_email, env_password, "env"
         runtime_email, runtime_password = _runtime_garmin_credentials(owner)
         if runtime_email and runtime_password:
             return runtime_email, runtime_password, "session"
+        env_email, env_password = _garmin_credentials_from_env()
+        if env_email and env_password:
+            return env_email, env_password, "env"
         return "", "", "missing"
 
     runtime_email, runtime_password = _runtime_garmin_credentials(owner)
@@ -4683,6 +4688,7 @@ def data_extract_comprehensive(
 
     start_day, incremental_log = _resolve_comprehensive_extract_start_day(
         requested_start_day=start_day,
+        explicit_start_day=bool(payload.explicit_start_day),
         db_path=db_path,
         include_wellness=bool(payload.include_wellness),
         incremental_only=bool(payload.incremental_only),
