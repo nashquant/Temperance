@@ -57,11 +57,10 @@ export function DataExtractPage(): JSX.Element {
   const lastFinishedAtRef = useRef<string | null>(null);
 
   const stamp = () => `[${new Date().toLocaleTimeString()}]`;
-  const safeCount = (counts: Record<string, number> | null | undefined, key: string) => Number(counts?.[key] ?? 0);
-
   const comprehensiveMutation = useMutation({
     mutationFn: async () => {
       if (!session?.token) throw new Error('Missing auth token');
+      setResult(null);
       setExtractLogs([]);
       lastProgressLogCountRef.current = 0;
       lastFinishedAtRef.current = null;
@@ -83,7 +82,6 @@ export function DataExtractPage(): JSX.Element {
       const progress = latest.data?.extract_progress;
       lastProgressLogCountRef.current = Number(progress?.log_count ?? 0);
       setExtractLogs(Array.isArray(progress?.logs) ? progress.logs : []);
-      setResult(`${response.summary} Owner scope: ${profile?.owner ?? '-'}`);
     },
     onError: (error) => {
       setResult(error instanceof Error ? error.message : 'Comprehensive extract failed');
@@ -116,12 +114,8 @@ export function DataExtractPage(): JSX.Element {
 
     if (!progress.running && progress.finished_at && lastFinishedAtRef.current !== progress.finished_at) {
       lastFinishedAtRef.current = progress.finished_at;
-      const counts = statusQuery.data?.counts ?? {};
-      setResult(
-        `Comprehensive extract complete for ${profile?.owner ?? '-'}: activities=${safeCount(counts, 'activities')}, details=${safeCount(counts, 'activity_details')}, splits=${safeCount(counts, 'activity_splits')}, sleep=${safeCount(counts, 'sleep_daily')}, wellness=${safeCount(counts, 'wellness_daily')}`,
-      );
     }
-  }, [safeCount, statusQuery.data]);
+  }, [statusQuery.data]);
 
   const customIngestMutation = useMutation({
     mutationFn: async () => {
