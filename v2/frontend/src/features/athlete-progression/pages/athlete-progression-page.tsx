@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react';
-import { RefreshCcw } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
@@ -14,10 +12,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProgressionLineChartCard } from '@/features/athlete-progression/components/progression-line-chart-card';
 import { useAthleteProgressionQuery } from '@/features/athlete-progression/hooks/use-athlete-progression-query';
-import type {
-  ProgressionActivityFilter,
-  ProgressionAggregation,
-} from '@/features/athlete-progression/types/athlete-progression';
+import type { ProgressionAggregation } from '@/features/athlete-progression/types/athlete-progression';
 
 function formatDay(iso: string, aggregation: ProgressionAggregation): string {
   const d = new Date(`${iso}T00:00:00`);
@@ -32,9 +27,8 @@ function formatDay(iso: string, aggregation: ProgressionAggregation): string {
 export function AthleteProgressionPage(): JSX.Element {
   const [days, setDays] = useState(365);
   const [aggregation, setAggregation] = useState<ProgressionAggregation>('weekly');
-  const [activityFilter, setActivityFilter] = useState<ProgressionActivityFilter>('all');
 
-  const query = useAthleteProgressionQuery(days, aggregation, activityFilter);
+  const query = useAthleteProgressionQuery(days, aggregation, 'all');
 
   const chartData = useMemo(() => {
     return (query.data?.points ?? []).map((row) => ({
@@ -79,21 +73,6 @@ export function AthleteProgressionPage(): JSX.Element {
               <SelectItem value="daily">Daily</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={activityFilter} onValueChange={(value) => setActivityFilter(value as ProgressionActivityFilter)}>
-            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Activity" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Activities</SelectItem>
-              <SelectItem value="all_running">All Running</SelectItem>
-              <SelectItem value="running">Running</SelectItem>
-              <SelectItem value="treadmill">Treadmill</SelectItem>
-              <SelectItem value="cycling">Cycling</SelectItem>
-              <SelectItem value="elliptical">Elliptical</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" onClick={() => void query.refetch()} disabled={query.isFetching}>
-            <RefreshCcw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
         </div>
       </div>
 

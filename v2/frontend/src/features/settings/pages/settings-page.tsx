@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Plus, X } from 'lucide-react';
+import { ChevronDown, Plus, X } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -100,6 +100,7 @@ export function SettingsPage(): JSX.Element {
   const [lthrRows, setLthrRows] = useState<LthrDraftRow[]>([]);
   const [paceRows, setPaceRows] = useState<LtPaceDraftRow[]>([]);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [showIfZonesGuide, setShowIfZonesGuide] = useState(false);
 
   useEffect(() => {
     if (!query.data) return;
@@ -256,43 +257,59 @@ export function SettingsPage(): JSX.Element {
 
       <Card className={surfaceClassName}>
         <CardContent className="space-y-2.5 p-3 sm:space-y-3 sm:p-4">
-          <p className="text-sm font-medium">IF Zones Guide</p>
-          <div className="grid gap-1.5 sm:hidden">
-            {zoneGuide.rows.map((row) => (
-              <div key={row.zone} className="rounded-lg border border-white/10 bg-black/15 px-3 py-2">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">{row.zone}</p>
-                  <p className="text-[11px] text-slate-300/72">{row.ifRange}</p>
-                </div>
-                <div className="grid gap-1 text-[11px] leading-4 text-slate-200/86">
-                  <p>HR: {row.hrRange}</p>
-                  <p>Pace: {row.paceRange}</p>
-                </div>
-              </div>
-            ))}
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">IF Zones Guide</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold text-slate-200 hover:bg-white/[0.08]"
+              onClick={() => setShowIfZonesGuide((previous) => !previous)}
+            >
+              {showIfZonesGuide ? 'Hide guide' : 'Show guide'}
+              <ChevronDown className={`ml-1.5 h-3.5 w-3.5 transition-transform ${showIfZonesGuide ? 'rotate-180' : ''}`} />
+            </Button>
           </div>
-          <div className="hidden overflow-x-auto rounded-xl border border-white/10 bg-black/15 sm:block">
-            <table className="w-full text-sm">
-              <thead className="bg-white/5 text-left text-xs text-slate-300/72">
-                <tr>
-                  <th className="px-3 py-2">Zone</th>
-                  <th className="px-3 py-2">IF Range</th>
-                  <th className="px-3 py-2">Suggested HR (bpm)</th>
-                  <th className="px-3 py-2">Suggested Pace</th>
-                </tr>
-              </thead>
-              <tbody>
+          {showIfZonesGuide ? (
+            <>
+              <div className="grid gap-1.5 sm:hidden">
                 {zoneGuide.rows.map((row) => (
-                  <tr key={row.zone} className="border-t border-white/10">
-                    <td className="px-3 py-2 font-semibold">{row.zone}</td>
-                    <td className="px-3 py-2">{row.ifRange}</td>
-                    <td className="px-3 py-2">{row.hrRange}</td>
-                    <td className="px-3 py-2">{row.paceRange}</td>
-                  </tr>
+                  <div key={row.zone} className="rounded-lg border border-white/10 bg-black/15 px-3 py-2">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold">{row.zone}</p>
+                      <p className="text-[11px] text-slate-300/72">{row.ifRange}</p>
+                    </div>
+                    <div className="grid gap-1 text-[11px] leading-4 text-slate-200/86">
+                      <p>HR: {row.hrRange}</p>
+                      <p>Pace: {row.paceRange}</p>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+              <div className="hidden overflow-x-auto rounded-xl border border-white/10 bg-black/15 sm:block">
+                <table className="w-full text-sm">
+                  <thead className="bg-white/5 text-left text-xs text-slate-300/72">
+                    <tr>
+                      <th className="px-3 py-2">Zone</th>
+                      <th className="px-3 py-2">IF Range</th>
+                      <th className="px-3 py-2">Suggested HR (bpm)</th>
+                      <th className="px-3 py-2">Suggested Pace</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {zoneGuide.rows.map((row) => (
+                      <tr key={row.zone} className="border-t border-white/10">
+                        <td className="px-3 py-2 font-semibold">{row.zone}</td>
+                        <td className="px-3 py-2">{row.ifRange}</td>
+                        <td className="px-3 py-2">{row.hrRange}</td>
+                        <td className="px-3 py-2">{row.paceRange}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
         </CardContent>
       </Card>
 

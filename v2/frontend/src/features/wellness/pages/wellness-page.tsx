@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react';
-import { RefreshCcw } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -62,10 +60,6 @@ export function WellnessPage(): JSX.Element {
               <SelectItem value="daily">Daily</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" onClick={() => void query.refetch()} disabled={query.isFetching}>
-            <RefreshCcw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
         </div>
       </div>
 

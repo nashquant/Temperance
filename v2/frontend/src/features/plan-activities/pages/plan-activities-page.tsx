@@ -197,6 +197,14 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         )}
       </div>
 
+      {!query.isLoading && !query.isError && query.data ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">TSS goal: {Math.round(query.data.goals.tss)}</Badge>
+          <Badge variant="outline">rTSS goal: {Math.round(query.data.goals.rtss)}</Badge>
+          <Badge variant="outline">Distance goal: {Math.round(query.data.goals.distance_eqv_km)} km</Badge>
+        </div>
+      ) : null}
+
       <Card className={surfaceClassName}>
         <CardContent className="space-y-4 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Planned Activity</p>
@@ -234,12 +242,6 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
       {!query.isLoading && !query.isError && query.data ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">TSS goal: {Math.round(query.data.goals.tss)}</Badge>
-            <Badge variant="outline">rTSS goal: {Math.round(query.data.goals.rtss)}</Badge>
-            <Badge variant="outline">Distance goal: {Math.round(query.data.goals.distance_eqv_km)} km</Badge>
-          </div>
-
           {weeks.length === 0 ? (
               <Card className={surfaceClassName}>
                 <CardContent className="p-8 text-sm text-slate-300/72">No planned activities found in this time window.</CardContent>

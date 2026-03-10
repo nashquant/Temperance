@@ -1,9 +1,7 @@
-import { RefreshCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CompareSelector } from '@/features/weekly-outlook/components/compare-selector';
@@ -41,27 +39,32 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        {embedded ? null : (
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Weekly Outlook</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Compare current week performance against plan or historical benchmark.
-            </p>
+      <div className="space-y-4">
+        {!activeQuery.isLoading && !activeQuery.isError && displayedData ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{`Week: ${formatRange(displayedData.weekStart, displayedData.weekEnd)}`}</Badge>
+            <Badge variant="secondary">
+              {displayedData.compare === 'planned'
+                ? 'Comparison: Planned week'
+                : `Comparison: ${formatRange(displayedData.compareWeekStart, displayedData.compareWeekEnd)}`}
+            </Badge>
           </div>
-        )}
+        ) : null}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <CompareSelector value={compare} onValueChange={setCompare} />
-          <MetricSelector value={metric} onValueChange={setMetric} />
-          <Button
-            variant="outline"
-            onClick={() => void Promise.all([query.refetch(), previousQuery.refetch()])}
-            disabled={query.isFetching || previousQuery.isFetching}
-          >
-            <RefreshCcw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          {embedded ? null : (
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Weekly Outlook</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Compare current week performance against plan or historical benchmark.
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <CompareSelector value={compare} onValueChange={setCompare} />
+            <MetricSelector value={metric} onValueChange={setMetric} />
+          </div>
         </div>
       </div>
 
@@ -83,15 +86,6 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
 
       {!activeQuery.isLoading && !activeQuery.isError && displayedData ? (
         <>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">{`Week: ${formatRange(displayedData.weekStart, displayedData.weekEnd)}`}</Badge>
-            <Badge variant="secondary">
-              {displayedData.compare === 'planned'
-                ? 'Comparison: Planned week'
-                : `Comparison: ${formatRange(displayedData.compareWeekStart, displayedData.compareWeekEnd)}`}
-            </Badge>
-          </div>
-
           {isEmpty ? (
             <Card>
               <CardContent className="p-8">

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { useCustomActivitiesQuery } from '@/features/custom-activities/hooks/use-custom-activities-query';
@@ -72,30 +73,44 @@ export function WeekPlannerPage(): JSX.Element {
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-xl font-semibold tracking-tight">Custom Activities (Selected Week)</h2>
-          <Select
-            value={selectedWeek?.week_start ?? ''}
-            onValueChange={(value) => setSelectedWeekStart(value)}
-            disabled={customWeeks.length === 0}
-          >
-            <SelectTrigger className="w-[240px]">
-              <SelectValue placeholder="Select week" />
-            </SelectTrigger>
-            <SelectContent>
-              {customWeeks.map((week) => (
-                <SelectItem key={week.week_start} value={week.week_start}>
-                  {week.week_start} - {week.week_end}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {selectedWeek ? (
+              <>
+                <Badge variant="outline" className="rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide">
+                  {selectedWeek.custom_activities} activities
+                </Badge>
+                <Badge variant="outline" className="rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide">
+                  TSS {Math.round(selectedWeek.tss)}
+                </Badge>
+                <Badge variant="outline" className="rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide">
+                  rTSS {Math.round(selectedWeek.rtss)}
+                </Badge>
+                <Badge variant="outline" className="rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide">
+                  Dist {Math.round(selectedWeek.distance_eqv_km)} kmeq
+                </Badge>
+              </>
+            ) : null}
+            <Select
+              value={selectedWeek?.week_start ?? ''}
+              onValueChange={(value) => setSelectedWeekStart(value)}
+              disabled={customWeeks.length === 0}
+            >
+              <SelectTrigger className="w-[240px]">
+                <SelectValue placeholder="Select week" />
+              </SelectTrigger>
+              <SelectContent>
+                {customWeeks.map((week) => (
+                  <SelectItem key={week.week_start} value={week.week_start}>
+                    {week.week_start} - {week.week_end}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {selectedWeek ? (
           <>
-            <div className="text-sm text-muted-foreground">
-              {selectedWeek.custom_activities} activities · TSS {Math.round(selectedWeek.tss)} · rTSS {Math.round(selectedWeek.rtss)} · Dist{' '}
-              {Math.round(selectedWeek.distance_eqv_km)} kmeq
-            </div>
             <div className="grid gap-4 xl:grid-cols-3">
               <PlannedWeekChart data={dailySeries.tss} metric="tss" />
               <PlannedWeekChart data={dailySeries.distance_eqv_km} metric="distance_eqv_km" />
