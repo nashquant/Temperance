@@ -85,7 +85,7 @@ function formatActivityTitle(raw: string): string {
   if (normalized.includes('cycl')) return 'Bike';
   if (normalized === 'run' || normalized === 'running' || normalized.includes(' run')) return 'Run';
   if (normalized === 'treadmill_running' || normalized === 'treadmill run' || normalized === 'treadmillrunning') {
-    return 'Treadmill';
+    return 'Tready';
   }
 
   return cleaned

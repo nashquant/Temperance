@@ -295,7 +295,7 @@ export function DataExtractPage(): JSX.Element {
               <div className="flex items-center gap-2">
                 <label className="min-w-0 flex-1">
                   <input
-                    className="h-10 w-full rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] px-3 text-sm text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none transition [color-scheme:dark] focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] px-3 text-sm text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none transition [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-datetime-edit]:text-slate-100 [&::-webkit-datetime-edit-fields-wrapper]:text-slate-100 [&::-webkit-datetime-edit-month-field]:text-slate-100 [&::-webkit-datetime-edit-day-field]:text-slate-100 [&::-webkit-datetime-edit-year-field]:text-slate-100 focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
                     type="date"
                     max={todayIso()}
                     value={startDay}
