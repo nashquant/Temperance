@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Clock3, Flame, HeartPulse, Route, Ruler } from 'lucide-react';
+import { Activity, AlertTriangle, Clock3, Flame, Gauge, HeartPulse, Route, Ruler } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,8 +13,8 @@ interface DashboardWeekSummaryCardProps {
   summary: DashboardWeekSummary;
 }
 
-function fmtNumber(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '-';
+function fmtNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
   return Math.round(value).toString();
 }
 
@@ -53,6 +53,15 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
         </div>
 
         <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-0.5">
+          <div className="col-span-2 mb-1 rounded-lg border border-sky-300/12 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_65%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] px-2.5 py-2 shadow-[0_10px_24px_rgba(2,6,23,0.18)]">
+            <div className="flex items-center justify-between gap-2">
+              <p className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold leading-[1.28] tracking-[0.01em] text-sky-100/92">
+                <Gauge className="h-3.5 w-3.5 text-sky-300/90" />
+                Current VDOT Max
+              </p>
+              <p className="text-right text-sm font-semibold tabular-nums text-sky-50">{fmtNumber(summary.vdot_max)}</p>
+            </div>
+          </div>
           <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Clock3 className="h-3 w-3" />Time</p>
           <p className="text-right text-[11px] font-medium tabular-nums text-foreground/90">{fmtDuration(summary.duration_h)}</p>
           <p className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-300/92"><Route className="h-3 w-3" />Dist</p>
