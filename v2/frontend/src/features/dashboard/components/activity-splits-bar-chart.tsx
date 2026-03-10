@@ -293,16 +293,22 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
               );
             })}
           </svg>
-          <div className="absolute inset-x-0 bottom-[2px] h-3">
+          <div
+            className="absolute bottom-[2px] h-3"
+            style={{
+              left: `${(margin.left / svgWidth) * 100}%`,
+              right: `${(margin.right / svgWidth) * 100}%`,
+            }}
+          >
             {elapsedTicks.map((tick) => {
-              const leftPct = ((margin.left + innerWidth * tick.ratio) / svgWidth) * 100;
+              const leftPct = tick.ratio * 100;
               return (
                 <div
                   key={`${tick.ratio}-${tick.label}`}
                   className="absolute bottom-0 text-[11px] font-semibold leading-none text-slate-50"
                   style={{
                     left: `${leftPct}%`,
-                    transform: tick.ratio > 1 ? 'translateX(-100%)' : 'translateX(-50%)',
+                    transform: tick.ratio > 0.98 ? 'translateX(-100%)' : 'translateX(-50%)',
                   }}
                 >
                   {tick.label}
