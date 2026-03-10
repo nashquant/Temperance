@@ -1067,6 +1067,16 @@ def _parse_repeated_distance_token(text: str) -> tuple[int, float] | None:
     return reps, distance_km
 
 
+def _split_interval_recovery_chunk(text: str) -> tuple[str, str | None]:
+    raw = str(text or "").strip()
+    if not raw:
+        return "", None
+    parts = re.split(r"\s+/\s+", raw, maxsplit=1)
+    if len(parts) < 2:
+        return raw, None
+    return parts[0].strip(), parts[1].strip() or None
+
+
 def _parse_bpm_token(text: str) -> float | None:
     lower = str(text or "").lower()
     m = re.search(r"@\s*(\d+(?:\.\d+)?)\s*bpm", lower)
@@ -1234,12 +1244,14 @@ def _expand_planned_segments(
     chunks = [c.strip() for c in re.split(r"\s*\+\s*", raw) if c.strip()]
     last_kind: str | None = None
     for chunk in chunks:
-        kind = _plan_activity_kind(chunk)
-        bpm = _parse_bpm_token(chunk)
-        pace = _parse_pace_token(chunk)
-        if_input = _parse_if_token(chunk)
+        work_chunk, recovery_chunk = _split_interval_recovery_chunk(chunk)
+
+        kind = _plan_activity_kind(work_chunk)
+        bpm = _parse_bpm_token(work_chunk)
+        pace = _parse_pace_token(work_chunk)
+        if_input = _parse_if_token(work_chunk)
         if_input_source: str | None = "explicit" if if_input is not None else None
-        tss_input = _parse_tss_token(chunk)
+        tss_input = _parse_tss_token(work_chunk)
         if kind == "other" and pace is not None:
             kind = "run"
         if kind == "other" and last_kind is not None:
@@ -1257,9 +1269,20 @@ def _expand_planned_segments(
             warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm`, `@70%`, `@4:50/km`, or `@40TSS`)")
             continue
 
+        recovery_minutes = _parse_minutes_token(recovery_chunk) if recovery_chunk else None
+        recovery_distance_km = _parse_distance_km_token(recovery_chunk) if recovery_chunk else None
+        recovery_bpm = _parse_bpm_token(recovery_chunk) if recovery_chunk else None
+        recovery_pace = _parse_pace_token(recovery_chunk) if recovery_chunk else None
+        recovery_if_input = _parse_if_token(recovery_chunk) if recovery_chunk else None
+        recovery_if_source: str | None = "explicit" if recovery_if_input is not None else None
+        recovery_tss_input = _parse_tss_token(recovery_chunk) if recovery_chunk else None
+        if recovery_chunk and recovery_bpm is None and recovery_pace is None and recovery_if_input is None and recovery_tss_input is None:
+            warnings.append(f"Missing recovery intensity in: `{chunk}`")
+            continue
+
         rep_match = re.search(
             r"(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|min|mins|minute|minutes|s|sec|secs|second|seconds)\b",
-            chunk.lower(),
+            work_chunk.lower(),
         )
         if rep_match:
             reps = int(rep_match.group(1))
@@ -1280,7 +1303,40 @@ def _expand_planned_segments(
                         pace = threshold_pace_value / if_input
                     elif (not is_running_like) and bpm is None and lthr_value > 0 and if_input > 0:
                         bpm = lthr_value * if_input
-            for _ in range(max(reps, 0)):
+            recovery_duration_min = recovery_minutes
+            if recovery_duration_min is None and recovery_distance_km is not None:
+                if not is_running_like:
+                    warnings.append(
+                        f"Distance-based recovery requires running/treadmill with pace in: `{chunk}`."
+                    )
+                    continue
+                if recovery_pace is None or recovery_pace <= 0:
+                    warnings.append(f"Distance-based recovery requires pace in: `{chunk}`")
+                    continue
+                recovery_duration_min = (recovery_distance_km * recovery_pace) / 60.0
+            if recovery_chunk and (recovery_duration_min is None or recovery_duration_min <= 0):
+                warnings.append(f"Could not parse recovery duration from: `{chunk}`")
+                continue
+            if recovery_tss_input is not None and recovery_tss_input > 0 and recovery_bpm is None and recovery_pace is None and recovery_if_input is None:
+                rec_duration_h = float(recovery_duration_min or 0.0) / 60.0
+                if rec_duration_h <= 0:
+                    warnings.append(f"TSS-based recovery requires positive duration in: `{chunk}`")
+                    continue
+                rec_derived_if = (float(recovery_tss_input) / (rec_duration_h * 100.0)) ** 0.5
+                recovery_if_input = max(float(rec_derived_if), 0.0)
+                recovery_if_source = "tss_derived"
+                if is_running_like:
+                    if threshold_pace_value <= 0:
+                        warnings.append(f"Missing LT pace to convert recovery TSS to pace in: `{chunk}`")
+                        continue
+                    if recovery_if_input > 0:
+                        recovery_pace = threshold_pace_value / recovery_if_input
+                else:
+                    if lthr_value <= 0:
+                        warnings.append(f"Missing LTHR to convert recovery TSS to HR in: `{chunk}`")
+                        continue
+                    recovery_bpm = lthr_value * recovery_if_input
+            for rep_idx in range(max(reps, 0)):
                 segments.append(
                     {
                         "kind": kind,
@@ -1294,10 +1350,24 @@ def _expand_planned_segments(
                         "source": chunk,
                     }
                 )
+                if recovery_chunk and rep_idx < reps - 1:
+                    segments.append(
+                        {
+                            "kind": kind,
+                            "duration_min": float(recovery_duration_min or 0.0),
+                            "avg_hr_bpm": recovery_bpm,
+                            "pace_s_per_km": recovery_pace,
+                            "if_input": recovery_if_input,
+                            "if_input_source": recovery_if_source,
+                            "tss_target": float(recovery_tss_input) if recovery_tss_input else None,
+                            "time_hint": line_time_hint,
+                            "source": chunk,
+                        }
+                    )
             last_kind = kind
             continue
 
-        repeated_distance = _parse_repeated_distance_token(chunk)
+        repeated_distance = _parse_repeated_distance_token(work_chunk)
         if repeated_distance is not None:
             reps, rep_distance_km = repeated_distance
             if not is_running_like:
@@ -1318,8 +1388,30 @@ def _expand_planned_segments(
             if rep_minutes <= 0:
                 warnings.append(f"Could not derive duration from repeated distance in: `{chunk}`")
                 continue
+            recovery_duration_min = recovery_minutes
+            if recovery_duration_min is None and recovery_distance_km is not None:
+                if recovery_pace is None or recovery_pace <= 0:
+                    warnings.append(f"Distance-based recovery requires pace in: `{chunk}`")
+                    continue
+                recovery_duration_min = (recovery_distance_km * recovery_pace) / 60.0
+            if recovery_chunk and (recovery_duration_min is None or recovery_duration_min <= 0):
+                warnings.append(f"Could not parse recovery duration from: `{chunk}`")
+                continue
+            if recovery_tss_input is not None and recovery_tss_input > 0 and recovery_bpm is None and recovery_pace is None and recovery_if_input is None:
+                rec_duration_h = float(recovery_duration_min or 0.0) / 60.0
+                if rec_duration_h <= 0:
+                    warnings.append(f"TSS-based recovery requires positive duration in: `{chunk}`")
+                    continue
+                rec_derived_if = (float(recovery_tss_input) / (rec_duration_h * 100.0)) ** 0.5
+                recovery_if_input = max(float(rec_derived_if), 0.0)
+                recovery_if_source = "tss_derived"
+                if threshold_pace_value <= 0:
+                    warnings.append(f"Missing LT pace to convert recovery TSS to pace in: `{chunk}`")
+                    continue
+                if recovery_if_input > 0:
+                    recovery_pace = threshold_pace_value / recovery_if_input
             per_rep_tss = (float(tss_input) / float(max(reps, 1))) if tss_input else None
-            for _ in range(max(reps, 0)):
+            for rep_idx in range(max(reps, 0)):
                 segments.append(
                     {
                         "kind": kind,
@@ -1333,12 +1425,26 @@ def _expand_planned_segments(
                         "source": chunk,
                     }
                 )
+                if recovery_chunk and rep_idx < reps - 1:
+                    segments.append(
+                        {
+                            "kind": kind,
+                            "duration_min": float(recovery_duration_min or 0.0),
+                            "avg_hr_bpm": recovery_bpm,
+                            "pace_s_per_km": recovery_pace,
+                            "if_input": recovery_if_input,
+                            "if_input_source": recovery_if_source,
+                            "tss_target": float(recovery_tss_input) if recovery_tss_input else None,
+                            "time_hint": line_time_hint,
+                            "source": chunk,
+                        }
+                    )
             last_kind = kind
             continue
 
-        minutes = _parse_minutes_token(chunk)
+        minutes = _parse_minutes_token(work_chunk)
         if minutes is None:
-            distance_km = _parse_distance_km_token(chunk)
+            distance_km = _parse_distance_km_token(work_chunk)
             if distance_km is not None:
                 if not is_running_like:
                     warnings.append(
