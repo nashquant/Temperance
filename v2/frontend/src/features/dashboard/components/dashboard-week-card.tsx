@@ -10,8 +10,8 @@ import type { DashboardWeekRow } from '@/features/dashboard/types/dashboard';
 interface DashboardWeekCardProps {
   week: DashboardWeekRow;
   onAddPlannedActivity?: (dayUtc: string) => void;
-  onMarkPlannedDone?: (activity: DashboardWeekRow['days'][number]['planned_activities'][number]) => void;
-  onDeletePlannedActivity?: (activity: DashboardWeekRow['days'][number]['planned_activities'][number]) => void;
+  onMarkPlannedDone?: (activity: DashboardWeekRow['days'][number]['planned_activities'][number], index: number) => void;
+  onDeletePlannedActivity?: (activity: DashboardWeekRow['days'][number]['planned_activities'][number], index: number) => void;
   onDeleteCustomActivity?: (activity: DashboardWeekRow['days'][number]['actual_activities'][number]) => void;
   onSelectActivity?: (activityId: string) => void;
   addingPlannedActivity?: boolean;
@@ -19,6 +19,14 @@ interface DashboardWeekCardProps {
   deletingPlannedActivity?: boolean;
   deletingCustomActivity?: boolean;
   userTimeZone?: string;
+  undoPlannedActivity?: {
+    dayUtc: string;
+    lineNo: number;
+    slotIndex: number;
+    label: string;
+  } | null;
+  undoVisible?: boolean;
+  onUndoPlannedActivity?: () => void;
 }
 
 function shortDay(iso: string): string {
@@ -109,6 +117,9 @@ export function DashboardWeekCard({
   deletingPlannedActivity,
   deletingCustomActivity,
   userTimeZone,
+  undoPlannedActivity,
+  undoVisible,
+  onUndoPlannedActivity,
 }: DashboardWeekCardProps): JSX.Element {
   const mobileRailRef = useRef<HTMLDivElement | null>(null);
   const centeredTodayRef = useRef<string>('');
@@ -156,6 +167,9 @@ export function DashboardWeekCard({
                       deletingPlannedActivity={deletingPlannedActivity}
                       deletingCustomActivity={deletingCustomActivity}
                       userTimeZone={userTimeZone}
+                      undoPlannedActivity={undoPlannedActivity}
+                      undoVisible={undoVisible}
+                      onUndoPlannedActivity={onUndoPlannedActivity}
                       compactMobile
                     />
                   </div>
@@ -185,6 +199,9 @@ export function DashboardWeekCard({
                 deletingPlannedActivity={deletingPlannedActivity}
                 deletingCustomActivity={deletingCustomActivity}
                 userTimeZone={userTimeZone}
+                undoPlannedActivity={undoPlannedActivity}
+                undoVisible={undoVisible}
+                onUndoPlannedActivity={onUndoPlannedActivity}
               />
             ))}
           </div>

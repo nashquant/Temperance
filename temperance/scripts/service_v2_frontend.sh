@@ -9,11 +9,16 @@ V2_FRONTEND_DIR="${V2_FRONTEND_DIR:-${REPO_DIR}/v2/frontend}"
 NODE_BIN="${NODE_BIN:-}"
 HOST="${V2_FRONTEND_HOST:-127.0.0.1}"
 PORT="${V2_FRONTEND_PORT:-5173}"
+USE_CAFFEINATE="${TEMPERANCE_USE_CAFFEINATE:-1}"
+CAFFEINATE_BIN="${CAFFEINATE_BIN:-}"
 PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 if [[ -z "${NODE_BIN}" ]]; then
   NODE_BIN="$(command -v node || true)"
 fi
 NODE_BIN="${NODE_BIN:-/opt/homebrew/bin/node}"
+if [[ -z "${CAFFEINATE_BIN}" ]]; then
+  CAFFEINATE_BIN="$(command -v caffeinate || true)"
+fi
 
 if [[ ! -d "${V2_FRONTEND_DIR}" ]]; then
   echo "Missing v2 frontend dir: ${V2_FRONTEND_DIR}" >&2
@@ -32,4 +37,8 @@ if [[ ! -f "${VITE_BIN}" ]]; then
 fi
 
 cd "${V2_FRONTEND_DIR}"
+if [[ "${USE_CAFFEINATE}" == "1" && -n "${CAFFEINATE_BIN}" ]]; then
+  exec "${CAFFEINATE_BIN}" -dimsu "${NODE_BIN}" "${VITE_BIN}" --host "${HOST}" --port "${PORT}"
+fi
+
 exec "${NODE_BIN}" "${VITE_BIN}" --host "${HOST}" --port "${PORT}"

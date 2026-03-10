@@ -1,4 +1,4 @@
-import { Check, Plus, X } from 'lucide-react';
+import { Check, Plus, RotateCcw, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,8 +9,8 @@ import type { DashboardDayColumn as DashboardDayColumnType } from '@/features/da
 interface DashboardDayColumnProps {
   day: DashboardDayColumnType;
   onAddPlannedActivity?: (dayUtc: string) => void;
-  onMarkPlannedDone?: (activity: DashboardDayColumnType['planned_activities'][number]) => void;
-  onDeletePlannedActivity?: (activity: DashboardDayColumnType['planned_activities'][number]) => void;
+  onMarkPlannedDone?: (activity: DashboardDayColumnType['planned_activities'][number], index: number) => void;
+  onDeletePlannedActivity?: (activity: DashboardDayColumnType['planned_activities'][number], index: number) => void;
   onDeleteCustomActivity?: (activity: DashboardDayColumnType['actual_activities'][number]) => void;
   onSelectActivity?: (activityId: string) => void;
   addingPlannedActivity?: boolean;
@@ -19,6 +19,14 @@ interface DashboardDayColumnProps {
   deletingCustomActivity?: boolean;
   userTimeZone?: string;
   compactMobile?: boolean;
+  undoPlannedActivity?: {
+    dayUtc: string;
+    lineNo: number;
+    slotIndex: number;
+    label: string;
+  } | null;
+  undoVisible?: boolean;
+  onUndoPlannedActivity?: () => void;
 }
 
 const intensityClasses: Record<string, string> = {
@@ -172,9 +180,21 @@ export function DashboardDayColumn({
   deletingCustomActivity,
   userTimeZone,
   compactMobile = false,
+  undoPlannedActivity,
+  undoVisible = false,
+  onUndoPlannedActivity,
 }: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
   const shouldScrollActivities = activityCount > 3;
+  const plannedCards: Array<
+    | { type: 'activity'; activity: DashboardDayColumnType['planned_activities'][number]; index: number }
+    | { type: 'undo'; slotIndex: number }
+  > = day.planned_activities.map((activity, index) => ({ type: 'activity', activity, index }));
+
+  if (undoPlannedActivity && undoPlannedActivity.dayUtc === day.day_utc) {
+    const insertionIndex = Math.max(0, Math.min(undoPlannedActivity.slotIndex, plannedCards.length));
+    plannedCards.splice(insertionIndex, 0, { type: 'undo', slotIndex: undoPlannedActivity.slotIndex });
+  }
 
   return (
     <Card
@@ -289,64 +309,92 @@ export function DashboardDayColumn({
             })()
           ))}
 
-          {day.planned_activities.map((activity) => (
-            <div
-              key={`${activity.day_utc}-${activity.line_no}`}
-              className={cn(
-                'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border-2 border-dashed transition-colors hover:bg-white/5',
-                compactMobile ? 'h-[88px] px-2 pb-2 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
-                plannedIntensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
-              )}
-              onClick={() => onSelectActivity?.(activity.activity_id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  onSelectActivity?.(activity.activity_id);
-                }
-              }}
-            >
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute -left-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onMarkPlannedDone?.(activity);
-                }}
-                disabled={markingPlannedDone}
-                aria-label="Mark planned activity as done"
+          {plannedCards.map((item) =>
+            item.type === 'undo' ? (
+              <div
+                key={`undo-${day.day_utc}-${undoPlannedActivity?.lineNo ?? item.slotIndex}`}
+                className={cn(
+                  'relative flex flex-col overflow-hidden rounded-lg border-2 border-dashed border-sky-300/35 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),rgba(15,23,42,0.45)] transition-all duration-200',
+                  compactMobile ? 'h-[88px] px-2 pb-2 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
+                  undoVisible ? 'opacity-100' : 'opacity-85',
+                )}
               >
-                <Check className="h-1.75 w-1.75" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute -right-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDeletePlannedActivity?.(activity);
+                <p className={cn('font-semibold text-sky-100', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
+                  {undoPlannedActivity?.label ?? 'Activity removed'}
+                </p>
+                <p className={cn('mt-1 line-clamp-2 text-slate-300/78', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
+                  Tap undo to restore this card in place.
+                </p>
+                <div className="mt-auto">
+                  <Button
+                    variant="outline"
+                    className="h-7 rounded-lg border-sky-300/25 bg-sky-300/8 px-2.5 text-[11px] font-medium text-sky-100 hover:bg-sky-300/14"
+                    onClick={onUndoPlannedActivity}
+                  >
+                    <RotateCcw className="mr-1.5 h-3 w-3" />
+                    Undo
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div
+                key={`${item.activity.day_utc}-${item.activity.line_no}`}
+                className={cn(
+                  'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border-2 border-dashed transition-colors hover:bg-white/5',
+                  compactMobile ? 'h-[88px] px-2 pb-2 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
+                  plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
+                )}
+                onClick={() => onSelectActivity?.(item.activity.activity_id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onSelectActivity?.(item.activity.activity_id);
+                  }
                 }}
-                disabled={deletingPlannedActivity}
-                aria-label="Delete planned activity"
               >
-                <X className="h-1.75 w-1.75" />
-              </Button>
-              <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
-                {formatActivityTitle(activity.activity)} <span className="text-muted-foreground">(P)</span>
-              </p>
-              <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
-                {compactLine([activity.duration_label, `${Math.round(activity.distance_eqv_km)} kmeq`])}
-              </p>
-              <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
-                {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
-              </p>
-              <p className={cn('mt-auto truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
-                TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
-              </p>
-            </div>
-          ))}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute -left-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onMarkPlannedDone?.(item.activity, item.index);
+                  }}
+                  disabled={markingPlannedDone}
+                  aria-label="Mark planned activity as done"
+                >
+                  <Check className="h-1.75 w-1.75" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute -right-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeletePlannedActivity?.(item.activity, item.index);
+                  }}
+                  disabled={deletingPlannedActivity}
+                  aria-label="Delete planned activity"
+                >
+                  <X className="h-1.75 w-1.75" />
+                </Button>
+                <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
+                  {formatActivityTitle(item.activity.activity)} <span className="text-muted-foreground">(P)</span>
+                </p>
+                <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
+                  {compactLine([item.activity.duration_label, `${Math.round(item.activity.distance_eqv_km)} kmeq`])}
+                </p>
+                <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
+                  {compactLine([item.activity.pace_label, `IF ${Math.round(item.activity.if_pct)}%`])}
+                </p>
+                <p className={cn('mt-auto truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
+                  TSS {Math.round(item.activity.tss)} · rTSS {Math.round(item.activity.rtss)}
+                </p>
+              </div>
+            ),
+          )}
 
           {day.actual_activities.length === 0 && day.planned_activities.length === 0 && day.is_past ? (
             <div className={cn('rounded-lg border border-border/70 bg-muted/25 p-2 text-center text-muted-foreground', compactMobile ? 'text-[11px]' : 'text-[12px]')}>

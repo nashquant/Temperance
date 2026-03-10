@@ -33,6 +33,11 @@ if [[ -z "${NODE_BIN:-}" ]]; then
   NODE_BIN="$(command -v node || true)"
 fi
 NODE_BIN="${NODE_BIN:-/opt/homebrew/bin/node}"
+TEMPERANCE_USE_CAFFEINATE="${TEMPERANCE_USE_CAFFEINATE:-1}"
+if [[ -z "${CAFFEINATE_BIN:-}" ]]; then
+  CAFFEINATE_BIN="$(command -v caffeinate || true)"
+fi
+CAFFEINATE_BIN="${CAFFEINATE_BIN:-/usr/bin/caffeinate}"
 
 mkdir -p "${LAUNCH_AGENTS_DIR}" "${LOG_DIR}"
 
@@ -50,6 +55,8 @@ Env overrides:
   TUNNEL_HOSTNAME    Hostname label (default: app.temperance-rtl.work)
   CLOUDFLARED_BIN    cloudflared binary (default: cloudflared)
   NODE_BIN           node binary (default: /opt/homebrew/bin/node)
+  TEMPERANCE_USE_CAFFEINATE  Wrap services with caffeinate when available (default: 1)
+  CAFFEINATE_BIN     caffeinate binary (default: /usr/bin/caffeinate)
 EOF
 }
 
@@ -75,6 +82,10 @@ write_v2_backend_plist() {
     <string>${V2_BACKEND_HOST}</string>
     <key>V2_PYTHON_BIN</key>
     <string>${V2_PYTHON_BIN}</string>
+    <key>TEMPERANCE_USE_CAFFEINATE</key>
+    <string>${TEMPERANCE_USE_CAFFEINATE}</string>
+    <key>CAFFEINATE_BIN</key>
+    <string>${CAFFEINATE_BIN}</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
@@ -113,6 +124,10 @@ write_v2_frontend_plist() {
     <string>${V2_FRONTEND_HOST}</string>
     <key>NODE_BIN</key>
     <string>${NODE_BIN}</string>
+    <key>TEMPERANCE_USE_CAFFEINATE</key>
+    <string>${TEMPERANCE_USE_CAFFEINATE}</string>
+    <key>CAFFEINATE_BIN</key>
+    <string>${CAFFEINATE_BIN}</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
@@ -188,6 +203,10 @@ write_cloud_plist() {
     <string>${CLOUDFLARED_BIN}</string>
     <key>CF_CONFIG_PATH</key>
     <string>${CF_CONFIG_PATH}</string>
+    <key>TEMPERANCE_USE_CAFFEINATE</key>
+    <string>${TEMPERANCE_USE_CAFFEINATE}</string>
+    <key>CAFFEINATE_BIN</key>
+    <string>${CAFFEINATE_BIN}</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
@@ -227,6 +246,7 @@ status_jobs() {
   echo "Local v2 frontend:   http://127.0.0.1:${V2_FRONTEND_PORT}/v2"
   echo "Public v2 URL:       https://${TUNNEL_HOSTNAME}/v2"
   echo "Tunnel config:       ${CF_CONFIG_PATH}"
+  echo "Caffeinate:          ${TEMPERANCE_USE_CAFFEINATE} (${CAFFEINATE_BIN})"
   echo
   launchctl print "gui/$(id -u)/${V2_BACKEND_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${V2_BACKEND_LABEL}: not loaded"
   launchctl print "gui/$(id -u)/${V2_FRONTEND_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${V2_FRONTEND_LABEL}: not loaded"
