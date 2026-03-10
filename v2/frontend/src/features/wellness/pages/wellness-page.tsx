@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -70,13 +71,24 @@ export function WellnessPage(): JSX.Element {
               <SelectItem value="3000">ALL</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={aggregation} onValueChange={(value) => setAggregation(value as WellnessAggregation)}>
-            <SelectTrigger className="w-[120px]"><SelectValue placeholder="Aggregation" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="weekly">Weekly</SelectItem>
-              <SelectItem value="daily">Daily</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="inline-flex rounded-lg border border-white/10 bg-black/15 p-1">
+            <Button
+              variant={aggregation === 'weekly' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-8 rounded-md px-2.5 text-xs"
+              onClick={() => setAggregation('weekly')}
+            >
+              Weekly
+            </Button>
+            <Button
+              variant={aggregation === 'daily' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-8 rounded-md px-2.5 text-xs"
+              onClick={() => setAggregation('daily')}
+            >
+              Daily
+            </Button>
+          </div>
         </div>
       </div>
 

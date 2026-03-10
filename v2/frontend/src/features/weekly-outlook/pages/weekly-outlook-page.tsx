@@ -40,17 +40,20 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
     <section className="space-y-6">
       <div className="space-y-4">
         {!activeQuery.isLoading && !activeQuery.isError && displayedData ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{`Week: ${formatRange(displayedData.weekStart, displayedData.weekEnd)}`}</Badge>
-            <Badge variant="secondary">
-              {displayedData.compare === 'planned'
-                ? 'Comparison: Planned week'
-                : `Comparison: ${formatRange(displayedData.compareWeekStart, displayedData.compareWeekEnd)}`}
-            </Badge>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{`Week: ${formatRange(displayedData.weekStart, displayedData.weekEnd)}`}</Badge>
+              <Badge variant="secondary">
+                {displayedData.compare === 'planned'
+                  ? 'Comparison: Planned week'
+                  : `Comparison: ${formatRange(displayedData.compareWeekStart, displayedData.compareWeekEnd)}`}
+              </Badge>
+            </div>
+            <CompareSelector value={compare} onValueChange={setCompare} />
           </div>
         ) : null}
 
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           {embedded ? null : (
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Weekly Outlook</h1>
@@ -60,9 +63,11 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
             </div>
           )}
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-            <CompareSelector value={compare} onValueChange={setCompare} />
-          </div>
+          {!displayedData ? (
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+              <CompareSelector value={compare} onValueChange={setCompare} />
+            </div>
+          ) : null}
         </div>
       </div>
 
