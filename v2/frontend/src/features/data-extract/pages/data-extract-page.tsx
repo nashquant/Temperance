@@ -372,7 +372,7 @@ export function DataExtractPage(): JSX.Element {
 
       <Card className={surfaceClassName}>
         <CardContent className="space-y-3 p-3 sm:p-4">
-          <p className="text-sm font-medium">Garmin Credentials</p>
+          <h2 className="text-lg font-semibold text-foreground">Garmin Credentials</h2>
           {isAdminOwnScope ? (
             <>
               <p className="text-xs text-muted-foreground">
@@ -437,9 +437,7 @@ export function DataExtractPage(): JSX.Element {
 
       <Card className={surfaceClassName}>
         <CardContent className="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-3 sm:space-y-4 sm:p-5">
-          <div className="space-y-1">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Custom Activity</p>
-          </div>
+          <h2 className="text-lg font-semibold text-foreground">Add Custom Activity</h2>
           <textarea
             className="min-h-[104px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20 sm:min-h-[120px] sm:py-3"
             value={customEntryText}
