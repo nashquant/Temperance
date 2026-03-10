@@ -76,12 +76,19 @@ export function DataExtractPage(): JSX.Element {
         },
       });
     },
+    onMutate: () => {
+      setResult(`Starting Garmin extract from ${extractStartDay}...`);
+    },
     onSuccess: async (response) => {
+      setResult(
+        `${response.summary} Requested ${response.requested_start_day}; fetching ${response.computed_start_day} to ${response.end_day}.`,
+      );
       await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
       const latest = await statusQuery.refetch();
       const progress = latest.data?.extract_progress;
       lastProgressLogCountRef.current = Number(progress?.log_count ?? 0);
-      setExtractLogs(Array.isArray(progress?.logs) ? progress.logs : []);
+      const nextLogs = Array.isArray(progress?.logs) ? progress.logs : [];
+      setExtractLogs(nextLogs.length > 0 ? nextLogs : [`${stamp()} ${response.summary}`]);
     },
     onError: (error) => {
       setResult(error instanceof Error ? error.message : 'Comprehensive extract failed');
@@ -291,7 +298,8 @@ export function DataExtractPage(): JSX.Element {
               />
             </div>
             <Button
-              className={`${controlButtonClassName} w-full rounded-xl sm:w-auto`}
+              type="button"
+              className={`${controlButtonClassName} relative z-10 w-full rounded-xl sm:w-auto`}
               onClick={() => comprehensiveMutation.mutate()}
               disabled={comprehensiveMutation.isPending || extractRunning}
             >
@@ -343,6 +351,7 @@ export function DataExtractPage(): JSX.Element {
               </label>
             </div>
           </div>
+          {result ? <p className="text-sm text-slate-200/82">{result}</p> : null}
           <div className="rounded-xl border border-white/10 bg-black/15 p-2">
             <div className="mb-1 flex items-center justify-between gap-2">
               <p className="text-xs font-medium text-muted-foreground">Extraction logs</p>
@@ -432,8 +441,6 @@ export function DataExtractPage(): JSX.Element {
           )}
         </CardContent>
       </Card>
-
-      {result ? <p className="text-sm text-muted-foreground">{result}</p> : null}
 
       <Card className={surfaceClassName}>
         <CardContent className="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-3 sm:space-y-4 sm:p-5">

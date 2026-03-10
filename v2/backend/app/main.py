@@ -4701,13 +4701,13 @@ def data_extract_comprehensive(
             detail="Garmin credentials missing. Add credentials for the active owner scope.",
         )
 
-    start_day = parse_supported_day_value(payload.start_day)
-    if start_day is None:
+    requested_start_day = parse_supported_day_value(payload.start_day)
+    if requested_start_day is None:
         raise HTTPException(status_code=400, detail="Invalid start_day. Use `3Mar26`, `YYYY-MM-DD`, or `DD/MM/YYYY`.")
     end_day = datetime.now(timezone.utc).date()
 
     start_day, target_activity_days, target_wellness_days, planning_logs = _plan_comprehensive_extract_dates(
-        requested_start_day=start_day,
+        requested_start_day=requested_start_day,
         db_path=db_path,
         include_wellness=bool(payload.include_wellness),
         incremental_only=bool(payload.incremental_only),
@@ -4731,6 +4731,8 @@ def data_extract_comprehensive(
         _extract_progress_finish(resolved_owner, summary, [])
         return {
             "success": True,
+            "requested_start_day": requested_start_day.isoformat(),
+            "computed_start_day": start_day.isoformat(),
             "start_day": start_day.isoformat(),
             "end_day": end_day.isoformat(),
             "summary": summary,
@@ -4755,6 +4757,8 @@ def data_extract_comprehensive(
     worker.start()
     return {
         "success": True,
+        "requested_start_day": requested_start_day.isoformat(),
+        "computed_start_day": start_day.isoformat(),
         "start_day": start_day.isoformat(),
         "end_day": end_day.isoformat(),
         "summary": "Comprehensive extract started in background.",

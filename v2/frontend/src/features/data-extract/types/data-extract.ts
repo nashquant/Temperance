@@ -58,6 +58,8 @@ export interface ComprehensiveExtractRequest {
 
 export interface ComprehensiveExtractResponse {
   success: boolean;
+  requested_start_day: string;
+  computed_start_day: string;
   start_day: string;
   end_day: string;
   summary: string;
