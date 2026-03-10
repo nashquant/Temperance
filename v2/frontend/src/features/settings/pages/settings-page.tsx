@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useSettingsQuery } from '@/features/settings/hooks/use-settings-query';
+import { useVdotQuery } from '@/features/settings/hooks/use-vdot-query';
 import { updateSettings } from '@/features/settings/services/settings-api';
 import type { LthrCurvePoint, LtPaceCurvePoint, SpecificityProfile } from '@/features/settings/types/settings';
 import { queryClient } from '@/lib/query-client';
@@ -94,6 +95,7 @@ export function SettingsPage(): JSX.Element {
   const fieldHintClassName = 'text-[11px] text-slate-300/58';
   const { session, profile } = useAuth();
   const query = useSettingsQuery();
+  const vdotQuery = useVdotQuery();
 
   const [ifZones, setIfZones] = useState({ z1_max: 0.7, z2_max: 0.8, z3_max: 0.9, z4_max: 1.0 });
   const [specificity, setSpecificity] = useState<SpecificityProfile>({ non_running: 0.8, treadmill: 1.0, elliptical: 0.8, cycling: 0.8 });
@@ -254,6 +256,37 @@ export function SettingsPage(): JSX.Element {
       </div>
 
       {saveMsg ? <p className="text-sm text-muted-foreground">{saveMsg}</p> : null}
+
+      {!vdotQuery.isLoading && !vdotQuery.isError && vdotQuery.data ? (
+        <Card className={surfaceClassName}>
+          <CardContent className="space-y-3 p-3 sm:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">VDOT</p>
+              <p className="text-[11px] text-slate-300/62">
+                LT pace {vdotQuery.data.threshold_assumption.lt_pace_label} as of {vdotQuery.data.as_of}
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-4">
+              <div className="rounded-xl border border-white/8 bg-black/10 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">VDOT</p>
+                <p className="mt-1 text-xl font-semibold text-slate-50">{vdotQuery.data.vdot.toFixed(1)}</p>
+              </div>
+              <div className="rounded-xl border border-white/8 bg-black/10 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">10K Pace</p>
+                <p className="mt-1 text-xl font-semibold text-slate-50">{vdotQuery.data.equivalents['10k'].pace_label}</p>
+              </div>
+              <div className="rounded-xl border border-white/8 bg-black/10 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">HMP</p>
+                <p className="mt-1 text-xl font-semibold text-slate-50">{vdotQuery.data.equivalents.half_marathon.pace_label}</p>
+              </div>
+              <div className="rounded-xl border border-white/8 bg-black/10 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">MP</p>
+                <p className="mt-1 text-xl font-semibold text-slate-50">{vdotQuery.data.equivalents.marathon.pace_label}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className={surfaceClassName}>
         <CardContent className="space-y-2.5 p-3 sm:space-y-3 sm:p-4">

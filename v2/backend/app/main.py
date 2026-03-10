@@ -922,6 +922,85 @@ def _weekly_distance_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
     return max(_lt_target_from_regression(lt_pace_sec_per_km, value_index=1), 0.0)
 
 
+def _daniels_velocity_vo2(velocity_m_per_min: float) -> float:
+    velocity = max(float(velocity_m_per_min), 0.0)
+    return -4.60 + 0.182258 * velocity + 0.000104 * (velocity**2)
+
+
+def _daniels_fraction_of_vo2max(race_time_min: float) -> float:
+    time_min = max(float(race_time_min), 1e-6)
+    return 0.8 + 0.1894393 * math.exp(-0.012778 * time_min) + 0.2989558 * math.exp(-0.1932605 * time_min)
+
+
+def _vdot_from_race(distance_m: float, race_time_min: float) -> float:
+    time_min = max(float(race_time_min), 1e-6)
+    velocity = float(distance_m) / time_min
+    frac = _daniels_fraction_of_vo2max(time_min)
+    if frac <= 0:
+        return 0.0
+    return _daniels_velocity_vo2(velocity) / frac
+
+
+def _race_time_from_vdot(distance_m: float, vdot: float) -> float:
+    distance = max(float(distance_m), 1.0)
+    target_vdot = max(float(vdot), 1e-6)
+    low = 1.0
+    high = 600.0
+    for _ in range(80):
+        mid = (low + high) / 2.0
+        estimate = _vdot_from_race(distance, mid)
+        if estimate > target_vdot:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2.0
+
+
+def _format_mmss(seconds: float) -> str:
+    total = max(int(round(float(seconds))), 0)
+    minutes, secs = divmod(total, 60)
+    return f"{minutes}:{secs:02d}"
+
+
+def _format_hhmmss(seconds: float) -> str:
+    total = max(int(round(float(seconds))), 0)
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}"
+
+
+def _vdot_payload_from_lt_pace(lt_pace_sec_per_km: float) -> dict[str, Any]:
+    threshold_pace = max(float(lt_pace_sec_per_km), 1.0)
+    threshold_distance_m = (3600.0 / threshold_pace) * 1000.0
+    vdot = _vdot_from_race(threshold_distance_m, 60.0)
+    equivalents: dict[str, Any] = {}
+    for key, distance_m in {
+        "10k": 10000.0,
+        "half_marathon": 21097.5,
+        "marathon": 42195.0,
+    }.items():
+        race_time_min = _race_time_from_vdot(distance_m, vdot)
+        pace_sec_per_km = (race_time_min * 60.0) / (distance_m / 1000.0)
+        equivalents[key] = {
+            "distance_m": distance_m,
+            "time_min": round(race_time_min, 2),
+            "time_hms": _format_hhmmss(race_time_min * 60.0),
+            "pace_sec_per_km": round(pace_sec_per_km, 2),
+            "pace_label": f"{_format_mmss(pace_sec_per_km)}/km",
+        }
+
+    return {
+        "vdot": round(vdot, 2),
+        "threshold_assumption": {
+            "basis": "lt_pace_curve",
+            "equivalent_race_duration_min": 60.0,
+            "lt_pace_sec_per_km": round(threshold_pace, 2),
+            "lt_pace_label": f"{_format_mmss(threshold_pace)}/km",
+        },
+        "equivalents": equivalents,
+    }
+
+
 def _week_start_monday(ts: pd.Timestamp) -> pd.Timestamp:
     return (ts - pd.Timedelta(days=int(ts.weekday()))).normalize()
 
@@ -4056,6 +4135,49 @@ def settings_update(
         updated.append("injury_windows")
 
     return {"updated": updated}
+
+
+@app.get("/api/v1/vdot")
+def vdot_view(
+    owner: str | None = Query(default=None),
+    as_of: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+
+    lt_pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    if not lt_pace_curve:
+        raise HTTPException(status_code=404, detail="LT pace curve unavailable")
+
+    if as_of:
+        try:
+            as_of_dt = datetime.fromisoformat(str(as_of).strip())
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid as_of date. Use YYYY-MM-DD.") from exc
+        if as_of_dt.tzinfo is None:
+            as_of_dt = as_of_dt.replace(tzinfo=timezone.utc)
+        as_of_ts = as_of_dt.astimezone(timezone.utc)
+        lt_pace = float(_curve_value_at(lt_pace_curve, float(lt_pace_curve[-1][1]), as_of_ts))
+        source_date = as_of_ts.date().isoformat()
+    else:
+        source_date = lt_pace_curve[-1][0].astimezone(timezone.utc).date().isoformat()
+        lt_pace = float(lt_pace_curve[-1][1])
+
+    payload = _vdot_payload_from_lt_pace(lt_pace)
+    payload.update(
+        {
+            "owner": resolved_owner,
+            "as_of": source_date,
+        }
+    )
+    return payload
 
 
 @app.get("/api/v1/data-extract/status")

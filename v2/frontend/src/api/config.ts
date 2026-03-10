@@ -9,6 +9,7 @@ export const API_CONFIG = {
     activities: '/activities',
     athleteProgression: '/athlete-progression',
     settings: '/settings',
+    vdot: '/vdot',
     dataExtractStatus: '/data-extract/status',
     dataExtractCredentials: '/data-extract/credentials',
     dataExtractSync: '/data-extract/sync',

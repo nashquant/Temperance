@@ -29,6 +29,31 @@ export interface InjuryWindow {
   severity: 'injury' | 'light_injury';
 }
 
+export interface VdotEquivalent {
+  distance_m: number;
+  time_min: number;
+  time_hms: string;
+  pace_sec_per_km: number;
+  pace_label: string;
+}
+
+export interface VdotResponse {
+  owner: string;
+  as_of: string;
+  vdot: number;
+  threshold_assumption: {
+    basis: string;
+    equivalent_race_duration_min: number;
+    lt_pace_sec_per_km: number;
+    lt_pace_label: string;
+  };
+  equivalents: {
+    '10k': VdotEquivalent;
+    half_marathon: VdotEquivalent;
+    marathon: VdotEquivalent;
+  };
+}
+
 export interface SettingsResponse {
   owner: string;
   db_path: string;

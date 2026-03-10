@@ -1,6 +1,6 @@
 import { API_CONFIG } from '@/api/config';
 import { apiRequest } from '@/api/http-client';
-import type { SettingsResponse, UpdateSettingsRequest } from '@/features/settings/types/settings';
+import type { SettingsResponse, UpdateSettingsRequest, VdotResponse } from '@/features/settings/types/settings';
 
 interface SettingsParams {
   token: string;
@@ -25,5 +25,15 @@ export async function updateSettings({ token, owner, payload }: SettingsParams &
     method: 'PUT',
     token,
     body: payload,
+  });
+}
+
+export async function getVdot({ token, owner }: SettingsParams): Promise<VdotResponse> {
+  const search = new URLSearchParams();
+  if (owner) search.set('owner', owner);
+  const suffix = search.toString() ? `?${search.toString()}` : '';
+  return apiRequest<VdotResponse>(`${API_CONFIG.endpoints.vdot}${suffix}`, {
+    method: 'GET',
+    token,
   });
 }
