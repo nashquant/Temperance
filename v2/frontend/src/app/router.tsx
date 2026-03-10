@@ -7,10 +7,10 @@ import { LoginPage } from '@/features/auth/pages/login-page';
 import { DataExtractPage } from '@/features/data-extract/pages/data-extract-page';
 import { DashboardPage } from '@/features/dashboard/pages/dashboard-page';
 import { AthleteProgressionPage } from '@/features/athlete-progression/pages/athlete-progression-page';
+import { AboutTemperancePage } from '@/features/about/pages/about-temperance-page';
 import { SettingsPage } from '@/features/settings/pages/settings-page';
 import { WeekPlannerPage } from '@/features/week-planner/pages/week-planner-page';
 import { WellnessPage } from '@/features/wellness/pages/wellness-page';
-import { FaqPage } from '@/features/faq/pages/faq-page';
 
 function RootRedirect(): JSX.Element {
   const { status } = useAuth();
@@ -48,7 +48,7 @@ export function AppRouter(): JSX.Element {
           <Route path="data-extract" element={<DataExtractPage />} />
           <Route path="activities" element={<Navigate to="/app/data-extract" replace />} />
           <Route path="settings" element={<SettingsPage />} />
-          <Route path="faq" element={<FaqPage />} />
+          <Route path="about" element={<AboutTemperancePage />} />
           <Route index element={<Navigate to="dashboard" replace />} />
         </Route>
       </Route>
