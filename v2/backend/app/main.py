@@ -166,7 +166,6 @@ class SyncRequest(BaseModel):
 
 class ComprehensiveExtractRequest(BaseModel):
     start_day: str
-    explicit_start_day: bool = False
     incremental_only: bool = True
     include_details: bool = True
     include_wellness: bool = False
@@ -653,7 +652,6 @@ def _run_comprehensive_extract_background(
 def _resolve_comprehensive_extract_start_day(
     *,
     requested_start_day: date,
-    explicit_start_day: bool,
     db_path: Path,
     include_wellness: bool,
     incremental_only: bool,
@@ -669,22 +667,10 @@ def _resolve_comprehensive_extract_start_day(
 
     anchor = min(anchors)
     incremental_anchor_day = (anchor - timedelta(days=2)).date()
-    if explicit_start_day and requested_start_day < incremental_anchor_day:
-        return (
-            requested_start_day,
-            (
-                f"[config] incremental_anchor={anchor.isoformat()} "
-                f"but honoring explicit earlier start_day={requested_start_day.isoformat()}"
-            ),
-        )
-
     resolved_start_day = max(requested_start_day, incremental_anchor_day)
     return (
         resolved_start_day,
-        (
-            f"[config] incremental_anchor={anchor.isoformat()} -> computed_start_day={resolved_start_day.isoformat()}"
-            + ("" if explicit_start_day else " (using incremental window because start_day was not explicitly changed)")
-        ),
+        f"[config] incremental_anchor={anchor.isoformat()} -> computed_start_day={resolved_start_day.isoformat()}",
     )
 
 
@@ -4688,7 +4674,6 @@ def data_extract_comprehensive(
 
     start_day, incremental_log = _resolve_comprehensive_extract_start_day(
         requested_start_day=start_day,
-        explicit_start_day=bool(payload.explicit_start_day),
         db_path=db_path,
         include_wellness=bool(payload.include_wellness),
         incremental_only=bool(payload.incremental_only),
