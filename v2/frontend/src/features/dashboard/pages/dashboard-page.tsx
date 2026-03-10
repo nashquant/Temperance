@@ -68,6 +68,7 @@ export function DashboardPage(): JSX.Element {
   const [addActivityDayUtc, setAddActivityDayUtc] = useState<string | null>(null);
   const [addActivityText, setAddActivityText] = useState('');
   const [addActivityMode, setAddActivityMode] = useState<'planned' | 'custom'>('planned');
+  const [addActivityResult, setAddActivityResult] = useState<string | null>(null);
   const [undoState, setUndoState] = useState<{
     id: number;
     label: string;
@@ -225,24 +226,31 @@ export function DashboardPage(): JSX.Element {
     }) => {
       if (!session?.token) throw new Error('Missing auth token');
       if (mode === 'custom') {
-        await ingestCustomActivities({
+        return ingestCustomActivities({
           token: session.token,
           owner: profile?.owner,
           entryText: `${dayUtc}: ${workoutText}`,
         });
-        return;
       }
-      await ingestPlannedActivities({
+      return ingestPlannedActivities({
         token: session.token,
         owner: profile?.owner,
         entryText: `${dayUtc}: ${workoutText}`,
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (response, variables) => {
+      if (response.errors.length > 0 && response.saved_count <= 0) {
+        setAddActivityResult(response.errors[0] ?? `Unable to save ${variables.mode} activity.`);
+        return;
+      }
       await refreshDashboardViews();
+      setAddActivityResult(null);
       setAddActivityDayUtc(null);
       setAddActivityText('');
       setAddActivityMode('planned');
+    },
+    onError: (error) => {
+      setAddActivityResult(error instanceof Error ? error.message : 'Unable to save activity.');
     },
   });
   const customDeleteMutation = useMutation({
@@ -425,7 +433,8 @@ export function DashboardPage(): JSX.Element {
                     onAddPlannedActivity={(dayUtc) => {
                       setAddActivityDayUtc(dayUtc);
                       setAddActivityText('');
-                      setAddActivityMode(isTodayOrPast(dayUtc) ? 'planned' : 'planned');
+                      setAddActivityMode('planned');
+                      setAddActivityResult(null);
                     }}
                     onMarkPlannedDone={(activity) =>
                       (() => {
@@ -511,6 +520,7 @@ export function DashboardPage(): JSX.Element {
               setAddActivityDayUtc(null);
               setAddActivityText('');
               setAddActivityMode('planned');
+              setAddActivityResult(null);
             }}
           />
           <div className="relative z-10 w-full max-w-xl rounded-2xl border border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
@@ -537,7 +547,10 @@ export function DashboardPage(): JSX.Element {
                       ? 'bg-white/10 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
-                  onClick={() => setAddActivityMode('planned')}
+                  onClick={() => {
+                    setAddActivityMode('planned');
+                    setAddActivityResult(null);
+                  }}
                   disabled={plannedCreateMutation.isPending}
                 >
                   Planned
@@ -549,7 +562,10 @@ export function DashboardPage(): JSX.Element {
                       ? 'bg-white/10 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
-                  onClick={() => setAddActivityMode('custom')}
+                  onClick={() => {
+                    setAddActivityMode('custom');
+                    setAddActivityResult(null);
+                  }}
                   disabled={plannedCreateMutation.isPending || !canAddCustomForComposer}
                 >
                   Custom
@@ -558,13 +574,16 @@ export function DashboardPage(): JSX.Element {
               <textarea
                 className="min-h-[120px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
                 value={addActivityText}
-                onChange={(event) => setAddActivityText(event.target.value)}
+                onChange={(event) => {
+                  if (addActivityResult) setAddActivityResult(null);
+                  setAddActivityText(event.target.value);
+                }}
                 placeholder={addActivityMode === 'planned' ? 'Type the planned workout...' : 'Type the custom activity...'}
                 autoFocus
               />
-              {plannedCreateMutation.isError ? (
+              {addActivityResult ? (
                 <p className="text-sm text-red-400">
-                  {plannedCreateMutation.error instanceof Error ? plannedCreateMutation.error.message : 'Unable to save activity.'}
+                  {addActivityResult}
                 </p>
               ) : null}
               <div className="flex items-center justify-between gap-3">
@@ -578,6 +597,7 @@ export function DashboardPage(): JSX.Element {
                       setAddActivityDayUtc(null);
                       setAddActivityText('');
                       setAddActivityMode('planned');
+                      setAddActivityResult(null);
                     }}
                     disabled={plannedCreateMutation.isPending}
                   >

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
+import { CalendarDays } from 'lucide-react';
+
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -25,6 +27,24 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function currentMonthStartIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function formatFriendlyDate(isoDay: string): string {
+  const value = String(isoDay || '').trim();
+  if (!value) return 'Select date';
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(parsed);
+}
+
 export function DataExtractPage(): JSX.Element {
   const surfaceClassName =
     'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
@@ -34,7 +54,7 @@ export function DataExtractPage(): JSX.Element {
   const statusQuery = useDataExtractStatusQuery();
   const customActivitiesQuery = useCustomActivitiesQuery();
 
-  const [startDay, setStartDay] = useState('2025-01-01');
+  const [startDay, setStartDay] = useState(currentMonthStartIso);
   const [incrementalOnly, setIncrementalOnly] = useState(true);
   const [includeDetails, setIncludeDetails] = useState(true);
   const [includeWellness, setIncludeWellness] = useState(false);
@@ -131,7 +151,9 @@ export function DataExtractPage(): JSX.Element {
     onSuccess: async (response) => {
       await queryClient.invalidateQueries({ queryKey: ['custom-activities'] });
       await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
-      if (response.errors.length > 0) {
+      if (response.errors.length > 0 && response.saved_count <= 0) {
+        setCustomResult(response.errors[0] ?? 'Unable to save custom activities.');
+      } else if (response.errors.length > 0) {
         setCustomResult(`Saved ${response.saved_count} to ${profile?.owner ?? '-'}. Some entries were skipped.`);
       } else {
         setCustomResult(`Saved ${response.saved_count} custom activit${response.saved_count === 1 ? 'y' : 'ies'} to ${profile?.owner ?? '-'}.`);
@@ -286,13 +308,22 @@ export function DataExtractPage(): JSX.Element {
                 <p className="text-[11px] text-slate-300/62">Choose where the backfill begins.</p>
               </div>
               <div className="flex gap-2">
-                <input
-                  className="h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-medium text-slate-100 outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
-                  type="date"
-                  max={todayIso()}
-                  value={startDay}
-                  onChange={(event) => setStartDay(event.target.value)}
-                />
+                <label className="group flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-sky-300/40 focus-within:ring-2 focus-within:ring-sky-300/20">
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/20 text-sky-200/78 transition group-focus-within:border-sky-300/30 group-focus-within:text-sky-100">
+                    <CalendarDays className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-100">{formatFriendlyDate(startDay)}</p>
+                    <p className="text-[11px] text-slate-300/52">Tap to change</p>
+                  </div>
+                  <input
+                    className="h-10 w-[132px] rounded-lg border border-white/10 bg-black/20 px-2 text-[11px] font-medium text-slate-300/78 outline-none transition [color-scheme:dark] focus:border-sky-300/40"
+                    type="date"
+                    max={todayIso()}
+                    value={startDay}
+                    onChange={(event) => setStartDay(event.target.value)}
+                  />
+                </label>
                 <Button
                   className={controlButtonClassName}
                   onClick={() => comprehensiveMutation.mutate()}

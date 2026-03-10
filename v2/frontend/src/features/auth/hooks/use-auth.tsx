@@ -3,6 +3,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { getMe, getOwners, login as loginRequest } from '@/features/auth/services/auth-api';
 import { clearAuthSession, readAuthSession, writeAuthSession } from '@/features/auth/services/auth-storage';
 import type { AuthSession, LoginPayload, MeResponse } from '@/features/auth/types';
+import { queryClient } from '@/lib/query-client';
 
 interface AuthContextValue {
   session: AuthSession | null;
@@ -104,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(OWNER_STORAGE_KEY, trimmed);
     }
+    void queryClient.invalidateQueries();
   }, [owners]);
 
   const value = useMemo<AuthContextValue>(

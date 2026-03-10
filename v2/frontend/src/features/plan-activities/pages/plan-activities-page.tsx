@@ -44,6 +44,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   const [entryText, setEntryText] = useState('');
   const [ingestResult, setIngestResult] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [rowSaveResults, setRowSaveResults] = useState<Record<string, { tone: 'error' | 'success'; message: string }>>({});
 
   const refetchPlan = async () => {
     await queryClient.invalidateQueries({ queryKey: ['plan-activities'] });
@@ -87,7 +88,9 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
     },
     onSuccess: async (response) => {
       await refetchPlan();
-      if (response.errors.length > 0) {
+      if (response.errors.length > 0 && response.saved_count <= 0) {
+        setIngestResult(response.errors[0] ?? 'Unable to save planned activities.');
+      } else if (response.errors.length > 0) {
         setIngestResult(`Saved ${response.saved_count}. Some entries were skipped.`);
       } else {
         setIngestResult(`Saved ${response.saved_count} planned activit${response.saved_count === 1 ? 'y' : 'ies'}.`);
@@ -111,7 +114,27 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         manualDone,
       });
     },
-    onSuccess: refetchPlan,
+    onSuccess: async (_response, variables) => {
+      const rowKey = `${variables.dayUtc}-${variables.lineNo}`;
+      setRowSaveResults((previous) => ({
+        ...previous,
+        [rowKey]: {
+          tone: 'success',
+          message: 'Saved.',
+        },
+      }));
+      await refetchPlan();
+    },
+    onError: (error, variables) => {
+      const rowKey = `${variables.dayUtc}-${variables.lineNo}`;
+      setRowSaveResults((previous) => ({
+        ...previous,
+        [rowKey]: {
+          tone: 'error',
+          message: error instanceof Error ? error.message : 'Unable to save planned activity.',
+        },
+      }));
+    },
   });
 
   const weeks = query.data?.weeks ?? [];
@@ -303,10 +326,25 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                                 <input
                                   className="w-full min-w-0 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
                                   value={editValues[rowKey] ?? ''}
-                                  onChange={(event) =>
-                                    setEditValues((previous) => ({ ...previous, [rowKey]: event.target.value }))
-                                  }
+                                  onChange={(event) => {
+                                    setEditValues((previous) => ({ ...previous, [rowKey]: event.target.value }));
+                                    setRowSaveResults((previous) => {
+                                      if (!(rowKey in previous)) return previous;
+                                      const next = { ...previous };
+                                      delete next[rowKey];
+                                      return next;
+                                    });
+                                  }}
                                 />
+                                {rowSaveResults[rowKey] ? (
+                                  <p
+                                    className={`mt-1 text-xs ${
+                                      rowSaveResults[rowKey]?.tone === 'error' ? 'text-red-400' : 'text-slate-300/72'
+                                    }`}
+                                  >
+                                    {rowSaveResults[rowKey]?.message}
+                                  </p>
+                                ) : null}
                               </td>
                               <td className="px-3 py-2 text-right">{Math.round(row.tss)}</td>
                               <td className="px-3 py-2 text-right">{Math.round(row.rtss)}</td>

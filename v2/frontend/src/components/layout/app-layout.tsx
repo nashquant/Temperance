@@ -1,4 +1,4 @@
-import { BarChart3, CalendarDays, Database, HeartPulse, LogOut, Menu, Settings, X } from 'lucide-react';
+import { BarChart3, CalendarDays, CircleHelp, Database, HeartPulse, LogOut, Menu, Settings, X } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
@@ -15,6 +15,7 @@ const navItems = [
   { to: '/app/wellness', label: 'Wellness', icon: HeartPulse, disabled: false },
   { to: '/app/data-extract', label: 'Data Extract', icon: Database, disabled: false },
   { to: '/app/settings', label: 'User Settings', icon: Settings, disabled: false },
+  { to: '/app/faq', label: 'FAQ', icon: CircleHelp, disabled: false },
 ];
 
 export function AppLayout(): JSX.Element {
@@ -31,6 +32,7 @@ export function AppLayout(): JSX.Element {
     if (path.startsWith('/app/week-planner')) return { section: 'Performance', title: 'Week Planner' };
     if (path.startsWith('/app/data-extract')) return { section: 'Data', title: 'Data Extract' };
     if (path.startsWith('/app/settings')) return { section: 'Configuration', title: 'Settings' };
+    if (path.startsWith('/app/faq')) return { section: 'Support', title: 'FAQ' };
     return { section: 'Performance', title: 'Temperance' };
   })();
 

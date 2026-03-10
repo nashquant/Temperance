@@ -2768,8 +2768,7 @@ def _build_activity_dashboard_payload(
             }
 
     latest_actual_day = pd.Timestamp(max_day).normalize()
-    display_anchor_day = pd.Timestamp(min(today_local, latest_actual_day)).normalize()
-    current_week_start = _week_start_monday(display_anchor_day)
+    current_week_start = _week_start_monday(today_local)
     fatigue_expected_lookup: dict[pd.Timestamp, float] = {}
     last_planned_day: pd.Timestamp | None = (
         max(planned_tss_lookup.keys()) if planned_tss_lookup else None
