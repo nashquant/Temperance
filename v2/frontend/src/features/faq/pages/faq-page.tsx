@@ -1,127 +1,5 @@
 import { Card, CardContent } from '@/components/ui/card';
 
-const glossaryItems = [
-  {
-    term: 'TSS',
-    summary: 'Overall training-load estimate.',
-    formula: 'TSS = duration_h x IF^2 x 100 x specificity_factor',
-    points: ['Best for total aerobic and metabolic load across mixed training.', 'Not a direct measure of fitness, durability, or injury risk.'],
-  },
-  {
-    term: 'rTSS',
-    summary: 'Running-specific load estimate.',
-    formula: 'rTSS = duration_h x rIF^2 x 100',
-    points: ['Usually the better signal for running-specific musculoskeletal cost.', 'Sharp jumps matter because tissues often fail before aerobic fitness does.'],
-  },
-  {
-    term: 'VDOT',
-    summary: 'Daniels running-performance score.',
-    points: ['Useful for race equivalence and training paces.', 'Reflects performance, economy, and sustainable aerobic use, not just lab capacity.'],
-  },
-  {
-    term: 'VO2 max',
-    summary: 'Your aerobic ceiling.',
-    points: ['Important for endurance potential, but not the whole performance story.', 'Threshold, economy, durability, and pacing still decide a lot on race day.'],
-  },
-  {
-    term: 'Fitness',
-    summary: 'Longer-term load trend.',
-    points: ['Moves slowly and reflects the base you have built.'],
-  },
-  {
-    term: 'Fatigue',
-    summary: 'Shorter-term load trend.',
-    points: ['Moves quickly and helps explain current tiredness or freshness.'],
-  },
-];
-
-const workflowFaqItems = [
-  {
-    question: 'What is the difference between planned, custom, and actual activities?',
-    points: [
-      'Planned activities come from workout-planning strings.',
-      'Custom activities are manual entries you add yourself.',
-      'Actual activities are imported records such as Garmin workouts.',
-    ],
-  },
-  {
-    question: 'How should I write workout strings?',
-    points: [
-      'Start with the date, then write the workout in the order it happens.',
-      'Think in segments: warm-up, reps, recoveries, steady work, cooldown.',
-      'Explicit recoveries produce better splits and better TSS, rTSS, pace, and duration estimates.',
-      'Example: `2026-03-26: 10min run @4:50 + 5x6min @3:40/km + 2min easy + 10min cooldown`.',
-    ],
-  },
-  {
-    question: 'What do specificity factors do?',
-    points: [
-      'They adjust how much load to credit for less specific activities.',
-      'This matters most for cross-training, where aerobic benefit may be real but running-specific transfer is smaller.',
-      'In Temperance, they help total TSS stay useful without pretending every session stresses running equally.',
-    ],
-  },
-  {
-    question: 'How important is it to set LTHR and LT Pace curves correctly?',
-    points: [
-      'Very important. These curves anchor how Temperance interprets intensity.',
-      'If they are wrong, zones, IF, TSS, rTSS, and split interpretation all drift.',
-      'When workouts or charts stop matching reality, review these settings first.',
-    ],
-  },
-];
-
-const trainingFaqItems = [
-  {
-    question: 'How should I think about TSS and rTSS progression?',
-    points: [
-      'TSS helps describe total training load, while rTSS is the more useful warning sign when running-specific stress rises too fast.',
-      'A bigger TSS week is not automatically better: load only works when you can absorb it and recover from it.',
-      'Build both metrics from your own recent baseline, not from the numbers of a fitter athlete.',
-      'For injury risk, watch sudden running spikes even more than the weekly headline total. If TSS rises mostly from cross-training while rTSS stays stable, that is usually easier to absorb than the same rise coming from pure running.',
-    ],
-  },
-  {
-    question: 'What is a reasonable weekly TSS for different kinds of runners?',
-    points: [
-      'There is no universal correct number, but for running-focused weeks these rough bands are a useful starting point: hobby jogger about 150-300 TSS, amateur or recreational racer about 250-450, sub-elite about 400-700, and elite about 650-1000+ in peak blocks.',
-      'Treat those as approximate peak-week bands, not year-round averages or requirements.',
-      'The difference is not just fitness. Better-trained runners usually have more training history, more frequency, better economy, and more tissue tolerance, so they can absorb more running-specific work.',
-      'The same headline TSS can also come from very different weeks. A 500-TSS week built mostly from running is usually harder on the legs than a 500-TSS week with substantial cycling, elliptical, or pool work.',
-    ],
-  },
-  {
-    question: 'Does the right TSS goal change with training approach?',
-    points: [
-      'Yes. A high-volume aerobic or pyramidal block usually spreads stress across more low-intensity running, so weekly TSS can be fairly high without every session feeling extreme.',
-      'A polarized, threshold-heavy, or race-specific block may keep similar total TSS but concentrate more stress into fewer hard sessions, so recovery demand rises faster than the weekly total suggests.',
-      'If your approach uses more cross-training, total TSS may stay high while rTSS stays moderate. That is often a good trade when the aerobic system can handle more work but the legs cannot.',
-      'Use TSS as the budget, rTSS as the running-specific cost, and your actual response as the final check.',
-    ],
-  },
-  {
-    question: 'What is overreach, and when is it a problem?',
-    points: [
-      'Functional overreaching is a short-term drop in freshness or performance that can be useful if followed by enough recovery.',
-      'Non-functional overreaching is when the load-recovery balance stays off for too long and performance keeps drifting down instead of rebounding.',
-      'Warning signs are not just tired legs: watch for unusual irritability, poor sleep, flat sessions, lingering soreness, illness, or paces that feel much harder than normal.',
-      'Temperance can help you spot the pattern, but no single metric diagnoses overtraining. Use the charts together with how you are actually responding.',
-    ],
-  },
-  {
-    question: 'How should I think about VDOT and VO2 max?',
-    points: [
-      'VO2 max is your aerobic ceiling. VDOT is a practical running-performance model that also reflects economy and sustainable race execution.',
-      'That means VDOT is often more useful for setting training paces, while VO2 max is more useful for understanding aerobic potential.',
-      'Do not chase VO2 max workouts year-round. They are effective, but they are also some of the most demanding sessions you can do and should sit on top of a stable aerobic base.',
-      'If your VDOT rises while VO2 max barely changes, that can still be real progress because threshold pace, economy, and durability often improve first.',
-      'They can look closer in well-trained runners whose economy and threshold durability are close to the assumptions in Daniels-style race modeling. In that case, race performance is expressing a large fraction of the aerobic engine you already have.',
-      'They do not reliably converge for every athlete. A runner with strong lab VO2 max but weak economy or poor durability can have a lower VDOT than expected, while an economical, durable runner can perform above what raw VO2 max alone would predict.',
-      'So the useful question is not whether they match perfectly. It is whether your race-derived VDOT is converting your aerobic capacity into running speed well. If not, economy, threshold, fueling, or event-specific endurance may be the limiter rather than VO2 max itself.',
-    ],
-  },
-];
-
 export function FaqPage(): JSX.Element {
   const surfaceClassName =
     'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
@@ -129,99 +7,181 @@ export function FaqPage(): JSX.Element {
   return (
     <section className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">FAQ</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Quick answers to the main Temperance workflows and behaviors.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">About Temperance</h1>
+        <p className="mt-1 text-sm text-muted-foreground">How Temperance interprets training load, running stress, and progression.</p>
       </div>
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-2 p-4">
-          <p className="text-sm font-semibold text-foreground">What Temperance Means</p>
-          <p className="text-sm leading-6 text-slate-300/72">
-            Temperance is about balance, discipline, and measured progression. In the app, that means building training load with intent,
-            respecting recovery, and using planning plus analytics to support sustainable running development rather than chasing stress for
-            its own sake.
-          </p>
+        <CardContent className="p-4">
+          <p className="text-sm font-semibold text-foreground">Temperance Model</p>
+          <div className="mt-2 space-y-3 text-sm leading-6 text-slate-300/72">
+            <p>
+              Temperance means balance, restraint, and good judgment. Built for runners who also use cross-training, it helps make
+              training load more coherent and easier to interpret.
+            </p>
+            <p>
+              Adaptation requires sufficient load, but injury risk rises when mechanical stress outpaces tissue capacity. For
+              endurance athletes, the real problem is not maximizing training load, but regulating it intelligently.
+            </p>
+            <p>
+              Most training systems measure load through physiological signals such as heart rate, pace, power, or perceived
+              exertion, capturing the aerobic stimulus of training. But runners are constrained by more than metabolism alone. They
+              are also limited by mechanical tolerance - the capacity of bones, tendons, muscles, and connective tissue to absorb and
+              adapt to stress on a slower and often less forgiving timeline.
+            </p>
+            <p>
+              By measuring intensity relative to your personal thresholds, Temperance gives context to the work you do. And by
+              separating total stress from running-specific stress, it recognizes a simple truth: not all load is created equal.
+            </p>
+            <p>
+              The result is a clearer view of training - one that helps you push adaptation while staying in control of durability.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
-      <div className="space-y-6">
-        <Card className={surfaceClassName}>
-          <CardContent className="space-y-3 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-foreground">Core Metrics</p>
-                <p className="text-xs text-slate-400/80">The few terms that matter most when you read the charts.</p>
-              </div>
-            </div>
-            <div className="grid gap-2 md:hidden">
-              {glossaryItems.map((item) => (
-                <div key={item.term} className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-3">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.term}</p>
-                    <p className="text-[11px] text-slate-400/75">{item.summary}</p>
-                  </div>
-                  {item.formula ? (
-                    <div className="mt-2 rounded-lg border border-sky-300/12 bg-slate-950/65 px-2.5 py-2 font-mono text-[11px] text-sky-100/88">
-                      {item.formula}
-                    </div>
-                  ) : null}
-                  <ul className="mt-1.5 space-y-1 text-sm leading-6 text-slate-300/72">
-                    {item.points.map((point) => (
-                      <li key={point}>- {point}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-            <div className="hidden gap-3 md:grid md:grid-cols-2">
-              {glossaryItems.map((item) => (
-                <div key={item.term} className="rounded-xl border border-white/10 bg-black/15 p-3">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <p className="text-sm font-semibold text-foreground">{item.term}</p>
-                    <p className="text-xs text-slate-400/80">{item.summary}</p>
-                  </div>
-                  {item.formula ? (
-                    <div className="mt-2 rounded-lg border border-sky-300/12 bg-slate-950/65 px-3 py-2 font-mono text-xs text-sky-100/88">
-                      {item.formula}
-                    </div>
-                  ) : null}
-                  <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-300/72">
-                    {item.points.map((point) => (
-                      <li key={point}>- {point}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      <Card className={surfaceClassName}>
+        <CardContent className="p-4">
+          <p className="text-sm font-semibold text-foreground">How Temperance Works</p>
+          <div className="mt-2 space-y-3 text-sm leading-6 text-slate-300/72">
+            <p>
+              Temperance begins with your personal heart-rate and pace thresholds. Those inputs need to be set correctly, because
+              threshold is what gives effort meaning. Rather than reading sessions in absolute terms, the platform interprets them
+              relative to your own physiology - the same principle that underpins modern threshold-based training models.
+            </p>
+            <p>
+              Temperance does not prescribe your thresholds for you. Those need to come from your own testing methodology, judgment, or
+              coaching context. The platform is built to interpret training once those inputs are set, not to replace the process of
+              determining them. That said, Temperance can assist with pace-threshold estimation by analyzing roughly the last 200 days
+              of activity and inferring your current VDOT-like fitness, which can serve as a useful hint for likely LT pace.
+            </p>
+            <p>
+              From there, it derives the metrics that make training easier to understand. The two core ones are TSS and rTSS. TSS
+              reflects overall aerobic stress, following the broader logic of TRIMP and threshold-based load models: how long you train
+              matters, but how hard that work is relative to your threshold matters more.
+            </p>
+            <p>
+              rTSS narrows the lens to running. Because it is anchored to pace relative to threshold pace, it captures the cost of
+              run-specific work more directly than a generic load number. It is not a literal measure of tissue damage or mechanical
+              force, but it is a useful proxy for how much running-specific demand you are accumulating - and therefore a useful
+              complement when thinking about economy, durability, and injury risk.
+            </p>
+            <p>
+              That distinction matters because running has a specificity that cross-training does not fully reproduce. Non-running
+              sessions can add meaningful aerobic load, but they usually place less stress on the structures that make running possible:
+              the legs, tendons, and connective tissues that absorb impact and repetition. Temperance keeps those worlds connected, but
+              not confused.
+            </p>
+            <p>
+              Because threshold reflects your current performance level, it also gives a rough sense of training capacity. In broad
+              terms, more developed athletes are often able to tolerate and benefit from higher loads than less adapted athletes.
+              Temperance uses the thresholds you provide to contextualize stress targets accordingly - not as a guarantee of safety, but
+              as a way to anchor load expectations to the athlete&apos;s current level.
+            </p>
+            <p>
+              That distinction matters because tolerance is not only aerobic. Running load is constrained by mechanical durability as
+              well, and injury risk rises when loading outpaces tissue capacity or progresses too aggressively. Temperance is designed
+              to make that balance easier to see, so higher targets are treated as context-sensitive rather than universally safe.
+            </p>
+            <p>
+              For cross-training, Temperance also accepts a specificity factor. This scales down the running-equivalent contribution of
+              non-running activities to reflect a simple principle: an activity may produce meaningful aerobic stress without
+              reproducing the same running-specific mechanical and neuromuscular stimulus. In that sense, cross-training still counts
+              for fitness, but not as a one-for-one substitute for running.
+            </p>
+            <p>
+              Temperance also helps translate cross-training into the language runners still care about most: weekly mileage. When
+              heart-rate zones and specificity are set correctly, it can derive a proxy distance and proxy pace for non-running
+              sessions, so their contribution can be integrated into weekly proxy mileage.
+            </p>
+            <p>
+              That estimate comes from creating parity between scaled TSS - adjusted by specificity - and rTSS. The result is a
+              running-equivalent view of cross-training load: not a claim of perfect equivalence, but a practical way to reflect how
+              non-running work contributes to the training week.
+            </p>
+            <p>
+              Another side of Temperance is that it looks forward, not just back. By projecting weekly TSS and rTSS, it helps you
+              plan load before it becomes a problem, rather than only recognizing overreaching after the fact. It also brings together
+              raw and derived metrics - such as acute load, chronic load, fatigue, and fitness - and contrasts them with Garmin
+              wellness signals to give training context beyond the session itself.
+            </p>
+            <p>
+              While Temperance is built with Garmin users in mind, it remains flexible by design. Custom activities can still be
+              added, and the platform will do its best to account for their contribution in a way that remains consistent with the
+              rest of your training.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
-        {[
-          { title: 'Using Temperance', subtitle: 'Workflow details that affect parsing and planning.', items: workflowFaqItems },
-          { title: 'Training Load', subtitle: 'The practical stuff behind TSS, rTSS, overreach, and pacing models.', items: trainingFaqItems },
-        ].map((section) => (
-          <Card key={section.title} className={surfaceClassName}>
-            <CardContent className="space-y-4 p-4">
-              <div>
-                <p className="text-sm font-semibold text-foreground">{section.title}</p>
-                <p className="mt-1 text-xs text-slate-400/80">{section.subtitle}</p>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                {section.items.map((item) => (
-                  <div key={item.question} className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.question}</p>
-                    <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-300/72">
-                      {item.points.map((point) => (
-                        <li key={point}>- {point}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <Card className={surfaceClassName}>
+        <CardContent className="p-4">
+          <p className="text-sm font-semibold text-foreground">How to Use Temperance</p>
+          <div className="mt-2 space-y-3 text-sm leading-6 text-slate-300/72">
+            <p>
+              The Dashboard is the central overview: a single place to plan activities, review weekly totals, add custom sessions,
+              and read the main aggregates at a glance.
+            </p>
+            <p>
+              The Weekly Planner is where planning becomes more precise. It is built for shaping the week ahead, adjusting details at
+              session level, and making bulk changes when the structure of the week needs to move. Activity inputs follow a compact
+              string-based syntax, documented in the next section.
+            </p>
+            <p>
+              Athlete Progression and Wellness is the analytical layer, where long-term progression, load, fatigue, fitness, and
+              recovery can be tracked more closely and contrasted with wellness signals.
+            </p>
+            <p>
+              User Settings is the foundation. Thresholds, zones, and specificity factors need to be configured correctly - otherwise
+              Temperance cannot produce meaningful output.
+            </p>
+            <p>
+              Finally, Data Extract is where Garmin sync and custom activity ingestion are managed, including bulk entry when needed,
+              so the data behind the platform stays complete and usable.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className={surfaceClassName}>
+        <CardContent className="p-4">
+          <p className="text-sm font-semibold text-foreground">Compact Activity Syntax</p>
+          <div className="mt-2 space-y-3 text-sm leading-6 text-slate-300/72">
+            <p>
+              Planned and custom activities follow the same compact string syntax. It is designed to stay quick to type while giving
+              Temperance enough structure to estimate duration, intensity, TSS, rTSS, and running-equivalent load.
+            </p>
+            <p>
+              Each entry follows a simple pattern: date, then activity. Multiple entries can be separated by a new line, semicolon, or
+              comma. Supported date formats include absolute dates such as <code>2026-03-26</code>, compact forms such as
+              <code>3Mar26</code>, and relative forms such as <code>T</code>, <code>T+2</code>, or <code>T-1</code>.
+            </p>
+            <p>
+              Activity types include running and treadmill, as well as cross-training modes such as elliptical, bike, and cycling.
+              Every segment requires an intensity token. Temperance accepts heart rate inputs such as <code>@140bpm</code>, intensity
+              factor inputs such as <code>@70%</code>, pace inputs such as <code>@4:50/km</code> for running-like sessions, and
+              explicit load targets such as <code>@70TSS</code>. If no activity type is specified, Temperance assumes the session is a
+              run.
+            </p>
+            <p>
+              Duration can be expressed as either time or distance. Examples include <code>90min</code>, <code>1h</code>,
+              <code>45s</code>, <code>10km</code>, or <code>400m</code>. Distance-only entries require the running or treadmill token
+              together with pace or intensity, since the parser needs enough context to infer time and load.
+            </p>
+            <p>
+              Segments can be chained with <code>+</code>, making it possible to describe a session in the order it happens, such as
+              <code>10min run @4:50/km + 5x6min @3:40/km + 2min easy + 10min cooldown</code>. Interval blocks can also be written in
+              repeated time or distance form, such as <code>5x6min @3:40/km</code>, <code>10x400m @3:35/km</code>, or
+              <code>6x1km @3:45/km</code>.
+            </p>
+            <p>
+              The practical rule is simple: use pace for running, and use heart rate or <code>%IF</code> for non-running work. When
+              that structure is followed, Temperance can interpret planned and custom sessions consistently and fold them into the same
+              weekly load model.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </section>
   );
 }

@@ -76,11 +76,17 @@ function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
               <p className="text-sm font-semibold text-sky-100/92">{fmtNumber(summary.vdot_max)}</p>
             </div>
             <div>
-              <p className="text-[10px] uppercase tracking-[0.08em] text-blue-300/90">TSS</p>
+              <p className="inline-flex items-center justify-end gap-1 text-[10px] uppercase tracking-[0.08em] text-blue-300/90">
+                <Activity className="h-3 w-3" />
+                TSS
+              </p>
               <p className="text-sm font-semibold text-blue-100/92">{fmtNumber(summary.tss)}</p>
             </div>
             <div>
-              <p className="text-[10px] uppercase tracking-[0.08em] text-blue-300/90">rTSS</p>
+              <p className="inline-flex items-center justify-end gap-1 text-[10px] uppercase tracking-[0.08em] text-blue-300/90">
+                <Activity className="h-3 w-3" />
+                rTSS
+              </p>
               <p className="text-sm font-semibold text-blue-100/92">{fmtNumber(summary.rtss)}</p>
             </div>
           </div>
@@ -88,18 +94,18 @@ function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
 
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2">
-            <p className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-300/90">
-              <Clock3 className="h-3 w-3" />
+            <p className="inline-flex items-center gap-1 text-[11px] font-medium text-cyan-200/92">
+              <Clock3 className="h-3 w-3 text-cyan-300/90" />
               Time
             </p>
-            <p className="mt-1 text-base font-semibold text-foreground">{fmtDuration(summary.duration_h)}</p>
+            <p className="mt-1 text-base font-semibold text-cyan-100/92">{fmtDuration(summary.duration_h)}</p>
           </div>
           <div className="rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2">
-            <p className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-300/90">
-              <Route className="h-3 w-3" />
+            <p className="inline-flex items-center gap-1 text-[11px] font-medium text-lime-200/92">
+              <Route className="h-3 w-3 text-lime-300/90" />
               Dist
             </p>
-            <p className="mt-1 text-base font-semibold text-foreground">{fmtNumber(summary.distance_eqv_km)} km</p>
+            <p className="mt-1 text-base font-semibold text-lime-100/92">{fmtNumber(summary.distance_eqv_km)} km</p>
           </div>
         </div>
 
@@ -109,12 +115,12 @@ function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
             <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
           </summary>
           <div className="mt-2 grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-[11px]">
-            <p className="inline-flex items-center gap-1 text-slate-300/90"><Activity className="h-3 w-3" />TSS | rTSS</p>
-            <p className="text-right font-medium text-foreground/95">{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
-            <p className="inline-flex items-center gap-1 text-slate-300/90"><HeartPulse className="h-3 w-3" />Fit | Fatg</p>
-            <p className="text-right font-medium text-foreground/95">{fmtNumber(summary.fitness)} | {fmtNumber(summary.fatigue)}</p>
-            <p className="inline-flex items-center gap-1 text-slate-300/90"><AlertTriangle className="h-3 w-3" />Ovr | Risk</p>
-            <p className="text-right font-medium text-foreground/95">{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
+            <p className="inline-flex items-center gap-1 text-blue-200/92"><Activity className="h-3 w-3 text-blue-300/90" />TSS | rTSS</p>
+            <p className="text-right font-medium text-blue-100/92">{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
+            <p className="inline-flex items-center gap-1 text-rose-200/92"><HeartPulse className="h-3 w-3 text-rose-300/90" />Fit | Fatg</p>
+            <p className="text-right font-medium text-rose-100/92">{fmtNumber(summary.fitness)} | {fmtNumber(summary.fatigue)}</p>
+            <p className="inline-flex items-center gap-1 text-orange-200/92"><AlertTriangle className="h-3 w-3 text-orange-300/90" />Ovr | Risk</p>
+            <p className="text-right font-medium text-orange-100/92">{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
           </div>
         </details>
       </CardContent>

@@ -15,7 +15,7 @@ const navItems = [
   { to: '/app/wellness', label: 'Wellness', icon: HeartPulse, disabled: false },
   { to: '/app/data-extract', label: 'Data Extract', icon: Database, disabled: false },
   { to: '/app/settings', label: 'User Settings', icon: Settings, disabled: false },
-  { to: '/app/faq', label: 'FAQ', icon: CircleHelp, disabled: false },
+  { to: '/app/faq', label: 'About Temperance', icon: CircleHelp, disabled: false },
 ];
 
 export function AppLayout(): JSX.Element {
@@ -32,7 +32,7 @@ export function AppLayout(): JSX.Element {
     if (path.startsWith('/app/week-planner')) return { section: 'Performance', title: 'Week Planner' };
     if (path.startsWith('/app/data-extract')) return { section: 'Data', title: 'Data Extract' };
     if (path.startsWith('/app/settings')) return { section: 'Configuration', title: 'Settings' };
-    if (path.startsWith('/app/faq')) return { section: 'Support', title: 'FAQ' };
+    if (path.startsWith('/app/faq')) return { section: 'About', title: 'About Temperance' };
     return { section: 'Performance', title: 'Temperance' };
   })();
 
