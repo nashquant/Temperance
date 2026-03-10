@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Activity, AlertTriangle, ChevronDown, Clock3, HeartPulse, Route } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -109,30 +110,55 @@ export function DashboardWeekCard({
   deletingCustomActivity,
   userTimeZone,
 }: DashboardWeekCardProps): JSX.Element {
+  const mobileRailRef = useRef<HTMLDivElement | null>(null);
+  const centeredTodayRef = useRef<string>('');
+
+  useEffect(() => {
+    const todayIndex = week.days.findIndex((day) => day.is_today);
+    if (todayIndex < 0) return;
+    if (centeredTodayRef.current === week.week_start) return;
+    const rail = mobileRailRef.current;
+    if (!rail) return;
+    const todayCard = rail.querySelector<HTMLElement>(`[data-day-utc="${week.days[todayIndex].day_utc}"]`);
+    if (!todayCard) return;
+
+    const nextLeft = Math.max(
+      0,
+      todayCard.offsetLeft - (rail.clientWidth / 2 - todayCard.clientWidth / 2),
+    );
+
+    rail.scrollTo({ left: nextLeft, behavior: 'smooth' });
+    centeredTodayRef.current = week.week_start;
+  }, [week.days, week.week_start]);
+
   return (
     <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(56,189,248,0.45),rgba(168,85,247,0.26),rgba(245,158,11,0.3))] p-[1px] shadow-[0_10px_30px_rgba(2,6,23,0.5)]">
       <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_8%_10%,rgba(56,189,248,0.1),transparent_40%),radial-gradient(circle_at_88%_90%,rgba(168,85,247,0.11),transparent_45%)] shadow-inner">
         <CardContent className="p-1.5">
           <div className="space-y-1.5 sm:hidden">
             <MobileWeekSummary week={week} />
-            <div className="-mx-1.5 overflow-x-auto px-1.5 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <div
+              ref={mobileRailRef}
+              className="-mx-1.5 overflow-x-auto px-1.5 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
               <div className="flex gap-2">
                 {week.days.map((day) => (
-                  <DashboardDayColumn
-                    key={day.day_utc}
-                    day={day}
-                    onAddPlannedActivity={onAddPlannedActivity}
-                    onMarkPlannedDone={onMarkPlannedDone}
-                    onDeletePlannedActivity={onDeletePlannedActivity}
-                    onDeleteCustomActivity={onDeleteCustomActivity}
-                    onSelectActivity={onSelectActivity}
-                    addingPlannedActivity={addingPlannedActivity}
-                    markingPlannedDone={markingPlannedDone}
-                    deletingPlannedActivity={deletingPlannedActivity}
-                    deletingCustomActivity={deletingCustomActivity}
-                    userTimeZone={userTimeZone}
-                    compactMobile
-                  />
+                  <div key={day.day_utc} data-day-utc={day.day_utc}>
+                    <DashboardDayColumn
+                      day={day}
+                      onAddPlannedActivity={onAddPlannedActivity}
+                      onMarkPlannedDone={onMarkPlannedDone}
+                      onDeletePlannedActivity={onDeletePlannedActivity}
+                      onDeleteCustomActivity={onDeleteCustomActivity}
+                      onSelectActivity={onSelectActivity}
+                      addingPlannedActivity={addingPlannedActivity}
+                      markingPlannedDone={markingPlannedDone}
+                      deletingPlannedActivity={deletingPlannedActivity}
+                      deletingCustomActivity={deletingCustomActivity}
+                      userTimeZone={userTimeZone}
+                      compactMobile
+                    />
+                  </div>
                 ))}
               </div>
             </div>
