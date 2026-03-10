@@ -272,13 +272,7 @@ export function DataExtractPage(): JSX.Element {
 
       <Card className={surfaceClassName}>
         <CardContent className="space-y-4 p-5">
-          <div className="space-y-1">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Garmin Extract</p>
-            <div className="space-y-1">
-              <h2 className="text-lg font-semibold text-foreground">Comprehensive Garmin Extract</h2>
-              <p className="text-sm text-slate-300/72">Run a full background pull and keep navigating while progress continues.</p>
-            </div>
-          </div>
+          <h2 className="text-lg font-semibold text-foreground">Garmin Sync</h2>
 
           <div className="grid gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:grid-cols-[280px_1fr]">
             <div className="space-y-2 rounded-[18px] border border-white/8 bg-[linear-gradient(180deg,rgba(2,6,23,0.36),rgba(15,23,42,0.18))] p-3">
@@ -380,23 +374,15 @@ export function DataExtractPage(): JSX.Element {
           {isAdminOwnScope ? (
             <>
               <p className="text-xs text-muted-foreground">
-                {status?.garmin_credentials_hint ?? (
-                  <>
-                    Admin account uses server environment credentials (<code>GARMIN_EMAIL</code> / <code>GARMIN_PASSWORD</code>).
-                  </>
-                )}
-              </p>
-              <p className="text-xs text-muted-foreground">
                 Current source: <span className="font-medium text-foreground">{status?.garmin_credentials_source ?? 'missing'}</span>
               </p>
             </>
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
-                {status?.garmin_credentials_hint ??
-                  (isAdmin
-                    ? 'When viewing another owner, provide Garmin credentials for that owner scope. They are kept in backend memory only and cleared on backend restart.'
-                    : 'Credentials are kept in backend memory only for this user session. They are not saved to the database and will be cleared on backend restart.')}
+                {isAdmin
+                  ? `When viewing ${profile?.owner ?? 'another owner'}, provide that user's Garmin credentials here. Running extract will ingest into ${profile?.owner ?? 'that'} database, and these credentials stay in memory only.`
+                  : 'Credentials are kept in backend memory only for this user session. They are not saved to the database and will be cleared on backend restart.'}
               </p>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1">
