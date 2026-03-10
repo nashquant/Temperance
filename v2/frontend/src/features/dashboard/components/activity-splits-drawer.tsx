@@ -41,6 +41,14 @@ function fmtDurationSeconds(seconds: number): string {
   return `${m}m ${s}s`;
 }
 
+function fmtDurationTick(seconds: number): string {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const minutes = Math.floor(total / 60);
+  const secs = total % 60;
+  if (secs === 0) return `${minutes}'`;
+  return `${minutes}'${String(secs).padStart(2, '0')}"`;
+}
+
 function paceLabelFromSpeed(speed: number): string {
   const numeric = Number(speed) || 0;
   if (numeric <= 0) return '-';
@@ -142,9 +150,33 @@ export function ActivitySplitsDrawer({
       lap_label: `Lap ${lap.lap}`,
       if_pct: Number(lap.if_pct) || 0,
       duration_label: lap.duration_label,
+      duration_seconds: durationSeconds,
       duration_ratio: totalDurationSeconds > 0 ? durationSeconds / totalDurationSeconds : 1 / Math.max(laps.length, 1),
     };
   });
+  const splitTimeline = (() => {
+    let cumulative = 0;
+    return splitChartData.map((row) => {
+      const startSeconds = cumulative;
+      cumulative += row.duration_seconds;
+      const endSeconds = cumulative;
+      return {
+        ...row,
+        start_seconds: startSeconds,
+        end_seconds: endSeconds,
+        start_pct: totalDurationSeconds > 0 ? (startSeconds / totalDurationSeconds) * 100 : 0,
+        end_pct: totalDurationSeconds > 0 ? (endSeconds / totalDurationSeconds) * 100 : 100,
+      };
+    });
+  })();
+  const splitAxisMarks = splitTimeline
+    .map((row, index) => ({
+      seconds: row.end_seconds,
+      pct: row.end_pct,
+      label: fmtDurationTick(row.end_seconds),
+      index,
+    }))
+    .filter((mark) => splitTimeline.length <= 8 || mark.index === splitTimeline.length - 1 || mark.index % 2 === 0);
 
   const updateMutation = useMutation({
     mutationFn: async (nextText: string) => {
@@ -302,14 +334,21 @@ export function ActivitySplitsDrawer({
                     </div>
                   </div>
                   <div className="rounded-[20px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_52%),linear-gradient(180deg,rgba(2,6,23,0.82),rgba(15,23,42,0.6))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                    <div className="flex h-[220px] items-end overflow-hidden rounded-2xl border border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-1.5 pb-1.5 pt-6">
-                      {splitChartData.map((row, index) => {
+                    <div className="h-[220px] overflow-hidden rounded-2xl border border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-1.5 pb-1.5 pt-6">
+                      <div
+                        className="grid h-full items-end"
+                        style={{
+                          gridTemplateColumns: splitTimeline
+                            .map((row) => `minmax(0, ${Math.max(row.duration_seconds, 1)}fr)`)
+                            .join(' '),
+                        }}
+                      >
+                      {splitTimeline.map((row, index) => {
                         const heightPct = Math.max(16, Math.min(100, row.if_pct));
                         return (
                           <div
                             key={row.lap_label}
-                            className="group flex h-full min-w-[18px] items-end"
-                            style={{ width: `${row.duration_ratio * 100}%` }}
+                            className="group flex h-full min-w-0 items-end"
                             title={`${row.lap_label} · ${row.duration_label} · IF ${Math.round(row.if_pct)}%`}
                           >
                             <div
@@ -317,14 +356,14 @@ export function ActivitySplitsDrawer({
                               style={{
                                 height: `${heightPct}%`,
                                 background: `linear-gradient(180deg, rgba(255,255,255,0.18), ${splitBarColor(row.if_pct)})`,
-                                borderTopLeftRadius: index === 0 ? '10px' : '3px',
-                                borderBottomLeftRadius: index === 0 ? '10px' : '3px',
-                                borderTopRightRadius: index === splitChartData.length - 1 ? '10px' : '3px',
-                                borderBottomRightRadius: index === splitChartData.length - 1 ? '10px' : '3px',
+                                borderTopLeftRadius: index === 0 ? '10px' : '2px',
+                                borderBottomLeftRadius: index === 0 ? '10px' : '2px',
+                                borderTopRightRadius: index === splitTimeline.length - 1 ? '10px' : '2px',
+                                borderBottomRightRadius: index === splitTimeline.length - 1 ? '10px' : '2px',
                               }}
                             >
                               <div className="absolute inset-x-0 top-0 h-4 bg-white/12" />
-                              <div className="absolute inset-y-0 right-0 w-px bg-white/12" />
+                              {index < splitTimeline.length - 1 ? <div className="absolute inset-y-0 right-0 w-px bg-white/18" /> : null}
                               <div className="pointer-events-none absolute inset-x-1 bottom-1 opacity-0 transition-opacity group-hover:opacity-100">
                                 <p className="truncate text-[10px] font-semibold text-white/92">{row.lap_label.replace('Lap ', 'L')}</p>
                               </div>
@@ -332,6 +371,28 @@ export function ActivitySplitsDrawer({
                           </div>
                         );
                       })}
+                      </div>
+                    </div>
+                    <div className="relative mt-3 h-8 px-1.5">
+                      <div className="absolute inset-x-0 top-1 h-px bg-white/10" />
+                      <div className="absolute left-0 top-0 -translate-x-1/2">
+                        <div className="mx-auto h-2 w-px bg-white/18" />
+                        <p className="mt-1 whitespace-nowrap text-[10px] font-medium tracking-[0.02em] text-slate-300/58">
+                          0"
+                        </p>
+                      </div>
+                      {splitAxisMarks.map((mark) => (
+                        <div
+                          key={`${mark.seconds}-${mark.pct}`}
+                          className="absolute top-0 -translate-x-1/2"
+                          style={{ left: `${mark.pct}%` }}
+                        >
+                          <div className="mx-auto h-2 w-px bg-white/18" />
+                          <p className="mt-1 whitespace-nowrap text-[10px] font-medium tracking-[0.02em] text-slate-300/72">
+                            {mark.label}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
