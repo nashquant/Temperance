@@ -322,9 +322,6 @@ export function DashboardDayColumn({
                 <p className={cn('font-semibold text-sky-100', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
                   {undoPlannedActivity?.label ?? 'Activity removed'}
                 </p>
-                <p className={cn('mt-1 line-clamp-2 text-slate-300/78', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
-                  Tap undo to restore this card in place.
-                </p>
                 <div className="mt-auto">
                   <Button
                     variant="outline"

@@ -187,7 +187,7 @@ export function DashboardPage(): JSX.Element {
         undoDismissTimerRef.current = null;
       }, 220);
       undoTimerRef.current = null;
-    }, 6000);
+    }, 9000);
   };
   useEffect(() => () => {
     if (undoTimerRef.current) {
@@ -473,7 +473,7 @@ export function DashboardPage(): JSX.Element {
                           dayUtc: activity.day_utc,
                           lineNo: activity.line_no,
                           slotIndex: index,
-                          label: `Marked ${activity.activity} done`,
+                          label: 'Marked',
                           action: async () => {
                             if (!session?.token) throw new Error('Missing auth token');
                             await setPlannedManualDone({
@@ -496,7 +496,7 @@ export function DashboardPage(): JSX.Element {
                           dayUtc: activity.day_utc,
                           lineNo: activity.line_no,
                           slotIndex: index,
-                          label: `Deleted ${activity.activity}`,
+                          label: 'Deleted',
                           action: async () => {
                             if (!session?.token) throw new Error('Missing auth token');
                             await ingestPlannedActivities({
@@ -516,7 +516,7 @@ export function DashboardPage(): JSX.Element {
                             removeCustomActivityLocally(activity.day_utc, activity.line_no);
                             if (activity.activity_text) {
                               showUndo({
-                                label: `Deleted ${activity.sport}`,
+                                label: 'Deleted',
                                 action: async () => {
                                   if (!session?.token) throw new Error('Missing auth token');
                                   await ingestCustomActivities({
