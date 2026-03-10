@@ -4285,6 +4285,7 @@ def vdot_view(
     payload = _vdot_payload_from_lt_pace(lt_pace)
 
     observed_max: dict[str, Any] | None = None
+    vdot_lookback_days = _load_vdot_lookback_days(db_path)
     metrics_df = _metrics_for_filters(
         db_path=db_path,
         days=3650,
@@ -4315,7 +4316,19 @@ def vdot_view(
                 axis=1,
             )
             observed_candidates["vdot"] = pd.to_numeric(observed_candidates["vdot"], errors="coerce")
-            observed_candidates = observed_candidates.dropna(subset=["vdot"]).sort_values(["vdot", "start_time_utc"], ascending=[False, False])
+            observed_candidates = observed_candidates.dropna(subset=["vdot"]).copy()
+            if not observed_candidates.empty:
+                if as_of:
+                    observed_window_end = as_of_ts
+                else:
+                    observed_window_end = pd.to_datetime(observed_candidates["start_time_utc"], utc=True, errors="coerce").max()
+                if pd.notna(observed_window_end):
+                    window_start = pd.Timestamp(observed_window_end) - pd.Timedelta(days=max(vdot_lookback_days - 1, 0))
+                    observed_candidates = observed_candidates[
+                        (pd.to_datetime(observed_candidates["start_time_utc"], utc=True, errors="coerce") >= window_start)
+                        & (pd.to_datetime(observed_candidates["start_time_utc"], utc=True, errors="coerce") <= observed_window_end)
+                    ].copy()
+                observed_candidates = observed_candidates.sort_values(["vdot", "start_time_utc"], ascending=[False, False])
             if not observed_candidates.empty:
                 best = observed_candidates.iloc[0]
                 best_vdot = float(best.get("vdot") or 0.0)
@@ -4323,6 +4336,7 @@ def vdot_view(
                 observed_max = {
                     "vdot": round(best_vdot, 2),
                     "source_date": best_ts.date().isoformat() if pd.notna(best_ts) else "",
+                    "window_days": int(vdot_lookback_days),
                     "equivalents": _vdot_equivalents(best_vdot),
                 }
 
