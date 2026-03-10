@@ -129,7 +129,8 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
           <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="h-full w-full" role="img" aria-label="Splits bar chart">
             {chartData.map((row) => {
               const x = margin.left + innerWidth * row.x0;
-              const width = innerWidth * (row.x1 - row.x0);
+              const rawWidth = innerWidth * (row.x1 - row.x0);
+              const width = Math.max(rawWidth - 1.5, 1);
               const barHeight = (row.ifPct / yMax) * innerHeight;
               const y = axisY - barHeight;
               const active = tooltip?.datum.label === row.label;
@@ -141,7 +142,7 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
                     y={y}
                     width={width}
                     height={barHeight}
-                    rx="6"
+                    rx="3"
                     fill={getBarFill(row.ifPct)}
                     opacity={active ? 1 : 0.95}
                     stroke={active ? 'rgba(226,232,240,0.9)' : 'rgba(255,255,255,0.08)'}
