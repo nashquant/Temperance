@@ -30,6 +30,37 @@ function formatValue(value: number, metric: PlannedMetricView): string {
   return `${Math.round(value)}`;
 }
 
+function PlannedWeekValueLabel({
+  x,
+  y,
+  width,
+  value,
+  metric,
+}: {
+  x?: number | string;
+  y?: number | string;
+  width?: number | string;
+  value?: number | string;
+  metric: PlannedMetricView;
+}): JSX.Element | null {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const labelX = Number(x ?? 0) + Number(width ?? 0) / 2;
+  const labelY = Math.max(Number(y ?? 0) - 10, 14);
+  return (
+    <text
+      x={labelX}
+      y={labelY}
+      textAnchor="middle"
+      fontSize={13}
+      fontWeight={700}
+      fill="#e2e8f0"
+    >
+      {formatValue(numeric, metric)}
+    </text>
+  );
+}
+
 function PlannedWeekTooltip({
   active,
   label,
@@ -51,7 +82,6 @@ function PlannedWeekTooltip({
 }
 
 export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.Element {
-  const valueLabelFormatter = (value: number) => (value > 0 ? formatValue(value, metric) : '');
   const getBarFill = (row: PlannedWeekChartRow): string => {
     const thresholdBasis =
       metric === 'tss'
@@ -64,13 +94,18 @@ export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.E
 
   return (
     <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
-      <CardContent className="p-4">
+      <CardContent className="px-4 pb-4 pt-6">
         <div className="h-[220px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} barCategoryGap="25%">
+            <BarChart data={data} barCategoryGap="25%" margin={{ top: 38, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(125,211,252,0.14)" />
               <XAxis dataKey="dayLabel" tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={{ stroke: 'rgba(148,163,184,0.18)' }} tickLine={false} />
-              <YAxis tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={false} tickLine={false} label={{ value: metricLabel(metric), angle: -90, position: 'insideLeft', style: { fill: '#94a3b8' } }} />
+              <YAxis
+                tick={{ fontSize: 12, fill: '#cbd5e1' }}
+                axisLine={false}
+                tickLine={false}
+                label={{ value: metricLabel(metric), angle: -90, position: 'insideLeft', style: { fill: '#94a3b8' } }}
+              />
               <Tooltip content={<PlannedWeekTooltip metric={metric} />} cursor={{ fill: 'rgba(56, 189, 248, 0.08)' }} />
               <Bar dataKey="value" fill="#34d399" radius={[6, 6, 0, 0]}>
                 {data.map((row) => (
@@ -79,8 +114,7 @@ export function PlannedWeekChart({ data, metric }: PlannedWeekChartProps): JSX.E
                 <LabelList
                   dataKey="value"
                   position="top"
-                  formatter={valueLabelFormatter}
-                  style={{ fontSize: 13, fontWeight: 700, fill: '#e2e8f0' }}
+                  content={(props) => <PlannedWeekValueLabel {...props} metric={metric} />}
                 />
               </Bar>
             </BarChart>

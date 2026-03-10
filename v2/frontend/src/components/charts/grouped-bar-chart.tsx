@@ -20,6 +20,31 @@ interface GroupedBarChartProps {
   compareLabel: string;
 }
 
+function GroupedBarValueLabel({
+  x,
+  y,
+  width,
+  value,
+  metric,
+}: {
+  x?: number | string;
+  y?: number | string;
+  width?: number | string;
+  value?: number | string;
+  metric: GroupedBarChartProps['metric'];
+}): JSX.Element | null {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const labelX = Number(x ?? 0) + Number(width ?? 0) / 2;
+  const labelY = Math.max(Number(y ?? 0) - 10, 14);
+  const text = metric === 'distance' ? numeric.toFixed(1) : String(Math.round(numeric));
+  return (
+    <text x={labelX} y={labelY} textAnchor="middle" fontSize={13} fontWeight={700} fill="#e2e8f0">
+      {text}
+    </text>
+  );
+}
+
 function GroupedBarTooltip({
   active,
   label,
@@ -70,11 +95,6 @@ function GroupedBarChartComponent({
   compareLabel,
 }: GroupedBarChartProps): JSX.Element {
   const axisLabel = metric === 'distance' ? 'Distance (km)' : metric === 'rtss' ? 'rTSS' : 'TSS';
-  const valueLabelFormatter = (value: number) => {
-    if (value <= 0) return '';
-    if (metric === 'distance') return value.toFixed(1);
-    return String(Math.round(value));
-  };
 
   const series = useMemo(
     () => [
@@ -93,7 +113,7 @@ function GroupedBarChartComponent({
   return (
     <div className="h-[360px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} barGap={4} barCategoryGap="20%">
+        <BarChart data={data} barGap={4} barCategoryGap="20%" margin={{ top: 34, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(125,211,252,0.14)" />
           <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={{ stroke: 'rgba(148,163,184,0.18)' }} tickLine={false} />
           <YAxis tick={{ fontSize: 12, fill: '#cbd5e1' }} axisLine={false} tickLine={false} label={{ value: axisLabel, angle: -90, position: 'insideLeft', style: { fill: '#94a3b8' } }} />
@@ -109,8 +129,7 @@ function GroupedBarChartComponent({
               <LabelList
                 dataKey={item.dataKey}
                 position="top"
-                formatter={valueLabelFormatter}
-                style={{ fontSize: 13, fontWeight: 700, fill: '#e2e8f0' }}
+                content={(props) => <GroupedBarValueLabel {...props} metric={metric} />}
               />
             </Bar>
           ))}
