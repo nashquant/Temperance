@@ -488,12 +488,15 @@ export function DashboardPage(): JSX.Element {
                 row.type === 'gap' ? (
                   <div
                     key={row.key}
-                    className="flex items-center justify-center py-1"
+                    className="flex items-center gap-3 py-1.5"
                     aria-label={`${row.gapWeeks} week gap`}
                   >
-                    <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs font-semibold tracking-[0.2em] text-slate-300/70">
-                      (...)
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-white/10" />
+                    <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] font-semibold text-slate-300/72">
+                      <span className="tracking-[0.18em] text-slate-400/72">(...)</span>
+                      <span className="ml-2">{row.gapWeeks}w gap</span>
                     </div>
+                    <div className="h-px flex-1 bg-gradient-to-l from-transparent via-white/10 to-white/10" />
                   </div>
                 ) : (
                   <div
