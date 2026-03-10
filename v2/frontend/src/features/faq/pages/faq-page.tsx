@@ -115,6 +115,9 @@ const trainingFaqItems = [
       'That means VDOT is often more useful for setting training paces, while VO2 max is more useful for understanding aerobic potential.',
       'Do not chase VO2 max workouts year-round. They are effective, but they are also some of the most demanding sessions you can do and should sit on top of a stable aerobic base.',
       'If your VDOT rises while VO2 max barely changes, that can still be real progress because threshold pace, economy, and durability often improve first.',
+      'They can look closer in well-trained runners whose economy and threshold durability are close to the assumptions in Daniels-style race modeling. In that case, race performance is expressing a large fraction of the aerobic engine you already have.',
+      'They do not reliably converge for every athlete. A runner with strong lab VO2 max but weak economy or poor durability can have a lower VDOT than expected, while an economical, durable runner can perform above what raw VO2 max alone would predict.',
+      'So the useful question is not whether they match perfectly. It is whether your race-derived VDOT is converting your aerobic capacity into running speed well. If not, economy, threshold, fueling, or event-specific endurance may be the limiter rather than VO2 max itself.',
     ],
   },
 ];

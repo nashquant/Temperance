@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Activity, AlertTriangle, ChevronDown, Clock3, HeartPulse, Route } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronDown, Clock3, Gauge, HeartPulse, Route } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -67,14 +67,21 @@ function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
               {shortDay(week.week_start)} - {shortDayWithYear(week.week_end)}
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-right">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-right">
             <div>
-              <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400">TSS</p>
-              <p className="text-sm font-semibold text-foreground">{fmtNumber(summary.tss)}</p>
+              <p className="inline-flex items-center justify-end gap-1 text-[10px] uppercase tracking-[0.08em] text-sky-300/90">
+                <Gauge className="h-3 w-3" />
+                VDOT
+              </p>
+              <p className="text-sm font-semibold text-sky-100/92">{fmtNumber(summary.vdot_max)}</p>
             </div>
             <div>
-              <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400">rTSS</p>
-              <p className="text-sm font-semibold text-foreground">{fmtNumber(summary.rtss)}</p>
+              <p className="text-[10px] uppercase tracking-[0.08em] text-blue-300/90">TSS</p>
+              <p className="text-sm font-semibold text-blue-100/92">{fmtNumber(summary.tss)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.08em] text-blue-300/90">rTSS</p>
+              <p className="text-sm font-semibold text-blue-100/92">{fmtNumber(summary.rtss)}</p>
             </div>
           </div>
         </div>
