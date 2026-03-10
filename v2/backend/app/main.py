@@ -2269,6 +2269,7 @@ def _activity_palette_token(
 def _day_lookup_with_daily_model(
     metrics_df: pd.DataFrame,
     daily_tss_target: float,
+    db_path: Path,
 ) -> tuple[pd.DataFrame, dict[pd.Timestamp, dict[str, float]], dict[pd.Timestamp, dict[str, float]]]:
     if metrics_df.empty:
         return (
@@ -2315,6 +2316,8 @@ def _day_lookup_with_daily_model(
     for col in ["distance_eqv_km", "calories", "duration_s", "tss", "rtss"]:
         model_df[col] = pd.to_numeric(model_df.get(col), errors="coerce").fillna(0.0)
 
+    model_df = model_df.merge(_build_daily_vdot_series(daily_df, db_path), on="day", how="left")
+
     tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
     rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
     if float(rtss_series.abs().sum()) <= 1e-9:
@@ -2342,6 +2345,7 @@ def _day_lookup_with_daily_model(
             "fatigue": _safe_float(row.get("fatigue")),
             "overreach": _safe_float(row.get("overreach")),
             "injury_risk": _safe_float(row.get("injury_risk")),
+            "vdot_max": _safe_float(row.get("vdot_max")),
         }
 
     return daily_agg, fitfat_lookup, model_lookup
@@ -2594,6 +2598,73 @@ def _filter_metrics_by_activity(metrics_df: pd.DataFrame, activity_filter: str |
     return metrics_df
 
 
+def _build_daily_vdot_series(activity_df: pd.DataFrame, db_path: Path) -> pd.DataFrame:
+    if activity_df.empty:
+        return pd.DataFrame(columns=["day", "vdot", "vdot_max"])
+
+    working = activity_df.copy()
+    if "start_local" not in working.columns:
+        working["start_local"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
+    else:
+        working["start_local"] = pd.to_datetime(working.get("start_local"), errors="coerce")
+    working["day"] = pd.to_datetime(working.get("day", working.get("start_local")), errors="coerce").dt.normalize()
+    working = working.dropna(subset=["day"]).copy()
+    if working.empty:
+        return pd.DataFrame(columns=["day", "vdot", "vdot_max"])
+
+    working["distance_m"] = pd.to_numeric(working.get("distance_m"), errors="coerce").fillna(0.0)
+    working["duration_s"] = pd.to_numeric(working.get("duration_s"), errors="coerce").fillna(0.0)
+    working["if_proxy"] = pd.to_numeric(working.get("if_proxy"), errors="coerce").fillna(0.0)
+    sport_lower = working.get("sport_type", pd.Series(index=working.index, dtype=object)).fillna("").astype(str).str.lower()
+    eligible_vdot_mask = (
+        (sport_lower.str.contains("run") | sport_lower.str.contains("treadmill"))
+        & (working["distance_m"] > 0.0)
+        & (working["duration_s"] > 0.0)
+        & (working["if_proxy"] > 0.90)
+    )
+    vdot_candidates = working.loc[eligible_vdot_mask, ["day", "distance_m", "duration_s"]].copy()
+
+    day_index = pd.date_range(
+        start=pd.to_datetime(working["day"], errors="coerce").min(),
+        end=pd.to_datetime(working["day"], errors="coerce").max(),
+        freq="D",
+    )
+    model_df = pd.DataFrame({"day": day_index})
+    if vdot_candidates.empty:
+        model_df["vdot"] = pd.NA
+        model_df["vdot_max"] = pd.NA
+        return model_df
+
+    vdot_candidates["vdot"] = vdot_candidates.apply(
+        lambda row: _activity_vdot(
+            distance_m=_safe_float(row.get("distance_m")),
+            duration_s=_safe_float(row.get("duration_s")),
+        ),
+        axis=1,
+    )
+    vdot_candidates["vdot"] = pd.to_numeric(vdot_candidates["vdot"], errors="coerce")
+    vdot_candidates = vdot_candidates.dropna(subset=["vdot"]).copy()
+    if vdot_candidates.empty:
+        model_df["vdot"] = pd.NA
+        model_df["vdot_max"] = pd.NA
+        return model_df
+
+    daily_vdot = (
+        vdot_candidates.groupby("day", as_index=False)
+        .agg(vdot=("vdot", "max"))
+        .sort_values("day")
+    )
+    vdot_lookback_days = _load_vdot_lookback_days(db_path)
+    model_df = model_df.merge(daily_vdot, on="day", how="left")
+    model_df["vdot"] = pd.to_numeric(model_df.get("vdot"), errors="coerce")
+    model_df["vdot_max"] = (
+        pd.to_numeric(model_df.get("vdot"), errors="coerce")
+        .rolling(window=vdot_lookback_days, min_periods=1)
+        .max()
+    )
+    return model_df
+
+
 def _build_athlete_progression_payload(
     db_path: Path,
     days: int,
@@ -2768,23 +2839,7 @@ def _build_athlete_progression_payload(
     model_df = model_df.merge(daily_agg, on="day", how="left")
     for col in [c for c in model_df.columns if c != "day"]:
         model_df[col] = pd.to_numeric(model_df[col], errors="coerce").fillna(0.0)
-    vdot_lookback_days = _load_vdot_lookback_days(db_path)
-    if not vdot_candidates.empty:
-        daily_vdot = (
-            vdot_candidates.groupby("day", as_index=False)
-            .agg(vdot=("vdot", "max"))
-            .sort_values("day")
-        )
-        model_df = model_df.merge(daily_vdot, on="day", how="left")
-        model_df["vdot"] = pd.to_numeric(model_df.get("vdot"), errors="coerce")
-        model_df["vdot_max"] = (
-            pd.to_numeric(model_df.get("vdot"), errors="coerce")
-            .rolling(window=vdot_lookback_days, min_periods=1)
-            .max()
-        )
-    else:
-        model_df["vdot"] = pd.NA
-        model_df["vdot_max"] = pd.NA
+    model_df = model_df.merge(_build_daily_vdot_series(filtered, db_path), on="day", how="left")
 
     pace_curve = _load_curve_points(
         db_path=db_path,
@@ -3196,6 +3251,7 @@ def _build_activity_dashboard_payload(
     day_agg, fitfat_lookup, model_lookup = _day_lookup_with_daily_model(
         metrics_df=metrics_df,
         daily_tss_target=daily_tss_target,
+        db_path=db_path,
     )
 
     day_stats_lookup: dict[pd.Timestamp, dict[str, float]] = {}
@@ -3389,7 +3445,8 @@ def _build_activity_dashboard_payload(
         week_calories = float(pd.to_numeric(week_df.get("calories_total"), errors="coerce").fillna(0.0).sum())
         week_tss = float(pd.to_numeric(week_df.get("tss"), errors="coerce").fillna(0.0).sum())
         week_rtss = float(pd.to_numeric(week_df.get("rtss"), errors="coerce").fillna(0.0).sum())
-        week_daily_model = _model_on_or_before(we)
+        summary_lookup_day = min(we, today_local) if ws <= today_local <= we else we
+        week_daily_model = _model_on_or_before(summary_lookup_day)
         week_zones_seconds = {
             "Z1": float(pd.to_numeric(week_df.get("hr_time_in_zone_1"), errors="coerce").fillna(0.0).sum()),
             "Z2": float(pd.to_numeric(week_df.get("hr_time_in_zone_2"), errors="coerce").fillna(0.0).sum()),
