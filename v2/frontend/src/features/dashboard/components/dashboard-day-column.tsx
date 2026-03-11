@@ -1,4 +1,4 @@
-import { Check, HeartPulse, Plus, RotateCcw, Route, X } from 'lucide-react';
+import { Activity, Check, Clock3, Gauge, HeartPulse, Plus, Route, RotateCcw, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,19 +32,19 @@ interface DashboardDayColumnProps {
 }
 
 const intensityClasses: Record<string, string> = {
-  green: 'border-[rgba(205,213,225,0.8)] bg-[rgba(203,213,225,0.22)]',
-  blue: 'border-[rgba(79,179,255,0.58)] bg-[rgba(79,179,255,0.14)]',
-  orange: 'border-[rgba(240,166,58,0.6)] bg-[rgba(240,166,58,0.15)]',
-  red: 'border-[rgba(239,106,106,0.58)] bg-[rgba(239,106,106,0.14)]',
-  purple: 'border-[rgba(139,108,246,0.58)] bg-[rgba(139,108,246,0.14)]',
+  green: 'border-[rgba(205,213,225,0.5)] bg-[linear-gradient(180deg,rgba(203,213,225,0.16),rgba(15,23,42,0.24))]',
+  blue: 'border-[rgba(79,179,255,0.48)] bg-[linear-gradient(180deg,rgba(79,179,255,0.14),rgba(15,23,42,0.24))]',
+  orange: 'border-[rgba(240,166,58,0.5)] bg-[linear-gradient(180deg,rgba(240,166,58,0.15),rgba(15,23,42,0.24))]',
+  red: 'border-[rgba(239,106,106,0.48)] bg-[linear-gradient(180deg,rgba(239,106,106,0.14),rgba(15,23,42,0.24))]',
+  purple: 'border-[rgba(139,108,246,0.48)] bg-[linear-gradient(180deg,rgba(139,108,246,0.14),rgba(15,23,42,0.24))]',
 };
 
 const plannedIntensityClasses: Record<string, string> = {
-  green: 'border-[rgba(205,213,225,0.88)] bg-[rgba(203,213,225,0.14)]',
-  blue: 'border-[rgba(79,179,255,0.72)] bg-[rgba(79,179,255,0.08)]',
-  orange: 'border-[rgba(240,166,58,0.74)] bg-[rgba(240,166,58,0.08)]',
-  red: 'border-[rgba(239,106,106,0.72)] bg-[rgba(239,106,106,0.08)]',
-  purple: 'border-[rgba(139,108,246,0.72)] bg-[rgba(139,108,246,0.08)]',
+  green: 'border-[rgba(205,213,225,0.66)] bg-[linear-gradient(180deg,rgba(203,213,225,0.12),rgba(15,23,42,0.2))]',
+  blue: 'border-[rgba(79,179,255,0.6)] bg-[linear-gradient(180deg,rgba(79,179,255,0.1),rgba(15,23,42,0.2))]',
+  orange: 'border-[rgba(240,166,58,0.62)] bg-[linear-gradient(180deg,rgba(240,166,58,0.1),rgba(15,23,42,0.2))]',
+  red: 'border-[rgba(239,106,106,0.6)] bg-[linear-gradient(180deg,rgba(239,106,106,0.1),rgba(15,23,42,0.2))]',
+  purple: 'border-[rgba(139,108,246,0.6)] bg-[linear-gradient(180deg,rgba(139,108,246,0.1),rgba(15,23,42,0.2))]',
 };
 
 const customBorderAccentClasses: Record<string, string> = {
@@ -103,11 +103,20 @@ function formatActivityTitle(raw: string): string {
     .join(' ');
 }
 
+function isRunningLikeSport(raw: string): boolean {
+  const normalized = String(raw || '').trim().toLowerCase();
+  return (
+    normalized.includes('run') ||
+    normalized.includes('treadmill') ||
+    normalized.includes('track')
+  );
+}
+
 function compactLine(parts: Array<string | null | undefined>): string {
   return parts
     .map((part) => String(part || '').trim())
     .filter(Boolean)
-    .map((part) => part.replace(/km\s*eqv\.?/gi, 'kmeq'))
+    .map((part) => part.replace(/\/km\b/gi, '').replace(/km\s*eqv\.?/gi, 'km'))
     .join(' · ');
 }
 
@@ -180,6 +189,43 @@ function shortWeekday(dayUtc: string, fallback: string): string {
   return new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(parsed);
 }
 
+function formatTssLabel(tss: number, rtss: number, showBoth: boolean, runningLike = false): string {
+  const roundedTss = Math.round(tss);
+  const roundedRtss = Math.round(rtss);
+  if (!showBoth) return `TSS ${roundedTss}`;
+  return runningLike ? `rTSS ${roundedRtss}(${roundedTss})` : `TSS ${roundedTss}(${roundedRtss})`;
+}
+
+function dayNumber(dayUtc: string): string {
+  const parsed = new Date(`${dayUtc}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return '--';
+  return new Intl.DateTimeFormat('en-US', { day: '2-digit' }).format(parsed);
+}
+
+function MetricRow({
+  icon,
+  text,
+  compactMobile = false,
+}: {
+  icon: JSX.Element;
+  text: string;
+  compactMobile?: boolean;
+}): JSX.Element | null {
+  const cleaned = text.trim();
+  if (!cleaned) return null;
+  return (
+    <p
+      className={cn(
+        'inline-flex min-w-0 items-center gap-1 font-medium tracking-[0.01em] text-slate-300/92',
+        compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]',
+      )}
+    >
+      {icon}
+      <span className="truncate">{cleaned}</span>
+    </p>
+  );
+}
+
 export function DashboardDayColumn({
   day,
   onAddPlannedActivity,
@@ -244,14 +290,24 @@ export function DashboardDayColumn({
           <div className="space-y-0.5">
             <div className="flex min-h-[24px] items-center gap-1.5">
               <div className="min-w-0">
-                <p
-                  className={cn(
-                    compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[13px] font-semibold leading-5',
-                    day.is_today ? 'text-primary' : 'text-foreground',
-                  )}
-                >
-                  {shortWeekday(day.day_utc, day.day_label)}
-                </p>
+                <div className="inline-flex items-baseline gap-1.5">
+                  <p
+                    className={cn(
+                      compactMobile ? 'text-[15px] font-semibold leading-4' : 'text-[17px] font-semibold leading-5',
+                      day.is_today ? 'text-primary' : 'text-foreground',
+                    )}
+                  >
+                    {dayNumber(day.day_utc)}
+                  </p>
+                  <p
+                    className={cn(
+                      compactMobile ? 'text-[11px] font-medium leading-4' : 'text-[11.5px] font-medium leading-5',
+                      'uppercase tracking-[0.14em] text-slate-400/88',
+                    )}
+                  >
+                    {shortWeekday(day.day_utc, day.day_label)}
+                  </p>
+                </div>
               </div>
               <Button
                 variant="ghost"
@@ -389,12 +445,13 @@ export function DashboardDayColumn({
                   </div>
                 );
               }
+              const runningLike = isRunningLikeSport(activity.sport);
               return (
                 <div
                   key={activity.activity_id}
                   className={cn(
                     'relative flex cursor-pointer flex-col overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-white/[0.045] hover:shadow-[0_16px_28px_rgba(2,6,23,0.24)]',
-                    compactMobile ? 'h-[88px] p-1.5 text-[11px]' : 'h-[102px] p-2 text-[12px]',
+                    compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[94px] p-2 text-[12px]',
                     activity.is_custom ? 'border-2 border-dashed outline outline-1 outline-offset-[-3px] outline-dotted' : undefined,
                     intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
                     activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
@@ -430,19 +487,23 @@ export function DashboardDayColumn({
                     {activity.is_custom ? '(C)' : ''}
                     {!activity.is_custom && timeLabel ? ` ${timeLabel}` : ''}
                   </p>
-                  <p className={cn('mt-0.5 line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
-                    {compactLine([activity.duration_label, activity.distance_label])}
-                  </p>
-                  <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
-                    {compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`])}
-                  </p>
-                  {activity.vdot != null ? (
-                    <p className={cn('line-clamp-1 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
-                      {`VDOT ${Math.round(activity.vdot)}`}
-                    </p>
-                  ) : null}
-                  <p className={cn('mt-auto truncate font-semibold text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
-                    TSS {Math.round(activity.tss)} · rTSS {Math.round(activity.rtss)}
+                  <div className={compactMobile ? 'mt-1 space-y-0.5' : 'mt-1.5 space-y-0.5'}>
+                    <MetricRow
+                      compactMobile={compactMobile}
+                      icon={<Clock3 className="h-2.5 w-2.5 shrink-0 text-cyan-300/80" />}
+                      text={compactLine([activity.duration_label, activity.distance_label])}
+                    />
+                    <MetricRow
+                      compactMobile={compactMobile}
+                      icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
+                      text={compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`, activity.vdot != null ? `VDOT ${Math.round(activity.vdot)}` : null])}
+                    />
+                  </div>
+                  <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
+                    <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />
+                    <span className="truncate">
+                      {formatTssLabel(activity.tss, activity.rtss, !activity.is_custom && runningLike, runningLike)}
+                    </span>
                   </p>
                 </div>
               );
@@ -478,7 +539,7 @@ export function DashboardDayColumn({
                 (() => {
                   const metricPills = [
                     metricPillLabel(item.activity.duration_label),
-                    metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} kmeq`),
+                    metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`),
                     metricPillLabel(item.activity.pace_label),
                     metricPillLabel(`TSS ${Math.round(item.activity.tss)}`),
                     metricPillLabel(`rTSS ${Math.round(item.activity.rtss)}`),
@@ -557,7 +618,7 @@ export function DashboardDayColumn({
                 key={`${item.activity.day_utc}-${item.activity.line_no}`}
                 className={cn(
                   'relative flex cursor-pointer flex-col overflow-hidden rounded-[1rem] border-2 border-dashed shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-white/[0.045] hover:shadow-[0_16px_28px_rgba(2,6,23,0.24)]',
-                  compactMobile ? 'h-[88px] px-2 pb-2 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
+                  compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[94px] px-2.5 pb-2 pt-2 text-[12px]',
                   plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                 )}
                 onClick={() => onSelectActivity?.(item.activity.activity_id)}
@@ -600,14 +661,21 @@ export function DashboardDayColumn({
                 <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
                   {formatActivityTitle(item.activity.activity)} <span className="text-muted-foreground">(P)</span>
                 </p>
-                <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
-                  {compactLine([item.activity.duration_label, `${Math.round(item.activity.distance_eqv_km)} kmeq`])}
-                </p>
-                <p className={cn('line-clamp-2 font-medium tracking-[0.01em] text-slate-300/92', compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]')}>
-                  {compactLine([item.activity.pace_label, `IF ${Math.round(item.activity.if_pct)}%`])}
-                </p>
-                <p className={cn('mt-auto truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
-                  TSS {Math.round(item.activity.tss)} · rTSS {Math.round(item.activity.rtss)}
+                <div className={compactMobile ? 'mt-1 space-y-0.5' : 'mt-1.5 space-y-0.5'}>
+                  <MetricRow
+                    compactMobile={compactMobile}
+                    icon={<Route className="h-2.5 w-2.5 shrink-0 text-emerald-300/80" />}
+                    text={compactLine([item.activity.duration_label, `${Math.round(item.activity.distance_eqv_km)} km`])}
+                  />
+                  <MetricRow
+                    compactMobile={compactMobile}
+                    icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
+                    text={compactLine([item.activity.pace_label, `IF ${Math.round(item.activity.if_pct)}%`])}
+                  />
+                </div>
+                <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
+                  <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />
+                  <span className="truncate">{formatTssLabel(item.activity.tss, item.activity.rtss, false)}</span>
                 </p>
               </div>
               )
