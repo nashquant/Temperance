@@ -383,6 +383,33 @@ def _load_curve_points(
     return out
 
 
+def _has_explicit_lt_pace_curve(db_path: Path) -> bool:
+    raw = get_setting(db_path, SETTINGS_KEY_LT_PACE_CURVE)
+    if not raw:
+        return False
+    try:
+        rows = json.loads(raw)
+    except Exception:
+        return False
+    if not isinstance(rows, list):
+        return False
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        date_raw = str(row.get("date") or "").strip()
+        value_raw = row.get("lt_pace_sec_per_km", row.get("lt_pace_sec"))
+        if not date_raw:
+            continue
+        try:
+            datetime.fromisoformat(date_raw)
+            value = float(value_raw)
+        except Exception:
+            continue
+        if value > 0:
+            return True
+    return False
+
+
 def _safe_float(value: Any) -> float:
     try:
         out = float(value)
@@ -1138,6 +1165,26 @@ def _vdot_payload_from_lt_pace(lt_pace_sec_per_km: float) -> dict[str, Any]:
     }
 
 
+def _pace_sec_per_km_from_named_vdot_token(token: str, lt_pace_sec_per_km: float) -> float | None:
+    alias = str(token or "").strip().lower()
+    equivalent_key = {
+        "mp": "marathon",
+        "hmp": "half_marathon",
+        "10k": "10k",
+    }.get(alias)
+    if equivalent_key is None:
+        return None
+    payload = _vdot_payload_from_lt_pace(lt_pace_sec_per_km)
+    equivalent = payload.get("equivalents", {}).get(equivalent_key)
+    if not isinstance(equivalent, dict):
+        return None
+    try:
+        pace = float(equivalent.get("pace_sec_per_km") or 0.0)
+    except Exception:
+        return None
+    return pace if pace > 0 else None
+
+
 def _activity_vdot(distance_m: float, duration_s: float) -> float | None:
     distance = float(distance_m)
     duration = float(duration_s)
@@ -1453,6 +1500,15 @@ def _parse_pace_token(text: str) -> float | None:
         return None
 
 
+def _parse_named_pace_token(text: str) -> str | None:
+    lower = str(text or "").lower()
+    m = re.search(r"@\s*(mp|hmp|10k)\b", lower)
+    if not m:
+        return None
+    token = str(m.group(1) or "").strip().lower()
+    return token or None
+
+
 def _parse_if_token(text: str) -> float | None:
     lower = str(text or "").lower()
     m = re.search(r"@\s*(\d+(?:\.\d+)?)\s*%", lower)
@@ -1579,6 +1635,7 @@ def _expand_planned_segments(
     line: str,
     lthr_bpm: float | None = None,
     threshold_pace_sec_per_km: float | None = None,
+    has_vdot_basis: bool = False,
 ) -> tuple[list[dict[str, float | str | None]], list[str]]:
     segments: list[dict[str, float | str | None]] = []
     warnings: list[str] = []
@@ -1597,10 +1654,13 @@ def _expand_planned_segments(
         kind = _plan_activity_kind(work_chunk)
         bpm = _parse_bpm_token(work_chunk)
         pace = _parse_pace_token(work_chunk)
+        named_pace = _parse_named_pace_token(work_chunk)
         if_input = _parse_if_token(work_chunk)
         if_input_source: str | None = "explicit" if if_input is not None else None
         tss_input = _parse_tss_token(work_chunk)
         if kind == "other" and pace is not None:
+            kind = "run"
+        if kind == "other" and named_pace is not None:
             kind = "run"
         if kind == "other" and last_kind is not None:
             kind = last_kind
@@ -1608,13 +1668,27 @@ def _expand_planned_segments(
             warnings.append(f"Missing/unknown activity in: `{chunk}` (include run/treadmill/elliptical/cycling)")
             continue
         is_running_like = kind in {"run", "treadmill"}
+        if named_pace is not None:
+            if not is_running_like:
+                warnings.append(
+                    f"Named pace is only allowed for running/treadmill in: `{chunk}` (use `@140bpm` or `@70%` for non-running)."
+                )
+                continue
+            if not has_vdot_basis:
+                warnings.append(f"Named pace token requires configured LT pace/VDOT in Settings for: `{chunk}`.")
+                continue
+            if pace is None:
+                pace = _pace_sec_per_km_from_named_vdot_token(named_pace, threshold_pace_value)
+            if pace is None or pace <= 0:
+                warnings.append(f"Could not derive `{named_pace.upper()}` pace from VDOT for: `{chunk}`.")
+                continue
         if (not is_running_like) and (pace is not None):
             warnings.append(
                 f"Pace is only allowed for running/treadmill in: `{chunk}` (use `@140bpm` or `@70%` for non-running)."
             )
             continue
         if bpm is None and pace is None and if_input is None and tss_input is None:
-            warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm`, `@70%`, `@4:50/km`, or `@40TSS`)")
+            warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm`, `@70%`, `@4:50/km`, `@MP`, `@HMP`, `@10k`, or `@40TSS`)")
             continue
 
         recovery_minutes = _parse_minutes_token(recovery_chunk) if recovery_chunk else None
@@ -1860,12 +1934,14 @@ def _segments_from_stored_or_source(
     source_text: str,
     lthr_bpm: float | None = None,
     threshold_pace_sec_per_km: float | None = None,
+    has_vdot_basis: bool = False,
 ) -> list[dict[str, Any]]:
     source_segments: list[dict[str, Any]] = []
     expanded, _warnings = _expand_planned_segments(
         str(source_text or ""),
         lthr_bpm=lthr_bpm,
         threshold_pace_sec_per_km=threshold_pace_sec_per_km,
+        has_vdot_basis=has_vdot_basis,
     )
     source_segments = [s for s in expanded if isinstance(s, dict)]
     if source_segments:
