@@ -40,15 +40,34 @@ function formatDay(iso: string, aggregation: ProgressionAggregation): string {
 export function AthleteProgressionPage(): JSX.Element {
   const [days, setDays] = useState(365);
   const [aggregation, setAggregation] = useState<ProgressionAggregation>('weekly');
+  const [includeCurrentPeriod, setIncludeCurrentPeriod] = useState(false);
 
   const query = useAthleteProgressionQuery(days, aggregation, 'all');
+  const currentWeekStart = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dayOffset = (today.getDay() + 6) % 7;
+    today.setDate(today.getDate() - dayOffset);
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  }, []);
+  const currentDay = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  }, []);
 
   const chartData = useMemo(() => {
-    return (query.data?.points ?? []).map((row) => ({
+    const rawPoints = query.data?.points ?? [];
+    const filteredPoints = rawPoints.filter((row) => {
+      if (includeCurrentPeriod) return true;
+      if (aggregation === 'weekly') return row.period_start !== currentWeekStart;
+      return row.period_start !== currentDay;
+    });
+    return filteredPoints.map((row) => ({
       ...row,
       label: formatDay(row.period_start, aggregation),
     }));
-  }, [aggregation, query.data?.points]);
+  }, [aggregation, currentDay, currentWeekStart, includeCurrentPeriod, query.data?.points]);
 
   const normalizedChartData = useMemo(() => {
     return chartData.map((row) => {
@@ -100,6 +119,24 @@ export function AthleteProgressionPage(): JSX.Element {
               onClick={() => setAggregation('daily')}
             >
               Daily
+            </Button>
+          </div>
+          <div className="inline-flex items-center rounded-lg border border-white/10 bg-black/15 p-1">
+            <Button
+              variant={includeCurrentPeriod ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-8 rounded-md px-2.5 text-xs"
+              onClick={() => setIncludeCurrentPeriod(true)}
+            >
+              T
+            </Button>
+            <Button
+              variant={!includeCurrentPeriod ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-8 rounded-md px-2.5 text-xs"
+              onClick={() => setIncludeCurrentPeriod(false)}
+            >
+              T-1
             </Button>
           </div>
         </div>
