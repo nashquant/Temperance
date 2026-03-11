@@ -1,4 +1,4 @@
-import { Check, Plus, RotateCcw, X } from 'lucide-react';
+import { Check, HeartPulse, Plus, RotateCcw, Route, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,7 +32,7 @@ interface DashboardDayColumnProps {
 }
 
 const intensityClasses: Record<string, string> = {
-  green: 'border-[rgba(143,155,173,0.58)] bg-[rgba(143,155,173,0.14)]',
+  green: 'border-[rgba(205,213,225,0.8)] bg-[rgba(203,213,225,0.22)]',
   blue: 'border-[rgba(79,179,255,0.58)] bg-[rgba(79,179,255,0.14)]',
   orange: 'border-[rgba(240,166,58,0.6)] bg-[rgba(240,166,58,0.15)]',
   red: 'border-[rgba(239,106,106,0.58)] bg-[rgba(239,106,106,0.14)]',
@@ -40,7 +40,7 @@ const intensityClasses: Record<string, string> = {
 };
 
 const plannedIntensityClasses: Record<string, string> = {
-  green: 'border-[rgba(143,155,173,0.72)] bg-[rgba(143,155,173,0.08)]',
+  green: 'border-[rgba(205,213,225,0.88)] bg-[rgba(203,213,225,0.14)]',
   blue: 'border-[rgba(79,179,255,0.72)] bg-[rgba(79,179,255,0.08)]',
   orange: 'border-[rgba(240,166,58,0.74)] bg-[rgba(240,166,58,0.08)]',
   red: 'border-[rgba(239,106,106,0.72)] bg-[rgba(239,106,106,0.08)]',
@@ -48,42 +48,38 @@ const plannedIntensityClasses: Record<string, string> = {
 };
 
 const customBorderAccentClasses: Record<string, string> = {
-  green: 'border-[rgba(143,155,173,0.74)] outline-[rgba(203,213,225,0.28)]',
+  green: 'border-[rgba(205,213,225,0.92)] outline-[rgba(241,245,249,0.38)]',
   blue: 'border-[rgba(79,179,255,0.76)] outline-[rgba(125,211,252,0.3)]',
   orange: 'border-[rgba(240,166,58,0.76)] outline-[rgba(252,211,77,0.3)]',
   red: 'border-[rgba(239,106,106,0.74)] outline-[rgba(253,164,175,0.3)]',
   purple: 'border-[rgba(139,108,246,0.74)] outline-[rgba(196,181,253,0.3)]',
 };
 
-function fmtMeta(day: DashboardDayColumnType): string[] {
-  const line1: string[] = [];
-  const line2: string[] = [];
-  const line3: string[] = [];
-
-  line1.push(`${Math.round(day.meta.distance_eqv_km || 0)} km`);
-  if ((day.meta.calories || 0) > 0) line1.push(`${Math.round(day.meta.calories)} kcal`);
-
-  if (day.meta.fitness !== null) line2.push(`Fit ${Math.round(day.meta.fitness)}`);
-  if (day.meta.fatigue !== null) line2.push(`Fatigue ${Math.round(day.meta.fatigue)}`);
-
-  if (day.meta.resting_hr !== null && day.meta.resting_hr > 0) {
-    line3.push(`RHR ${Math.round(day.meta.resting_hr)}`);
+function fmtMeta(day: DashboardDayColumnType): Array<{ key: string; label: string; value: string; tone: string }> {
+  const parts: Array<{ key: string; label: string; value: string; tone: string }> = [];
+  parts.push({
+    key: 'distance',
+    label: 'Dist',
+    value: `${Math.round(day.meta.distance_eqv_km || 0)} km`,
+    tone: 'text-emerald-200/88',
+  });
+  const hasFatigueExpected = Boolean(day.meta.show_fatigue_expected && day.meta.fatigue_expected !== null);
+  if (hasFatigueExpected) {
+    parts.push({
+      key: 'fatg',
+      label: 'fatg',
+      value: `${Math.round(day.meta.fatigue_expected ?? 0)}`,
+      tone: 'text-rose-200/88',
+    });
+  } else if (day.meta.fatigue !== null) {
+    parts.push({
+      key: 'fatg',
+      label: 'fatg',
+      value: `${Math.round(day.meta.fatigue)}`,
+      tone: 'text-rose-200/88',
+    });
   }
-  if (day.meta.stress_avg !== null && day.meta.stress_avg > 0) {
-    line3.push(`Stress ${Math.round(day.meta.stress_avg)}`);
-  }
-
-  if (line2.length === 0 && (day.meta.planned_duration_s || 0) > 0) {
-    line2.push(`${Math.round(day.meta.planned_duration_s / 3600)}h`);
-  }
-  if (line2.length < 2 && (day.meta.planned_if_pct || 0) > 0) {
-    line2.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
-  }
-  if (line3.length === 0 && day.meta.show_fatigue_expected && day.meta.fatigue_expected !== null) {
-    line3.push(`Fatigue exp ${Math.round(day.meta.fatigue_expected)}`);
-  }
-
-  return [line1.join(' · '), line2.join(' · '), line3.join(' · ')].filter(Boolean);
+  return parts;
 }
 
 function formatActivityTitle(raw: string): string {
@@ -178,6 +174,12 @@ function metricPillLabel(value: string | null | undefined): string | null {
   return cleaned ? cleaned : null;
 }
 
+function shortWeekday(dayUtc: string, fallback: string): string {
+  const parsed = new Date(`${dayUtc}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(parsed);
+}
+
 export function DashboardDayColumn({
   day,
   onAddPlannedActivity,
@@ -197,6 +199,7 @@ export function DashboardDayColumn({
   onUndoActivity,
 }: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
+  const metaItems = fmtMeta(day);
   const shouldScrollActivities = activityCount > 3;
   const actualCards: Array<
     | { type: 'activity'; activity: DashboardDayColumnType['actual_activities'][number]; index: number }
@@ -214,70 +217,67 @@ export function DashboardDayColumn({
   }
 
   const cardClassName = cn(
-    'rounded-xl border-border/80 bg-card/75 shadow-sm',
+    'overflow-hidden rounded-[1.25rem] border border-[rgba(51,65,85,0.72)] bg-[linear-gradient(180deg,rgba(10,18,33,0.99),rgba(6,12,23,0.98))] shadow-[0_20px_44px_rgba(2,6,23,0.36),inset_0_1px_0_rgba(255,255,255,0.05),inset_0_0_0_1px_rgba(15,23,42,0.75)]',
     compactMobile
       ? mobileFullWidth
         ? 'w-full min-w-0'
         : 'w-[240px] shrink-0 min-h-[340px]'
       : 'sm:min-h-[340px] lg:h-[430px]',
-    day.is_today && !compactMobile ? 'border-primary/70' : undefined,
+    day.is_today && !compactMobile
+      ? 'border-[rgba(79,70,229,0.58)] shadow-[0_24px_50px_rgba(2,6,23,0.44),inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(129,140,248,0.18)]'
+      : undefined,
   );
 
   const contentClassName = cn(
-    'flex h-full flex-col',
+    'relative flex h-full flex-col',
     compactMobile && mobileFullWidth ? 'gap-1.5 p-2' : 'gap-2 p-2.5',
   );
 
   return (
     <Card className={cardClassName}>
       <CardContent className={contentClassName}>
-        <div className="space-y-1">
-          <div className="flex min-h-[24px] items-center">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <p
-                className={cn(
-                  compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[13px] font-semibold leading-5',
-                  day.is_today ? 'text-primary' : 'text-foreground',
-                )}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[linear-gradient(180deg,rgba(96,165,250,0.07),rgba(168,85,247,0.05)_38%,transparent)]" />
+        <div className="relative rounded-[1rem] border border-[rgba(71,85,105,0.55)] bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_0_1px_rgba(15,23,42,0.42),0_10px_24px_rgba(2,6,23,0.18)] backdrop-blur-sm">
+          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(125,211,252,0.22)] to-transparent" />
+          <div className="pointer-events-none absolute inset-y-3 left-0 w-px bg-gradient-to-b from-transparent via-[rgba(129,140,248,0.14)] to-transparent" />
+          <div className="pointer-events-none absolute inset-y-3 right-0 w-px bg-gradient-to-b from-transparent via-[rgba(192,132,252,0.12)] to-transparent" />
+          <div className="space-y-0.5">
+            <div className="flex min-h-[24px] items-center gap-1.5">
+              <div className="min-w-0">
+                <p
+                  className={cn(
+                    compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[13px] font-semibold leading-5',
+                    day.is_today ? 'text-primary' : 'text-foreground',
+                  )}
+                >
+                  {shortWeekday(day.day_utc, day.day_label)}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="ml-auto h-6 w-6 rounded-full border border-white/8 bg-white/[0.025] text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] hover:bg-white/[0.05] hover:text-foreground"
+                onClick={() => onAddPlannedActivity?.(day.day_utc)}
+                disabled={addingPlannedActivity}
+                aria-label={`Add activity for ${shortWeekday(day.day_utc, day.day_label)}`}
               >
-                {day.day_label}
-              </p>
-              {compactMobile && mobileFullWidth && day.is_today ? (
-                <span className="rounded-full border border-sky-300/18 bg-sky-300/10 px-1.5 py-0.5 text-[8.5px] font-semibold uppercase tracking-[0.12em] text-sky-100/92">
-                  Today
-                </span>
-              ) : null}
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-auto h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
-              onClick={() => onAddPlannedActivity?.(day.day_utc)}
-              disabled={addingPlannedActivity}
-              aria-label={`Add activity for ${day.day_label}`}
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <div
-            className={cn(
-              'space-y-0.5 text-muted-foreground',
-              compactMobile && mobileFullWidth
-                ? 'text-[10px] leading-[1.2]'
-                : compactMobile
-                  ? 'min-h-[40px] text-[11px] leading-[1.25]'
-                  : 'min-h-[50px] text-[12px] leading-[1.3]',
-            )}
-          >
-            {fmtMeta(day).slice(0, compactMobile && mobileFullWidth ? 2 : 3).map((line) => (
-              <p key={line} className="truncate">
-                {line}
-              </p>
-            ))}
+            <div className="flex items-center gap-2 overflow-hidden text-[10px] leading-4">
+              {metaItems.map((item) => (
+                <div key={item.key} className={cn('inline-flex min-w-0 items-center gap-1', item.tone)}>
+                  {item.key === 'distance' ? <Route className="h-3 w-3 shrink-0" /> : <HeartPulse className="h-3 w-3 shrink-0" />}
+                  <span className="truncate text-slate-300/88">
+                    {item.value}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        <Separator className={cn('bg-border/70', compactMobile && mobileFullWidth ? 'opacity-60' : undefined)} />
+        <Separator className={cn('bg-gradient-to-r from-transparent via-white/8 to-transparent', compactMobile && mobileFullWidth ? 'opacity-60' : undefined)} />
 
         <div
           className={cn(
@@ -330,7 +330,7 @@ export function DashboardDayColumn({
                   <div
                     key={activity.activity_id}
                     className={cn(
-                      'relative overflow-hidden rounded-lg border',
+                      'relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
                       'px-2 py-1.5',
                       activity.is_custom ? 'border-2 border-dashed outline outline-1 outline-offset-[-3px] outline-dotted' : undefined,
                       intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
@@ -346,6 +346,7 @@ export function DashboardDayColumn({
                       }
                     }}
                   >
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
                     {activity.is_custom ? (
                       <Button
                         variant="ghost"
@@ -392,7 +393,7 @@ export function DashboardDayColumn({
                 <div
                   key={activity.activity_id}
                   className={cn(
-                    'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
+                    'relative flex cursor-pointer flex-col overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-white/[0.045] hover:shadow-[0_16px_28px_rgba(2,6,23,0.24)]',
                     compactMobile ? 'h-[88px] p-1.5 text-[11px]' : 'h-[102px] p-2 text-[12px]',
                     activity.is_custom ? 'border-2 border-dashed outline outline-1 outline-offset-[-3px] outline-dotted' : undefined,
                     intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
@@ -408,6 +409,7 @@ export function DashboardDayColumn({
                     }
                   }}
                 >
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
                   {activity.is_custom ? (
                     <Button
                       variant="ghost"
@@ -486,7 +488,7 @@ export function DashboardDayColumn({
                 <div
                   key={`${item.activity.day_utc}-${item.activity.line_no}`}
                   className={cn(
-                    'relative overflow-hidden rounded-lg border-2 border-dashed',
+                    'relative overflow-hidden rounded-[1rem] border-2 border-dashed shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
                     'px-2 py-1.5',
                     plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                   )}
@@ -500,6 +502,7 @@ export function DashboardDayColumn({
                     }
                   }}
                 >
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
                   <div className="absolute right-1.5 top-1.5 flex gap-1">
                     <Button
                       variant="ghost"
@@ -553,7 +556,7 @@ export function DashboardDayColumn({
               <div
                 key={`${item.activity.day_utc}-${item.activity.line_no}`}
                 className={cn(
-                  'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border-2 border-dashed transition-colors hover:bg-white/5',
+                  'relative flex cursor-pointer flex-col overflow-hidden rounded-[1rem] border-2 border-dashed shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-white/[0.045] hover:shadow-[0_16px_28px_rgba(2,6,23,0.24)]',
                   compactMobile ? 'h-[88px] px-2 pb-2 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
                   plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                 )}
@@ -567,6 +570,7 @@ export function DashboardDayColumn({
                   }
                 }}
               >
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
                 <Button
                   variant="ghost"
                   size="icon"
@@ -611,7 +615,7 @@ export function DashboardDayColumn({
           )}
 
           {day.actual_activities.length === 0 && day.planned_activities.length === 0 && day.is_past ? (
-            <div className={cn('rounded-lg border border-border/70 bg-muted/25 p-2 text-center text-muted-foreground', compactMobile ? 'text-[11px]' : 'text-[12px]')}>
+            <div className={cn('rounded-[0.95rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-2 text-center text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]', compactMobile ? 'text-[11px]' : 'text-[12px]')}>
               <p className="font-semibold text-foreground">Rest Day</p>
               <p>Rest is part of training.</p>
             </div>

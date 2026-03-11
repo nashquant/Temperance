@@ -38,6 +38,8 @@ function fmt(value: number | null | undefined): string {
 export function WellnessPage(): JSX.Element {
   const surfaceClassName =
     'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
+  const summaryCardClassName =
+    'group relative overflow-hidden rounded-[1.4rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(96,165,250,0.18),transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.94))] shadow-[0_20px_48px_rgba(2,6,23,0.34)]';
   const [days, setDays] = useState(30);
   const [aggregation, setAggregation] = useState<WellnessAggregation>('weekly');
   const query = useWellnessQuery(days, aggregation);
@@ -121,14 +123,20 @@ export function WellnessPage(): JSX.Element {
       {!query.isLoading && !query.isError && query.data ? (
         <>
           <Card className={`${surfaceClassName} md:hidden`}>
-            <CardContent className="grid gap-2 p-4">
+            <CardContent className="grid gap-3 p-4">
               {summaryItems.map((item) => (
                 <div
                   key={item.label}
-                  className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5"
+                  className="relative overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
                 >
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.label}</p>
-                  <p className="text-lg font-semibold text-slate-50">{item.value}</p>
+                  <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-sky-200/30 to-transparent" />
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/72">{item.label}</p>
+                      <p className="mt-1 text-[10px] uppercase tracking-[0.22em] text-slate-500/90">Latest</p>
+                    </div>
+                    <p className="text-xl font-semibold tracking-tight text-slate-50">{item.value}</p>
+                  </div>
                 </div>
               ))}
             </CardContent>
@@ -136,10 +144,18 @@ export function WellnessPage(): JSX.Element {
 
           <div className="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-5">
             {summaryItems.map((item) => (
-              <Card key={item.label} className={surfaceClassName}>
-                <CardContent className="p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/78">{item.label}</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-50">{item.value}</p>
+              <Card key={item.label} className={summaryCardClassName}>
+                <CardContent className="relative p-5">
+                  <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-sky-200/34 to-transparent" />
+                  <div className="absolute right-4 top-4 h-10 w-10 rounded-full bg-sky-300/8 blur-2xl transition-opacity duration-300 group-hover:opacity-100" />
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-200/76">{item.label}</p>
+                      <p className="mt-2 text-[10px] uppercase tracking-[0.26em] text-slate-500/90">Latest snapshot</p>
+                    </div>
+                    <div className="mt-1 h-2.5 w-2.5 rounded-full bg-sky-300/70 shadow-[0_0_14px_rgba(125,211,252,0.55)]" />
+                  </div>
+                  <p className="mt-6 text-3xl font-semibold tracking-[-0.03em] text-slate-50">{item.value}</p>
                 </CardContent>
               </Card>
             ))}

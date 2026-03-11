@@ -144,10 +144,14 @@ export function DashboardWeekCard({
   onUndoActivity,
 }: DashboardWeekCardProps): JSX.Element {
   return (
-    <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(56,189,248,0.45),rgba(168,85,247,0.26),rgba(245,158,11,0.3))] p-[1px] shadow-[0_10px_30px_rgba(2,6,23,0.5)]">
-      <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_8%_10%,rgba(56,189,248,0.1),transparent_40%),radial-gradient(circle_at_88%_90%,rgba(168,85,247,0.11),transparent_45%)] shadow-inner">
-        <CardContent className="p-1 sm:p-1.5">
-          <div className="space-y-1.5 sm:hidden">
+    <div className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,rgba(37,99,235,0.34),rgba(79,70,229,0.28)_48%,rgba(147,51,234,0.24))] p-[1.5px] shadow-[0_16px_38px_rgba(2,6,23,0.42)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_18%,rgba(96,165,250,0.22),transparent_30%),radial-gradient(circle_at_84%_14%,rgba(168,85,247,0.18),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.05),transparent_22%,transparent_78%,rgba(15,23,42,0.12))]" />
+      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent" />
+      <Card className="relative overflow-hidden rounded-2xl border border-[rgba(51,65,85,0.76)] bg-[linear-gradient(180deg,rgba(9,16,29,0.99),rgba(6,11,22,0.97))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_0_0_1px_rgba(15,23,42,0.72)]">
+        <CardContent className="relative p-1 sm:p-1.5">
+          <div className="pointer-events-none absolute inset-[1px] rounded-[calc(1rem-1px)] bg-[radial-gradient(circle_at_10%_18%,rgba(59,130,246,0.14),transparent_24%),radial-gradient(circle_at_88%_16%,rgba(147,51,234,0.14),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.025),transparent_20%,transparent_78%,rgba(15,23,42,0.12))]" />
+          <div className="pointer-events-none absolute inset-x-16 top-[1px] h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+          <div className="relative space-y-1.5 sm:hidden">
             <MobileWeekSummary week={week} />
             <div className="-mx-0.5 grid gap-1.5 pb-1">
               {week.days.map((day) => (
@@ -174,7 +178,7 @@ export function DashboardWeekCard({
             </div>
           </div>
 
-          <div className="hidden gap-1.5 sm:grid lg:grid-cols-[1.15fr_repeat(7,minmax(0,1fr))] sm:items-start">
+          <div className="relative hidden gap-1.5 sm:grid lg:grid-cols-[1.15fr_repeat(7,minmax(0,1fr))] sm:items-start">
             <DashboardWeekSummaryCard
               weekNumber={week.week_number}
               weekStart={shortDay(week.week_start)}
