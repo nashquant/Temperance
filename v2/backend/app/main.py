@@ -3271,9 +3271,9 @@ def _build_wellness_payload(
                 body_battery_end=("body_battery_end", "mean"),
                 body_battery_avg=("body_battery_avg", "mean"),
                 respiration_avg=("respiration_avg", "mean"),
-                steps=("steps", "sum"),
-                intensity_minutes=("intensity_minutes", "sum"),
-                calories_total=("calories_total", "sum"),
+                steps=("steps", "mean"),
+                intensity_minutes=("intensity_minutes", "mean"),
+                calories_total=("calories_total", "mean"),
             )
             .sort_values("period_start")
         )
