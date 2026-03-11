@@ -39,7 +39,7 @@ Behavior:
 
 - Runs inside the backend process as one daemon thread.
 - Sleeps between runs; no separate worker process is spawned.
-- Pulls Garmin quick activity sync only.
+- Pulls Garmin quick activity summaries for all eligible activities.
 - No wellness, no details, no FIT parsing.
 - Looks back only at today + previous day (`TEMPERANCE_AUTO_SYNC_DAYS_BACK=2` by default).
 - Skips if another Garmin sync is already running.

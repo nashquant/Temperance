@@ -167,13 +167,6 @@ def _first_numeric(data: Any, keys: tuple[str, ...]) -> float | None:
     return None
 
 
-def _is_running_activity(sport_type: str | None) -> bool:
-    if not sport_type:
-        return False
-    lower = sport_type.lower()
-    return "run" in lower or "treadmill" in lower
-
-
 def _extract_sport_type(a: dict[str, Any]) -> str:
     activity_type = a.get("activityType")
     if isinstance(activity_type, dict):
@@ -645,7 +638,7 @@ def fetch_garmin_runs(
     since_utc: datetime | None = None,
     progress_cb: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
-    """Backward-compatible run fetch used by the simple sync path."""
+    """Backward-compatible quick activity fetch used by the simple sync path."""
     end_day = datetime.now(timezone.utc).date()
     start_day = end_day - timedelta(days=days_back)
     if since_utc:
@@ -662,7 +655,7 @@ def fetch_garmin_runs(
         raw_export_dir=None,
         progress_cb=progress_cb,
     )
-    return [a for a in result.activities if _is_running_activity(a.get("sport_type"))]
+    return result.activities
 
 
 def fetch_garmin_comprehensive(
