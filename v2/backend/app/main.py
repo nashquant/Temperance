@@ -2375,14 +2375,14 @@ def _format_duration_compact_with_seconds(duration_s: float | int | None) -> str
 def _activity_kind_display_name(kind: str) -> str:
     normalized = str(kind or "").strip().lower()
     if normalized == "treadmill":
-        return "treadmill"
+        return "Treadmill"
     if normalized == "run":
-        return "run"
+        return "Run"
     if normalized == "elliptical":
-        return "elliptical"
+        return "Elliptical"
     if normalized in {"cycling", "bike"}:
-        return "bike"
-    return normalized or "activity"
+        return "Bike"
+    return (normalized or "activity").capitalize()
 
 
 def _activity_type_matches_filter(segments: list[dict[str, Any]], activity_type: str | None) -> bool:
@@ -2560,11 +2560,18 @@ def _generated_activity_stats(
 def _generated_activity_bucket(
     segments: list[dict[str, Any]],
     source_text: str,
+    lthr_bpm: float,
+    threshold_pace_sec_per_km: float,
 ) -> str:
     raw = str(source_text or "").strip().lower()
-    total_minutes = 0.0
-    if_weighted_sum = 0.0
-    if_weight_minutes = 0.0
+    stats = _generated_activity_stats(
+        segments=segments,
+        lthr_bpm=lthr_bpm,
+        threshold_pace_sec_per_km=threshold_pace_sec_per_km,
+    )
+    total_minutes = float(stats.get("total_minutes") or 0.0)
+    avg_if = float(stats.get("avg_if") or 0.0)
+    max_if = float(stats.get("max_if") or 0.0)
     segment_count = 0
     unique_segment_minutes: set[int] = set()
 
@@ -2573,19 +2580,14 @@ def _generated_activity_bucket(
         if duration_min <= 0:
             continue
         segment_count += 1
-        total_minutes += duration_min
         unique_segment_minutes.add(int(round(duration_min)))
-        if_proxy = _safe_float(seg.get("if_input"))
-        if if_proxy > 0:
-            if_weighted_sum += if_proxy * duration_min
-            if_weight_minutes += duration_min
-
-    avg_if = (if_weighted_sum / if_weight_minutes) if if_weight_minutes > 0 else 0.0
     if segment_count > 1:
         if "fartlek" in raw or len(unique_segment_minutes) >= 3:
             return "fartlek"
-        if avg_if >= 0.86:
+        if max_if >= 0.92 or avg_if >= 0.86:
             return "intervals"
+        if avg_if >= 0.80:
+            return "tempo"
         return "steady"
     if total_minutes >= 95:
         return "long"
@@ -2607,9 +2609,9 @@ def _generated_activity_preferred_buckets(day_utc: str) -> list[str]:
     weekday = int(pd.Timestamp(day_ts).weekday())
     weekday_map: dict[int, list[str]] = {
         0: ["recovery", "easy", "aerobic"],  # Monday
-        1: ["intervals", "tempo", "steady", "fartlek"],  # Tuesday
+        1: ["intervals", "fartlek", "tempo", "steady"],  # Tuesday
         2: ["easy", "recovery", "aerobic"],  # Wednesday
-        3: ["intervals", "tempo", "steady", "fartlek"],  # Thursday
+        3: ["intervals", "fartlek", "tempo", "steady"],  # Thursday
         4: ["easy", "recovery", "aerobic"],  # Friday
         5: ["long", "fartlek", "easy", "tempo"],  # Saturday
         6: ["long"],  # Sunday
@@ -2705,7 +2707,12 @@ def _generated_activity_candidates(
                 {
                     "activity_text": suggestion,
                     "priority": _generated_activity_priority(segments=segments, source_text=source_text),
-                    "bucket": _generated_activity_bucket(segments=segments, source_text=source_text),
+                    "bucket": _generated_activity_bucket(
+                        segments=segments,
+                        source_text=source_text,
+                        lthr_bpm=lthr_for_day,
+                        threshold_pace_sec_per_km=pace_for_day,
+                    ),
                     "estimated_tss": float(stats.get("estimated_tss") or 0.0),
                 }
             )
