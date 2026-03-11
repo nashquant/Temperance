@@ -5066,6 +5066,7 @@ def planned_activities_ingest(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
+    has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
     lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
     pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
 
@@ -5089,6 +5090,7 @@ def planned_activities_ingest(
             normalized,
             lthr_bpm=lthr_for_day,
             threshold_pace_sec_per_km=pace_for_day,
+            has_vdot_basis=has_vdot_basis,
         )
         if warns or not segs:
             details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
@@ -5160,6 +5162,7 @@ def planned_activity_workout_update(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
+    has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
     lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
     pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
     lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
@@ -5168,6 +5171,7 @@ def planned_activity_workout_update(
         workout_text,
         lthr_bpm=lthr_for_day,
         threshold_pace_sec_per_km=pace_for_day,
+        has_vdot_basis=has_vdot_basis,
     )
     if warns or not segs:
         details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
@@ -5512,11 +5516,13 @@ def activity_detail(
                 day_ts,
             )
         )
+        has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
         segments = _segments_from_stored_or_source(
             parsed_json=row.get("parsed_json"),
             source_text=str(row.get("activity_text") or ""),
             lthr_bpm=lthr_for_day,
             threshold_pace_sec_per_km=threshold_pace_for_day,
+            has_vdot_basis=has_vdot_basis,
         )
 
         if_thresholds = _load_if_zone_thresholds(db_path)
@@ -5664,11 +5670,13 @@ def activity_detail(
                 day_ts,
             )
         )
+        has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
         segments = _segments_from_stored_or_source(
             parsed_json=row.get("parsed_json"),
             source_text=str(row.get("workout_text") or ""),
             lthr_bpm=lthr_for_day,
             threshold_pace_sec_per_km=threshold_pace_for_day,
+            has_vdot_basis=has_vdot_basis,
         )
 
         if_thresholds = _load_if_zone_thresholds(db_path)
