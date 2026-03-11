@@ -5706,6 +5706,15 @@ def generated_activity(
         raise HTTPException(status_code=400, detail="Invalid mode")
     if activity_type is not None and activity_type not in {"running", "elliptical", "bike"}:
         raise HTTPException(status_code=400, detail="Invalid activity_type")
+    day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
 
     suggestions = _generated_activity_candidates(
         db_path=db_path,
