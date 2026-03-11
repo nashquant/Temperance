@@ -2468,12 +2468,179 @@ def _generated_activity_text_from_segments(
     return None
 
 
+def _generated_activity_priority(
+    segments: list[dict[str, Any]],
+    source_text: str,
+) -> int:
+    raw = str(source_text or "").strip().lower()
+    total_minutes = 0.0
+    if_weighted_sum = 0.0
+    if_weight_minutes = 0.0
+    max_if = 0.0
+    total_distance_km = 0.0
+    segment_count = 0
+
+    for seg in segments:
+        duration_min = _safe_float(seg.get("duration_min"))
+        if duration_min <= 0:
+            continue
+        segment_count += 1
+        total_minutes += duration_min
+        if_proxy = _safe_float(seg.get("if_input"))
+        if if_proxy > 0:
+            if_weighted_sum += if_proxy * duration_min
+            if_weight_minutes += duration_min
+            max_if = max(max_if, if_proxy)
+        total_distance_km += _safe_float(seg.get("distance_km"))
+
+    avg_if = (if_weighted_sum / if_weight_minutes) if if_weight_minutes > 0 else 0.0
+    race_tokens = (" race", "mp", "hmp", "10k", "5k", "time trial", "tt", "42.2", "21.1")
+    has_race_token = any(token in raw for token in race_tokens)
+    is_race_like = (
+        has_race_token
+        or max_if >= 0.97
+        or (avg_if >= 0.90 and total_minutes >= 80)
+        or total_distance_km >= 18.0
+    )
+    if is_race_like:
+        return 3
+    if segment_count > 1 or max_if >= 0.90 or avg_if >= 0.88:
+        return 2
+    if avg_if >= 0.80 or total_minutes >= 85:
+        return 1
+    return 0
+
+
+def _generated_activity_stats(
+    segments: list[dict[str, Any]],
+    lthr_bpm: float,
+    threshold_pace_sec_per_km: float,
+) -> dict[str, float]:
+    total_minutes = 0.0
+    if_weighted_sum = 0.0
+    if_weight_minutes = 0.0
+    total_tss = 0.0
+    max_if = 0.0
+    for seg in segments:
+        duration_min = _safe_float(seg.get("duration_min"))
+        if duration_min <= 0:
+            continue
+        total_minutes += duration_min
+        if_proxy = None
+        try:
+            explicit_if = _safe_float(seg.get("if_input"))
+        except Exception:
+            explicit_if = 0.0
+        if explicit_if > 0:
+            if_proxy = explicit_if
+        else:
+            pace_value = _safe_float(seg.get("pace_s_per_km"))
+            kind = str(seg.get("kind") or "").strip().lower()
+            if kind in {"run", "treadmill"} and pace_value > 0 and threshold_pace_sec_per_km > 0:
+                if_proxy = threshold_pace_sec_per_km / pace_value
+            else:
+                avg_hr_bpm = _safe_float(seg.get("avg_hr_bpm"))
+                if avg_hr_bpm > 0 and lthr_bpm > 0:
+                    if_proxy = avg_hr_bpm / lthr_bpm
+        if if_proxy is None or if_proxy <= 0:
+            continue
+        if_weighted_sum += if_proxy * duration_min
+        if_weight_minutes += duration_min
+        max_if = max(max_if, if_proxy)
+        total_tss += (duration_min / 60.0) * (if_proxy**2) * 100.0
+    avg_if = (if_weighted_sum / if_weight_minutes) if if_weight_minutes > 0 else 0.0
+    return {
+        "total_minutes": total_minutes,
+        "avg_if": avg_if,
+        "max_if": max_if,
+        "estimated_tss": total_tss,
+    }
+
+
+def _generated_activity_bucket(
+    segments: list[dict[str, Any]],
+    source_text: str,
+) -> str:
+    raw = str(source_text or "").strip().lower()
+    total_minutes = 0.0
+    if_weighted_sum = 0.0
+    if_weight_minutes = 0.0
+    segment_count = 0
+    unique_segment_minutes: set[int] = set()
+
+    for seg in segments:
+        duration_min = _safe_float(seg.get("duration_min"))
+        if duration_min <= 0:
+            continue
+        segment_count += 1
+        total_minutes += duration_min
+        unique_segment_minutes.add(int(round(duration_min)))
+        if_proxy = _safe_float(seg.get("if_input"))
+        if if_proxy > 0:
+            if_weighted_sum += if_proxy * duration_min
+            if_weight_minutes += duration_min
+
+    avg_if = (if_weighted_sum / if_weight_minutes) if if_weight_minutes > 0 else 0.0
+    if segment_count > 1:
+        if "fartlek" in raw or len(unique_segment_minutes) >= 3:
+            return "fartlek"
+        if avg_if >= 0.86:
+            return "intervals"
+        return "steady"
+    if total_minutes >= 95:
+        return "long"
+    if avg_if > 0 and avg_if < 0.66:
+        return "recovery"
+    if avg_if > 0 and avg_if < 0.78:
+        return "easy" if total_minutes < 60 else "aerobic"
+    if avg_if > 0 and avg_if < 0.88:
+        return "steady"
+    if avg_if >= 0.88:
+        return "tempo"
+    return "easy"
+
+
+def _generated_activity_preferred_buckets(day_utc: str) -> list[str]:
+    day_ts = pd.to_datetime(day_utc, errors="coerce")
+    if pd.isna(day_ts):
+        return []
+    weekday = int(pd.Timestamp(day_ts).weekday())
+    weekday_map: dict[int, list[str]] = {
+        0: ["recovery", "easy", "aerobic"],  # Monday
+        1: ["intervals", "tempo", "steady", "fartlek"],  # Tuesday
+        2: ["easy", "recovery", "aerobic"],  # Wednesday
+        3: ["intervals", "tempo", "steady", "fartlek"],  # Thursday
+        4: ["easy", "recovery", "aerobic"],  # Friday
+        5: ["long", "fartlek", "easy", "tempo"],  # Saturday
+        6: ["long"],  # Sunday
+    }
+    return weekday_map.get(weekday, [])
+
+
+def _generated_activity_day_goal_tss(day_utc: str, threshold_pace_sec_per_km: float) -> float:
+    base_daily_goal = (_weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10) / 7.0 if threshold_pace_sec_per_km > 0 else 50.0
+    day_ts = pd.to_datetime(day_utc, errors="coerce")
+    if pd.isna(day_ts):
+        return float(base_daily_goal)
+    weekday = int(pd.Timestamp(day_ts).weekday())
+    multipliers = {
+        0: 0.70,  # Monday
+        1: 0.90,  # Tuesday
+        2: 0.70,  # Wednesday
+        3: 0.90,  # Thursday
+        4: 0.70,  # Friday
+        5: 1.00,  # Saturday
+        6: 1.20,  # Sunday
+    }
+    return float(base_daily_goal * multipliers.get(weekday, 1.0))
+
+
 def _generated_activity_candidates(
     db_path: Path,
     mode: str,
     day_utc: str,
     activity_type: str | None = None,
-) -> list[str]:
+) -> list[dict[str, Any]]:
     mode_normalized = str(mode or "planned").strip().lower()
     day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
     lthr_curve = _load_curve_points(
@@ -2502,15 +2669,16 @@ def _generated_activity_candidates(
         source_frames.append((get_planned_activities_df(db_path=db_path), "workout_text"))
         source_frames.append((get_custom_activities_df(db_path=db_path), "activity_text"))
 
-    out: list[str] = []
+    out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for frame, text_column in source_frames:
         if frame.empty:
             continue
         for _, row in frame.sort_values(["day_utc", "line_no"], ascending=[False, False]).iterrows():
+            source_text = str(row.get(text_column) or "")
             segments = _segments_from_stored_or_source(
                 parsed_json=row.get("parsed_json"),
-                source_text=str(row.get(text_column) or ""),
+                source_text=source_text,
                 lthr_bpm=lthr_for_day,
                 threshold_pace_sec_per_km=pace_for_day,
                 has_vdot_basis=has_vdot_basis,
@@ -2528,8 +2696,51 @@ def _generated_activity_candidates(
             if key in seen:
                 continue
             seen.add(key)
-            out.append(suggestion)
+            stats = _generated_activity_stats(
+                segments=segments,
+                lthr_bpm=lthr_for_day,
+                threshold_pace_sec_per_km=pace_for_day,
+            )
+            out.append(
+                {
+                    "activity_text": suggestion,
+                    "priority": _generated_activity_priority(segments=segments, source_text=source_text),
+                    "bucket": _generated_activity_bucket(segments=segments, source_text=source_text),
+                    "estimated_tss": float(stats.get("estimated_tss") or 0.0),
+                }
+            )
     return out
+
+
+def _generated_activity_fallbacks(activity_type: str | None, mode: str) -> list[str]:
+    target = str(activity_type or "").strip().lower() or "running"
+    fallback_map: dict[str, list[str]] = {
+        "running": [
+            "run 40min @4:50/km",
+            "run 50min @5:00/km",
+            "run 70min @4:55/km",
+            "run 20min @4:50/km + 6x3min @3:55/km",
+            "run 15min @4:55/km + 4x8min @4:10/km",
+        ],
+        "elliptical": [
+            "elliptical 40min @135bpm",
+            "elliptical 50min @140bpm",
+            "elliptical 70min @138bpm",
+            "elliptical 20min @130bpm + 4x6min @150bpm",
+            "elliptical 30min @135bpm + 20min @145bpm",
+        ],
+        "bike": [
+            "bike 60min @135bpm",
+            "bike 90min @138bpm",
+            "bike 2h @140bpm",
+            "bike 20min @130bpm + 5x5min @155bpm",
+            "bike 30min @135bpm + 3x12min @150bpm",
+        ],
+    }
+    suggestions = fallback_map.get(target, fallback_map["running"])
+    if str(mode or "").strip().lower() == "custom":
+        return suggestions
+    return suggestions
 
 
 def _load_if_zone_thresholds(db_path: Path) -> dict[str, float]:
@@ -5503,13 +5714,41 @@ def generated_activity(
         activity_type=activity_type,
     )
     if not suggestions:
-        raise HTTPException(status_code=404, detail="No saved activities available to generate from")
+        fallback_suggestions = _generated_activity_fallbacks(activity_type=activity_type, mode=mode)
+        fallback_bucket = (_generated_activity_preferred_buckets(day_utc) or ["easy"])[0]
+        fallback_goal = _generated_activity_day_goal_tss(day_utc=day_utc, threshold_pace_sec_per_km=pace_for_day)
+        suggestions = [{"activity_text": text, "priority": 0, "bucket": fallback_bucket, "estimated_tss": fallback_goal} for text in fallback_suggestions]
+    if not suggestions:
+        raise HTTPException(status_code=404, detail="No activities available to generate from")
 
-    suggestion = random.choice(suggestions)
+    preferred_buckets = _generated_activity_preferred_buckets(day_utc)
+    eligible = suggestions
+    if preferred_buckets:
+        for preferred_bucket in preferred_buckets:
+            bucket_matches = [item for item in suggestions if str(item.get("bucket") or "") == preferred_bucket]
+            if bucket_matches:
+                eligible = bucket_matches
+                break
+
+    preferred_priorities = [0, 1, 2, 3]
+    for priority in preferred_priorities:
+        priority_matches = [item for item in eligible if int(item.get("priority") or 0) == priority]
+        if priority_matches:
+            eligible = priority_matches
+            break
+
+    target_tss = random.gauss(_generated_activity_day_goal_tss(day_utc=day_utc, threshold_pace_sec_per_km=pace_for_day), 10.0)
+    ranked_by_tss = sorted(
+        eligible,
+        key=lambda item: abs(float(item.get("estimated_tss") or 0.0) - target_tss),
+    )
+    eligible = ranked_by_tss[: min(5, len(ranked_by_tss))] if ranked_by_tss else eligible
+
+    suggestion = random.choice(eligible)
     return {
         "owner": resolved_owner,
         "mode": mode,
-        "activity_text": suggestion,
+        "activity_text": str(suggestion.get("activity_text") or ""),
         "total_candidates": len(suggestions),
     }
 

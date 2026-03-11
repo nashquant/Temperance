@@ -823,7 +823,7 @@ export function DashboardPage(): JSX.Element {
                     {[
                       { value: 'running', label: 'Run' },
                       { value: 'bike', label: 'Bike' },
-                      { value: 'elliptical', label: 'Elip' },
+                      { value: 'elliptical', label: 'Ellip' },
                     ].map((option) => (
                       <button
                         key={option.value}
