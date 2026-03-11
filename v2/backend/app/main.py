@@ -5324,6 +5324,7 @@ def custom_activities_ingest(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
+    has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
     lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
     pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
 
@@ -5344,6 +5345,7 @@ def custom_activities_ingest(
             normalized,
             lthr_bpm=lthr_for_day,
             threshold_pace_sec_per_km=pace_for_day,
+            has_vdot_basis=has_vdot_basis,
         )
         if warns or not segs:
             details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
@@ -5416,6 +5418,7 @@ def custom_activity_workout_update(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
+    has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
     lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
     pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
     lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
@@ -5424,6 +5427,7 @@ def custom_activity_workout_update(
         activity_text,
         lthr_bpm=lthr_for_day,
         threshold_pace_sec_per_km=pace_for_day,
+        has_vdot_basis=has_vdot_basis,
     )
     if warns or not segs:
         details = "; ".join(warns[:2]) if warns else "Could not parse this activity."

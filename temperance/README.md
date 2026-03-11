@@ -268,6 +268,7 @@ Intensity tokens (at least one is required per segment):
 - `@140bpm`
 - `@70%` (IF percent)
 - `@4:50/km` (pace; running/treadmill only)
+- `@MP`, `@HMP`, `@10k` (pace aliases derived from VDOT; running/treadmill only, requires LT pace configured)
 - `@70TSS`
 
 Composition / intervals:
