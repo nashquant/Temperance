@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -16,7 +16,7 @@ import {
   setPlannedManualDone,
   updatePlannedWorkout,
 } from '@/features/plan-activities/services/plan-activities-api';
-import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
+import type { PlannedActivityRow, PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
 import { queryClient } from '@/lib/query-client';
 
 function dayLabel(isoDay: string): string {
@@ -34,6 +34,7 @@ interface PlanActivitiesSectionProps {
 }
 
 export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectionProps): JSX.Element {
+  const deleteUndoWindowMs = 6000;
   const surfaceClassName =
     'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
   const { session, profile } = useAuth();
@@ -44,6 +45,10 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   const [ingestResult, setIngestResult] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [rowSaveResults, setRowSaveResults] = useState<Record<string, { tone: 'error' | 'success'; message: string }>>({});
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; row: PlannedActivityRow } | null>(null);
+  const [deleteResult, setDeleteResult] = useState<string | null>(null);
+  const pendingDeleteTimerRef = useRef<number | null>(null);
+  const pendingDeleteRef = useRef<{ id: number; row: PlannedActivityRow } | null>(null);
   const sanitizedRows = useMemo(
     () =>
       (query.data?.rows ?? []).filter((row) => {
@@ -214,6 +219,57 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       ]
     : [];
 
+  const clearPendingDeleteTimer = () => {
+    if (pendingDeleteTimerRef.current) {
+      window.clearTimeout(pendingDeleteTimerRef.current);
+      pendingDeleteTimerRef.current = null;
+    }
+  };
+
+  const finalizePendingDelete = async (candidate: { id: number; row: PlannedActivityRow }) => {
+    try {
+      await deleteMutation.mutateAsync({
+        dayUtc: candidate.row.day_utc,
+        lineNo: candidate.row.line_no,
+      });
+      setDeleteResult(`Deleted ${candidate.row.activity || 'planned activity'}.`);
+    } catch (error) {
+      setDeleteResult(error instanceof Error ? error.message : 'Unable to delete planned activity.');
+      setPendingDelete((current) => (current?.id === candidate.id ? null : current));
+      pendingDeleteRef.current = null;
+      return;
+    }
+    setPendingDelete((current) => (current?.id === candidate.id ? null : current));
+    pendingDeleteRef.current = null;
+  };
+
+  const queueDelete = (row: PlannedActivityRow) => {
+    clearPendingDeleteTimer();
+    const existingPendingDelete = pendingDeleteRef.current;
+    if (existingPendingDelete) {
+      void finalizePendingDelete(existingPendingDelete);
+    }
+    const candidate = { id: Date.now(), row };
+    pendingDeleteRef.current = candidate;
+    setPendingDelete(candidate);
+    setDeleteResult(null);
+    pendingDeleteTimerRef.current = window.setTimeout(() => {
+      if (pendingDeleteRef.current?.id !== candidate.id) return;
+      void finalizePendingDelete(candidate);
+    }, deleteUndoWindowMs);
+  };
+
+  const handleUndoDelete = () => {
+    clearPendingDeleteTimer();
+    pendingDeleteRef.current = null;
+    setPendingDelete(null);
+    setDeleteResult(null);
+  };
+
+  useEffect(() => () => {
+    clearPendingDeleteTimer();
+  }, []);
+
   return (
     <section className="space-y-6">
       <div>
@@ -248,21 +304,21 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       ) : null}
 
       <Card className={surfaceClassName}>
-        <CardContent className="space-y-4 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/80">Add Planned Activity</p>
+        <CardContent className="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-3 sm:space-y-4 sm:p-5">
+          <h2 className="text-lg font-semibold text-foreground">Add Planned Activity</h2>
           <textarea
-            className="min-h-[120px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+            className="min-h-[104px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20 sm:min-h-[120px] sm:py-3"
             placeholder="e.g. 3Mar26: 80min elliptical @140bpm; 2026-03-26: 10min run @4:50 + 5x6min @3:40/km"
             value={entryText}
             onChange={(event) => setEntryText(event.target.value)}
           />
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <p className="text-xs text-muted-foreground">Multiple entries are supported with new lines, `;`, or `,`.</p>
-            <div className="flex items-center gap-2">
-            <Button onClick={() => ingestMutation.mutate(entryText)} disabled={ingestMutation.isPending || !entryText.trim()}>
-              {ingestMutation.isPending ? 'Saving...' : 'Save'}
-            </Button>
-            {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
+            <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
+              <Button className="w-full sm:w-auto" onClick={() => ingestMutation.mutate(entryText)} disabled={ingestMutation.isPending || !entryText.trim()}>
+                {ingestMutation.isPending ? 'Saving...' : 'Save'}
+              </Button>
+              {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
             </div>
           </div>
         </CardContent>
@@ -279,6 +335,13 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         <Alert className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300">
           <AlertTitle>Unable to load planned activities</AlertTitle>
           <AlertDescription>{query.error instanceof Error ? query.error.message : 'Unexpected error.'}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {deleteResult ? (
+        <Alert className="border-white/15 bg-white/[0.03] text-slate-100">
+          <AlertTitle>Delete status</AlertTitle>
+          <AlertDescription>{deleteResult}</AlertDescription>
         </Alert>
       ) : null}
 
@@ -353,13 +416,22 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                       <tbody>
                         {selectedRows.map((row) => {
                           const rowKey = `${row.day_utc}-${row.line_no}`;
+                          const workoutText = editValues[rowKey] ?? '';
+                          const isDirty = workoutText !== row.workout_text;
+                          const isPendingDelete =
+                            pendingDelete?.row.day_utc === row.day_utc && pendingDelete.row.line_no === row.line_no;
+                          const isSavingRow =
+                            workoutUpdateMutation.isPending
+                            && workoutUpdateMutation.variables?.dayUtc === row.day_utc
+                            && workoutUpdateMutation.variables?.lineNo === row.line_no;
                           return (
-                            <tr key={rowKey} className="border-t border-white/10">
+                            <tr key={rowKey} className={`border-t border-white/10 ${isPendingDelete ? 'bg-rose-500/8' : ''}`}>
                               <td className="px-2 py-2 sm:px-3">
                                 <input
                                   className="h-4 w-4 accent-sky-400"
                                   type="checkbox"
                                   checked={row.manual_done}
+                                  disabled={isPendingDelete}
                                   onChange={(event) =>
                                     manualDoneMutation.mutate({
                                       dayUtc: row.day_utc,
@@ -373,8 +445,9 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                               <td className="px-2 py-2 sm:px-3">{row.activity}</td>
                               <td className="px-2 py-2 sm:px-3">
                                 <input
-                                  className="min-w-[260px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
-                                  value={editValues[rowKey] ?? ''}
+                                  className={`min-w-[260px] w-full rounded-xl border px-3 py-2 text-sm outline-none transition ${isPendingDelete ? 'border-rose-400/20 bg-rose-500/8 text-slate-400' : 'border-white/10 bg-black/20 text-foreground focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20'}`}
+                                  value={workoutText}
+                                  disabled={isPendingDelete}
                                   onChange={(event) => {
                                     setEditValues((previous) => ({ ...previous, [rowKey]: event.target.value }));
                                     setRowSaveResults((previous) => {
@@ -394,6 +467,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                                     {rowSaveResults[rowKey]?.message}
                                   </p>
                                 ) : null}
+                                {isPendingDelete ? <p className="mt-1 text-xs text-rose-200/85">Delete pending. Undo is available in Actions.</p> : null}
                               </td>
                               <td className="px-2 py-2 text-right sm:px-3">{Math.round(row.tss)}</td>
                               <td className="px-2 py-2 text-right sm:px-3">{Math.round(row.rtss)}</td>
@@ -402,32 +476,40 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                               <td className="px-2 py-2 text-right sm:px-3">
                                 <div className="flex justify-end gap-1.5">
                                   <Button
-                                    variant="ghost"
+                                    variant={isDirty ? 'default' : 'outline'}
                                     size="sm"
-                                    className="px-2.5 text-slate-200 hover:bg-white/10 hover:text-white"
+                                    className={isDirty ? 'px-2.5' : 'border-white/10 px-2.5 text-slate-200 hover:bg-white/10 hover:text-white'}
+                                    disabled={!isDirty || isSavingRow || isPendingDelete}
                                     onClick={() =>
                                       workoutUpdateMutation.mutate({
                                         dayUtc: row.day_utc,
                                         lineNo: row.line_no,
-                                        workoutText: editValues[rowKey] ?? row.workout_text,
+                                        workoutText,
                                         manualDone: row.manual_done,
                                       })
                                     }
                                   >
-                                    Save
+                                    {isSavingRow ? 'Saving...' : isDirty ? 'Save' : 'Saved'}
                                   </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="px-2.5 text-slate-300 hover:bg-rose-500/12 hover:text-rose-100"
-                                    onClick={() => {
-                                      if (window.confirm('Delete this planned activity?')) {
-                                        deleteMutation.mutate({ dayUtc: row.day_utc, lineNo: row.line_no });
-                                      }
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
+                                  {isPendingDelete ? (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="border-amber-200/40 px-2.5 text-amber-50 hover:bg-amber-500/15"
+                                      onClick={handleUndoDelete}
+                                    >
+                                      Undo
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="border-rose-400/25 px-2.5 text-rose-100 hover:bg-rose-500/12 hover:text-rose-50"
+                                      onClick={() => queueDelete(row)}
+                                    >
+                                      Delete
+                                    </Button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
