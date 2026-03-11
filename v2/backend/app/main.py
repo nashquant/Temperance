@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from v2.backend.app.date_parsing import parse_supported_day_value
+from app.date_parsing import parse_supported_day_value
 
 TEMPERANCE_SRC = Path(__file__).resolve().parents[3] / "temperance"
 if str(TEMPERANCE_SRC) not in sys.path:

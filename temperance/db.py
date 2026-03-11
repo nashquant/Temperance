@@ -4,7 +4,7 @@ import json
 import os
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +12,7 @@ import pandas as pd
 
 UTC_NOW = lambda: datetime.now(timezone.utc).isoformat()
 DB_FILE_MAX_BYTES = int(os.getenv("TEMPERANCE_DB_MAX_BYTES", str(1 * 1024 * 1024 * 1024)))
+DB_EXECUTEMANY_CHUNK_SIZE = max(int(os.getenv("TEMPERANCE_DB_EXECUTEMANY_CHUNK_SIZE", "1000")), 1)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS activities (
@@ -219,6 +220,22 @@ def get_conn(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _executemany_in_chunks(
+    conn: sqlite3.Connection,
+    sql: str,
+    rows: list[dict[str, Any]],
+    *,
+    chunk_size: int = DB_EXECUTEMANY_CHUNK_SIZE,
+) -> int:
+    if not rows:
+        return 0
+    effective_chunk_size = max(int(chunk_size), 1)
+    start_total_changes = conn.total_changes
+    for idx in range(0, len(rows), effective_chunk_size):
+        conn.executemany(sql, rows[idx : idx + effective_chunk_size])
+    return conn.total_changes - start_total_changes
+
+
 def run_migrations(db_path: Path) -> None:
     # v1 canonical schema: no legacy backfill migrations.
     with closing(get_conn(db_path)) as conn:
@@ -312,8 +329,67 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
         return 0
 
     now = UTC_NOW()
+    params = [
+        {
+            "activity_id": row.get("activity_id"),
+            "start_time_utc": row.get("start_time_utc"),
+            "sport_type": row.get("sport_type") or "unknown",
+            "distance_m": row.get("distance_m"),
+            "duration_s": row.get("duration_s"),
+            "avg_hr": row.get("avg_hr"),
+            "max_hr": row.get("max_hr"),
+            "avg_pace_s_per_km": row.get("avg_pace_s_per_km"),
+            "elevation_gain_m": row.get("elevation_gain_m"),
+            "elevation_loss_m": row.get("elevation_loss_m"),
+            "avg_cadence": row.get("avg_cadence"),
+            "max_cadence": row.get("max_cadence"),
+            "avg_stride_length": row.get("avg_stride_length"),
+            "vertical_ratio": row.get("vertical_ratio"),
+            "vertical_oscillation": row.get("vertical_oscillation"),
+            "running_power_avg": row.get("running_power_avg"),
+            "running_power_max": row.get("running_power_max"),
+            "stamina_start": row.get("stamina_start"),
+            "stamina_end": row.get("stamina_end"),
+            "training_effect_aerobic": row.get("training_effect_aerobic"),
+            "training_effect_anaerobic": row.get("training_effect_anaerobic"),
+            "performance_condition": row.get("performance_condition"),
+            "device_name": row.get("device_name"),
+            "manufacturer": row.get("manufacturer"),
+            "activity_uuid": row.get("activity_uuid"),
+            "owner_id": row.get("owner_id"),
+            "owner_full_name": row.get("owner_full_name"),
+            "elapsed_duration_s": row.get("elapsed_duration_s"),
+            "moving_duration_s": row.get("moving_duration_s"),
+            "average_speed_mps": row.get("average_speed_mps"),
+            "activity_type_key": row.get("activity_type_key"),
+            "activity_type_id": row.get("activity_type_id"),
+            "hr_time_in_zone_1": row.get("hr_time_in_zone_1"),
+            "hr_time_in_zone_2": row.get("hr_time_in_zone_2"),
+            "hr_time_in_zone_3": row.get("hr_time_in_zone_3"),
+            "hr_time_in_zone_4": row.get("hr_time_in_zone_4"),
+            "hr_time_in_zone_5": row.get("hr_time_in_zone_5"),
+            "difference_body_battery": row.get("difference_body_battery"),
+            "bmr_calories": row.get("bmr_calories"),
+            "is_pr": row.get("is_pr"),
+            "split_summaries_json": row.get("split_summaries_json"),
+            "training_load_garmin": row.get("training_load_garmin"),
+            "training_load_garmin_field_name": row.get("training_load_garmin_field_name"),
+            "training_load_garmin_units": row.get("training_load_garmin_units"),
+            "calories_active": row.get("calories_active"),
+            "calories_total": row.get("calories_total"),
+            "intensity_minutes_vigorous": row.get("intensity_minutes_vigorous"),
+            "intensity_minutes_moderate": row.get("intensity_minutes_moderate"),
+            "trimp": row.get("trimp"),
+            "source": row.get("source") or "unknown",
+            "raw_json": json.dumps(row.get("raw", {}), default=str),
+            "created_at": now,
+            "updated_at": now,
+        }
+        for row in activities
+    ]
     with closing(get_conn(db_path)) as conn:
-        conn.executemany(
+        changed = _executemany_in_chunks(
+            conn,
             """
             INSERT INTO activities (
                 activity_id, start_time_utc, sport_type, distance_m, duration_s,
@@ -403,67 +479,10 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                 raw_json=excluded.raw_json,
                 updated_at=excluded.updated_at
             """,
-            [
-                {
-                    "activity_id": row.get("activity_id"),
-                    "start_time_utc": row.get("start_time_utc"),
-                    "sport_type": row.get("sport_type") or "unknown",
-                    "distance_m": row.get("distance_m"),
-                    "duration_s": row.get("duration_s"),
-                    "avg_hr": row.get("avg_hr"),
-                    "max_hr": row.get("max_hr"),
-                    "avg_pace_s_per_km": row.get("avg_pace_s_per_km"),
-                    "elevation_gain_m": row.get("elevation_gain_m"),
-                    "elevation_loss_m": row.get("elevation_loss_m"),
-                    "avg_cadence": row.get("avg_cadence"),
-                    "max_cadence": row.get("max_cadence"),
-                    "avg_stride_length": row.get("avg_stride_length"),
-                    "vertical_ratio": row.get("vertical_ratio"),
-                    "vertical_oscillation": row.get("vertical_oscillation"),
-                    "running_power_avg": row.get("running_power_avg"),
-                    "running_power_max": row.get("running_power_max"),
-                    "stamina_start": row.get("stamina_start"),
-                    "stamina_end": row.get("stamina_end"),
-                    "training_effect_aerobic": row.get("training_effect_aerobic"),
-                    "training_effect_anaerobic": row.get("training_effect_anaerobic"),
-                    "performance_condition": row.get("performance_condition"),
-                    "device_name": row.get("device_name"),
-                    "manufacturer": row.get("manufacturer"),
-                    "activity_uuid": row.get("activity_uuid"),
-                    "owner_id": row.get("owner_id"),
-                    "owner_full_name": row.get("owner_full_name"),
-                    "elapsed_duration_s": row.get("elapsed_duration_s"),
-                    "moving_duration_s": row.get("moving_duration_s"),
-                    "average_speed_mps": row.get("average_speed_mps"),
-                    "activity_type_key": row.get("activity_type_key"),
-                    "activity_type_id": row.get("activity_type_id"),
-                    "hr_time_in_zone_1": row.get("hr_time_in_zone_1"),
-                    "hr_time_in_zone_2": row.get("hr_time_in_zone_2"),
-                    "hr_time_in_zone_3": row.get("hr_time_in_zone_3"),
-                    "hr_time_in_zone_4": row.get("hr_time_in_zone_4"),
-                    "hr_time_in_zone_5": row.get("hr_time_in_zone_5"),
-                    "difference_body_battery": row.get("difference_body_battery"),
-                    "bmr_calories": row.get("bmr_calories"),
-                    "is_pr": row.get("is_pr"),
-                    "split_summaries_json": row.get("split_summaries_json"),
-                    "training_load_garmin": row.get("training_load_garmin"),
-                    "training_load_garmin_field_name": row.get("training_load_garmin_field_name"),
-                    "training_load_garmin_units": row.get("training_load_garmin_units"),
-                    "calories_active": row.get("calories_active"),
-                    "calories_total": row.get("calories_total"),
-                    "intensity_minutes_vigorous": row.get("intensity_minutes_vigorous"),
-                    "intensity_minutes_moderate": row.get("intensity_minutes_moderate"),
-                    "trimp": row.get("trimp"),
-                    "source": row.get("source") or "unknown",
-                    "raw_json": json.dumps(row.get("raw", {}), default=str),
-                    "created_at": now,
-                    "updated_at": now,
-                }
-                for row in activities
-            ],
+            params,
         )
         conn.commit()
-        return conn.total_changes
+        return changed
 
 
 def upsert_activity_details(db_path: Path, details: list[dict[str, Any]]) -> int:
@@ -471,8 +490,17 @@ def upsert_activity_details(db_path: Path, details: list[dict[str, Any]]) -> int
         return 0
 
     now = UTC_NOW()
+    params = [
+        {
+            "activity_id": row["activity_id"],
+            "details_json": json.dumps(row.get("details", {}), default=str),
+            "updated_at": now,
+        }
+        for row in details
+    ]
     with closing(get_conn(db_path)) as conn:
-        conn.executemany(
+        changed = _executemany_in_chunks(
+            conn,
             """
             INSERT INTO activity_details(activity_id, details_json, updated_at)
             VALUES (:activity_id, :details_json, :updated_at)
@@ -481,17 +509,10 @@ def upsert_activity_details(db_path: Path, details: list[dict[str, Any]]) -> int
                 updated_at=excluded.updated_at
             WHERE activity_details.details_json IS NOT excluded.details_json
             """,
-            [
-                {
-                    "activity_id": row["activity_id"],
-                    "details_json": json.dumps(row.get("details", {}), default=str),
-                    "updated_at": now,
-                }
-                for row in details
-            ],
+            params,
         )
         conn.commit()
-        return conn.total_changes
+        return changed
 
 
 def upsert_activity_records(db_path: Path, records: list[dict[str, Any]]) -> int:
@@ -499,8 +520,30 @@ def upsert_activity_records(db_path: Path, records: list[dict[str, Any]]) -> int
         return 0
 
     now = UTC_NOW()
+    params = [
+        {
+            "activity_id": row.get("activity_id"),
+            "record_time_utc": row.get("record_time_utc"),
+            "heart_rate": row.get("heart_rate"),
+            "cadence": row.get("cadence"),
+            "step_length": row.get("step_length"),
+            "stride_length": row.get("stride_length"),
+            "vertical_ratio": row.get("vertical_ratio"),
+            "vertical_oscillation": row.get("vertical_oscillation"),
+            "power": row.get("power"),
+            "grade": row.get("grade"),
+            "altitude": row.get("altitude"),
+            "speed": row.get("speed"),
+            "distance": row.get("distance"),
+            "stamina": row.get("stamina"),
+            "raw_json": json.dumps(row.get("raw", {}), default=str),
+            "updated_at": now,
+        }
+        for row in records
+    ]
     with closing(get_conn(db_path)) as conn:
-        conn.executemany(
+        changed = _executemany_in_chunks(
+            conn,
             """
             INSERT INTO activity_records (
                 activity_id, record_time_utc, heart_rate, cadence, step_length,
@@ -527,17 +570,10 @@ def upsert_activity_records(db_path: Path, records: list[dict[str, Any]]) -> int
                 raw_json=excluded.raw_json,
                 updated_at=excluded.updated_at
             """,
-            [
-                {
-                    **row,
-                    "raw_json": json.dumps(row.get("raw", {}), default=str),
-                    "updated_at": now,
-                }
-                for row in records
-            ],
+            params,
         )
         conn.commit()
-        return conn.total_changes
+        return changed
 
 
 def upsert_activity_splits(db_path: Path, rows: list[dict[str, Any]]) -> int:
@@ -545,8 +581,21 @@ def upsert_activity_splits(db_path: Path, rows: list[dict[str, Any]]) -> int:
         return 0
 
     now = UTC_NOW()
+    params = [
+        {
+            "activity_id": row.get("activity_id"),
+            "split_json": json.dumps(row.get("split"), default=str),
+            "split_summaries_json": json.dumps(row.get("split_summaries"), default=str),
+            "lap_count": row.get("lap_count"),
+            "total_duration_s": row.get("total_duration_s"),
+            "total_distance_m": row.get("total_distance_m"),
+            "updated_at": now,
+        }
+        for row in rows
+    ]
     with closing(get_conn(db_path)) as conn:
-        conn.executemany(
+        changed = _executemany_in_chunks(
+            conn,
             """
             INSERT INTO activity_splits (
                 activity_id, split_json, split_summaries_json, lap_count,
@@ -563,21 +612,10 @@ def upsert_activity_splits(db_path: Path, rows: list[dict[str, Any]]) -> int:
                 total_distance_m=excluded.total_distance_m,
                 updated_at=excluded.updated_at
             """,
-            [
-                {
-                    "activity_id": row.get("activity_id"),
-                    "split_json": json.dumps(row.get("split"), default=str),
-                    "split_summaries_json": json.dumps(row.get("split_summaries"), default=str),
-                    "lap_count": row.get("lap_count"),
-                    "total_duration_s": row.get("total_duration_s"),
-                    "total_distance_m": row.get("total_distance_m"),
-                    "updated_at": now,
-                }
-                for row in rows
-            ],
+            params,
         )
         conn.commit()
-        return conn.total_changes
+        return changed
 
 
 def upsert_sleep_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
@@ -585,8 +623,17 @@ def upsert_sleep_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
         return 0
 
     now = UTC_NOW()
+    params = [
+        {
+            **row,
+            "raw_json": json.dumps(row.get("raw", {}), default=str),
+            "updated_at": now,
+        }
+        for row in rows
+    ]
     with closing(get_conn(db_path)) as conn:
-        conn.executemany(
+        changed = _executemany_in_chunks(
+            conn,
             """
             INSERT INTO sleep_daily (
                 day_utc, sleep_score, sleep_duration_s, deep_sleep_s,
@@ -609,17 +656,10 @@ def upsert_sleep_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
                 raw_json=excluded.raw_json,
                 updated_at=excluded.updated_at
             """,
-            [
-                {
-                    **row,
-                    "raw_json": json.dumps(row.get("raw", {}), default=str),
-                    "updated_at": now,
-                }
-                for row in rows
-            ],
+            params,
         )
         conn.commit()
-        return conn.total_changes
+        return changed
 
 
 def upsert_wellness_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
@@ -627,8 +667,17 @@ def upsert_wellness_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
         return 0
 
     now = UTC_NOW()
+    params = [
+        {
+            **row,
+            "raw_json": json.dumps(row.get("raw", {}), default=str),
+            "updated_at": now,
+        }
+        for row in rows
+    ]
     with closing(get_conn(db_path)) as conn:
-        conn.executemany(
+        changed = _executemany_in_chunks(
+            conn,
             """
             INSERT INTO wellness_daily (
                 day_utc, resting_hr, hrv_status, training_readiness,
@@ -657,17 +706,10 @@ def upsert_wellness_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
                 raw_json=excluded.raw_json,
                 updated_at=excluded.updated_at
             """,
-            [
-                {
-                    **row,
-                    "raw_json": json.dumps(row.get("raw", {}), default=str),
-                    "updated_at": now,
-                }
-                for row in rows
-            ],
+            params,
         )
         conn.commit()
-        return conn.total_changes
+        return changed
 
 
 def get_runs_df(db_path: Path) -> pd.DataFrame:
@@ -911,6 +953,44 @@ def get_latest_recovery_day(db_path: Path) -> datetime | None:
     if not latest_day:
         return None
     return datetime.fromisoformat(f"{latest_day}T00:00:00+00:00")
+
+
+def get_activity_days(db_path: Path) -> set[date]:
+    with closing(get_conn(db_path)) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT substr(start_time_utc, 1, 10) AS day_utc FROM activities WHERE start_time_utc IS NOT NULL"
+        ).fetchall()
+    out: set[date] = set()
+    for row in rows:
+        day_raw = row["day_utc"] if row else None
+        if not day_raw:
+            continue
+        try:
+            out.add(datetime.fromisoformat(f"{day_raw}T00:00:00+00:00").date())
+        except Exception:
+            continue
+    return out
+
+
+def get_recovery_days(db_path: Path) -> set[date]:
+    with closing(get_conn(db_path)) as conn:
+        rows = conn.execute(
+            """
+            SELECT day_utc FROM sleep_daily
+            UNION
+            SELECT day_utc FROM wellness_daily
+            """
+        ).fetchall()
+    out: set[date] = set()
+    for row in rows:
+        day_raw = row["day_utc"] if row else None
+        if not day_raw:
+            continue
+        try:
+            out.add(datetime.fromisoformat(f"{day_raw}T00:00:00+00:00").date())
+        except Exception:
+            continue
+    return out
 
 
 def get_activities_cache_key(db_path: Path) -> str:
