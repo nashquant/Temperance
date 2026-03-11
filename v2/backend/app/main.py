@@ -6,6 +6,7 @@ import hmac
 import json
 import math
 import os
+import random
 import re
 import sqlite3
 import sys
@@ -153,6 +154,12 @@ class CustomActivityUpdateRequest(BaseModel):
     day_utc: str
     line_no: int
     activity_text: str
+
+
+class GeneratedActivityRequest(BaseModel):
+    day_utc: str
+    mode: str = "planned"
+    activity_type: str | None = None
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -2332,6 +2339,15 @@ def _format_duration_short(duration_s: float) -> str:
     return f"{minutes}'"
 
 
+def _format_duration_for_generated_activity(total_minutes: float) -> str:
+    rounded_minutes = max(int(round(float(total_minutes))), 0)
+    hours = rounded_minutes // 60
+    minutes = rounded_minutes % 60
+    if hours > 0:
+        return f"{hours}h{minutes}min" if minutes > 0 else f"{hours}h"
+    return f"{rounded_minutes}min"
+
+
 def _format_pace_short(pace_s_per_km: float | None) -> str:
     if pace_s_per_km is None:
         return "-"
@@ -2354,6 +2370,166 @@ def _format_duration_compact_with_seconds(duration_s: float | int | None) -> str
     if hours > 0:
         return f"{hours}h{minutes:02d}'{seconds:02d}\""
     return f"{minutes}'{seconds:02d}\""
+
+
+def _activity_kind_display_name(kind: str) -> str:
+    normalized = str(kind or "").strip().lower()
+    if normalized == "treadmill":
+        return "treadmill"
+    if normalized == "run":
+        return "run"
+    if normalized == "elliptical":
+        return "elliptical"
+    if normalized in {"cycling", "bike"}:
+        return "bike"
+    return normalized or "activity"
+
+
+def _activity_type_matches_filter(segments: list[dict[str, Any]], activity_type: str | None) -> bool:
+    target = str(activity_type or "").strip().lower()
+    if not target:
+        return True
+    kind_aliases = {
+        "running": {"run", "treadmill"},
+        "elliptical": {"elliptical"},
+        "bike": {"cycling", "bike"},
+    }
+    accepted = kind_aliases.get(target)
+    if not accepted:
+        return True
+    seen_kinds = {
+        str(segment.get("kind") or "").strip().lower()
+        for segment in segments
+        if str(segment.get("kind") or "").strip()
+    }
+    return any(kind in accepted for kind in seen_kinds)
+
+
+def _generated_activity_text_from_segments(
+    segments: list[dict[str, Any]],
+    lthr_bpm: float,
+    threshold_pace_sec_per_km: float,
+) -> str | None:
+    if not segments:
+        return None
+    total_minutes = 0.0
+    duration_by_kind: dict[str, float] = {}
+    weighted_pace_sum = 0.0
+    weighted_pace_minutes = 0.0
+    weighted_hr_sum = 0.0
+    weighted_hr_minutes = 0.0
+
+    for seg in segments:
+        duration_min = _safe_float(seg.get("duration_min"))
+        if duration_min <= 0:
+            continue
+        total_minutes += duration_min
+        kind = str(seg.get("kind") or "other").strip().lower() or "other"
+        duration_by_kind[kind] = duration_by_kind.get(kind, 0.0) + duration_min
+
+        pace_value = _safe_float(seg.get("pace_s_per_km"))
+        if pace_value <= 0:
+            if_input = _safe_float(seg.get("if_input"))
+            if if_input > 0 and threshold_pace_sec_per_km > 0:
+                pace_value = threshold_pace_sec_per_km / if_input
+            else:
+                avg_hr_value = _safe_float(seg.get("avg_hr_bpm"))
+                if avg_hr_value > 0 and lthr_bpm > 0 and threshold_pace_sec_per_km > 0:
+                    derived_if = avg_hr_value / max(lthr_bpm, 1e-6)
+                    if derived_if > 0:
+                        pace_value = threshold_pace_sec_per_km / derived_if
+        if pace_value > 0:
+            weighted_pace_sum += pace_value * duration_min
+            weighted_pace_minutes += duration_min
+
+        hr_value = _safe_float(seg.get("avg_hr_bpm"))
+        if hr_value <= 0:
+            if_input = _safe_float(seg.get("if_input"))
+            if if_input > 0 and lthr_bpm > 0:
+                hr_value = lthr_bpm * if_input
+        if hr_value > 0:
+            weighted_hr_sum += hr_value * duration_min
+            weighted_hr_minutes += duration_min
+
+    if total_minutes <= 0 or not duration_by_kind:
+        return None
+
+    dominant_kind = max(duration_by_kind.items(), key=lambda item: item[1])[0]
+    activity_name = _activity_kind_display_name(dominant_kind)
+    duration_label = _format_duration_for_generated_activity(total_minutes)
+    if dominant_kind in {"run", "treadmill"}:
+        pace_value = weighted_pace_sum / weighted_pace_minutes if weighted_pace_minutes > 0 else 0.0
+        pace_label = _format_pace_short(pace_value if pace_value > 0 else None)
+        if pace_label != "-":
+            return f"{activity_name} {duration_label} @{pace_label}"
+    hr_value = weighted_hr_sum / weighted_hr_minutes if weighted_hr_minutes > 0 else 0.0
+    if hr_value > 0:
+        return f"{activity_name} {duration_label} @{int(round(hr_value))}bpm"
+    return None
+
+
+def _generated_activity_candidates(
+    db_path: Path,
+    mode: str,
+    day_utc: str,
+    activity_type: str | None = None,
+) -> list[str]:
+    mode_normalized = str(mode or "planned").strip().lower()
+    day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
+    lthr_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=DEFAULT_LTHR,
+    )
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
+    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
+    pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
+    has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
+
+    source_frames: list[tuple[pd.DataFrame, str]] = []
+    if mode_normalized == "custom":
+        source_frames.append((get_custom_activities_df(db_path=db_path), "activity_text"))
+        source_frames.append((get_planned_activities_df(db_path=db_path), "workout_text"))
+    else:
+        source_frames.append((get_planned_activities_df(db_path=db_path), "workout_text"))
+        source_frames.append((get_custom_activities_df(db_path=db_path), "activity_text"))
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for frame, text_column in source_frames:
+        if frame.empty:
+            continue
+        for _, row in frame.sort_values(["day_utc", "line_no"], ascending=[False, False]).iterrows():
+            segments = _segments_from_stored_or_source(
+                parsed_json=row.get("parsed_json"),
+                source_text=str(row.get(text_column) or ""),
+                lthr_bpm=lthr_for_day,
+                threshold_pace_sec_per_km=pace_for_day,
+                has_vdot_basis=has_vdot_basis,
+            )
+            if not _activity_type_matches_filter(segments, activity_type):
+                continue
+            suggestion = _generated_activity_text_from_segments(
+                segments=segments,
+                lthr_bpm=lthr_for_day,
+                threshold_pace_sec_per_km=pace_for_day,
+            )
+            if not suggestion:
+                continue
+            key = suggestion.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(suggestion)
+    return out
 
 
 def _load_if_zone_thresholds(db_path: Path) -> dict[str, float]:
@@ -5298,6 +5474,44 @@ def custom_activities_view(
         )
 
     return {"owner": resolved_owner, "rows": rows_out, "weeks": weeks_out}
+
+
+@app.post("/api/v1/generated-activity")
+def generated_activity(
+    payload: GeneratedActivityRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+
+    day_utc = str(payload.day_utc or "").strip()
+    mode = str(payload.mode or "planned").strip().lower()
+    activity_type = str(payload.activity_type or "").strip().lower() or None
+    if not day_utc:
+        raise HTTPException(status_code=400, detail="Missing day_utc")
+    if mode not in {"planned", "custom"}:
+        raise HTTPException(status_code=400, detail="Invalid mode")
+    if activity_type is not None and activity_type not in {"running", "elliptical", "bike"}:
+        raise HTTPException(status_code=400, detail="Invalid activity_type")
+
+    suggestions = _generated_activity_candidates(
+        db_path=db_path,
+        mode=mode,
+        day_utc=day_utc,
+        activity_type=activity_type,
+    )
+    if not suggestions:
+        raise HTTPException(status_code=404, detail="No saved activities available to generate from")
+
+    suggestion = random.choice(suggestions)
+    return {
+        "owner": resolved_owner,
+        "mode": mode,
+        "activity_text": suggestion,
+        "total_candidates": len(suggestions),
+    }
 
 
 @app.post("/api/v1/custom-activities/ingest")

@@ -1,0 +1,3790 @@
+{
+  "generated_at": "2026-03-11T19:44:48Z",
+  "db_root": "/Users/matheus/Temperance/temperance/data/private/users",
+  "count": 200,
+  "bucket_counts": {
+    "recovery": 20,
+    "easy aerobic": 20,
+    "aerobic endurance": 20,
+    "long run": 20,
+    "steady / tempo": 20,
+    "short reps": 20,
+    "long reps": 40,
+    "fartlek": 40
+  },
+  "buckets": [
+    "recovery",
+    "easy aerobic",
+    "aerobic endurance",
+    "long run",
+    "steady / tempo",
+    "short reps",
+    "long reps",
+    "fartlek"
+  ],
+  "minimum_per_bucket": 20,
+  "cards": [
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-14",
+      "line_no": 1,
+      "raw_text": "5km @ 6:00",
+      "normalized_label": "run 30' @ 58%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "30'",
+      "duration_min": 30.0,
+      "if_pct": 58,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-11",
+      "line_no": 1,
+      "raw_text": "Elliptical 40min @ 130bpm",
+      "normalized_label": "elliptical 40' @ 73%",
+      "type": "elliptical",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "40'",
+      "duration_min": 40.0,
+      "if_pct": 73,
+      "segment_count": 1,
+      "kinds": [
+        "elliptical"
+      ]
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-07",
+      "line_no": 9,
+      "raw_text": "13km run @ 5:00/km",
+      "normalized_label": "run 1h5' @ 70%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h5'",
+      "duration_min": 65.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-15",
+      "line_no": 1,
+      "raw_text": "42.2km @MP",
+      "normalized_label": "run 2h37' @ 94%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "2h37'",
+      "duration_min": 156.7,
+      "if_pct": 94,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-08",
+      "line_no": 2,
+      "raw_text": "70min elliptical @ 140bpm PM",
+      "normalized_label": "elliptical 1h10' @ 79%",
+      "type": "elliptical",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "1h10'",
+      "duration_min": 70.0,
+      "if_pct": 79,
+      "segment_count": 1,
+      "kinds": [
+        "elliptical"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 1,
+      "raw_text": "run 24' @ 88%",
+      "normalized_label": "run 24' @ 88%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "24'",
+      "duration_min": 24.0,
+      "if_pct": 88,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-10",
+      "line_no": 5,
+      "raw_text": "elliptical 40min @ 135bpm + 10min @ 150bpm PM",
+      "normalized_label": "elliptical 50' @ 78%",
+      "type": "elliptical",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "50'",
+      "duration_min": 50.0,
+      "if_pct": 78,
+      "segment_count": 2,
+      "kinds": [
+        "elliptical"
+      ]
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-10",
+      "line_no": 4,
+      "raw_text": "10min run @ 4:40/km + run 3x2km @ 3:45 / 1min @ 4:50/km",
+      "normalized_label": "run 34' @ 87%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "34'",
+      "duration_min": 34.5,
+      "if_pct": 87,
+      "segment_count": 6,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-27",
+      "line_no": 1,
+      "raw_text": "45min run @4:40/km",
+      "normalized_label": "run 45' @ 61%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 61,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-26",
+      "line_no": 1,
+      "raw_text": "25min run @4:30/km",
+      "normalized_label": "run 25' @ 70%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "25'",
+      "duration_min": 25.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-31",
+      "line_no": 1,
+      "raw_text": "84min run @4:10/km",
+      "normalized_label": "run 1h24' @ 68%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h24'",
+      "duration_min": 84.0,
+      "if_pct": 68,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-14",
+      "line_no": 1,
+      "raw_text": "120min run @4:00/km",
+      "normalized_label": "run 2h @ 71%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "2h",
+      "duration_min": 120.0,
+      "if_pct": 71,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-06",
+      "line_no": 1,
+      "raw_text": "60min elliptical @ 140bpm",
+      "normalized_label": "elliptical 1h @ 79%",
+      "type": "elliptical",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "1h",
+      "duration_min": 60.0,
+      "if_pct": 79,
+      "segment_count": 1,
+      "kinds": [
+        "elliptical"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 2,
+      "raw_text": "run 24' @ 90%",
+      "normalized_label": "run 24' @ 90%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "24'",
+      "duration_min": 24.0,
+      "if_pct": 90,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-07",
+      "line_no": 10,
+      "raw_text": "2x30min elliptical @ 145bpm",
+      "normalized_label": "elliptical 1h @ 81%",
+      "type": "elliptical",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h",
+      "duration_min": 60.0,
+      "if_pct": 81,
+      "segment_count": 2,
+      "kinds": [
+        "elliptical"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-12",
+      "line_no": 1,
+      "raw_text": "12km run @3:31/km + 5min run @4:40/km + 5km run @2:56/km + 12km run @3:26/km + 5min run @4:40/km + 5km run @2:57/km",
+      "normalized_label": "run 2h3' @ 83%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h3'",
+      "duration_min": 122.8,
+      "if_pct": 83,
+      "segment_count": 6,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-10",
+      "line_no": 1,
+      "raw_text": "50min run @4:40/km",
+      "normalized_label": "run 50' @ 61%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "50'",
+      "duration_min": 50.0,
+      "if_pct": 61,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-25",
+      "line_no": 1,
+      "raw_text": "40min run @4:30/km",
+      "normalized_label": "run 40' @ 70%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "40'",
+      "duration_min": 40.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-25",
+      "line_no": 1,
+      "raw_text": "89min run @4:02/km",
+      "normalized_label": "run 1h29' @ 70%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h29'",
+      "duration_min": 89.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-04",
+      "line_no": 1,
+      "raw_text": "38km run @4:00/km",
+      "normalized_label": "run 2h32' @ 71%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "2h32'",
+      "duration_min": 152.0,
+      "if_pct": 71,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-02",
+      "line_no": 2,
+      "raw_text": "80min elliptical @ 140bpm",
+      "normalized_label": "elliptical 1h20' @ 79%",
+      "type": "elliptical",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "1h20'",
+      "duration_min": 80.0,
+      "if_pct": 79,
+      "segment_count": 1,
+      "kinds": [
+        "elliptical"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 3,
+      "raw_text": "run 24' @ 92%",
+      "normalized_label": "run 24' @ 92%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "24'",
+      "duration_min": 24.0,
+      "if_pct": 92,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-05",
+      "line_no": 1,
+      "raw_text": "40min elliptical @ 135bpm + 40min elliptical @ 155bpm",
+      "normalized_label": "elliptical 1h20' @ 81%",
+      "type": "elliptical",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h20'",
+      "duration_min": 80.0,
+      "if_pct": 81,
+      "segment_count": 2,
+      "kinds": [
+        "elliptical"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-09",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 2km run @2:58/km + 1km run @3:27/km + 3km run @2:58/km + 1km run @3:27/km + 4km run @2:58/km + 1km run @3:27/km + 3km run @2:58/km + 1km run @3:27/km + 2km run @2:58/km + 1km run @3:27/km + 1km run @2:58/km",
+      "normalized_label": "run 1h22' @ 84%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h22'",
+      "duration_min": 81.8,
+      "if_pct": 84,
+      "segment_count": 12,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-28",
+      "line_no": 1,
+      "raw_text": "16km run @4:40/km",
+      "normalized_label": "run 1h15' @ 61%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "1h15'",
+      "duration_min": 74.7,
+      "if_pct": 61,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-23",
+      "line_no": 1,
+      "raw_text": "45min run @4:30/km",
+      "normalized_label": "run 45' @ 70%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-29",
+      "line_no": 1,
+      "raw_text": "61min run @4:02/km",
+      "normalized_label": "run 1h1' @ 70%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h1'",
+      "duration_min": 61.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-03",
+      "line_no": 1,
+      "raw_text": "105min run @3:29/km",
+      "normalized_label": "run 1h45' @ 81%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h45'",
+      "duration_min": 105.0,
+      "if_pct": 81,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-25",
+      "line_no": 1,
+      "raw_text": "21.1km run @2:51/km",
+      "normalized_label": "run 1h @ 99%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "1h",
+      "duration_min": 60.1,
+      "if_pct": 99,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 4,
+      "raw_text": "run 24' @ 94%",
+      "normalized_label": "run 24' @ 94%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "24'",
+      "duration_min": 24.0,
+      "if_pct": 94,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "admin",
+      "source": "planned",
+      "day_utc": "2026-03-03",
+      "line_no": 2,
+      "raw_text": "20min elliptical @ 120bpm + 3x10min @155bpm PM",
+      "normalized_label": "elliptical 50' @ 79%",
+      "type": "elliptical",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "50'",
+      "duration_min": 50.0,
+      "if_pct": 79,
+      "segment_count": 4,
+      "kinds": [
+        "elliptical"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-08",
+      "line_no": 1,
+      "raw_text": "10km run @3:47/km + 3km run @3:40/km + 3km run @3:29/km + 3km run @3:18/km + 3km run @3:12/km + 41min run @4:05/km",
+      "normalized_label": "run 2h @ 76%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h",
+      "duration_min": 119.8,
+      "if_pct": 76,
+      "segment_count": 6,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 1,
+      "raw_text": "run 20' @ 55%",
+      "normalized_label": "run 20' @ 55%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "20'",
+      "duration_min": 20.0,
+      "if_pct": 55,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-05",
+      "line_no": 1,
+      "raw_text": "8km run @4:30/km",
+      "normalized_label": "run 36' @ 70%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "36'",
+      "duration_min": 36.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-02",
+      "line_no": 1,
+      "raw_text": "75min run @3:40/km",
+      "normalized_label": "run 1h15' @ 77%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h15'",
+      "duration_min": 75.0,
+      "if_pct": 77,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-07",
+      "line_no": 1,
+      "raw_text": "95min run @4:40/km",
+      "normalized_label": "run 1h35' @ 61%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h35'",
+      "duration_min": 95.0,
+      "if_pct": 61,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-06",
+      "line_no": 1,
+      "raw_text": "21.1km run @3:13/km",
+      "normalized_label": "run 1h8' @ 98%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "1h8'",
+      "duration_min": 67.9,
+      "if_pct": 98,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 5,
+      "raw_text": "run 24' @ 96%",
+      "normalized_label": "run 24' @ 96%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "24'",
+      "duration_min": 24.0,
+      "if_pct": 96,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-13",
+      "line_no": 1,
+      "raw_text": "88min run @4:02/km + 40min run @4:40/km",
+      "normalized_label": "run 2h8' @ 67%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h8'",
+      "duration_min": 128.0,
+      "if_pct": 67,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-05",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 6km run @3:03/km + 1km run @3:40/km + 5km run @3:00/km + 1km run @3:40/km + 4km run @2:57/km + 1km run @3:40/km + 3km run @2:55/km + 1km run @3:40/km + 2km run @2:52/km + 39min run @4:40/km",
+      "normalized_label": "run 2h13' @ 78%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h13'",
+      "duration_min": 133.2,
+      "if_pct": 78,
+      "segment_count": 11,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 2,
+      "raw_text": "run 20' @ 58%",
+      "normalized_label": "run 20' @ 58%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "20'",
+      "duration_min": 20.0,
+      "if_pct": 58,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-03-14",
+      "line_no": 1,
+      "raw_text": "45min run @4:35/km",
+      "normalized_label": "run 45' @ 69%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 69,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "guest",
+      "source": "custom",
+      "day_utc": "2025-01-01",
+      "line_no": 1,
+      "raw_text": "60min run @ 5:00",
+      "normalized_label": "run 1h @ 70%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h",
+      "duration_min": 60.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-27",
+      "line_no": 1,
+      "raw_text": "42.2km @ 3:23/km",
+      "normalized_label": "run 2h23' @ 94%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "2h23'",
+      "duration_min": 142.8,
+      "if_pct": 94,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-03-23",
+      "line_no": 1,
+      "raw_text": "10km run @3:04/km",
+      "normalized_label": "run 31' @ 103%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "31'",
+      "duration_min": 30.7,
+      "if_pct": 103,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 6,
+      "raw_text": "run 28' @ 88%",
+      "normalized_label": "run 28' @ 88%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "28'",
+      "duration_min": 28.0,
+      "if_pct": 88,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-11",
+      "line_no": 1,
+      "raw_text": "88min run @4:00/km + 36min run @4:40/km",
+      "normalized_label": "run 2h4' @ 68%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h4'",
+      "duration_min": 124.0,
+      "if_pct": 68,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-27",
+      "line_no": 1,
+      "raw_text": "30min run @4:40/km + 10x400m run @2:47/km + 10x400m run @2:43/km + 10x400m run @2:38/km + 37min run @4:40/km",
+      "normalized_label": "run 1h40' @ 75%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h40'",
+      "duration_min": 99.5,
+      "if_pct": 75,
+      "segment_count": 32,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 3,
+      "raw_text": "run 20' @ 60%",
+      "normalized_label": "run 20' @ 60%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "20'",
+      "duration_min": 20.0,
+      "if_pct": 60,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 1,
+      "raw_text": "run 35' @ 66%",
+      "normalized_label": "run 35' @ 66%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "35'",
+      "duration_min": 35.0,
+      "if_pct": 66,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-09",
+      "line_no": 1,
+      "raw_text": "90min run @4:25/km",
+      "normalized_label": "run 1h30' @ 72%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h30'",
+      "duration_min": 90.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-03-30",
+      "line_no": 1,
+      "raw_text": "140min run @4:25/km",
+      "normalized_label": "run 2h20' @ 72%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "2h20'",
+      "duration_min": 140.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-02-22",
+      "line_no": 1,
+      "raw_text": "5km run @3:03/km",
+      "normalized_label": "run 15' @ 104%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "15'",
+      "duration_min": 15.2,
+      "if_pct": 104,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 7,
+      "raw_text": "run 28' @ 90%",
+      "normalized_label": "run 28' @ 90%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "28'",
+      "duration_min": 28.0,
+      "if_pct": 90,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-10",
+      "line_no": 1,
+      "raw_text": "89min run @4:02/km + 43min run @4:40/km",
+      "normalized_label": "run 2h12' @ 67%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h12'",
+      "duration_min": 132.0,
+      "if_pct": 67,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-26",
+      "line_no": 1,
+      "raw_text": "32min run @4:00/km + 1km run @3:25/km + 5km run @3:01/km + 1km run @4:40/km + 40min run @4:00/km",
+      "normalized_label": "run 1h35' @ 74%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h35'",
+      "duration_min": 95.2,
+      "if_pct": 74,
+      "segment_count": 5,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 4,
+      "raw_text": "run 20' @ 62%",
+      "normalized_label": "run 20' @ 62%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "20'",
+      "duration_min": 20.0,
+      "if_pct": 62,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 2,
+      "raw_text": "run 35' @ 68%",
+      "normalized_label": "run 35' @ 68%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "35'",
+      "duration_min": 35.0,
+      "if_pct": 68,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-08",
+      "line_no": 1,
+      "raw_text": "75min run @4:30/km",
+      "normalized_label": "run 1h15' @ 70%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h15'",
+      "duration_min": 75.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-03-02",
+      "line_no": 1,
+      "raw_text": "135min run @4:25/km",
+      "normalized_label": "run 2h15' @ 72%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "2h15'",
+      "duration_min": 135.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-02-15",
+      "line_no": 1,
+      "raw_text": "5km run @3:06/km",
+      "normalized_label": "run 16' @ 102%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "16'",
+      "duration_min": 15.5,
+      "if_pct": 102,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 8,
+      "raw_text": "run 28' @ 92%",
+      "normalized_label": "run 28' @ 92%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "28'",
+      "duration_min": 28.0,
+      "if_pct": 92,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-07",
+      "line_no": 1,
+      "raw_text": "97min run @4:00/km + 36min run @4:40/km",
+      "normalized_label": "run 2h13' @ 68%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h13'",
+      "duration_min": 133.0,
+      "if_pct": 68,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-24",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 6x3min run @2:55/km + 6x1min run @4:40/km + 6x2min run @2:50/km + 6x1min run @4:40/km + 6x1min run @2:45/km + 6x2min run @4:40/km",
+      "normalized_label": "run 1h20' @ 78%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h20'",
+      "duration_min": 80.0,
+      "if_pct": 78,
+      "segment_count": 37,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 5,
+      "raw_text": "run 20' @ 64%",
+      "normalized_label": "run 20' @ 64%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "20'",
+      "duration_min": 20.0,
+      "if_pct": 64,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 3,
+      "raw_text": "run 35' @ 70%",
+      "normalized_label": "run 35' @ 70%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "35'",
+      "duration_min": 35.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-03-12",
+      "line_no": 1,
+      "raw_text": "60min run @4:35/km",
+      "normalized_label": "run 1h @ 69%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h",
+      "duration_min": 60.0,
+      "if_pct": 69,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-02-09",
+      "line_no": 1,
+      "raw_text": "125min run @4:25/km",
+      "normalized_label": "run 2h5' @ 72%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "2h5'",
+      "duration_min": 125.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 1,
+      "raw_text": "run 45' @ 78%",
+      "normalized_label": "run 45' @ 78%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 78,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 9,
+      "raw_text": "run 28' @ 94%",
+      "normalized_label": "run 28' @ 94%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "28'",
+      "duration_min": 28.0,
+      "if_pct": 94,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-06",
+      "line_no": 1,
+      "raw_text": "82min run @4:08/km + 43min run @4:40/km",
+      "normalized_label": "run 2h5' @ 66%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h5'",
+      "duration_min": 125.0,
+      "if_pct": 66,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-23",
+      "line_no": 1,
+      "raw_text": "17km run @4:05/km + 3km run @3:20/km + 42min run @4:12/km + 12x20s run @150%",
+      "normalized_label": "run 2h5' @ 73%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h5'",
+      "duration_min": 125.4,
+      "if_pct": 73,
+      "segment_count": 15,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 6,
+      "raw_text": "run 25' @ 55%",
+      "normalized_label": "run 25' @ 55%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "25'",
+      "duration_min": 25.0,
+      "if_pct": 55,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 4,
+      "raw_text": "run 35' @ 72%",
+      "normalized_label": "run 35' @ 72%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "35'",
+      "duration_min": 35.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-03-05",
+      "line_no": 1,
+      "raw_text": "75min run @4:35/km",
+      "normalized_label": "run 1h15' @ 69%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h15'",
+      "duration_min": 75.0,
+      "if_pct": 69,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-02-02",
+      "line_no": 1,
+      "raw_text": "120min run @4:25/km",
+      "normalized_label": "run 2h @ 72%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "2h",
+      "duration_min": 120.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 2,
+      "raw_text": "run 45' @ 80%",
+      "normalized_label": "run 45' @ 80%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 80,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 10,
+      "raw_text": "run 28' @ 96%",
+      "normalized_label": "run 28' @ 96%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "28'",
+      "duration_min": 28.0,
+      "if_pct": 96,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-04",
+      "line_no": 1,
+      "raw_text": "81min run @4:00/km + 42min run @4:10/km",
+      "normalized_label": "run 2h3' @ 70%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h3'",
+      "duration_min": 123.0,
+      "if_pct": 70,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-21",
+      "line_no": 1,
+      "raw_text": "18min run @4:40/km + 14x400m run @3:27/km + 14x300m run @2:45/km + 12min run @4:00/km + 5km run @3:04/km + 12min run @4:00/km + 49min run @4:08/km",
+      "normalized_label": "run 2h17' @ 75%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h17'",
+      "duration_min": 137.2,
+      "if_pct": 75,
+      "segment_count": 33,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 7,
+      "raw_text": "run 25' @ 58%",
+      "normalized_label": "run 25' @ 58%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "25'",
+      "duration_min": 25.0,
+      "if_pct": 58,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 5,
+      "raw_text": "run 35' @ 74%",
+      "normalized_label": "run 35' @ 74%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "35'",
+      "duration_min": 35.0,
+      "if_pct": 74,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 1,
+      "raw_text": "run 1h @ 68%",
+      "normalized_label": "run 1h @ 68%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h",
+      "duration_min": 60.0,
+      "if_pct": 68,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "aerobic endurance"
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-01-26",
+      "line_no": 1,
+      "raw_text": "115min run @4:25/km",
+      "normalized_label": "run 1h55' @ 72%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h55'",
+      "duration_min": 115.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 3,
+      "raw_text": "run 45' @ 82%",
+      "normalized_label": "run 45' @ 82%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 82,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 11,
+      "raw_text": "run 32' @ 88%",
+      "normalized_label": "run 32' @ 88%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "32'",
+      "duration_min": 32.0,
+      "if_pct": 88,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-03",
+      "line_no": 1,
+      "raw_text": "70min run @3:55/km + 40min run @4:02/km",
+      "normalized_label": "run 1h50' @ 72%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h50'",
+      "duration_min": 110.0,
+      "if_pct": 72,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-10",
+      "line_no": 1,
+      "raw_text": "10km run @3:42/km + 10km run @3:28/km + 42min run @4:05/km",
+      "normalized_label": "run 1h54' @ 75%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h54'",
+      "duration_min": 113.7,
+      "if_pct": 75,
+      "segment_count": 3,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 8,
+      "raw_text": "run 25' @ 60%",
+      "normalized_label": "run 25' @ 60%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "25'",
+      "duration_min": 25.0,
+      "if_pct": 60,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 6,
+      "raw_text": "run 40' @ 66%",
+      "normalized_label": "run 40' @ 66%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "40'",
+      "duration_min": 40.0,
+      "if_pct": 66,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 2,
+      "raw_text": "run 1h @ 72%",
+      "normalized_label": "run 1h @ 72%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h",
+      "duration_min": 60.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "aerobic endurance"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 1,
+      "raw_text": "run 1h40' @ 70%",
+      "normalized_label": "run 1h40' @ 70%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h40'",
+      "duration_min": 100.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "long run"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 4,
+      "raw_text": "run 45' @ 84%",
+      "normalized_label": "run 45' @ 84%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 84,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 12,
+      "raw_text": "run 32' @ 90%",
+      "normalized_label": "run 32' @ 90%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "32'",
+      "duration_min": 32.0,
+      "if_pct": 90,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-04-01",
+      "line_no": 1,
+      "raw_text": "82min run @4:05/km + 41min run @4:08/km",
+      "normalized_label": "run 2h3' @ 69%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h3'",
+      "duration_min": 123.0,
+      "if_pct": 69,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-07",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 3x5min run @2:55/km + 3x1min run @4:40/km + 4x1min run @2:50/km + 4x1min run @4:40/km + 3x4min run @2:55/km + 3x1min run @4:40/km + 3x3min run @2:55/km + 3x1min run @4:40/km + 47min run @4:00/km",
+      "normalized_label": "run 2h @ 77%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h",
+      "duration_min": 120.0,
+      "if_pct": 77,
+      "segment_count": 28,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 9,
+      "raw_text": "run 25' @ 62%",
+      "normalized_label": "run 25' @ 62%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "25'",
+      "duration_min": 25.0,
+      "if_pct": 62,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 7,
+      "raw_text": "run 40' @ 68%",
+      "normalized_label": "run 40' @ 68%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "40'",
+      "duration_min": 40.0,
+      "if_pct": 68,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 3,
+      "raw_text": "run 1h @ 74%",
+      "normalized_label": "run 1h @ 74%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h",
+      "duration_min": 60.0,
+      "if_pct": 74,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "aerobic endurance"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 2,
+      "raw_text": "run 1h40' @ 72%",
+      "normalized_label": "run 1h40' @ 72%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h40'",
+      "duration_min": 100.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "long run"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 5,
+      "raw_text": "run 45' @ 86%",
+      "normalized_label": "run 45' @ 86%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 86,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 13,
+      "raw_text": "run 32' @ 92%",
+      "normalized_label": "run 32' @ 92%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "32'",
+      "duration_min": 32.0,
+      "if_pct": 92,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-30",
+      "line_no": 1,
+      "raw_text": "16min run @4:40/km + 35km run @3:03/km",
+      "normalized_label": "run 2h3' @ 89%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h3'",
+      "duration_min": 122.8,
+      "if_pct": 89,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-05",
+      "line_no": 1,
+      "raw_text": "30min run @4:40/km + 10km run @3:09/km + 7km run @3:05/km + 1km run @2:47/km + 3km run @2:46/km + 4km run @2:59/km + 2km run @2:56/km + 24km run @3:42/km",
+      "normalized_label": "run 3h21' @ 81%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "3h21'",
+      "duration_min": 200.8,
+      "if_pct": 81,
+      "segment_count": 8,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 10,
+      "raw_text": "run 25' @ 64%",
+      "normalized_label": "run 25' @ 64%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "25'",
+      "duration_min": 25.0,
+      "if_pct": 64,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 8,
+      "raw_text": "run 40' @ 72%",
+      "normalized_label": "run 40' @ 72%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "40'",
+      "duration_min": 40.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 4,
+      "raw_text": "run 1h @ 76%",
+      "normalized_label": "run 1h @ 76%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h",
+      "duration_min": 60.0,
+      "if_pct": 76,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "aerobic endurance"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 3,
+      "raw_text": "run 1h40' @ 74%",
+      "normalized_label": "run 1h40' @ 74%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h40'",
+      "duration_min": 100.0,
+      "if_pct": 74,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "long run"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 6,
+      "raw_text": "run 45' @ 88%",
+      "normalized_label": "run 45' @ 88%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 88,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 14,
+      "raw_text": "run 32' @ 94%",
+      "normalized_label": "run 32' @ 94%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "32'",
+      "duration_min": 32.0,
+      "if_pct": 94,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-29",
+      "line_no": 1,
+      "raw_text": "41min run @4:02/km + 40min run @4:02/km",
+      "normalized_label": "run 1h21' @ 70%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h21'",
+      "duration_min": 81.0,
+      "if_pct": 70,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-02",
+      "line_no": 1,
+      "raw_text": "19min run @4:40/km + 79min run @3:55/km + 57min run @4:00/km",
+      "normalized_label": "run 2h35' @ 70%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h35'",
+      "duration_min": 155.0,
+      "if_pct": 70,
+      "segment_count": 3,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 11,
+      "raw_text": "run 30' @ 55%",
+      "normalized_label": "run 30' @ 55%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "30'",
+      "duration_min": 30.0,
+      "if_pct": 55,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 9,
+      "raw_text": "run 40' @ 74%",
+      "normalized_label": "run 40' @ 74%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "40'",
+      "duration_min": 40.0,
+      "if_pct": 74,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 5,
+      "raw_text": "run 1h10' @ 68%",
+      "normalized_label": "run 1h10' @ 68%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h10'",
+      "duration_min": 70.0,
+      "if_pct": 68,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "aerobic endurance"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 4,
+      "raw_text": "run 1h40' @ 76%",
+      "normalized_label": "run 1h40' @ 76%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h40'",
+      "duration_min": 100.0,
+      "if_pct": 76,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "long run"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 7,
+      "raw_text": "run 45' @ 90%",
+      "normalized_label": "run 45' @ 90%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 90,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 15,
+      "raw_text": "run 32' @ 96%",
+      "normalized_label": "run 32' @ 96%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "32'",
+      "duration_min": 32.0,
+      "if_pct": 96,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-28",
+      "line_no": 1,
+      "raw_text": "39min run @3:55/km + 41min run @4:08/km",
+      "normalized_label": "run 1h20' @ 70%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h20'",
+      "duration_min": 80.0,
+      "if_pct": 70,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-01",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 17min run @3:00/km + 15min run @3:00/km + 13min run @3:00/km + 11min run @3:00/km + 50min run @3:20/km",
+      "normalized_label": "run 2h6' @ 85%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h6'",
+      "duration_min": 126.0,
+      "if_pct": 85,
+      "segment_count": 6,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 12,
+      "raw_text": "run 30' @ 60%",
+      "normalized_label": "run 30' @ 60%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "30'",
+      "duration_min": 30.0,
+      "if_pct": 60,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 10,
+      "raw_text": "run 45' @ 66%",
+      "normalized_label": "run 45' @ 66%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 66,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 6,
+      "raw_text": "run 1h10' @ 70%",
+      "normalized_label": "run 1h10' @ 70%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h10'",
+      "duration_min": 70.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "aerobic endurance"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 5,
+      "raw_text": "run 1h40' @ 78%",
+      "normalized_label": "run 1h40' @ 78%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h40'",
+      "duration_min": 100.0,
+      "if_pct": 78,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "long run"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 8,
+      "raw_text": "run 50' @ 78%",
+      "normalized_label": "run 50' @ 78%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "50'",
+      "duration_min": 50.0,
+      "if_pct": 78,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 16,
+      "raw_text": "run 36' @ 88%",
+      "normalized_label": "run 36' @ 88%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "36'",
+      "duration_min": 36.0,
+      "if_pct": 88,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-22",
+      "line_no": 1,
+      "raw_text": "81min run @4:02/km + 41min run @4:05/km",
+      "normalized_label": "run 2h2' @ 70%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h2'",
+      "duration_min": 122.0,
+      "if_pct": 70,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-21",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 12x1min run @2:50/km + 12x1min run @4:40/km + 12x30s run @2:45/km + 12x30s run @4:40/km",
+      "normalized_label": "run 56' @ 74%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "56'",
+      "duration_min": 56.0,
+      "if_pct": 74,
+      "segment_count": 49,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 13,
+      "raw_text": "run 30' @ 62%",
+      "normalized_label": "run 30' @ 62%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "30'",
+      "duration_min": 30.0,
+      "if_pct": 62,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 11,
+      "raw_text": "run 45' @ 68%",
+      "normalized_label": "run 45' @ 68%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 68,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 7,
+      "raw_text": "run 1h10' @ 72%",
+      "normalized_label": "run 1h10' @ 72%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h10'",
+      "duration_min": 70.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "aerobic endurance"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 6,
+      "raw_text": "run 1h50' @ 70%",
+      "normalized_label": "run 1h50' @ 70%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h50'",
+      "duration_min": 110.0,
+      "if_pct": 70,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "long run"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 9,
+      "raw_text": "run 50' @ 80%",
+      "normalized_label": "run 50' @ 80%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "50'",
+      "duration_min": 50.0,
+      "if_pct": 80,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 17,
+      "raw_text": "run 36' @ 90%",
+      "normalized_label": "run 36' @ 90%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "36'",
+      "duration_min": 36.0,
+      "if_pct": 90,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-20",
+      "line_no": 1,
+      "raw_text": "87min run @3:50/km + 43min run @4:20/km",
+      "normalized_label": "run 2h10' @ 71%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h10'",
+      "duration_min": 130.0,
+      "if_pct": 71,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-16",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 6x2km run @2:52/km + 6x1km run @3:41/km + 40min run @4:40/km",
+      "normalized_label": "run 1h57' @ 75%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h57'",
+      "duration_min": 116.5,
+      "if_pct": 75,
+      "segment_count": 14,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 14,
+      "raw_text": "run 30' @ 64%",
+      "normalized_label": "run 30' @ 64%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "30'",
+      "duration_min": 30.0,
+      "if_pct": 64,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 12,
+      "raw_text": "run 45' @ 72%",
+      "normalized_label": "run 45' @ 72%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 72,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 8,
+      "raw_text": "run 1h10' @ 74%",
+      "normalized_label": "run 1h10' @ 74%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h10'",
+      "duration_min": 70.0,
+      "if_pct": 74,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "aerobic endurance"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 7,
+      "raw_text": "run 1h50' @ 74%",
+      "normalized_label": "run 1h50' @ 74%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h50'",
+      "duration_min": 110.0,
+      "if_pct": 74,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "long run"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 10,
+      "raw_text": "run 50' @ 82%",
+      "normalized_label": "run 50' @ 82%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "50'",
+      "duration_min": 50.0,
+      "if_pct": 82,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 18,
+      "raw_text": "run 36' @ 92%",
+      "normalized_label": "run 36' @ 92%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "36'",
+      "duration_min": 36.0,
+      "if_pct": 92,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-18",
+      "line_no": 1,
+      "raw_text": "48min run @4:00/km + 40min run @4:02/km",
+      "normalized_label": "run 1h28' @ 71%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h28'",
+      "duration_min": 88.0,
+      "if_pct": 71,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-13",
+      "line_no": 1,
+      "raw_text": "39min run @3:52/km + 10x25s run @120% + 5km run @2:55/km + 56min run @4:40/km",
+      "normalized_label": "run 1h54' @ 72%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h54'",
+      "duration_min": 113.7,
+      "if_pct": 72,
+      "segment_count": 13,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 15,
+      "raw_text": "run 35' @ 55%",
+      "normalized_label": "run 35' @ 55%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "35'",
+      "duration_min": 35.0,
+      "if_pct": 55,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 13,
+      "raw_text": "run 45' @ 74%",
+      "normalized_label": "run 45' @ 74%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "45'",
+      "duration_min": 45.0,
+      "if_pct": 74,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 9,
+      "raw_text": "run 1h10' @ 76%",
+      "normalized_label": "run 1h10' @ 76%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h10'",
+      "duration_min": 70.0,
+      "if_pct": 76,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "aerobic endurance"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 8,
+      "raw_text": "run 1h50' @ 76%",
+      "normalized_label": "run 1h50' @ 76%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h50'",
+      "duration_min": 110.0,
+      "if_pct": 76,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "long run"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 11,
+      "raw_text": "run 50' @ 84%",
+      "normalized_label": "run 50' @ 84%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "50'",
+      "duration_min": 50.0,
+      "if_pct": 84,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 19,
+      "raw_text": "run 36' @ 94%",
+      "normalized_label": "run 36' @ 94%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "36'",
+      "duration_min": 36.0,
+      "if_pct": 94,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-17",
+      "line_no": 1,
+      "raw_text": "49min run @4:05/km + 31min run @4:05/km",
+      "normalized_label": "run 1h20' @ 69%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h20'",
+      "duration_min": 80.0,
+      "if_pct": 69,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-09",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 10x1.6km run @2:53/km + 10min run @4:40/km + 35min run @4:40/km",
+      "normalized_label": "run 1h51' @ 76%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h51'",
+      "duration_min": 111.1,
+      "if_pct": 76,
+      "segment_count": 13,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 16,
+      "raw_text": "run 35' @ 58%",
+      "normalized_label": "run 35' @ 58%",
+      "type": "run",
+      "bucket": "recovery",
+      "label": "recovery",
+      "duration_label": "35'",
+      "duration_min": 35.0,
+      "if_pct": 58,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "recovery"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 14,
+      "raw_text": "run 50' @ 66%",
+      "normalized_label": "run 50' @ 66%",
+      "type": "run",
+      "bucket": "easy aerobic",
+      "label": "easy aerobic",
+      "duration_label": "50'",
+      "duration_min": 50.0,
+      "if_pct": 66,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "easy aerobic"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 10,
+      "raw_text": "run 1h15' @ 68%",
+      "normalized_label": "run 1h15' @ 68%",
+      "type": "run",
+      "bucket": "aerobic endurance",
+      "label": "aerobic endurance",
+      "duration_label": "1h15'",
+      "duration_min": 75.0,
+      "if_pct": 68,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "aerobic endurance"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 9,
+      "raw_text": "run 1h50' @ 78%",
+      "normalized_label": "run 1h50' @ 78%",
+      "type": "run",
+      "bucket": "long run",
+      "label": "long run",
+      "duration_label": "1h50'",
+      "duration_min": 110.0,
+      "if_pct": 78,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "long run"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 12,
+      "raw_text": "run 50' @ 86%",
+      "normalized_label": "run 50' @ 86%",
+      "type": "run",
+      "bucket": "steady / tempo",
+      "label": "steady / tempo",
+      "duration_label": "50'",
+      "duration_min": 50.0,
+      "if_pct": 86,
+      "segment_count": 1,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "steady / tempo"
+    },
+    {
+      "owner": "examples",
+      "source": "fabricated",
+      "day_utc": "2026-01-01",
+      "line_no": 20,
+      "raw_text": "run 36' @ 96%",
+      "normalized_label": "run 36' @ 96%",
+      "type": "run",
+      "bucket": "short reps",
+      "label": "short reps",
+      "duration_label": "36'",
+      "duration_min": 36.0,
+      "if_pct": 96,
+      "segment_count": 4,
+      "kinds": [
+        "run"
+      ],
+      "fabricated": true,
+      "fabricated_from_bucket": "short reps"
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-16",
+      "line_no": 1,
+      "raw_text": "5min run @4:40/km + 45km run @3:17/km",
+      "normalized_label": "run 2h33' @ 85%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h33'",
+      "duration_min": 152.8,
+      "if_pct": 85,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-06",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 6km run @3:03/km + 5km run @3:00/km + 4km run @2:58/km + 3km run @2:57/km + 2km run @2:56/km + 1km run @2:55/km + 21km run @3:41/km",
+      "normalized_label": "run 2h40' @ 82%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h40'",
+      "duration_min": 160.1,
+      "if_pct": 82,
+      "segment_count": 8,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-15",
+      "line_no": 1,
+      "raw_text": "39min run @3:58/km + 40min run @4:00/km",
+      "normalized_label": "run 1h19' @ 71%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h19'",
+      "duration_min": 79.0,
+      "if_pct": 71,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-05",
+      "line_no": 1,
+      "raw_text": "95min run @4:18/km + 48min run @4:40/km + 5x20s run @120%",
+      "normalized_label": "run 2h25' @ 65%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h25'",
+      "duration_min": 144.7,
+      "if_pct": 65,
+      "segment_count": 7,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-14",
+      "line_no": 1,
+      "raw_text": "41min run @4:05/km + 39min run @3:55/km",
+      "normalized_label": "run 1h20' @ 71%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h20'",
+      "duration_min": 80.0,
+      "if_pct": 71,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-03",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 11x1km run @2:53/km + 11x1km run @3:17/km + 10min run @4:40/km",
+      "normalized_label": "run 1h38' @ 82%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h38'",
+      "duration_min": 97.8,
+      "if_pct": 82,
+      "segment_count": 24,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-13",
+      "line_no": 1,
+      "raw_text": "89min run @4:00/km + 56min run @4:08/km",
+      "normalized_label": "run 2h25' @ 70%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h25'",
+      "duration_min": 145.0,
+      "if_pct": 70,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-26",
+      "line_no": 1,
+      "raw_text": "84min run @4:12/km + 10km run @4:40/km + 5x15s run @150%",
+      "normalized_label": "run 2h12' @ 66%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h12'",
+      "duration_min": 131.9,
+      "if_pct": 66,
+      "segment_count": 7,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-12",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 12x1km run @3:26/km + 12x1km run @2:50/km",
+      "normalized_label": "run 1h35' @ 84%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h35'",
+      "duration_min": 95.2,
+      "if_pct": 84,
+      "segment_count": 25,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-23",
+      "line_no": 1,
+      "raw_text": "21min run @4:40/km + 10x3min run @2:55/km + 10x1min run @4:40/km + 10x1min run @2:50/km + 10x1min run @4:40/km + 10x30s run @2:45/km + 10x30s run @4:40/km + 33min run @4:40/km",
+      "normalized_label": "run 2h4' @ 74%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h4'",
+      "duration_min": 124.0,
+      "if_pct": 74,
+      "segment_count": 62,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-09",
+      "line_no": 1,
+      "raw_text": "95min run @3:58/km + 40min run @3:58/km",
+      "normalized_label": "run 2h15' @ 71%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h15'",
+      "duration_min": 135.0,
+      "if_pct": 71,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-22",
+      "line_no": 1,
+      "raw_text": "97min run @3:50/km + 50min run @4:40/km + 6x40s run @120%",
+      "normalized_label": "run 2h31' @ 71%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h31'",
+      "duration_min": 151.0,
+      "if_pct": 71,
+      "segment_count": 8,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-03-06",
+      "line_no": 1,
+      "raw_text": "74min run @4:08/km + 58min run @4:40/km",
+      "normalized_label": "run 2h12' @ 65%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h12'",
+      "duration_min": 132.0,
+      "if_pct": 65,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-18",
+      "line_no": 1,
+      "raw_text": "80min run @4:08/km + 10km run @4:40/km + 10x25s run @150%",
+      "normalized_label": "run 2h11' @ 68%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h11'",
+      "duration_min": 130.8,
+      "if_pct": 68,
+      "segment_count": 12,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-23",
+      "line_no": 1,
+      "raw_text": "40min run @4:00/km + 5x24s run @120%",
+      "normalized_label": "run 42' @ 73%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "42'",
+      "duration_min": 42.0,
+      "if_pct": 73,
+      "segment_count": 6,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-10",
+      "line_no": 1,
+      "raw_text": "98min run @4:40/km + 8km run @4:40/km + 10x25s run @150%",
+      "normalized_label": "run 2h19' @ 63%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h19'",
+      "duration_min": 139.5,
+      "if_pct": 63,
+      "segment_count": 12,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-20",
+      "line_no": 1,
+      "raw_text": "63min run @4:02/km + 62min run @3:58/km",
+      "normalized_label": "run 2h5' @ 71%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h5'",
+      "duration_min": 125.0,
+      "if_pct": 71,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-09",
+      "line_no": 1,
+      "raw_text": "21min run @4:40/km + 15x2min run @2:55/km + 15x1min run @4:40/km + 15x30s run @2:50/km + 15x30s run @4:40/km + 55min run @4:40/km",
+      "normalized_label": "run 2h16' @ 71%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h16'",
+      "duration_min": 136.0,
+      "if_pct": 71,
+      "segment_count": 62,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-19",
+      "line_no": 1,
+      "raw_text": "98min run @3:55/km + 32min run @4:02/km",
+      "normalized_label": "run 2h10' @ 72%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h10'",
+      "duration_min": 130.0,
+      "if_pct": 72,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-08",
+      "line_no": 1,
+      "raw_text": "98min run @4:40/km + 52min run @4:40/km + 10x25s run @120%",
+      "normalized_label": "run 2h34' @ 62%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "2h34'",
+      "duration_min": 154.2,
+      "if_pct": 62,
+      "segment_count": 12,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-18",
+      "line_no": 1,
+      "raw_text": "20min run @4:40/km + 15km run @3:00/km",
+      "normalized_label": "run 1h5' @ 84%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h5'",
+      "duration_min": 65.0,
+      "if_pct": 84,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-05",
+      "line_no": 1,
+      "raw_text": "61min run @4:00/km + 43min run @4:15/km + 5x20s run @150%",
+      "normalized_label": "run 1h46' @ 70%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h46'",
+      "duration_min": 105.7,
+      "if_pct": 70,
+      "segment_count": 7,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-17",
+      "line_no": 1,
+      "raw_text": "73min run @3:58/km + 39min run @3:55/km",
+      "normalized_label": "run 1h52' @ 72%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "1h52'",
+      "duration_min": 112.0,
+      "if_pct": 72,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-20",
+      "line_no": 1,
+      "raw_text": "30min run @4:30/km + 3x3km run @3:25/km + 30min run @4:30/km + 10x100m run @ 6:00/km",
+      "normalized_label": "run 1h37' @ 76%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h37'",
+      "duration_min": 96.7,
+      "if_pct": 76,
+      "segment_count": 15,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-15",
+      "line_no": 1,
+      "raw_text": "79min run @4:00/km + 48min run @4:40/km",
+      "normalized_label": "run 2h7' @ 67%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h7'",
+      "duration_min": 127.0,
+      "if_pct": 67,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-15",
+      "line_no": 1,
+      "raw_text": "10min run @4:30/km + 8km run @3:43/km + 8km run @3:36/km + 8km run @3:25/km + 10min run @4:30/km + 10x100m run @ 6:00/km",
+      "normalized_label": "run 1h52' @ 83%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h52'",
+      "duration_min": 111.9,
+      "if_pct": 83,
+      "segment_count": 15,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-12",
+      "line_no": 1,
+      "raw_text": "86min run @3:55/km + 36min run @3:36/km",
+      "normalized_label": "run 2h2' @ 74%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h2'",
+      "duration_min": 122.0,
+      "if_pct": 74,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-13",
+      "line_no": 1,
+      "raw_text": "25min run @4:30/km + 10km run @3:25/km + 25min run @4:30/km + 10x100m run @ 6:00/km",
+      "normalized_label": "run 1h30' @ 78%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h30'",
+      "duration_min": 90.2,
+      "if_pct": 78,
+      "segment_count": 13,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-07",
+      "line_no": 1,
+      "raw_text": "84min run @4:00/km + 50min run @4:40/km",
+      "normalized_label": "run 2h14' @ 67%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h14'",
+      "duration_min": 134.0,
+      "if_pct": 67,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-11",
+      "line_no": 1,
+      "raw_text": "4km run @4:30/km + 5x5km run @3:21/km + 10x100m run @ 6:00/km",
+      "normalized_label": "run 1h48' @ 88%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h48'",
+      "duration_min": 107.7,
+      "if_pct": 88,
+      "segment_count": 16,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-02-01",
+      "line_no": 1,
+      "raw_text": "96min run @4:22/km + 58min run @4:40/km",
+      "normalized_label": "run 2h34' @ 63%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h34'",
+      "duration_min": 154.0,
+      "if_pct": 63,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-03",
+      "line_no": 1,
+      "raw_text": "4km run @4:30/km + 8x1km run @3:09/km + 10x100m run @ 6:00/km",
+      "normalized_label": "run 49' @ 84%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "49'",
+      "duration_min": 49.2,
+      "if_pct": 84,
+      "segment_count": 19,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-30",
+      "line_no": 1,
+      "raw_text": "24km run @4:40/km + 12km run @4:40/km",
+      "normalized_label": "run 2h48' @ 61%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h48'",
+      "duration_min": 168.0,
+      "if_pct": 61,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-04-01",
+      "line_no": 1,
+      "raw_text": "4km run @4:30/km + 5x2km run @3:15/km + 10x100m run @ 6:00/km",
+      "normalized_label": "run 57' @ 84%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "57'",
+      "duration_min": 56.5,
+      "if_pct": 84,
+      "segment_count": 16,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-29",
+      "line_no": 1,
+      "raw_text": "22km run @4:40/km + 12km run @4:40/km",
+      "normalized_label": "run 2h39' @ 61%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h39'",
+      "duration_min": 158.7,
+      "if_pct": 61,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-03-29",
+      "line_no": 1,
+      "raw_text": "4km run @4:30/km + 3x5km run @3:21/km + 10x100m run @ 6:00/km",
+      "normalized_label": "run 1h14' @ 85%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h14'",
+      "duration_min": 74.2,
+      "if_pct": 85,
+      "segment_count": 14,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-27",
+      "line_no": 1,
+      "raw_text": "11min run @4:40/km + 37km run @3:18/km",
+      "normalized_label": "run 2h13' @ 84%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h13'",
+      "duration_min": 133.1,
+      "if_pct": 84,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-03-27",
+      "line_no": 1,
+      "raw_text": "4km run @4:30/km + 10x1km run @3:09/km + 10x100m run @ 6:00/km",
+      "normalized_label": "run 56' @ 86%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "56'",
+      "duration_min": 55.5,
+      "if_pct": 86,
+      "segment_count": 21,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-24",
+      "line_no": 1,
+      "raw_text": "88min run @3:58/km + 57min run @4:40/km",
+      "normalized_label": "run 2h25' @ 67%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h25'",
+      "duration_min": 145.0,
+      "if_pct": 67,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-03-25",
+      "line_no": 1,
+      "raw_text": "4km run @4:30/km + 4x3km run @3:21/km + 10x100m run @ 6:00/km",
+      "normalized_label": "run 1h4' @ 84%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h4'",
+      "duration_min": 64.2,
+      "if_pct": 84,
+      "segment_count": 15,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "cairess",
+      "source": "custom",
+      "day_utc": "2024-01-21",
+      "line_no": 1,
+      "raw_text": "111min run @4:40/km + 53min run @4:40/km",
+      "normalized_label": "run 2h44' @ 61%",
+      "type": "run",
+      "bucket": "long reps",
+      "label": "long reps",
+      "duration_label": "2h44'",
+      "duration_min": 164.0,
+      "if_pct": 61,
+      "segment_count": 2,
+      "kinds": [
+        "run"
+      ]
+    },
+    {
+      "owner": "sirpoc",
+      "source": "custom",
+      "day_utc": "2025-03-13",
+      "line_no": 1,
+      "raw_text": "4km run @4:35/km + 3x5km run @3:26/km + 10x100m run @ 6:00/km",
+      "normalized_label": "run 1h16' @ 84%",
+      "type": "run",
+      "bucket": "fartlek",
+      "label": "fartlek",
+      "duration_label": "1h16'",
+      "duration_min": 75.8,
+      "if_pct": 84,
+      "segment_count": 14,
+      "kinds": [
+        "run"
+      ]
+    }
+  ]
+}

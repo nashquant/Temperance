@@ -10,6 +10,7 @@ import { ActivitySplitsDrawer } from '@/features/dashboard/components/activity-s
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
 import { getDashboard } from '@/features/dashboard/services/dashboard-api';
+import { generateActivitySuggestion } from '@/features/dashboard/services/generated-activity-api';
 import type { DashboardActivityCard, DashboardResponse } from '@/features/dashboard/types/dashboard';
 import {
   deletePlannedActivity,
@@ -87,6 +88,7 @@ export function DashboardPage(): JSX.Element {
   const [addActivityDayUtc, setAddActivityDayUtc] = useState<string | null>(null);
   const [addActivityText, setAddActivityText] = useState('');
   const [addActivityMode, setAddActivityMode] = useState<'planned' | 'custom'>('planned');
+  const [addGeneratedActivityType, setAddGeneratedActivityType] = useState<'running' | 'elliptical' | 'bike'>('running');
   const [addActivityResult, setAddActivityResult] = useState<string | null>(null);
   const [undoState, setUndoState] = useState<{
     id: number;
@@ -406,6 +408,33 @@ export function DashboardPage(): JSX.Element {
     },
     onSuccess: async () => {
       await refreshDashboardViews();
+    },
+  });
+  const generateActivityMutation = useMutation({
+    mutationFn: async ({
+      dayUtc,
+      mode,
+      activityType,
+    }: {
+      dayUtc: string;
+      mode: 'planned' | 'custom';
+      activityType: 'running' | 'elliptical' | 'bike';
+    }) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return generateActivitySuggestion({
+        token: session.token,
+        owner: profile?.owner,
+        dayUtc,
+        mode,
+        activityType,
+      });
+    },
+    onSuccess: (response) => {
+      setAddActivityText(response.activity_text);
+      setAddActivityResult(null);
+    },
+    onError: (error) => {
+      setAddActivityResult(error instanceof Error ? error.message : 'Unable to generate activity.');
     },
   });
   const displayWeeks = useMemo(() => {
@@ -744,6 +773,7 @@ export function DashboardPage(): JSX.Element {
               setAddActivityDayUtc(null);
               setAddActivityText('');
               setAddActivityMode('planned');
+              setAddGeneratedActivityType('running');
               setAddActivityResult(null);
             }}
           />
@@ -786,8 +816,49 @@ export function DashboardPage(): JSX.Element {
                   Custom
                 </button>
               </div>
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-300/82">Generate From</p>
+                  <div className="inline-flex rounded-xl border border-white/10 bg-black/20 p-1">
+                    {[
+                      { value: 'running', label: 'Run' },
+                      { value: 'bike', label: 'Bike' },
+                      { value: 'elliptical', label: 'Elip' },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`rounded-lg px-3 py-1.5 text-sm transition ${
+                          addGeneratedActivityType === option.value
+                            ? 'bg-white/10 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                        onClick={() => setAddGeneratedActivityType(option.value as 'running' | 'elliptical' | 'bike')}
+                        disabled={plannedCreateMutation.isPending || generateActivityMutation.isPending}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  className="h-9 border-white/10 bg-black/20"
+                  onClick={() => {
+                    if (!addActivityDayUtc) return;
+                    generateActivityMutation.mutate({
+                      dayUtc: addActivityDayUtc,
+                      mode: addActivityMode,
+                      activityType: addGeneratedActivityType,
+                    });
+                  }}
+                  disabled={plannedCreateMutation.isPending || generateActivityMutation.isPending}
+                >
+                  {generateActivityMutation.isPending ? 'Generating...' : 'Generate'}
+                </Button>
+              </div>
               <textarea
-                className="min-h-[120px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                className="min-h-[88px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
                 value={addActivityText}
                 onChange={(event) => {
                   if (addActivityResult) setAddActivityResult(null);
@@ -812,9 +883,10 @@ export function DashboardPage(): JSX.Element {
                       setAddActivityDayUtc(null);
                       setAddActivityText('');
                       setAddActivityMode('planned');
+                      setAddGeneratedActivityType('running');
                       setAddActivityResult(null);
                     }}
-                    disabled={plannedCreateMutation.isPending}
+                    disabled={plannedCreateMutation.isPending || generateActivityMutation.isPending}
                   >
                     Cancel
                   </Button>
@@ -824,7 +896,7 @@ export function DashboardPage(): JSX.Element {
                       if (!workoutText || !addActivityDayUtc) return;
                       plannedCreateMutation.mutate({ dayUtc: addActivityDayUtc, workoutText, mode: addActivityMode });
                     }}
-                    disabled={plannedCreateMutation.isPending || !addActivityText.trim()}
+                    disabled={plannedCreateMutation.isPending || generateActivityMutation.isPending || !addActivityText.trim()}
                   >
                     {plannedCreateMutation.isPending ? 'Saving...' : 'Save'}
                   </Button>

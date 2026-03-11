@@ -5,6 +5,7 @@ export const API_CONFIG = {
     me: '/auth/me',
     owners: '/auth/owners',
     dashboard: '/dashboard',
+    generatedActivity: '/generated-activity',
     wellness: '/wellness',
     activities: '/activities',
     athleteProgression: '/athlete-progression',
