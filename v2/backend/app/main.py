@@ -160,6 +160,7 @@ class GeneratedActivityRequest(BaseModel):
     day_utc: str
     mode: str = "planned"
     activity_type: str | None = None
+    previous_activity_text: str | None = None
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -5707,6 +5708,7 @@ def generated_activity(
     day_utc = str(payload.day_utc or "").strip()
     mode = str(payload.mode or "planned").strip().lower()
     activity_type = str(payload.activity_type or "").strip().lower() or None
+    previous_activity_text = str(payload.previous_activity_text or "").strip()
     if not day_utc:
         raise HTTPException(status_code=400, detail="Missing day_utc")
     if mode not in {"planned", "custom"}:
@@ -5759,6 +5761,14 @@ def generated_activity(
         key=lambda item: abs(float(item.get("estimated_tss") or 0.0) - target_tss),
     )
     eligible = ranked_by_tss[: min(5, len(ranked_by_tss))] if ranked_by_tss else eligible
+    if previous_activity_text:
+        rotated = [
+            item
+            for item in eligible
+            if str(item.get("activity_text") or "").strip().lower() != previous_activity_text.lower()
+        ]
+        if rotated:
+            eligible = rotated
 
     suggestion = random.choice(eligible)
     return {

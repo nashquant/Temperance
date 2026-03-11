@@ -7,6 +7,7 @@ interface GenerateActivityParams {
   dayUtc: string;
   mode: 'planned' | 'custom';
   activityType: 'running' | 'elliptical' | 'bike';
+  previousActivityText?: string;
 }
 
 interface GenerateActivityResponse {
@@ -22,6 +23,7 @@ export async function generateActivitySuggestion({
   dayUtc,
   mode,
   activityType,
+  previousActivityText,
 }: GenerateActivityParams): Promise<GenerateActivityResponse> {
   const search = new URLSearchParams();
   if (owner) search.set('owner', owner);
@@ -34,6 +36,7 @@ export async function generateActivitySuggestion({
       day_utc: dayUtc,
       mode,
       activity_type: activityType,
+      previous_activity_text: previousActivityText,
     },
   });
 }

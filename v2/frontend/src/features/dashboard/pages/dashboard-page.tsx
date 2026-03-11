@@ -89,6 +89,7 @@ export function DashboardPage(): JSX.Element {
   const [addActivityText, setAddActivityText] = useState('');
   const [addActivityMode, setAddActivityMode] = useState<'planned' | 'custom'>('planned');
   const [addGeneratedActivityType, setAddGeneratedActivityType] = useState<'running' | 'elliptical' | 'bike'>('running');
+  const [lastGeneratedActivityText, setLastGeneratedActivityText] = useState<string>('');
   const [addActivityResult, setAddActivityResult] = useState<string | null>(null);
   const [undoState, setUndoState] = useState<{
     id: number;
@@ -154,6 +155,9 @@ export function DashboardPage(): JSX.Element {
       setAddActivityMode('planned');
     }
   }, [addActivityDayUtc, addActivityMode, canAddCustomForComposer, isBeforeCurrentWeek]);
+  useEffect(() => {
+    setLastGeneratedActivityText('');
+  }, [addActivityDayUtc, addActivityMode, addGeneratedActivityType]);
   const refreshDashboardViews = async () => {
     await Promise.all([
       query.refetch(),
@@ -415,10 +419,12 @@ export function DashboardPage(): JSX.Element {
       dayUtc,
       mode,
       activityType,
+      previousActivityText,
     }: {
       dayUtc: string;
       mode: 'planned' | 'custom';
       activityType: 'running' | 'elliptical' | 'bike';
+      previousActivityText?: string;
     }) => {
       if (!session?.token) throw new Error('Missing auth token');
       return generateActivitySuggestion({
@@ -427,10 +433,12 @@ export function DashboardPage(): JSX.Element {
         dayUtc,
         mode,
         activityType,
+        previousActivityText,
       });
     },
     onSuccess: (response) => {
       setAddActivityText(response.activity_text);
+      setLastGeneratedActivityText(response.activity_text);
       setAddActivityResult(null);
     },
     onError: (error) => {
@@ -774,6 +782,7 @@ export function DashboardPage(): JSX.Element {
               setAddActivityText('');
               setAddActivityMode('planned');
               setAddGeneratedActivityType('running');
+              setLastGeneratedActivityText('');
               setAddActivityResult(null);
             }}
           />
@@ -850,6 +859,7 @@ export function DashboardPage(): JSX.Element {
                       dayUtc: addActivityDayUtc,
                       mode: addActivityMode,
                       activityType: addGeneratedActivityType,
+                      previousActivityText: lastGeneratedActivityText || addActivityText.trim(),
                     });
                   }}
                   disabled={plannedCreateMutation.isPending || generateActivityMutation.isPending}
@@ -884,6 +894,7 @@ export function DashboardPage(): JSX.Element {
                       setAddActivityText('');
                       setAddActivityMode('planned');
                       setAddGeneratedActivityType('running');
+                      setLastGeneratedActivityText('');
                       setAddActivityResult(null);
                     }}
                     disabled={plannedCreateMutation.isPending || generateActivityMutation.isPending}
