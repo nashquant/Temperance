@@ -232,6 +232,28 @@ load_jobs() {
   launchctl bootstrap "gui/$(id -u)" "${CLOUD_PLIST}"
 }
 
+restart_jobs() {
+  local gui_domain="gui/$(id -u)"
+
+  if launchctl print "${gui_domain}/${V2_BACKEND_LABEL}" >/dev/null 2>&1; then
+    launchctl kickstart -k "${gui_domain}/${V2_BACKEND_LABEL}"
+  else
+    launchctl bootstrap "${gui_domain}" "${V2_BACKEND_PLIST}"
+  fi
+
+  if launchctl print "${gui_domain}/${V2_FRONTEND_LABEL}" >/dev/null 2>&1; then
+    launchctl kickstart -k "${gui_domain}/${V2_FRONTEND_LABEL}"
+  else
+    launchctl bootstrap "${gui_domain}" "${V2_FRONTEND_PLIST}"
+  fi
+
+  if launchctl print "${gui_domain}/${CLOUD_LABEL}" >/dev/null 2>&1; then
+    launchctl kickstart -k "${gui_domain}/${CLOUD_LABEL}"
+  else
+    launchctl bootstrap "${gui_domain}" "${CLOUD_PLIST}"
+  fi
+}
+
 unload_jobs() {
   launchctl bootout "gui/$(id -u)" "${CLOUD_PLIST}" >/dev/null 2>&1 || true
   launchctl bootout "gui/$(id -u)" "${V2_FRONTEND_PLIST}" >/dev/null 2>&1 || true
@@ -297,12 +319,7 @@ case "${cmd}" in
     status_jobs
     ;;
   restart)
-    unload_jobs
-    write_cloudflared_config
-    write_v2_backend_plist
-    write_v2_frontend_plist
-    write_cloud_plist
-    load_jobs
+    restart_jobs
     status_jobs
     ;;
   status)
