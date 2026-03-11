@@ -76,8 +76,10 @@ from db import (  # noqa: E402
     upsert_custom_activities_rows,
 )
 from garmin_client import (  # noqa: E402
+    GarminActivityChunk,
     fetch_garmin_comprehensive,
     fetch_garmin_runs,
+    GarminWellnessChunk,
     import_runs_from_folder,
 )
 
@@ -610,6 +612,36 @@ def _run_comprehensive_extract_background(
     target_wellness_days: set[date] | None,
 ) -> None:
     try:
+        streamed_counts = {
+            "activities": 0,
+            "details": 0,
+            "records": 0,
+            "splits": 0,
+            "sleep": 0,
+            "wellness": 0,
+        }
+
+        def _stream_activity_chunk(chunk: GarminActivityChunk) -> None:
+            _extract_progress_append(
+                owner,
+                (
+                    f"[db:stream] activities={len(chunk.activities)} details={len(chunk.activity_details)} "
+                    f"records={len(chunk.activity_records)} splits={len(chunk.activity_splits)}"
+                ),
+            )
+            streamed_counts["activities"] += upsert_activities(db_path, chunk.activities)
+            streamed_counts["details"] += upsert_activity_details(db_path, chunk.activity_details)
+            streamed_counts["records"] += upsert_activity_records(db_path, chunk.activity_records)
+            streamed_counts["splits"] += upsert_activity_splits(db_path, chunk.activity_splits)
+
+        def _stream_wellness_chunk(chunk: GarminWellnessChunk) -> None:
+            _extract_progress_append(
+                owner,
+                f"[db:stream] sleep={len(chunk.sleep_daily)} wellness={len(chunk.wellness_daily)}",
+            )
+            streamed_counts["sleep"] += upsert_sleep_daily(db_path, chunk.sleep_daily)
+            streamed_counts["wellness"] += upsert_wellness_daily(db_path, chunk.wellness_daily)
+
         extract = fetch_garmin_comprehensive(
             email=garmin_email,
             password=garmin_password,
@@ -620,6 +652,8 @@ def _run_comprehensive_extract_background(
             include_wellness=bool(include_wellness),
             raw_export_dir=None,
             progress_cb=lambda evt: _extract_progress_event(owner, evt),
+            activity_chunk_cb=_stream_activity_chunk,
+            wellness_chunk_cb=_stream_wellness_chunk,
             target_activity_days=target_activity_days,
             target_wellness_days=target_wellness_days,
         )
@@ -631,13 +665,12 @@ def _run_comprehensive_extract_background(
                 f"sleep={len(extract.sleep_daily)} wellness={len(extract.wellness_daily)} errors={len(extract.errors)}"
             ),
         )
-        _extract_progress_append(owner, "[db] upserting activities/details/records/splits/sleep/wellness")
-        n_a = upsert_activities(db_path, extract.activities)
-        n_d = upsert_activity_details(db_path, extract.activity_details)
-        n_r = upsert_activity_records(db_path, extract.activity_records)
-        n_sp = upsert_activity_splits(db_path, extract.activity_splits)
-        n_s = upsert_sleep_daily(db_path, extract.sleep_daily)
-        n_w = upsert_wellness_daily(db_path, extract.wellness_daily)
+        n_a = streamed_counts["activities"]
+        n_d = streamed_counts["details"]
+        n_r = streamed_counts["records"]
+        n_sp = streamed_counts["splits"]
+        n_s = streamed_counts["sleep"]
+        n_w = streamed_counts["wellness"]
         _extract_progress_append(
             owner,
             (

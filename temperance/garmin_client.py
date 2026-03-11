@@ -27,6 +27,20 @@ class GarminExtractResult:
     errors: list[str]
 
 
+@dataclass
+class GarminActivityChunk:
+    activities: list[dict[str, Any]]
+    activity_details: list[dict[str, Any]]
+    activity_records: list[dict[str, Any]]
+    activity_splits: list[dict[str, Any]]
+
+
+@dataclass
+class GarminWellnessChunk:
+    sleep_daily: list[dict[str, Any]]
+    wellness_daily: list[dict[str, Any]]
+
+
 def _to_iso_utc(value: str | datetime) -> str:
     if isinstance(value, datetime):
         dt = value
@@ -662,6 +676,11 @@ def fetch_garmin_comprehensive(
     page_size: int = 100,
     raw_export_dir: Path | None = None,
     progress_cb: Callable[[dict[str, Any]], None] | None = None,
+    activity_chunk_cb: Callable[[GarminActivityChunk], None] | None = None,
+    wellness_chunk_cb: Callable[[GarminWellnessChunk], None] | None = None,
+    stream_chunk_size: int = 10,
+    target_activity_days: set[date] | None = None,
+    target_wellness_days: set[date] | None = None,
 ) -> GarminExtractResult:
     """
     Pull a broad local archive from Garmin with incremental behavior:
@@ -686,11 +705,58 @@ def fetch_garmin_comprehensive(
     client = Garmin(email=email, password=password)
     client.login()
 
+    activity_day_filter = set(target_activity_days) if target_activity_days is not None else None
+    activity_min_day = min(activity_day_filter) if activity_day_filter else start_day
+
     errors: list[str] = []
     activities: list[dict[str, Any]] = []
     activity_details: list[dict[str, Any]] = []
     activity_records: list[dict[str, Any]] = []
     activity_splits: list[dict[str, Any]] = []
+    pending_activities: list[dict[str, Any]] = []
+    pending_activity_details: list[dict[str, Any]] = []
+    pending_activity_records: list[dict[str, Any]] = []
+    pending_activity_splits: list[dict[str, Any]] = []
+    pending_sleep_daily: list[dict[str, Any]] = []
+    pending_wellness_daily: list[dict[str, Any]] = []
+    effective_stream_chunk_size = max(int(stream_chunk_size), 1)
+
+    def _flush_activity_chunk(force: bool = False) -> None:
+        if activity_chunk_cb is None:
+            return
+        if not pending_activities:
+            return
+        if not force and len(pending_activities) < effective_stream_chunk_size:
+            return
+        activity_chunk_cb(
+            GarminActivityChunk(
+                activities=list(pending_activities),
+                activity_details=list(pending_activity_details),
+                activity_records=list(pending_activity_records),
+                activity_splits=list(pending_activity_splits),
+            )
+        )
+        pending_activities.clear()
+        pending_activity_details.clear()
+        pending_activity_records.clear()
+        pending_activity_splits.clear()
+
+    def _flush_wellness_chunk(force: bool = False) -> None:
+        if wellness_chunk_cb is None:
+            return
+        if not pending_sleep_daily and not pending_wellness_daily:
+            return
+        largest_pending = max(len(pending_sleep_daily), len(pending_wellness_daily))
+        if not force and largest_pending < effective_stream_chunk_size:
+            return
+        wellness_chunk_cb(
+            GarminWellnessChunk(
+                sleep_daily=list(pending_sleep_daily),
+                wellness_daily=list(pending_wellness_daily),
+            )
+        )
+        pending_sleep_daily.clear()
+        pending_wellness_daily.clear()
 
     if FitFile is None:
         errors.append("fitparse unavailable: install fitparse to enable FIT session/record parsing (power, stamina, grade, etc.)")
@@ -703,6 +769,8 @@ def fetch_garmin_comprehensive(
         )
 
     def _count_activities_in_window() -> int:
+        if activity_day_filter is not None and len(activity_day_filter) == 0:
+            return 0
         total = 0
         probe_offset = 0
         while True:
@@ -719,10 +787,12 @@ def fetch_garmin_comprehensive(
                     continue
                 start_dt = datetime.fromisoformat(normalized["start_time_utc"].replace("Z", "+00:00"))
                 day = start_dt.date()
-                if day < start_day:
+                if day < activity_min_day:
                     keep = False
                     continue
                 if day > end_day:
+                    continue
+                if activity_day_filter is not None and day not in activity_day_filter:
                     continue
                 total += 1
             probe_offset += page_size
@@ -744,135 +814,157 @@ def fetch_garmin_comprehensive(
             "total_days": total_days,
         }
     )
-    while True:
-        batch, err = _safe_call(client.get_activities, offset, effective_page_size)
-        if err:
-            raise RuntimeError(f"Garmin activities fetch failed at offset {offset}: {err}") from None
+    if activity_day_filter is None or len(activity_day_filter) > 0:
+        while True:
+            batch, err = _safe_call(client.get_activities, offset, effective_page_size)
+            if err:
+                raise RuntimeError(f"Garmin activities fetch failed at offset {offset}: {err}") from None
 
-        rows = batch or []
-        if not rows:
-            break
+            rows = batch or []
+            if not rows:
+                break
 
-        keep_going = True
-        oldest_in_batch: date | None = None
+            keep_going = True
+            oldest_in_batch: date | None = None
 
-        for row in rows:
-            normalized = _normalize_activity(row, source="garmin_api")
-            if not normalized:
-                continue
+            for row in rows:
+                normalized = _normalize_activity(row, source="garmin_api")
+                if not normalized:
+                    continue
 
-            start_dt = datetime.fromisoformat(normalized["start_time_utc"].replace("Z", "+00:00"))
-            day = start_dt.date()
-            oldest_in_batch = day if oldest_in_batch is None else min(oldest_in_batch, day)
+                start_dt = datetime.fromisoformat(normalized["start_time_utc"].replace("Z", "+00:00"))
+                day = start_dt.date()
+                oldest_in_batch = day if oldest_in_batch is None else min(oldest_in_batch, day)
 
-            if day < start_day:
-                keep_going = False
-                continue
-            if day > end_day:
-                continue
-            processed_activities += 1
-            fraction_live = min(max(((end_day - max(day, start_day)).days + 1) / float(total_days), 0.0), 1.0)
-            _progress(
-                {
-                    "phase": "activities",
-                    "message": "Processing activity details/FIT",
-                    "fraction": fraction_live,
-                    "oldest_in_batch": day.isoformat(),
-                    "day": day.isoformat(),
-                    "offset": offset,
-                    "processed": processed_activities,
-                    "fetched": len(activities) + 1,
-                    "total": total_activities_target,
-                }
-            )
-
-            activity_id = normalized["activity_id"]
-            _archive_activity_payload(raw_export_dir, activity_id, "summary", row)
-
-            details_bundle: dict[str, Any] | None = None
-            if include_activity_details:
-                details_bundle = {}
-                for endpoint_name, method_name in (
-                    ("details", "get_activity_details"),
-                    ("weather", "get_activity_weather"),
-                    ("hr_timezones", "get_activity_hr_in_timezones"),
-                ):
-                    method = getattr(client, method_name, None)
-                    if method is None:
-                        continue
-                    payload, call_err = _safe_call(method, int(activity_id))
-                    if call_err:
-                        errors.append(f"activity_id={activity_id} {endpoint_name}: {call_err}")
-                    details_bundle[endpoint_name] = payload
-                    _archive_activity_payload(raw_export_dir, activity_id, endpoint_name, payload)
-
-                activity_details.append(
+                if day < activity_min_day:
+                    keep_going = False
+                    continue
+                if day > end_day:
+                    continue
+                if activity_day_filter is not None and day not in activity_day_filter:
+                    continue
+                processed_activities += 1
+                fraction_live = (
+                    min(max(processed_activities / float(total_activities_target), 0.0), 1.0)
+                    if total_activities_target > 0
+                    else 1.0
+                )
+                _progress(
                     {
-                        "activity_id": activity_id,
-                        "details": details_bundle,
+                        "phase": "activities",
+                        "message": "Processing activity details/FIT",
+                        "fraction": fraction_live,
+                        "oldest_in_batch": day.isoformat(),
+                        "day": day.isoformat(),
+                        "offset": offset,
+                        "processed": processed_activities,
+                        "fetched": len(activities) + 1,
+                        "total": total_activities_target,
                     }
                 )
 
-            if include_splits:
-                split_payload = None
-                split_summaries_payload = None
-                for endpoint_name, method_name in (
-                    ("splits", "get_activity_splits"),
-                    ("split_summaries", "get_activity_split_summaries"),
-                ):
-                    method = getattr(client, method_name, None)
-                    if method is None:
-                        continue
-                    payload, call_err = _safe_call(method, int(activity_id))
-                    if call_err:
-                        errors.append(f"activity_id={activity_id} {endpoint_name}: {call_err}")
-                    if endpoint_name == "splits":
-                        split_payload = payload
-                    else:
-                        split_summaries_payload = payload
-                    _archive_activity_payload(raw_export_dir, activity_id, endpoint_name, payload)
-                activity_splits.append(
-                    _parse_split_payload(split_payload, split_summaries_payload, activity_id)
+                activity_id = normalized["activity_id"]
+                _archive_activity_payload(raw_export_dir, activity_id, "summary", row)
+
+                details_bundle: dict[str, Any] | None = None
+                if include_activity_details:
+                    details_bundle = {}
+                    for endpoint_name, method_name in (
+                        ("details", "get_activity_details"),
+                        ("weather", "get_activity_weather"),
+                        ("hr_timezones", "get_activity_hr_in_timezones"),
+                    ):
+                        method = getattr(client, method_name, None)
+                        if method is None:
+                            continue
+                        payload, call_err = _safe_call(method, int(activity_id))
+                        if call_err:
+                            errors.append(f"activity_id={activity_id} {endpoint_name}: {call_err}")
+                        details_bundle[endpoint_name] = payload
+                        _archive_activity_payload(raw_export_dir, activity_id, endpoint_name, payload)
+
+                    activity_details.append(
+                        {
+                            "activity_id": activity_id,
+                            "details": details_bundle,
+                        }
+                    )
+                    pending_activity_details.append(
+                        {
+                            "activity_id": activity_id,
+                            "details": details_bundle,
+                        }
+                    )
+
+                if include_splits:
+                    split_payload = None
+                    split_summaries_payload = None
+                    for endpoint_name, method_name in (
+                        ("splits", "get_activity_splits"),
+                        ("split_summaries", "get_activity_split_summaries"),
+                    ):
+                        method = getattr(client, method_name, None)
+                        if method is None:
+                            continue
+                        payload, call_err = _safe_call(method, int(activity_id))
+                        if call_err:
+                            errors.append(f"activity_id={activity_id} {endpoint_name}: {call_err}")
+                        if endpoint_name == "splits":
+                            split_payload = payload
+                        else:
+                            split_summaries_payload = payload
+                        _archive_activity_payload(raw_export_dir, activity_id, endpoint_name, payload)
+                    activity_splits.append(
+                        _parse_split_payload(split_payload, split_summaries_payload, activity_id)
+                    )
+                    pending_activity_splits.append(
+                        _parse_split_payload(split_payload, split_summaries_payload, activity_id)
+                    )
+
+                normalized = _normalize_activity(row, source="garmin_api", details_bundle=details_bundle) or normalized
+
+                fit_bytes, fit_err = _download_fit_bytes(client, activity_id, raw_export_dir)
+                if fit_err:
+                    errors.append(f"activity_id={activity_id} fit_download: {fit_err}")
+
+                if fit_bytes:
+                    try:
+                        session_data = _extract_fit_session_bytes(fit_bytes)
+                        normalized = _merge_session_into_activity(normalized, session_data)
+                        parsed_records = _parse_fit_records_bytes(fit_bytes, activity_id)
+                        activity_records.extend(parsed_records)
+                        pending_activity_records.extend(parsed_records)
+                    except Exception as parse_err:
+                        errors.append(f"activity_id={activity_id} fit_parse: {parse_err}")
+
+                activities.append(normalized)
+                pending_activities.append(normalized)
+                _flush_activity_chunk()
+
+            offset += effective_page_size
+            if oldest_in_batch:
+                fraction = (
+                    min(max(len(activities) / float(total_activities_target), 0.0), 1.0)
+                    if total_activities_target > 0
+                    else 1.0
                 )
-
-            normalized = _normalize_activity(row, source="garmin_api", details_bundle=details_bundle) or normalized
-
-            fit_bytes, fit_err = _download_fit_bytes(client, activity_id, raw_export_dir)
-            if fit_err:
-                errors.append(f"activity_id={activity_id} fit_download: {fit_err}")
-
-            if fit_bytes:
-                try:
-                    session_data = _extract_fit_session_bytes(fit_bytes)
-                    normalized = _merge_session_into_activity(normalized, session_data)
-                    activity_records.extend(_parse_fit_records_bytes(fit_bytes, activity_id))
-                except Exception as parse_err:
-                    errors.append(f"activity_id={activity_id} fit_parse: {parse_err}")
-
-            activities.append(normalized)
-
-        offset += effective_page_size
-        if oldest_in_batch:
-            clamped_oldest = max(oldest_in_batch, start_day)
-            covered_days = max((end_day - clamped_oldest).days + 1, 0)
-            fraction = min(max(covered_days / float(total_days), 0.0), 1.0)
-            _progress(
-                {
-                    "phase": "activities",
-                    "message": "Fetching activity summaries",
-                    "fraction": fraction,
-                    "oldest_in_batch": clamped_oldest.isoformat(),
-                    "day": clamped_oldest.isoformat(),
-                    "offset": offset,
-                    "processed": processed_activities,
-                    "fetched": len(activities),
-                    "total": total_activities_target,
-                }
-            )
-        if not keep_going:
-            break
-        if oldest_in_batch and oldest_in_batch < start_day:
-            break
+                _progress(
+                    {
+                        "phase": "activities",
+                        "message": "Fetching activity summaries",
+                        "fraction": fraction,
+                        "oldest_in_batch": max(oldest_in_batch, activity_min_day).isoformat(),
+                        "day": max(oldest_in_batch, activity_min_day).isoformat(),
+                        "offset": offset,
+                        "processed": processed_activities,
+                        "fetched": len(activities),
+                        "total": total_activities_target,
+                    }
+                )
+            if not keep_going:
+                break
+            if oldest_in_batch and oldest_in_batch < activity_min_day:
+                break
 
     # Deduplicate by activity_id in case APIs return overlapping windows.
     activities = list({row["activity_id"]: row for row in activities}.values())
@@ -885,12 +977,13 @@ def fetch_garmin_comprehensive(
         }.values()
     )
     activity_splits = list({row["activity_id"]: row for row in activity_splits}.values())
+    _flush_activity_chunk(force=True)
 
     sleep_daily: list[dict[str, Any]] = []
     wellness_daily: list[dict[str, Any]] = []
 
     if include_wellness:
-        days = _iter_days(start_day, end_day)
+        days = sorted(target_wellness_days) if target_wellness_days is not None else _iter_days(start_day, end_day)
         total_wellness_days = len(days)
         _progress(
             {
@@ -909,6 +1002,7 @@ def fetch_garmin_comprehensive(
                 errors.append(f"date={cdate} sleep: {sleep_err}")
             _archive_daily_payload(raw_export_dir, cdate, "sleep", sleep_data)
             sleep_daily.append(_extract_sleep_row(day, sleep_data))
+            pending_sleep_daily.append(_extract_sleep_row(day, sleep_data))
 
             body_battery, bb_err, _ = _safe_call_method(client, ("get_body_battery",), cdate)
             stress, stress_err, _ = _safe_call_method(client, ("get_all_day_stress",), cdate)
@@ -966,20 +1060,21 @@ def fetch_garmin_comprehensive(
             _archive_daily_payload(raw_export_dir, cdate, "intensity_minutes", intensity)
             _archive_daily_payload(raw_export_dir, cdate, "steps", steps_data)
 
-            wellness_daily.append(
-                _extract_wellness_row(
-                    day=day,
-                    body_battery=body_battery,
-                    stress=stress,
-                    hrv=hrv,
-                    rhr=rhr,
-                    readiness=readiness,
-                    stats_body=stats_body,
-                    respiration=respiration,
-                    intensity_minutes=intensity,
-                    steps_payload=steps_data,
-                )
+            wellness_row = _extract_wellness_row(
+                day=day,
+                body_battery=body_battery,
+                stress=stress,
+                hrv=hrv,
+                rhr=rhr,
+                readiness=readiness,
+                stats_body=stats_body,
+                respiration=respiration,
+                intensity_minutes=intensity,
+                steps_payload=steps_data,
             )
+            wellness_daily.append(wellness_row)
+            pending_wellness_daily.append(wellness_row)
+            _flush_wellness_chunk()
             _progress(
                 {
                     "phase": "wellness",
@@ -990,6 +1085,7 @@ def fetch_garmin_comprehensive(
                     "day": cdate,
                 }
             )
+        _flush_wellness_chunk(force=True)
 
     _progress({"phase": "complete", "message": "Fetch completed", "fraction": 1.0})
 

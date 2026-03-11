@@ -6,13 +6,13 @@ import sqlite3
 from contextlib import closing
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
 UTC_NOW = lambda: datetime.now(timezone.utc).isoformat()
 DB_FILE_MAX_BYTES = int(os.getenv("TEMPERANCE_DB_MAX_BYTES", str(1 * 1024 * 1024 * 1024)))
-DB_EXECUTEMANY_CHUNK_SIZE = max(int(os.getenv("TEMPERANCE_DB_EXECUTEMANY_CHUNK_SIZE", "1000")), 1)
+DB_EXECUTEMANY_CHUNK_SIZE = max(int(os.getenv("TEMPERANCE_DB_EXECUTEMANY_CHUNK_SIZE", "10")), 1)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS activities (
@@ -226,13 +226,20 @@ def _executemany_in_chunks(
     rows: list[dict[str, Any]],
     *,
     chunk_size: int = DB_EXECUTEMANY_CHUNK_SIZE,
+    progress_cb: Callable[[int, int], None] | None = None,
 ) -> int:
     if not rows:
         return 0
     effective_chunk_size = max(int(chunk_size), 1)
     start_total_changes = conn.total_changes
+    total_rows = len(rows)
+    processed_rows = 0
     for idx in range(0, len(rows), effective_chunk_size):
-        conn.executemany(sql, rows[idx : idx + effective_chunk_size])
+        batch = rows[idx : idx + effective_chunk_size]
+        conn.executemany(sql, batch)
+        processed_rows += len(batch)
+        if progress_cb is not None:
+            progress_cb(processed_rows, total_rows)
     return conn.total_changes - start_total_changes
 
 
@@ -324,7 +331,12 @@ def init_db(db_path: Path) -> None:
     run_migrations(db_path)
 
 
-def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
+def upsert_activities(
+    db_path: Path,
+    activities: list[dict[str, Any]],
+    *,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> int:
     if not activities:
         return 0
 
@@ -480,12 +492,18 @@ def upsert_activities(db_path: Path, activities: list[dict[str, Any]]) -> int:
                 updated_at=excluded.updated_at
             """,
             params,
+            progress_cb=progress_cb,
         )
         conn.commit()
         return changed
 
 
-def upsert_activity_details(db_path: Path, details: list[dict[str, Any]]) -> int:
+def upsert_activity_details(
+    db_path: Path,
+    details: list[dict[str, Any]],
+    *,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> int:
     if not details:
         return 0
 
@@ -510,12 +528,18 @@ def upsert_activity_details(db_path: Path, details: list[dict[str, Any]]) -> int
             WHERE activity_details.details_json IS NOT excluded.details_json
             """,
             params,
+            progress_cb=progress_cb,
         )
         conn.commit()
         return changed
 
 
-def upsert_activity_records(db_path: Path, records: list[dict[str, Any]]) -> int:
+def upsert_activity_records(
+    db_path: Path,
+    records: list[dict[str, Any]],
+    *,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> int:
     if not records:
         return 0
 
@@ -571,12 +595,18 @@ def upsert_activity_records(db_path: Path, records: list[dict[str, Any]]) -> int
                 updated_at=excluded.updated_at
             """,
             params,
+            progress_cb=progress_cb,
         )
         conn.commit()
         return changed
 
 
-def upsert_activity_splits(db_path: Path, rows: list[dict[str, Any]]) -> int:
+def upsert_activity_splits(
+    db_path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> int:
     if not rows:
         return 0
 
@@ -613,12 +643,18 @@ def upsert_activity_splits(db_path: Path, rows: list[dict[str, Any]]) -> int:
                 updated_at=excluded.updated_at
             """,
             params,
+            progress_cb=progress_cb,
         )
         conn.commit()
         return changed
 
 
-def upsert_sleep_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
+def upsert_sleep_daily(
+    db_path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> int:
     if not rows:
         return 0
 
@@ -657,12 +693,18 @@ def upsert_sleep_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
                 updated_at=excluded.updated_at
             """,
             params,
+            progress_cb=progress_cb,
         )
         conn.commit()
         return changed
 
 
-def upsert_wellness_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
+def upsert_wellness_daily(
+    db_path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> int:
     if not rows:
         return 0
 
@@ -707,6 +749,7 @@ def upsert_wellness_daily(db_path: Path, rows: list[dict[str, Any]]) -> int:
                 updated_at=excluded.updated_at
             """,
             params,
+            progress_cb=progress_cb,
         )
         conn.commit()
         return changed

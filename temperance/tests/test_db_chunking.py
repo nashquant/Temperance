@@ -18,15 +18,18 @@ class TrackingConnection:
 
 def test_executemany_in_chunks_splits_large_batches(tmp_path: Path) -> None:
     conn = TrackingConnection()
+    progress_calls: list[tuple[int, int]] = []
     changed = _executemany_in_chunks(
         conn,  # type: ignore[arg-type]
         "INSERT INTO anything VALUES (:id)",
         [{"id": idx} for idx in range(5)],
         chunk_size=2,
+        progress_cb=lambda processed, total: progress_calls.append((processed, total)),
     )
 
     assert changed == 5
     assert conn.calls == [2, 2, 1]
+    assert progress_calls == [(2, 5), (4, 5), (5, 5)]
 
 
 def test_upsert_activity_records_preserves_row_count_across_chunks(tmp_path: Path) -> None:
