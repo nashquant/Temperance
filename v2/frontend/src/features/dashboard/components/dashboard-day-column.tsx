@@ -19,6 +19,7 @@ interface DashboardDayColumnProps {
   deletingCustomActivity?: boolean;
   userTimeZone?: string;
   compactMobile?: boolean;
+  mobileFullWidth?: boolean;
   undoActivity?: {
     dayUtc: string;
     lineNo: number;
@@ -168,6 +169,15 @@ function deriveCompactTimeLabel(
   return '';
 }
 
+function activityTypeLabel(isCustom: boolean): string {
+  return isCustom ? 'Custom' : 'Done';
+}
+
+function metricPillLabel(value: string | null | undefined): string | null {
+  const cleaned = String(value || '').trim();
+  return cleaned ? cleaned : null;
+}
+
 export function DashboardDayColumn({
   day,
   onAddPlannedActivity,
@@ -181,6 +191,7 @@ export function DashboardDayColumn({
   deletingCustomActivity,
   userTimeZone,
   compactMobile = false,
+  mobileFullWidth = false,
   undoActivity,
   undoVisible = false,
   onUndoActivity,
@@ -202,25 +213,41 @@ export function DashboardDayColumn({
     laneCards.splice(insertionIndex, 0, { type: 'undo', slotIndex: undoActivity.slotIndex });
   }
 
+  const cardClassName = cn(
+    'rounded-xl border-border/80 bg-card/75 shadow-sm',
+    compactMobile
+      ? mobileFullWidth
+        ? 'w-full min-w-0'
+        : 'w-[240px] shrink-0 min-h-[340px]'
+      : 'sm:min-h-[340px] lg:h-[430px]',
+    day.is_today && !compactMobile ? 'border-primary/70' : undefined,
+  );
+
+  const contentClassName = cn(
+    'flex h-full flex-col',
+    compactMobile && mobileFullWidth ? 'gap-1.5 p-2' : 'gap-2 p-2.5',
+  );
+
   return (
-    <Card
-      className={cn(
-        'rounded-xl border-border/80 bg-card/75 shadow-sm',
-        compactMobile ? 'w-[240px] shrink-0 min-h-[340px]' : 'sm:min-h-[340px] lg:h-[430px]',
-        day.is_today ? 'border-primary/70' : undefined,
-      )}
-    >
-      <CardContent className={cn('flex h-full flex-col', compactMobile ? 'gap-1.5 p-2' : 'gap-2 p-2.5')}>
+    <Card className={cardClassName}>
+      <CardContent className={contentClassName}>
         <div className="space-y-1">
           <div className="flex min-h-[24px] items-center">
-            <p
-              className={cn(
-                compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[13px] font-semibold leading-5',
-                day.is_today ? 'text-primary' : 'text-foreground',
-              )}
-            >
-              {day.day_label}
-            </p>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p
+                className={cn(
+                  compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[13px] font-semibold leading-5',
+                  day.is_today ? 'text-primary' : 'text-foreground',
+                )}
+              >
+                {day.day_label}
+              </p>
+              {compactMobile && mobileFullWidth && day.is_today ? (
+                <span className="rounded-full border border-sky-300/18 bg-sky-300/10 px-1.5 py-0.5 text-[8.5px] font-semibold uppercase tracking-[0.12em] text-sky-100/92">
+                  Today
+                </span>
+              ) : null}
+            </div>
             <Button
               variant="ghost"
               size="icon"
@@ -235,10 +262,14 @@ export function DashboardDayColumn({
           <div
             className={cn(
               'space-y-0.5 text-muted-foreground',
-              compactMobile ? 'min-h-[40px] text-[11px] leading-[1.25]' : 'min-h-[50px] text-[12px] leading-[1.3]',
+              compactMobile && mobileFullWidth
+                ? 'text-[10px] leading-[1.2]'
+                : compactMobile
+                  ? 'min-h-[40px] text-[11px] leading-[1.25]'
+                  : 'min-h-[50px] text-[12px] leading-[1.3]',
             )}
           >
-            {fmtMeta(day).map((line) => (
+            {fmtMeta(day).slice(0, compactMobile && mobileFullWidth ? 2 : 3).map((line) => (
               <p key={line} className="truncate">
                 {line}
               </p>
@@ -246,13 +277,15 @@ export function DashboardDayColumn({
           </div>
         </div>
 
-        <Separator className="bg-border/70" />
+        <Separator className={cn('bg-border/70', compactMobile && mobileFullWidth ? 'opacity-60' : undefined)} />
 
         <div
           className={cn(
             'flex-1 space-y-2',
             shouldScrollActivities
-              ? 'overflow-visible sm:overflow-y-auto sm:pr-1 sm:[scrollbar-width:none] sm:[-ms-overflow-style:none] sm:[&::-webkit-scrollbar]:hidden'
+              ? compactMobile
+                ? 'overflow-visible'
+                : 'overflow-visible sm:overflow-y-auto sm:pr-1 sm:[scrollbar-width:none] sm:[-ms-overflow-style:none] sm:[&::-webkit-scrollbar]:hidden'
               : 'overflow-visible',
           )}
         >
@@ -284,6 +317,77 @@ export function DashboardDayColumn({
             (() => {
               const activity = item.activity;
               const timeLabel = activity.is_custom ? '' : deriveCompactTimeLabel(activity, userTimeZone);
+              if (compactMobile && mobileFullWidth) {
+                const metricPills = [
+                  metricPillLabel(activity.duration_label),
+                  metricPillLabel(activity.distance_label),
+                  metricPillLabel(activity.pace_label),
+                  metricPillLabel(`TSS ${Math.round(activity.tss)}`),
+                  metricPillLabel(`rTSS ${Math.round(activity.rtss)}`),
+                  activity.vdot != null ? metricPillLabel(`VDOT ${Math.round(activity.vdot)}`) : null,
+                ].filter((pill): pill is string => Boolean(pill));
+                return (
+                  <div
+                    key={activity.activity_id}
+                    className={cn(
+                      'relative overflow-hidden rounded-lg border',
+                      'px-2 py-1.5',
+                      activity.is_custom ? 'border-2 border-dashed outline outline-1 outline-offset-[-3px] outline-dotted' : undefined,
+                      intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
+                      activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
+                    )}
+                    onClick={() => onSelectActivity?.(activity.activity_id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        onSelectActivity?.(activity.activity_id);
+                      }
+                    }}
+                  >
+                    {activity.is_custom ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1.5 top-1.5 h-5 w-5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDeleteCustomActivity?.(activity, item.index);
+                        }}
+                        disabled={deletingCustomActivity}
+                        aria-label="Delete custom activity"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </Button>
+                    ) : null}
+                    <div className="flex items-start gap-2 pr-6">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[12px] font-semibold leading-4 text-foreground">
+                          {formatActivityTitle(activity.sport)}
+                          {timeLabel ? ` ${timeLabel}` : ''}
+                        </p>
+                        <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400/90">
+                          {activityTypeLabel(Boolean(activity.is_custom))}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {metricPills.slice(0, 5).map((pill) => (
+                        <span
+                          key={`${activity.activity_id}-${pill}`}
+                          className="rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92"
+                        >
+                          {pill}
+                        </span>
+                      ))}
+                      <span className="rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92">
+                        IF {Math.round(activity.if_pct)}%
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div
                   key={activity.activity_id}
@@ -368,6 +472,84 @@ export function DashboardDayColumn({
                 </div>
               </div>
             ) : (
+              compactMobile && mobileFullWidth ? (
+                (() => {
+                  const metricPills = [
+                    metricPillLabel(item.activity.duration_label),
+                    metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} kmeq`),
+                    metricPillLabel(item.activity.pace_label),
+                    metricPillLabel(`TSS ${Math.round(item.activity.tss)}`),
+                    metricPillLabel(`rTSS ${Math.round(item.activity.rtss)}`),
+                    metricPillLabel(`IF ${Math.round(item.activity.if_pct)}%`),
+                  ].filter((pill): pill is string => Boolean(pill));
+                  return (
+                <div
+                  key={`${item.activity.day_utc}-${item.activity.line_no}`}
+                  className={cn(
+                    'relative overflow-hidden rounded-lg border-2 border-dashed',
+                    'px-2 py-1.5',
+                    plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
+                  )}
+                  onClick={() => onSelectActivity?.(item.activity.activity_id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelectActivity?.(item.activity.activity_id);
+                    }
+                  }}
+                >
+                  <div className="absolute right-1.5 top-1.5 flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onMarkPlannedDone?.(item.activity, item.index);
+                      }}
+                      disabled={markingPlannedDone}
+                      aria-label="Mark planned activity as done"
+                    >
+                      <Check className="h-2.5 w-2.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDeletePlannedActivity?.(item.activity, item.index);
+                      }}
+                      disabled={deletingPlannedActivity}
+                      aria-label="Delete planned activity"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </Button>
+                  </div>
+                  <div className="min-w-0 pr-12">
+                    <p className="truncate text-[12px] font-semibold leading-4 text-foreground">
+                      {formatActivityTitle(item.activity.activity)}
+                    </p>
+                    <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400/90">
+                      Planned
+                    </p>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {metricPills.map((pill) => (
+                      <span
+                        key={`${item.activity.day_utc}-${item.activity.line_no}-${pill}`}
+                        className="rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92"
+                      >
+                        {pill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                  );
+                })()
+              ) : (
               <div
                 key={`${item.activity.day_utc}-${item.activity.line_no}`}
                 className={cn(
@@ -424,6 +606,7 @@ export function DashboardDayColumn({
                   TSS {Math.round(item.activity.tss)} · rTSS {Math.round(item.activity.rtss)}
                 </p>
               </div>
+              )
             ),
           )}
 
