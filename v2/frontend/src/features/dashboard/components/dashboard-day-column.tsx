@@ -56,13 +56,14 @@ const customBorderAccentClasses: Record<string, string> = {
   purple: 'border-[rgba(139,108,246,0.74)] outline-[rgba(196,181,253,0.3)]',
 };
 
-function fmtMeta(day: DashboardDayColumnType): Array<{ key: string; label: string; value: string; tone: string }> {
-  const parts: Array<{ key: string; label: string; value: string; tone: string }> = [];
+function fmtMeta(day: DashboardDayColumnType): Array<{ key: string; label: string; value: string; tone: string; iconTone: string }> {
+  const parts: Array<{ key: string; label: string; value: string; tone: string; iconTone: string }> = [];
   parts.push({
     key: 'distance',
     label: 'Dist',
     value: `${Math.round(day.meta.distance_eqv_km || 0)} km`,
-    tone: 'text-emerald-200/88',
+    tone: 'text-slate-300/88',
+    iconTone: 'text-emerald-300/90',
   });
   const hasFatigueExpected = Boolean(day.meta.show_fatigue_expected && day.meta.fatigue_expected !== null);
   if (hasFatigueExpected) {
@@ -70,14 +71,16 @@ function fmtMeta(day: DashboardDayColumnType): Array<{ key: string; label: strin
       key: 'fatg',
       label: 'fatg',
       value: `${Math.round(day.meta.fatigue_expected ?? 0)}`,
-      tone: 'text-rose-200/88',
+      tone: 'text-slate-300/88',
+      iconTone: 'text-rose-300/90',
     });
   } else if (day.meta.fatigue !== null) {
     parts.push({
       key: 'fatg',
       label: 'fatg',
       value: `${Math.round(day.meta.fatigue)}`,
-      tone: 'text-rose-200/88',
+      tone: 'text-slate-300/88',
+      iconTone: 'text-rose-300/90',
     });
   }
   return parts;
@@ -119,6 +122,10 @@ function compactLine(parts: Array<string | null | undefined>): string {
     .filter(Boolean)
     .map((part) => part.replace(/\/km\b/gi, '').replace(/km\s*eqv\.?/gi, 'km'))
     .join(' · ');
+}
+
+function compactDistanceLabel(label: string | null | undefined): string {
+  return String(label || '').trim().replace(/\/km\b/gi, '').replace(/km\s*eqv\.?/gi, 'km');
 }
 
 function deriveCompactTimeLabel(
@@ -205,10 +212,21 @@ function formatTssLabel(tss: number, rtss: number, showBoth: boolean, runningLik
   return runningLike ? `rTSS ${roundedRtss}(${roundedTss})` : `TSS ${roundedTss}(${roundedRtss})`;
 }
 
+function primaryLoadLabel(tss: number, rtss: number, runningLike: boolean): string {
+  return runningLike ? `rTSS ${Math.round(rtss)}` : `TSS ${Math.round(tss)}`;
+}
+
 function dayNumber(dayUtc: string): string {
   const parsed = new Date(`${dayUtc}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return '--';
   return new Intl.DateTimeFormat('en-US', { day: '2-digit' }).format(parsed);
+}
+
+function mobileActivitySectionLabel(day: DashboardDayColumnType): string {
+  const count = day.actual_activities.length + day.planned_activities.length;
+  if (count === 0 && day.is_past) return 'Rest';
+  if (count === 1) return '1 activity';
+  return `${count} activities`;
 }
 
 function MetricRow({
@@ -285,21 +303,35 @@ export function DashboardDayColumn({
 
   const contentClassName = cn(
     'relative flex h-full flex-col',
-    compactMobile && mobileFullWidth ? 'gap-1.5 p-2' : 'gap-2 p-2.5',
+    compactMobile && mobileFullWidth ? 'gap-2 p-2' : 'gap-2 p-2.5',
   );
 
   return (
     <Card className={cardClassName}>
       <CardContent className={contentClassName}>
         <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[linear-gradient(180deg,rgba(96,165,250,0.07),rgba(168,85,247,0.05)_38%,transparent)]" />
-        <div className="relative rounded-[1rem] border border-[rgba(71,85,105,0.55)] bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_0_1px_rgba(15,23,42,0.42),0_10px_24px_rgba(2,6,23,0.18)] backdrop-blur-sm">
+        <div
+          className={cn(
+            'relative rounded-[1rem] border border-[rgba(71,85,105,0.55)] bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_0_1px_rgba(15,23,42,0.42),0_10px_24px_rgba(2,6,23,0.18)] backdrop-blur-sm',
+            compactMobile && mobileFullWidth
+              ? 'rounded-[1.05rem] border-white/14 bg-[linear-gradient(180deg,rgba(30,41,59,0.72),rgba(15,23,42,0.32))] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_0_0_1px_rgba(15,23,42,0.46),0_14px_30px_rgba(2,6,23,0.24)]'
+              : undefined,
+          )}
+        >
           <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(125,211,252,0.22)] to-transparent" />
           <div className="pointer-events-none absolute inset-y-3 left-0 w-px bg-gradient-to-b from-transparent via-[rgba(129,140,248,0.14)] to-transparent" />
           <div className="pointer-events-none absolute inset-y-3 right-0 w-px bg-gradient-to-b from-transparent via-[rgba(192,132,252,0.12)] to-transparent" />
           <div className="space-y-0.5">
             <div className="flex min-h-[24px] items-center gap-1.5">
               <div className="min-w-0">
-                <div className="inline-flex items-baseline gap-1.5">
+                <div
+                  className={cn(
+                    'inline-flex items-baseline gap-1.5',
+                    compactMobile && mobileFullWidth
+                      ? 'rounded-full border border-white/10 bg-black/15 px-2 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
+                      : undefined,
+                  )}
+                >
                   <p
                     className={cn(
                       compactMobile ? 'text-[15px] font-semibold leading-4' : 'text-[17px] font-semibold leading-5',
@@ -332,7 +364,11 @@ export function DashboardDayColumn({
             <div className="flex items-center gap-2 overflow-hidden text-[10px] leading-4">
               {metaItems.map((item) => (
                 <div key={item.key} className={cn('inline-flex min-w-0 items-center gap-1', item.tone)}>
-                  {item.key === 'distance' ? <Route className="h-3 w-3 shrink-0" /> : <HeartPulse className="h-3 w-3 shrink-0" />}
+                  {item.key === 'distance' ? (
+                    <Route className={cn('h-3 w-3 shrink-0', item.iconTone)} />
+                  ) : (
+                    <HeartPulse className={cn('h-3 w-3 shrink-0', item.iconTone)} />
+                  )}
                   <span className="truncate text-slate-300/88">
                     {item.value}
                   </span>
@@ -342,11 +378,20 @@ export function DashboardDayColumn({
           </div>
         </div>
 
-        <Separator className={cn('bg-gradient-to-r from-transparent via-white/8 to-transparent', compactMobile && mobileFullWidth ? 'opacity-60' : undefined)} />
+        <div className={cn(compactMobile && mobileFullWidth ? 'px-1' : undefined)}>
+          <Separator
+            className={cn(
+              'bg-gradient-to-r from-transparent via-white/8 to-transparent',
+              compactMobile && mobileFullWidth
+                ? 'h-px bg-gradient-to-r from-transparent via-sky-200/18 to-transparent opacity-100'
+                : undefined,
+            )}
+          />
+        </div>
 
         <div
           className={cn(
-            'flex-1 space-y-2',
+            'flex-1',
             shouldScrollActivities
               ? compactMobile
                 ? 'overflow-visible'
@@ -354,6 +399,23 @@ export function DashboardDayColumn({
               : 'overflow-visible',
           )}
         >
+          <div
+            className={cn(
+              'space-y-2',
+              compactMobile && mobileFullWidth
+                ? 'rounded-[1.1rem] border border-white/8 bg-[linear-gradient(180deg,rgba(2,6,23,0.34),rgba(15,23,42,0.16))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+                : undefined,
+            )}
+          >
+            {compactMobile && mobileFullWidth ? (
+              <div className="flex items-center gap-2 px-0.5">
+                <span className="h-px flex-1 bg-gradient-to-r from-sky-300/35 to-transparent" />
+                <p className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.22em] text-slate-400/88">
+                  {mobileActivitySectionLabel(day)}
+                </p>
+                <span className="h-px flex-1 bg-gradient-to-l from-fuchsia-300/25 to-transparent" />
+              </div>
+            ) : null}
           {actualCards.map((item) =>
             item.type === 'undo' ? (
               <div
@@ -381,15 +443,15 @@ export function DashboardDayColumn({
             ) : (
             (() => {
               const activity = item.activity;
+              const runningLike = isRunningLikeSport(activity.sport);
               const timeLabel = activity.is_custom ? '' : deriveCompactTimeLabel(activity, userTimeZone);
               const durationLabel = normalizeCompactDurationLabel(activity.duration_label);
               if (compactMobile && mobileFullWidth) {
                 const metricPills = [
                   metricPillLabel(durationLabel),
-                  metricPillLabel(activity.distance_label),
+                  metricPillLabel(compactDistanceLabel(activity.distance_label)),
                   metricPillLabel(activity.pace_label),
-                  metricPillLabel(`TSS ${Math.round(activity.tss)}`),
-                  metricPillLabel(`rTSS ${Math.round(activity.rtss)}`),
+                  metricPillLabel(primaryLoadLabel(activity.tss, activity.rtss, runningLike)),
                 ].filter((pill): pill is string => Boolean(pill));
                 return (
                   <div
@@ -461,7 +523,6 @@ export function DashboardDayColumn({
                   </div>
                 );
               }
-              const runningLike = isRunningLikeSport(activity.sport);
               return (
                 <div
                   key={activity.activity_id}
@@ -554,12 +615,12 @@ export function DashboardDayColumn({
               compactMobile && mobileFullWidth ? (
                 (() => {
                   const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
+                  const runningLike = isRunningLikeSport(item.activity.activity);
                   const metricPills = [
                     metricPillLabel(durationLabel),
                     metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`),
                     metricPillLabel(item.activity.pace_label),
-                    metricPillLabel(`TSS ${Math.round(item.activity.tss)}`),
-                    metricPillLabel(`rTSS ${Math.round(item.activity.rtss)}`),
+                    metricPillLabel(primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike)),
                   ].filter((pill): pill is string => Boolean(pill));
                   return (
                 <div
@@ -636,6 +697,7 @@ export function DashboardDayColumn({
               ) : (
                 (() => {
                   const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
+                  const runningLike = isRunningLikeSport(item.activity.activity);
                   return (
                     <div
                       key={`${item.activity.day_utc}-${item.activity.line_no}`}
@@ -698,7 +760,7 @@ export function DashboardDayColumn({
                       </div>
                       <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
                         <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />
-                        <span className="truncate">{formatTssLabel(item.activity.tss, item.activity.rtss, false)}</span>
+                        <span className="truncate">{primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike)}</span>
                       </p>
                     </div>
                   );
@@ -713,6 +775,7 @@ export function DashboardDayColumn({
               <p>Rest is part of training.</p>
             </div>
           ) : null}
+          </div>
         </div>
       </CardContent>
     </Card>

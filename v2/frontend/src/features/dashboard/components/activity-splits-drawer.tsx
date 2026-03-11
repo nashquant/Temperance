@@ -130,7 +130,7 @@ function paceLabelFromSpeed(speed: number): string {
   const secondsPerKm = 1000 / numeric;
   const minutes = Math.floor(secondsPerKm / 60);
   const seconds = Math.round(secondsPerKm % 60);
-  return `${minutes}:${String(seconds).padStart(2, '0')}/km`;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 function parseDurationLabelSeconds(label: string): number {

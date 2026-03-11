@@ -86,7 +86,7 @@ export function WeekPlannerPage(): JSX.Element {
                   rTSS {Math.round(selectedWeek.rtss)}
                 </Badge>
                 <Badge variant="outline" className="rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide">
-                  Dist {Math.round(selectedWeek.distance_eqv_km)} kmeq
+                  Dist {Math.round(selectedWeek.distance_eqv_km)} km
                 </Badge>
               </>
             ) : null}
