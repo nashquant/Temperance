@@ -184,6 +184,10 @@ function metricPillLabel(value: string | null | undefined): string | null {
   return cleaned ? cleaned : null;
 }
 
+function formatIfPctLabel(ifPct: number): string {
+  return `${Math.round(ifPct)}%`;
+}
+
 function shortWeekday(dayUtc: string, fallback: string): string {
   const parsed = new Date(`${dayUtc}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return fallback;
@@ -440,8 +444,9 @@ export function DashboardDayColumn({
                           {pill}
                         </span>
                       ))}
-                      <span className="rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92">
-                        IF {Math.round(activity.if_pct)}%
+                      <span className="inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92">
+                        <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />
+                        {formatIfPctLabel(activity.if_pct)}
                       </span>
                     </div>
                   </div>
@@ -498,7 +503,7 @@ export function DashboardDayColumn({
                     <MetricRow
                       compactMobile={compactMobile}
                       icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
-                      text={compactLine([activity.pace_label, `IF ${Math.round(activity.if_pct)}%`, activity.vdot != null ? `VDOT ${Math.round(activity.vdot)}` : null])}
+                      text={compactLine([activity.pace_label, formatIfPctLabel(activity.if_pct), activity.vdot != null ? `VDOT ${Math.round(activity.vdot)}` : null])}
                     />
                   </div>
                   <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
@@ -546,7 +551,6 @@ export function DashboardDayColumn({
                     metricPillLabel(item.activity.pace_label),
                     metricPillLabel(`TSS ${Math.round(item.activity.tss)}`),
                     metricPillLabel(`rTSS ${Math.round(item.activity.rtss)}`),
-                    metricPillLabel(`IF ${Math.round(item.activity.if_pct)}%`),
                   ].filter((pill): pill is string => Boolean(pill));
                   return (
                 <div
@@ -612,6 +616,10 @@ export function DashboardDayColumn({
                         {pill}
                       </span>
                     ))}
+                    <span className="inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92">
+                      <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />
+                      {formatIfPctLabel(item.activity.if_pct)}
+                    </span>
                   </div>
                 </div>
                   );
@@ -676,7 +684,7 @@ export function DashboardDayColumn({
                         <MetricRow
                           compactMobile={compactMobile}
                           icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
-                          text={compactLine([item.activity.pace_label, `IF ${Math.round(item.activity.if_pct)}%`])}
+                          text={compactLine([item.activity.pace_label, formatIfPctLabel(item.activity.if_pct)])}
                         />
                       </div>
                       <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
