@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import type { DashboardDayColumn as DashboardDayColumnType } from '@/features/dashboard/types/dashboard';
+import { normalizeCompactDurationLabel } from '@/features/dashboard/utils/format-duration';
 
 interface DashboardDayColumnProps {
   day: DashboardDayColumnType;
@@ -373,9 +374,10 @@ export function DashboardDayColumn({
             (() => {
               const activity = item.activity;
               const timeLabel = activity.is_custom ? '' : deriveCompactTimeLabel(activity, userTimeZone);
+              const durationLabel = normalizeCompactDurationLabel(activity.duration_label);
               if (compactMobile && mobileFullWidth) {
                 const metricPills = [
-                  metricPillLabel(activity.duration_label),
+                  metricPillLabel(durationLabel),
                   metricPillLabel(activity.distance_label),
                   metricPillLabel(activity.pace_label),
                   metricPillLabel(`TSS ${Math.round(activity.tss)}`),
@@ -491,7 +493,7 @@ export function DashboardDayColumn({
                     <MetricRow
                       compactMobile={compactMobile}
                       icon={<Clock3 className="h-2.5 w-2.5 shrink-0 text-cyan-300/80" />}
-                      text={compactLine([activity.duration_label, activity.distance_label])}
+                      text={compactLine([durationLabel, activity.distance_label])}
                     />
                     <MetricRow
                       compactMobile={compactMobile}
@@ -537,8 +539,9 @@ export function DashboardDayColumn({
             ) : (
               compactMobile && mobileFullWidth ? (
                 (() => {
+                  const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
                   const metricPills = [
-                    metricPillLabel(item.activity.duration_label),
+                    metricPillLabel(durationLabel),
                     metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`),
                     metricPillLabel(item.activity.pace_label),
                     metricPillLabel(`TSS ${Math.round(item.activity.tss)}`),
@@ -614,70 +617,75 @@ export function DashboardDayColumn({
                   );
                 })()
               ) : (
-              <div
-                key={`${item.activity.day_utc}-${item.activity.line_no}`}
-                className={cn(
-                  'relative flex cursor-pointer flex-col overflow-hidden rounded-[1rem] border-2 border-dashed shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-white/[0.045] hover:shadow-[0_16px_28px_rgba(2,6,23,0.24)]',
-                  compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[94px] px-2.5 pb-2 pt-2 text-[12px]',
-                  plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
-                )}
-                onClick={() => onSelectActivity?.(item.activity.activity_id)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    onSelectActivity?.(item.activity.activity_id);
-                  }
-                }}
-              >
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute -left-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onMarkPlannedDone?.(item.activity, item.index);
-                  }}
-                  disabled={markingPlannedDone}
-                  aria-label="Mark planned activity as done"
-                >
-                  <Check className="h-1.75 w-1.75" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute -right-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDeletePlannedActivity?.(item.activity, item.index);
-                  }}
-                  disabled={deletingPlannedActivity}
-                  aria-label="Delete planned activity"
-                >
-                  <X className="h-1.75 w-1.75" />
-                </Button>
-                <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
-                  {formatActivityTitle(item.activity.activity)} <span className="text-muted-foreground">(P)</span>
-                </p>
-                <div className={compactMobile ? 'mt-1 space-y-0.5' : 'mt-1.5 space-y-0.5'}>
-                  <MetricRow
-                    compactMobile={compactMobile}
-                    icon={<Route className="h-2.5 w-2.5 shrink-0 text-emerald-300/80" />}
-                    text={compactLine([item.activity.duration_label, `${Math.round(item.activity.distance_eqv_km)} km`])}
-                  />
-                  <MetricRow
-                    compactMobile={compactMobile}
-                    icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
-                    text={compactLine([item.activity.pace_label, `IF ${Math.round(item.activity.if_pct)}%`])}
-                  />
-                </div>
-                <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
-                  <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />
-                  <span className="truncate">{formatTssLabel(item.activity.tss, item.activity.rtss, false)}</span>
-                </p>
-              </div>
+                (() => {
+                  const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
+                  return (
+                    <div
+                      key={`${item.activity.day_utc}-${item.activity.line_no}`}
+                      className={cn(
+                        'relative flex cursor-pointer flex-col overflow-hidden rounded-[1rem] border-2 border-dashed shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-white/[0.045] hover:shadow-[0_16px_28px_rgba(2,6,23,0.24)]',
+                        compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[94px] px-2.5 pb-2 pt-2 text-[12px]',
+                        plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
+                      )}
+                      onClick={() => onSelectActivity?.(item.activity.activity_id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          onSelectActivity?.(item.activity.activity_id);
+                        }
+                      }}
+                    >
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute -left-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onMarkPlannedDone?.(item.activity, item.index);
+                        }}
+                        disabled={markingPlannedDone}
+                        aria-label="Mark planned activity as done"
+                      >
+                        <Check className="h-1.75 w-1.75" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute -right-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDeletePlannedActivity?.(item.activity, item.index);
+                        }}
+                        disabled={deletingPlannedActivity}
+                        aria-label="Delete planned activity"
+                      >
+                        <X className="h-1.75 w-1.75" />
+                      </Button>
+                      <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
+                        {formatActivityTitle(item.activity.activity)} <span className="text-muted-foreground">(P)</span>
+                      </p>
+                      <div className={compactMobile ? 'mt-1 space-y-0.5' : 'mt-1.5 space-y-0.5'}>
+                        <MetricRow
+                          compactMobile={compactMobile}
+                          icon={<Route className="h-2.5 w-2.5 shrink-0 text-emerald-300/80" />}
+                          text={compactLine([durationLabel, `${Math.round(item.activity.distance_eqv_km)} km`])}
+                        />
+                        <MetricRow
+                          compactMobile={compactMobile}
+                          icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
+                          text={compactLine([item.activity.pace_label, `IF ${Math.round(item.activity.if_pct)}%`])}
+                        />
+                      </div>
+                      <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
+                        <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />
+                        <span className="truncate">{formatTssLabel(item.activity.tss, item.activity.rtss, false)}</span>
+                      </p>
+                    </div>
+                  );
+                })()
               )
             ),
           )}

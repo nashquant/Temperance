@@ -2328,8 +2328,8 @@ def _format_duration_short(duration_s: float) -> str:
     hours = total_minutes // 60
     minutes = total_minutes % 60
     if hours > 0:
-        return f"{hours}h {minutes}m" if minutes > 0 else f"{hours}h"
-    return f"{minutes}m"
+        return f"{hours}h{minutes}'" if minutes > 0 else f"{hours}h"
+    return f"{minutes}'"
 
 
 def _format_pace_short(pace_s_per_km: float | None) -> str:

@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, Clock3, Flame, Gauge, HeartPulse, Route, Ruler
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { formatCompactDurationHours } from '@/features/dashboard/utils/format-duration';
 import { intensityHexFromKey } from '@/features/dashboard/utils/intensity-palette';
 import type { DashboardWeekSummary } from '@/features/dashboard/types/dashboard';
 
@@ -18,17 +19,12 @@ function fmtNumber(value: number | null | undefined): string {
   return Math.round(value).toString();
 }
 
-function fmtDuration(hours: number): string {
-  if (hours < 1) return `${Math.round(hours * 60)}m`;
-  return `${hours.toFixed(1)}h`;
-}
-
 function fmtSeconds(seconds: number): string {
   const totalMin = Math.max(0, Math.round(seconds / 60));
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  if (h > 0) return m > 0 ? `${h}h${m}'` : `${h}h`;
+  return `${m}'`;
 }
 
 const zoneColors: Record<string, string> = {
@@ -102,7 +98,7 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
           </p>
           <p className={`text-right text-[11px] font-semibold tabular-nums ${summaryToneClassNames.vdot.value}`}>{fmtNumber(summary.vdot_max)}</p>
           <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.time.label}`}><Clock3 className={`h-3 w-3 ${summaryToneClassNames.time.icon}`} />Time</p>
-          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.time.value}`}>{fmtDuration(summary.duration_h)}</p>
+          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.time.value}`}>{formatCompactDurationHours(summary.duration_h)}</p>
           <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.distance.label}`}><Route className={`h-3 w-3 ${summaryToneClassNames.distance.icon}`} />Dist</p>
           <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.distance.value}`}>{fmtNumber(summary.distance_km)} km</p>
           <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.equivalent.label}`}><Ruler className={`h-3 w-3 ${summaryToneClassNames.equivalent.icon}`} />Eqv</p>
@@ -122,8 +118,14 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
         <div className="space-y-1">
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Zones</p>
           {summary.zones.map((zone) => (
-            <div key={zone.zone} className="grid grid-cols-[18px_minmax(36px,1fr)_42px_24px] items-center gap-1 text-[11px] leading-4 text-muted-foreground">
-              <span>{zone.zone}</span>
+            <div key={zone.zone} className="grid grid-cols-[32px_minmax(36px,1fr)_42px_24px] items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+              <span className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-200/92">
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: zoneColors[zone.zone] ?? intensityHexFromKey('green') }}
+                />
+                {zone.zone}
+              </span>
               <div className="h-1.5 w-full overflow-hidden rounded-full border border-border/70 bg-muted/70">
                 <div
                   className="h-full rounded-full"
@@ -133,7 +135,7 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
                   }}
                 />
               </div>
-              <span className="text-right">{fmtSeconds(zone.seconds)}</span>
+              <span className="text-right font-medium tabular-nums text-slate-200/92">{fmtSeconds(zone.seconds)}</span>
               <span className="text-right">{zone.pct.toFixed(0)}%</span>
             </div>
           ))}

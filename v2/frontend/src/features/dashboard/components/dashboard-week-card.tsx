@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { DashboardDayColumn } from '@/features/dashboard/components/dashboard-day-column';
 import { DashboardWeekSummaryCard } from '@/features/dashboard/components/dashboard-week-summary-card';
 import type { DashboardWeekRow } from '@/features/dashboard/types/dashboard';
+import { formatCompactDurationHours } from '@/features/dashboard/utils/format-duration';
 
 interface DashboardWeekCardProps {
   week: DashboardWeekRow;
@@ -44,11 +45,6 @@ function shortDayWithYear(iso: string): string {
 function fmtNumber(value: number | null): string {
   if (value === null || Number.isNaN(value)) return '-';
   return Math.round(value).toString();
-}
-
-function fmtDuration(hours: number): string {
-  if (hours < 1) return `${Math.round(hours * 60)}m`;
-  return `${hours.toFixed(1)}h`;
 }
 
 function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
@@ -97,7 +93,7 @@ function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
               <Clock3 className="h-3 w-3 text-cyan-300/90" />
               Time
             </p>
-            <p className="mt-1 text-base font-semibold text-cyan-100/92">{fmtDuration(summary.duration_h)}</p>
+            <p className="mt-1 text-base font-semibold text-cyan-100/92">{formatCompactDurationHours(summary.duration_h)}</p>
           </div>
           <div className="rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2">
             <p className="inline-flex items-center gap-1 text-[11px] font-medium text-lime-200/92">
