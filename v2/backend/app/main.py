@@ -1723,6 +1723,9 @@ def _expand_planned_segments(
                     f"Distance-only reps require running/treadmill with pace in: `{chunk}` (non-running should use time + bpm/%IF)."
                 )
                 continue
+            if pace is None and if_input is not None and if_input > 0 and threshold_pace_value > 0:
+                pace = threshold_pace_value / float(if_input)
+                if_input_source = if_input_source or "if_input"
             if pace is None and tss_input is not None and tss_input > 0 and threshold_pace_value > 0:
                 total_distance_km = rep_distance_km * float(max(reps, 1))
                 pace = (total_distance_km * (threshold_pace_value**2) * 100.0) / (3600.0 * float(tss_input))
@@ -1799,6 +1802,9 @@ def _expand_planned_segments(
                         f"Distance-only segment requires running/treadmill with pace in: `{chunk}` (non-running should use minutes + bpm/%IF)."
                     )
                     continue
+                if pace is None and if_input is not None and if_input > 0 and threshold_pace_value > 0:
+                    pace = threshold_pace_value / float(if_input)
+                    if_input_source = if_input_source or "if_input"
                 if pace is None and tss_input is not None and tss_input > 0 and threshold_pace_value > 0:
                     pace = (distance_km * (threshold_pace_value**2) * 100.0) / (3600.0 * float(tss_input))
                     if pace > 0:

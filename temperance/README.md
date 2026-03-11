@@ -262,7 +262,7 @@ Activity kinds recognized:
 
 Duration / distance tokens:
 - `90min`, `1h`, `45s`
-- `10km`, `400m` (distance-only requires running/treadmill + pace)
+- `10km`, `400m` (distance-only requires running/treadmill + pace or `%IF`)
 
 Intensity tokens (at least one is required per segment):
 - `@140bpm`
