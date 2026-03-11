@@ -28,11 +28,19 @@ function fmtSeconds(seconds: number): string {
 }
 
 const zoneColors: Record<string, string> = {
-  Z1: intensityHexFromKey('green'),
+  Z1: '#d7e4f2',
   Z2: intensityHexFromKey('blue'),
   Z3: intensityHexFromKey('orange'),
   Z4: intensityHexFromKey('red'),
   Z5: intensityHexFromKey('purple'),
+};
+
+const zoneTrackClassNames: Record<string, string> = {
+  Z1: 'border-slate-300/18 bg-slate-200/10',
+  Z2: 'border-border/70 bg-muted/70',
+  Z3: 'border-border/70 bg-muted/70',
+  Z4: 'border-border/70 bg-muted/70',
+  Z5: 'border-border/70 bg-muted/70',
 };
 
 const summaryToneClassNames = {
@@ -126,7 +134,9 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
                 />
                 {zone.zone}
               </span>
-              <div className="h-1.5 w-full overflow-hidden rounded-full border border-border/70 bg-muted/70">
+              <div
+                className={`h-1.5 w-full overflow-hidden rounded-full border ${zoneTrackClassNames[zone.zone] ?? 'border-border/70 bg-muted/70'}`}
+              >
                 <div
                   className="h-full rounded-full"
                   style={{
