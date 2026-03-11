@@ -188,6 +188,10 @@ function formatIfPctLabel(ifPct: number): string {
   return `${Math.round(ifPct)}%`;
 }
 
+function formatVdotLabel(vdot: number): string {
+  return `${Math.round(vdot)}v.`;
+}
+
 function shortWeekday(dayUtc: string, fallback: string): string {
   const parsed = new Date(`${dayUtc}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return fallback;
@@ -386,7 +390,6 @@ export function DashboardDayColumn({
                   metricPillLabel(activity.pace_label),
                   metricPillLabel(`TSS ${Math.round(activity.tss)}`),
                   metricPillLabel(`rTSS ${Math.round(activity.rtss)}`),
-                  activity.vdot != null ? metricPillLabel(`VDOT ${Math.round(activity.vdot)}`) : null,
                 ].filter((pill): pill is string => Boolean(pill));
                 return (
                   <div
@@ -448,6 +451,12 @@ export function DashboardDayColumn({
                         <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />
                         {formatIfPctLabel(activity.if_pct)}
                       </span>
+                      {activity.vdot != null ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92">
+                          <Gauge className="h-2.5 w-2.5 shrink-0 text-sky-300/80" />
+                          {formatVdotLabel(activity.vdot)}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -503,7 +512,7 @@ export function DashboardDayColumn({
                     <MetricRow
                       compactMobile={compactMobile}
                       icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
-                      text={compactLine([activity.pace_label, formatIfPctLabel(activity.if_pct), activity.vdot != null ? `VDOT ${Math.round(activity.vdot)}` : null])}
+                      text={compactLine([activity.pace_label, formatIfPctLabel(activity.if_pct), activity.vdot != null ? formatVdotLabel(activity.vdot) : null])}
                     />
                   </div>
                   <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
