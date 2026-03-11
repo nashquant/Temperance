@@ -59,9 +59,9 @@ export function AppLayout(): JSX.Element {
   };
 
   return (
-    <div className="min-h-[100dvh] overflow-hidden bg-background">
-      <div className="grid min-h-[100dvh] md:grid-cols-[250px_1fr]">
-        <aside className="sticky top-0 hidden h-screen overflow-y-auto border-r bg-card/50 p-4 md:block md:p-6">
+    <div className="h-[100dvh] overflow-hidden bg-background">
+      <div className="h-[100dvh]">
+        <aside className="fixed inset-y-0 left-0 z-20 hidden w-[250px] overflow-y-auto border-r bg-card/50 p-4 md:block md:p-6">
           <div className="mb-6 flex items-center justify-between">
             <h1 className="text-lg font-semibold">Temperance</h1>
           </div>
@@ -206,8 +206,8 @@ export function AppLayout(): JSX.Element {
           </div>
         ) : null}
 
-        <div className="flex min-h-[100dvh] min-w-0 flex-col overflow-hidden">
-          <header className="sticky top-0 z-20 border-b bg-background/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4">
+        <div className="flex h-[100dvh] min-w-0 flex-col overflow-y-auto md:pl-[250px]">
+          <header className="sticky top-0 z-30 border-b bg-background/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4">
             <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">{headerMeta.section}</p>
@@ -224,7 +224,7 @@ export function AppLayout(): JSX.Element {
               </Button>
             </div>
           </header>
-          <main className="min-h-0 flex-1 overflow-y-auto">
+          <main className="min-h-0 flex-1">
             <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
               <Outlet />
             </div>
