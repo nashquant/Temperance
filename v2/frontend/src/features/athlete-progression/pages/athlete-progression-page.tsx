@@ -24,6 +24,7 @@ const PROGRESSION_CHART_COLORS = {
   gray: '#f87171',
   graySoft: '#cbd5e1',
   grayDeep: '#dc2626',
+  redMuted: '#fb7185',
 } as const;
 
 function formatDay(iso: string, aggregation: ProgressionAggregation): string {
@@ -145,7 +146,7 @@ export function AthleteProgressionPage(): JSX.Element {
                 targetLabel="Daily Target"
                 series={[
                   { key: 'leg_elasticity', label: 'Bounce', color: PROGRESSION_CHART_COLORS.blueAlt },
-                  { key: 'pounding', label: 'Pounding', color: PROGRESSION_CHART_COLORS.grayDeep },
+                  { key: 'pounding', label: 'Pounding', color: PROGRESSION_CHART_COLORS.redMuted },
                 ]}
               />
 
@@ -157,7 +158,7 @@ export function AthleteProgressionPage(): JSX.Element {
                 targetLabel="Distance Target"
                 series={[
                   { key: 'distance_km', label: 'Distance', color: PROGRESSION_CHART_COLORS.blueAlt },
-                  { key: 'distance_eqv_km', label: 'Dist Eqv', color: PROGRESSION_CHART_COLORS.purpleSoft },
+                  { key: 'distance_eqv_km', label: 'Dist Eqv', color: PROGRESSION_CHART_COLORS.graySoft, dashed: true, strokeOpacity: 0.85, dotOpacity: 0.4 },
                 ]}
               />
 

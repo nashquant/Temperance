@@ -3022,9 +3022,17 @@ def _build_athlete_progression_payload(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    latest_lt_pace = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-    daily_tss_target = float(max(_weekly_tss_target_from_lt_pace(latest_lt_pace) / 7.0, 0.0))
-    daily_distance_target = float(max(_weekly_distance_target_from_lt_pace(latest_lt_pace) / 7.0, 0.0))
+    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    model_df["lt_pace_target_sec_per_km"] = model_df["day"].map(
+        lambda day: float(_curve_value_at(pace_curve, pace_default, pd.Timestamp(day).to_pydatetime()))
+    )
+    model_df["target_tss"] = pd.to_numeric(model_df["lt_pace_target_sec_per_km"], errors="coerce").map(
+        lambda pace: float(max(_weekly_tss_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
+    )
+    model_df["target_distance_km"] = pd.to_numeric(model_df["lt_pace_target_sec_per_km"], errors="coerce").map(
+        lambda pace: float(max(_weekly_distance_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
+    )
+    daily_tss_target_series = pd.to_numeric(model_df.get("target_tss"), errors="coerce").fillna(0.0)
 
     tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
     rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
@@ -3035,8 +3043,8 @@ def _build_athlete_progression_payload(
     rtss_emas = ema_multi(rtss_series, [100, 7, 10])
     model_df["fitness"] = tss_emas[42]
     model_df["fatigue"] = tss_emas[7]
-    model_df["overreach"] = (tss_emas[10] - daily_tss_target).clip(lower=0.0)
-    model_df["injury_risk"] = (rtss_emas[10] - daily_tss_target).clip(lower=0.0)
+    model_df["overreach"] = (tss_emas[10] - daily_tss_target_series).clip(lower=0.0)
+    model_df["injury_risk"] = (rtss_emas[10] - daily_tss_target_series).clip(lower=0.0)
     model_df["leg_elasticity"] = rtss_emas[100]
     model_df["pounding"] = rtss_emas[7]
 
@@ -3072,15 +3080,13 @@ def _build_athlete_progression_payload(
                 pounding=("pounding", "mean"),
                 vdot=("vdot", "max"),
                 vdot_max=("vdot_max", "max"),
+                target_tss=("target_tss", "sum"),
+                target_distance_km=("target_distance_km", "sum"),
             )
             .sort_values("period_start")
         )
-        points_df["target_tss"] = daily_tss_target * 7.0
-        points_df["target_distance_km"] = daily_distance_target * 7.0
     else:
         points_df = model_df.rename(columns={"day": "period_start"}).copy()
-        points_df["target_tss"] = daily_tss_target
-        points_df["target_distance_km"] = daily_distance_target
 
     summary = {
         "activities": int(len(filtered.index)),

@@ -114,8 +114,9 @@ function ProgressionTooltip({
   active,
   label,
   payload,
-}: TooltipProps<ValueType, NameType>): JSX.Element | null {
-  const visiblePayload = (payload ?? []).filter((entry) => String(entry.dataKey || '') !== '__target');
+  targetKey,
+}: TooltipProps<ValueType, NameType> & { targetKey?: string }): JSX.Element | null {
+  const visiblePayload = (payload ?? []).filter((entry) => String(entry.dataKey || '') !== String(targetKey || ''));
   if (!active || visiblePayload.length === 0) return null;
   return (
     <div
@@ -165,20 +166,16 @@ export function ProgressionLineChartCard({
         .filter((item) => item.yAxisId === 'right')
         .every((item) => shouldUseHourFormat(item.key))
     : false;
-  const targetValue = targetKey
-    ? (() => {
-        for (let i = data.length - 1; i >= 0; i -= 1) {
-          const candidate = Number(data[i]?.[targetKey] ?? 0);
-          if (Number.isFinite(candidate) && candidate > 0) return candidate;
-        }
-        return 0;
-      })()
-    : 0;
+  const hasTargetSeries = targetKey
+    ? data.some((row) => {
+        const candidate = Number(row?.[targetKey] ?? 0);
+        return Number.isFinite(candidate) && candidate > 0;
+      })
+    : false;
   const chartData = data.map((row) => {
     const nextRow: Record<string, number | string | null | undefined> = {
       ...row,
       _x: String(row.period_start ?? row.label ?? ''),
-      __target: targetValue > 0 ? targetValue : undefined,
     };
     for (const item of series) {
       const raw = nextRow[item.key];
@@ -188,6 +185,15 @@ export function ProgressionLineChartCard({
       }
       const parsed = Number(raw);
       nextRow[item.key] = Number.isFinite(parsed) ? parsed : null;
+    }
+    if (targetKey) {
+      const rawTarget = nextRow[targetKey];
+      if (rawTarget == null || rawTarget === '') {
+        nextRow[targetKey] = null;
+      } else {
+        const parsedTarget = Number(rawTarget);
+        nextRow[targetKey] = Number.isFinite(parsedTarget) ? parsedTarget : null;
+      }
     }
     return nextRow;
   }) as Array<Record<string, number | string | null | undefined>>;
@@ -242,7 +248,7 @@ export function ProgressionLineChartCard({
                 />
               ) : null}
               <Tooltip
-                content={<ProgressionTooltip />}
+                content={<ProgressionTooltip targetKey={targetKey} />}
                 labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
                 cursor={{ stroke: '#38bdf8', strokeOpacity: 0.3 }}
                 allowEscapeViewBox={{ x: true, y: true }}
@@ -264,10 +270,10 @@ export function ProgressionLineChartCard({
                   connectNulls
                 />
               ))}
-              {targetKey && targetValue > 0 ? (
+              {targetKey && hasTargetSeries ? (
                 <Line
                   type="monotone"
-                  dataKey="__target"
+                  dataKey={targetKey}
                   yAxisId="left"
                   stroke="#cbd5e1"
                   strokeOpacity={0.92}
