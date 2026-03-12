@@ -18,6 +18,12 @@
   --border: 214 32% 87%;
   --input: 214 32% 87%;
   --ring: 221 83% 53%;
+  --card-chrome-edge: 216 10% 38%;
+  --card-chrome-highlight: 210 12% 78%;
+  --card-chrome-shadow: 220 32% 8%;
+  --card-chrome-top: 214 12% 68%;
+  --card-chrome-mid: 217 12% 52%;
+  --card-chrome-bottom: 221 16% 34%;
 }
 
 .dark {
@@ -36,6 +42,12 @@
   --border: 223 20% 25%;
   --input: 223 20% 25%;
   --ring: 212 93% 68%;
+  --card-chrome-edge: 215 10% 20%;
+  --card-chrome-highlight: 210 10% 62%;
+  --card-chrome-shadow: 222 45% 3%;
+  --card-chrome-top: 214 10% 16%;
+  --card-chrome-mid: 218 10% 11%;
+  --card-chrome-bottom: 222 16% 6%;
 }
 
 @layer base {
@@ -55,5 +67,33 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer components {
+  .chrome-card {
+    position: relative;
+    overflow: hidden;
+    border-color: hsl(var(--card-chrome-edge) / 0.82);
+    background:
+      linear-gradient(180deg, hsl(var(--card-chrome-top) / 0.985) 0%, hsl(var(--card-chrome-mid) / 0.97) 42%, hsl(var(--card-chrome-bottom) / 1) 100%);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--card-chrome-highlight) / 0.14),
+      inset 0 -1px 0 hsl(var(--card-chrome-shadow) / 0.52),
+      inset 0 0 0 1px hsl(var(--card-chrome-highlight) / 0.03),
+      0 24px 42px -26px hsl(var(--card-chrome-shadow) / 0.9);
+    backdrop-filter: blur(16px) saturate(135%);
+  }
+
+  .chrome-card::before {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, hsl(var(--card-chrome-highlight) / 0.06), transparent 18%),
+      linear-gradient(180deg, transparent 72%, hsl(0 0% 100% / 0.025) 100%);
+    opacity: 0.42;
   }
 }

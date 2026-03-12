@@ -33,19 +33,29 @@ interface DashboardDayColumnProps {
 }
 
 const intensityClasses: Record<string, string> = {
-  green: 'border-[rgba(205,213,225,0.5)] bg-[linear-gradient(180deg,rgba(203,213,225,0.16),rgba(15,23,42,0.24))]',
-  blue: 'border-[rgba(79,179,255,0.48)] bg-[linear-gradient(180deg,rgba(79,179,255,0.14),rgba(15,23,42,0.24))]',
-  orange: 'border-[rgba(240,166,58,0.5)] bg-[linear-gradient(180deg,rgba(240,166,58,0.15),rgba(15,23,42,0.24))]',
-  red: 'border-[rgba(239,106,106,0.48)] bg-[linear-gradient(180deg,rgba(239,106,106,0.14),rgba(15,23,42,0.24))]',
-  purple: 'border-[rgba(139,108,246,0.48)] bg-[linear-gradient(180deg,rgba(139,108,246,0.14),rgba(15,23,42,0.24))]',
+  green:
+    'chrome-card border-[rgba(148,163,184,0.26)] bg-[linear-gradient(180deg,rgba(66,74,84,0.97),rgba(28,34,43,0.985)_46%,rgba(8,12,20,1))] shadow-[0_18px_32px_rgba(2,6,23,0.34),inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.34)]',
+  blue:
+    'chrome-card border-[rgba(100,116,139,0.26)] bg-[linear-gradient(180deg,rgba(61,69,82,0.97),rgba(24,31,43,0.985)_46%,rgba(7,11,20,1))] shadow-[0_18px_32px_rgba(2,6,23,0.34),inset_0_1px_0_rgba(125,211,252,0.07),inset_0_-1px_0_rgba(0,0,0,0.34)]',
+  orange:
+    'chrome-card border-[rgba(120,113,108,0.28)] bg-[linear-gradient(180deg,rgba(76,66,57,0.97),rgba(36,30,27,0.985)_46%,rgba(11,10,12,1))] shadow-[0_18px_32px_rgba(2,6,23,0.34),inset_0_1px_0_rgba(251,191,36,0.07),inset_0_-1px_0_rgba(0,0,0,0.34)]',
+  red:
+    'chrome-card border-[rgba(120,113,108,0.28)] bg-[linear-gradient(180deg,rgba(79,60,64,0.97),rgba(38,24,29,0.985)_46%,rgba(12,9,12,1))] shadow-[0_18px_32px_rgba(2,6,23,0.34),inset_0_1px_0_rgba(248,113,113,0.07),inset_0_-1px_0_rgba(0,0,0,0.34)]',
+  purple:
+    'chrome-card border-[rgba(100,116,139,0.26)] bg-[linear-gradient(180deg,rgba(66,62,89,0.97),rgba(28,24,47,0.985)_46%,rgba(8,10,20,1))] shadow-[0_18px_32px_rgba(2,6,23,0.34),inset_0_1px_0_rgba(196,181,253,0.07),inset_0_-1px_0_rgba(0,0,0,0.34)]',
 };
 
 const plannedIntensityClasses: Record<string, string> = {
-  green: 'border-[rgba(205,213,225,0.66)] bg-[linear-gradient(180deg,rgba(203,213,225,0.12),rgba(15,23,42,0.2))]',
-  blue: 'border-[rgba(79,179,255,0.6)] bg-[linear-gradient(180deg,rgba(79,179,255,0.1),rgba(15,23,42,0.2))]',
-  orange: 'border-[rgba(240,166,58,0.62)] bg-[linear-gradient(180deg,rgba(240,166,58,0.1),rgba(15,23,42,0.2))]',
-  red: 'border-[rgba(239,106,106,0.6)] bg-[linear-gradient(180deg,rgba(239,106,106,0.1),rgba(15,23,42,0.2))]',
-  purple: 'border-[rgba(139,108,246,0.6)] bg-[linear-gradient(180deg,rgba(139,108,246,0.1),rgba(15,23,42,0.2))]',
+  green:
+    'chrome-card border-[rgba(148,163,184,0.3)] bg-[linear-gradient(180deg,rgba(76,86,96,0.94),rgba(34,41,50,0.97)_46%,rgba(12,17,26,0.99))] shadow-[0_16px_28px_rgba(2,6,23,0.3),inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.3)]',
+  blue:
+    'chrome-card border-[rgba(100,116,139,0.3)] bg-[linear-gradient(180deg,rgba(72,82,94,0.94),rgba(30,38,50,0.97)_46%,rgba(11,16,26,0.99))] shadow-[0_16px_28px_rgba(2,6,23,0.3),inset_0_1px_0_rgba(125,211,252,0.06),inset_0_-1px_0_rgba(0,0,0,0.3)]',
+  orange:
+    'chrome-card border-[rgba(120,113,108,0.3)] bg-[linear-gradient(180deg,rgba(84,73,63,0.94),rgba(41,34,30,0.97)_46%,rgba(15,13,14,0.99))] shadow-[0_16px_28px_rgba(2,6,23,0.3),inset_0_1px_0_rgba(251,191,36,0.06),inset_0_-1px_0_rgba(0,0,0,0.3)]',
+  red:
+    'chrome-card border-[rgba(120,113,108,0.3)] bg-[linear-gradient(180deg,rgba(86,69,72,0.94),rgba(42,29,33,0.97)_46%,rgba(15,12,15,0.99))] shadow-[0_16px_28px_rgba(2,6,23,0.3),inset_0_1px_0_rgba(248,113,113,0.06),inset_0_-1px_0_rgba(0,0,0,0.3)]',
+  purple:
+    'chrome-card border-[rgba(100,116,139,0.3)] bg-[linear-gradient(180deg,rgba(73,69,97,0.94),rgba(31,27,50,0.97)_46%,rgba(11,14,26,0.99))] shadow-[0_16px_28px_rgba(2,6,23,0.3),inset_0_1px_0_rgba(196,181,253,0.06),inset_0_-1px_0_rgba(0,0,0,0.3)]',
 };
 
 const customBorderAccentClasses: Record<string, string> = {
@@ -216,6 +226,39 @@ function formatIfPctLabel(ifPct: number): string {
 
 function formatVdotLabel(vdot: number): string {
   return `${Math.round(vdot)}v.`;
+}
+
+type MetricBadgeTone = 'duration' | 'distance' | 'pace' | 'load' | 'if' | 'vdot';
+
+interface MetricBadgeItem {
+  tone: MetricBadgeTone;
+  label: string;
+}
+
+function metricBadgeIcon(tone: MetricBadgeTone): JSX.Element {
+  switch (tone) {
+    case 'duration':
+      return <Clock3 className="h-2.5 w-2.5 shrink-0 text-cyan-300/80" />;
+    case 'distance':
+      return <Route className="h-2.5 w-2.5 shrink-0 text-emerald-300/80" />;
+    case 'pace':
+      return <PersonStanding className="h-2.5 w-2.5 shrink-0 text-violet-300/80" />;
+    case 'load':
+      return <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />;
+    case 'if':
+      return <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />;
+    case 'vdot':
+      return <Gauge className="h-2.5 w-2.5 shrink-0 text-sky-300/80" />;
+  }
+}
+
+function MetricBadge({ item }: { item: MetricBadgeItem }): JSX.Element {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92">
+      {metricBadgeIcon(item.tone)}
+      {item.label}
+    </span>
+  );
 }
 
 function shortWeekday(dayUtc: string, fallback: string): string {
@@ -468,12 +511,16 @@ export function DashboardDayColumn({
               const kindLabel = activityTypeLabel(Boolean(activity.is_custom));
               const titleIcon = activityTitleIcon(activity.sport);
               if (compactMobile && mobileFullWidth) {
-                const metricPills = [
-                  metricPillLabel(durationLabel),
-                  metricPillLabel(compactDistanceLabel(activity.distance_label)),
-                  metricPillLabel(activity.pace_label),
-                  metricPillLabel(primaryLoadLabel(activity.tss, activity.rtss, runningLike)),
-                ].filter((pill): pill is string => Boolean(pill));
+                const metricPills: MetricBadgeItem[] = [
+                  metricPillLabel(durationLabel) ? { tone: 'duration', label: metricPillLabel(durationLabel)! } : null,
+                  metricPillLabel(compactDistanceLabel(activity.distance_label))
+                    ? { tone: 'distance', label: metricPillLabel(compactDistanceLabel(activity.distance_label))! }
+                    : null,
+                  metricPillLabel(activity.pace_label) ? { tone: 'pace', label: metricPillLabel(activity.pace_label)! } : null,
+                  metricPillLabel(primaryLoadLabel(activity.tss, activity.rtss, runningLike))
+                    ? { tone: 'load', label: metricPillLabel(primaryLoadLabel(activity.tss, activity.rtss, runningLike))! }
+                    : null,
+                ].filter((pill): pill is MetricBadgeItem => Boolean(pill));
                 return (
                   <div
                     key={activity.activity_id}
@@ -528,22 +575,11 @@ export function DashboardDayColumn({
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {metricPills.slice(0, 5).map((pill) => (
-                        <span
-                          key={`${activity.activity_id}-${pill}`}
-                          className="rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92"
-                        >
-                          {pill}
-                        </span>
+                        <MetricBadge key={`${activity.activity_id}-${pill.tone}-${pill.label}`} item={pill} />
                       ))}
-                      <span className="inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92">
-                        <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />
-                        {formatIfPctLabel(activity.if_pct)}
-                      </span>
+                      <MetricBadge item={{ tone: 'if', label: formatIfPctLabel(activity.if_pct) }} />
                       {activity.vdot != null ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92">
-                          <Gauge className="h-2.5 w-2.5 shrink-0 text-sky-300/80" />
-                          {formatVdotLabel(activity.vdot)}
-                        </span>
+                        <MetricBadge item={{ tone: 'vdot', label: formatVdotLabel(activity.vdot) }} />
                       ) : null}
                     </div>
                   </div>
@@ -646,12 +682,16 @@ export function DashboardDayColumn({
                   const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
                   const runningLike = isRunningLikeSport(item.activity.activity);
                   const titleIcon = activityTitleIcon(item.activity.activity);
-                  const metricPills = [
-                    metricPillLabel(durationLabel),
-                    metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`),
-                    metricPillLabel(item.activity.pace_label),
-                    metricPillLabel(primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike)),
-                  ].filter((pill): pill is string => Boolean(pill));
+                  const metricPills: MetricBadgeItem[] = [
+                    metricPillLabel(durationLabel) ? { tone: 'duration', label: metricPillLabel(durationLabel)! } : null,
+                    metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`)
+                      ? { tone: 'distance', label: metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`)! }
+                      : null,
+                    metricPillLabel(item.activity.pace_label) ? { tone: 'pace', label: metricPillLabel(item.activity.pace_label)! } : null,
+                    metricPillLabel(primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike))
+                      ? { tone: 'load', label: metricPillLabel(primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike))! }
+                      : null,
+                  ].filter((pill): pill is MetricBadgeItem => Boolean(pill));
                   return (
                 <div
                   key={`${item.activity.day_utc}-${item.activity.line_no}`}
@@ -712,17 +752,9 @@ export function DashboardDayColumn({
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {metricPills.map((pill) => (
-                      <span
-                        key={`${item.activity.day_utc}-${item.activity.line_no}-${pill}`}
-                        className="rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92"
-                      >
-                        {pill}
-                      </span>
+                      <MetricBadge key={`${item.activity.day_utc}-${item.activity.line_no}-${pill.tone}-${pill.label}`} item={pill} />
                     ))}
-                    <span className="inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92">
-                      <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />
-                      {formatIfPctLabel(item.activity.if_pct)}
-                    </span>
+                    <MetricBadge item={{ tone: 'if', label: formatIfPctLabel(item.activity.if_pct) }} />
                   </div>
                 </div>
                   );
