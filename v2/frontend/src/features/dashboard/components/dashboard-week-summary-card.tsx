@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Clock3, Flame, Gauge, HeartPulse, Route, Ruler } from 'lucide-react';
+import { Activity, AlertTriangle, Clock3, Flame, Gauge, Route, Ruler } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -74,11 +74,6 @@ const summaryToneClassNames = {
     icon: 'text-blue-300/90',
     value: 'text-blue-100/92',
   },
-  fitness: {
-    label: 'text-rose-200/92',
-    icon: 'text-rose-300/90',
-    value: 'text-rose-100/92',
-  },
   risk: {
     label: 'text-orange-200/92',
     icon: 'text-orange-300/90',
@@ -89,7 +84,7 @@ const summaryToneClassNames = {
 export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summary }: DashboardWeekSummaryCardProps): JSX.Element {
   return (
     <Card className="rounded-xl border-border/80 bg-card/80 shadow-sm lg:h-[430px]">
-      <CardContent className="flex h-full flex-col space-y-2 overflow-y-auto p-2">
+      <CardContent className="flex h-full flex-col space-y-3 overflow-y-auto p-2.5">
         <div className="space-y-1">
           <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-semibold tracking-wide">
             Week {weekNumber}
@@ -99,7 +94,7 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
           </p>
         </div>
 
-        <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-0.5">
+        <div className="grid grid-cols-[1fr_auto] gap-x-1.5 gap-y-1">
           <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.vdot.label}`}>
             <Gauge className={`h-3 w-3 ${summaryToneClassNames.vdot.icon}`} />
             VDOT Max
@@ -115,8 +110,6 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
           <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.calories.value}`}>{fmtNumber(summary.calories)}</p>
           <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.stress.label}`}><Activity className={`h-3 w-3 ${summaryToneClassNames.stress.icon}`} />TSS | rTSS</p>
           <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
-          <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.fitness.label}`}><HeartPulse className={`h-3 w-3 ${summaryToneClassNames.fitness.icon}`} />Fit | Fatg</p>
-          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.fitness.value}`}>{fmtNumber(summary.fitness)} | {fmtNumber(summary.fatigue)}</p>
           <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.risk.label}`}><AlertTriangle className={`h-3 w-3 ${summaryToneClassNames.risk.icon}`} />Ovr | Risk</p>
           <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.risk.value}`}>{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
         </div>

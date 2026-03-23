@@ -1,4 +1,4 @@
-import { Activity, Bike, Check, Clock3, Dumbbell, Gauge, HeartPulse, PersonStanding, Plus, Route, RotateCcw, Waves, X } from 'lucide-react';
+import { Activity, Bike, Check, Clock3, Dumbbell, Gauge, HeartPulse, PersonStanding, Plus, Route, RotateCcw, Waves, Zap, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -66,34 +66,41 @@ const customBorderAccentClasses: Record<string, string> = {
   purple: 'border-[rgba(139,108,246,0.74)] outline-[rgba(196,181,253,0.3)]',
 };
 
-function fmtMeta(day: DashboardDayColumnType): Array<{ key: string; label: string; value: string; tone: string; iconTone: string }> {
-  const parts: Array<{ key: string; label: string; value: string; tone: string; iconTone: string }> = [];
-  parts.push({
-    key: 'distance',
-    label: 'Dist',
-    value: `${Math.round(day.meta.distance_eqv_km || 0)} km`,
-    tone: 'text-slate-300/88',
-    iconTone: 'text-emerald-300/90',
-  });
-  const hasFatigueExpected = Boolean(day.meta.show_fatigue_expected && day.meta.fatigue_expected !== null);
-  if (hasFatigueExpected) {
-    parts.push({
-      key: 'fatg',
-      label: 'fatg',
-      value: `${Math.round(day.meta.fatigue_expected ?? 0)}`,
-      tone: 'text-slate-300/88',
-      iconTone: 'text-rose-300/90',
-    });
-  } else if (day.meta.fatigue !== null) {
-    parts.push({
-      key: 'fatg',
-      label: 'fatg',
-      value: `${Math.round(day.meta.fatigue)}`,
-      tone: 'text-slate-300/88',
-      iconTone: 'text-rose-300/90',
+type DayMetaItem = {
+  key: string;
+  icon: 'distance' | 'fitness' | 'fatigue';
+  value: string;
+};
+
+function fmtMeta(day: DashboardDayColumnType): DayMetaItem[] {
+  const items: DayMetaItem[] = [
+    {
+      key: 'distance',
+      icon: 'distance',
+      value: `${Math.round(day.meta.distance_eqv_km || 0)}km`,
+    },
+  ];
+
+  if (day.meta.fitness !== null) {
+    items.push({
+      key: 'fitness',
+      icon: 'fitness',
+      value: `${Math.round(day.meta.fitness)}`,
     });
   }
-  return parts;
+
+  const fatigueValue = day.meta.show_fatigue_expected && day.meta.fatigue_expected !== null
+    ? day.meta.fatigue_expected
+    : day.meta.fatigue;
+  if (fatigueValue !== null) {
+    items.push({
+      key: 'fatigue',
+      icon: 'fatigue',
+      value: `${Math.round(fatigueValue)}`,
+    });
+  }
+
+  return items;
 }
 
 function formatActivityTitle(raw: string): string {
@@ -155,6 +162,11 @@ function compactLine(parts: Array<string | null | undefined>): string {
 
 function compactDistanceLabel(label: string | null | undefined): string {
   return String(label || '').trim().replace(/\/km\b/gi, '').replace(/km\s*eqv\.?/gi, 'km');
+}
+
+function compactPaceLabel(label: string | null | undefined): string {
+  const cleaned = String(label || '').trim().replace(/\/km\b/gi, '');
+  return cleaned.replace(/(\d{1,2}):(\d{2})/, "$1'$2''");
 }
 
 function deriveCompactTimeLabel(
@@ -242,11 +254,11 @@ function metricBadgeIcon(tone: MetricBadgeTone): JSX.Element {
     case 'distance':
       return <Route className="h-2.5 w-2.5 shrink-0 text-emerald-300/80" />;
     case 'pace':
-      return <PersonStanding className="h-2.5 w-2.5 shrink-0 text-violet-300/80" />;
+      return <Gauge className="h-2.5 w-2.5 shrink-0 text-violet-300/80" />;
     case 'load':
       return <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />;
     case 'if':
-      return <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />;
+      return <Zap className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />;
     case 'vdot':
       return <Gauge className="h-2.5 w-2.5 shrink-0 text-sky-300/80" />;
   }
@@ -261,12 +273,6 @@ function MetricBadge({ item }: { item: MetricBadgeItem }): JSX.Element {
   );
 }
 
-function shortWeekday(dayUtc: string, fallback: string): string {
-  const parsed = new Date(`${dayUtc}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return fallback;
-  return new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(parsed);
-}
-
 function formatTssLabel(tss: number, rtss: number, showBoth: boolean, runningLike = false): string {
   const roundedTss = Math.round(tss);
   const roundedRtss = Math.round(rtss);
@@ -276,12 +282,6 @@ function formatTssLabel(tss: number, rtss: number, showBoth: boolean, runningLik
 
 function primaryLoadLabel(tss: number, rtss: number, runningLike: boolean): string {
   return runningLike ? `rTSS ${Math.round(rtss)}` : `TSS ${Math.round(tss)}`;
-}
-
-function dayNumber(dayUtc: string): string {
-  const parsed = new Date(`${dayUtc}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return '--';
-  return new Intl.DateTimeFormat('en-US', { day: '2-digit' }).format(parsed);
 }
 
 function mobileActivitySectionLabel(day: DashboardDayColumnType): string {
@@ -352,91 +352,58 @@ export function DashboardDayColumn({
   }
 
   const cardClassName = cn(
-    'overflow-hidden rounded-[1.25rem] border border-[rgba(51,65,85,0.72)] bg-[linear-gradient(180deg,rgba(10,18,33,0.99),rgba(6,12,23,0.98))] shadow-[0_20px_44px_rgba(2,6,23,0.36),inset_0_1px_0_rgba(255,255,255,0.05),inset_0_0_0_1px_rgba(15,23,42,0.75)]',
+    'rounded-xl border-border/80 bg-card/75 shadow-sm',
     compactMobile
       ? mobileFullWidth
         ? 'w-full min-w-0'
         : 'w-[240px] shrink-0 min-h-[340px]'
       : 'sm:min-h-[340px] lg:h-[430px]',
-    day.is_today && !compactMobile
-      ? 'border-[rgba(79,70,229,0.58)] shadow-[0_24px_50px_rgba(2,6,23,0.44),inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(129,140,248,0.18)]'
-      : undefined,
+    day.is_today ? 'border-primary/70' : undefined,
   );
 
   const contentClassName = cn(
-    'relative flex h-full flex-col',
-    compactMobile && mobileFullWidth ? 'gap-2 p-2' : 'gap-2 p-2.5',
+    'flex h-full flex-col',
+    compactMobile ? 'gap-1.5 p-2' : 'gap-2 p-2.5',
   );
 
   return (
     <Card className={cardClassName}>
       <CardContent className={contentClassName}>
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[linear-gradient(180deg,rgba(96,165,250,0.07),rgba(168,85,247,0.05)_38%,transparent)]" />
-        <div
-          className={cn(
-            'relative rounded-[1rem] border border-[rgba(71,85,105,0.55)] bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_0_1px_rgba(15,23,42,0.42),0_10px_24px_rgba(2,6,23,0.18)] backdrop-blur-sm',
-            compactMobile && mobileFullWidth
-              ? 'rounded-[1.05rem] border-white/14 bg-[linear-gradient(180deg,rgba(30,41,59,0.72),rgba(15,23,42,0.32))] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_0_0_1px_rgba(15,23,42,0.46),0_14px_30px_rgba(2,6,23,0.24)]'
-              : undefined,
-          )}
-        >
-          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(125,211,252,0.22)] to-transparent" />
-          <div className="pointer-events-none absolute inset-y-3 left-0 w-px bg-gradient-to-b from-transparent via-[rgba(129,140,248,0.14)] to-transparent" />
-          <div className="pointer-events-none absolute inset-y-3 right-0 w-px bg-gradient-to-b from-transparent via-[rgba(192,132,252,0.12)] to-transparent" />
-          <div className="space-y-0.5">
-            <div className="flex min-h-[24px] items-center gap-1.5">
-              <div className="flex min-w-0 items-center gap-2 overflow-hidden">
-                <div
-                  className={cn(
-                    'inline-flex shrink-0 items-baseline gap-1.5',
-                    compactMobile && mobileFullWidth
-                      ? 'rounded-full border border-white/10 bg-black/15 px-2 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
-                      : undefined,
-                  )}
-                >
-                  <p
-                    className={cn(
-                      compactMobile ? 'text-[15px] font-semibold leading-4' : 'text-[17px] font-semibold leading-5',
-                      day.is_today ? 'text-primary' : 'text-foreground',
-                    )}
-                  >
-                    {dayNumber(day.day_utc)}
-                  </p>
-                  <p
-                    className={cn(
-                      compactMobile ? 'text-[11px] font-medium leading-4' : 'text-[11.5px] font-medium leading-5',
-                      'uppercase tracking-[0.14em] text-slate-400/88',
-                    )}
-                  >
-                    {shortWeekday(day.day_utc, day.day_label)}
-                  </p>
-                </div>
-                <div className="flex min-w-0 items-center gap-2 overflow-hidden text-[10px] leading-4">
-                  {metaItems.map((item) => (
-                    <div key={item.key} className={cn('inline-flex min-w-0 items-center gap-1', item.tone)}>
-                      {item.key === 'distance' ? (
-                        <Route className={cn('h-3 w-3 shrink-0', item.iconTone)} />
-                      ) : (
-                        <HeartPulse className={cn('h-3 w-3 shrink-0', item.iconTone)} />
-                      )}
-                      <span className="truncate text-slate-300/88">
-                        {item.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+        <div className="space-y-1">
+          <div className="flex min-h-[24px] items-center">
+            <p
+              className={cn(
+                compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[13px] font-semibold leading-5',
+                day.is_today ? 'text-sky-100' : 'text-slate-50',
+              )}
+            >
+              {day.day_label}
+            </p>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
+              onClick={() => onAddPlannedActivity?.(day.day_utc)}
+              disabled={addingPlannedActivity}
+              aria-label={`Add activity for ${day.day_label}`}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div
+            className={cn(
+              'flex min-h-[20px] flex-nowrap items-center gap-2 overflow-hidden text-muted-foreground',
+              compactMobile ? 'text-[10.5px] leading-[1.2]' : 'text-[11px] leading-[1.25]',
+            )}
+          >
+            {metaItems.map((item) => (
+              <div key={item.key} className="inline-flex min-w-0 shrink items-center gap-1 whitespace-nowrap">
+                {item.icon === 'distance' ? <Route className="h-3 w-3 text-emerald-300/90" /> : null}
+                {item.icon === 'fitness' ? <Gauge className="h-3 w-3 text-sky-300/90" /> : null}
+                {item.icon === 'fatigue' ? <HeartPulse className="h-3 w-3 text-rose-300/90" /> : null}
+                <span className="font-medium text-slate-200/92 tabular-nums">{item.value}</span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="ml-auto h-6 w-6 rounded-full border border-white/8 bg-white/[0.025] text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] hover:bg-white/[0.05] hover:text-foreground"
-                onClick={() => onAddPlannedActivity?.(day.day_utc)}
-                disabled={addingPlannedActivity}
-                aria-label={`Add activity for ${shortWeekday(day.day_utc, day.day_label)}`}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            </div>
+            ))}
           </div>
         </div>
 
@@ -516,7 +483,9 @@ export function DashboardDayColumn({
                   metricPillLabel(compactDistanceLabel(activity.distance_label))
                     ? { tone: 'distance', label: metricPillLabel(compactDistanceLabel(activity.distance_label))! }
                     : null,
-                  metricPillLabel(activity.pace_label) ? { tone: 'pace', label: metricPillLabel(activity.pace_label)! } : null,
+                  metricPillLabel(compactPaceLabel(activity.pace_label))
+                    ? { tone: 'pace', label: metricPillLabel(compactPaceLabel(activity.pace_label))! }
+                    : null,
                   metricPillLabel(primaryLoadLabel(activity.tss, activity.rtss, runningLike))
                     ? { tone: 'load', label: metricPillLabel(primaryLoadLabel(activity.tss, activity.rtss, runningLike))! }
                     : null,
@@ -577,10 +546,12 @@ export function DashboardDayColumn({
                       {metricPills.slice(0, 5).map((pill) => (
                         <MetricBadge key={`${activity.activity_id}-${pill.tone}-${pill.label}`} item={pill} />
                       ))}
-                      <MetricBadge item={{ tone: 'if', label: formatIfPctLabel(activity.if_pct) }} />
-                      {activity.vdot != null ? (
-                        <MetricBadge item={{ tone: 'vdot', label: formatVdotLabel(activity.vdot) }} />
-                      ) : null}
+                      <div className="flex flex-col gap-1">
+                        {activity.vdot != null ? (
+                          <MetricBadge item={{ tone: 'vdot', label: formatVdotLabel(activity.vdot) }} />
+                        ) : null}
+                        <MetricBadge item={{ tone: 'if', label: formatIfPctLabel(activity.if_pct) }} />
+                      </div>
                     </div>
                   </div>
                 );
@@ -687,7 +658,9 @@ export function DashboardDayColumn({
                     metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`)
                       ? { tone: 'distance', label: metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`)! }
                       : null,
-                    metricPillLabel(item.activity.pace_label) ? { tone: 'pace', label: metricPillLabel(item.activity.pace_label)! } : null,
+                    metricPillLabel(compactPaceLabel(item.activity.pace_label))
+                      ? { tone: 'pace', label: metricPillLabel(compactPaceLabel(item.activity.pace_label))! }
+                      : null,
                     metricPillLabel(primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike))
                       ? { tone: 'load', label: metricPillLabel(primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike))! }
                       : null,

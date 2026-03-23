@@ -29,6 +29,14 @@ TEMPERANCE_SRC = Path(__file__).resolve().parents[3] / "temperance"
 if str(TEMPERANCE_SRC) not in sys.path:
     sys.path.insert(0, str(TEMPERANCE_SRC))
 
+from activity_parsing import (  # noqa: E402
+    expand_planned_segments as _shared_expand_planned_segments,
+    normalize_plan_text as _shared_normalize_plan_text,
+    parse_dated_activity_entry as _shared_parse_dated_activity_entry,
+    planned_row_signature as _shared_planned_row_signature,
+    split_dated_activity_entries as _shared_split_dated_activity_entries,
+    strip_meridiem_tokens as _shared_strip_meridiem_tokens,
+)
 from config import load_config  # noqa: E402
 
 
@@ -60,6 +68,7 @@ from db import (  # noqa: E402
     get_activity_records_df,
     get_planned_activities_df,
     get_runs_df,
+    get_last_sync_for_source_like,
     get_sleep_df,
     get_setting,
     get_table_counts,
@@ -91,11 +100,14 @@ SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
+SETTINGS_KEY_USER_TIMEZONE = "user_timezone_v1"
 APP_TIMEZONE_NAME = str(os.getenv("TEMPERANCE_TIMEZONE") or os.getenv("TZ") or "America/Sao_Paulo").strip() or "America/Sao_Paulo"
 AUTO_SYNC_ENABLED = str(os.getenv("TEMPERANCE_AUTO_SYNC_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
-AUTO_SYNC_INTERVAL_SECONDS = max(60, int(str(os.getenv("TEMPERANCE_AUTO_SYNC_INTERVAL_SECONDS", "900") or "900")))
+AUTO_SYNC_INTERVAL_SECONDS = max(60, int(str(os.getenv("TEMPERANCE_AUTO_SYNC_INTERVAL_SECONDS", "1800") or "1800")))
 AUTO_SYNC_OWNER = str(os.getenv("TEMPERANCE_AUTO_SYNC_OWNER", "admin") or "admin").strip() or "admin"
 AUTO_SYNC_DAYS_BACK = max(1, min(int(str(os.getenv("TEMPERANCE_AUTO_SYNC_DAYS_BACK", "2") or "2")), 7))
+AUTO_SYNC_MIN_INTERVAL_SECONDS = 30 * 60
+AUTO_SYNC_LOCAL_WINDOWS = ((8, 10), (20, 22))
 
 
 def _now_app_local() -> pd.Timestamp:
@@ -170,6 +182,7 @@ class UpdateSettingsRequest(BaseModel):
     lthr_curve: list[dict[str, Any]] | None = None
     lt_pace_curve: list[dict[str, Any]] | None = None
     injury_windows: list[dict[str, Any]] | None = None
+    timezone: str | None = None
 
 
 class SyncRequest(BaseModel):
@@ -447,6 +460,97 @@ def _rounded_optional(value: Any, digits: int = 2) -> float | None:
 
 def _settings_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _normalize_timezone_name(value: str | None, fallback: str = "America/Sao_Paulo") -> str:
+    for candidate in (value, APP_TIMEZONE_NAME, fallback, "UTC"):
+        name = str(candidate or "").strip()
+        if not name:
+            continue
+        try:
+            ZoneInfo(name)
+            return name
+        except Exception:
+            continue
+    return "UTC"
+
+
+def _owner_timezone_info(db_path: Path) -> tuple[str, str]:
+    configured = str(get_setting(db_path, SETTINGS_KEY_USER_TIMEZONE) or "").strip()
+    if configured:
+        try:
+            ZoneInfo(configured)
+            return configured, "settings"
+        except Exception:
+            pass
+    return _normalize_timezone_name(APP_TIMEZONE_NAME), "app_default"
+
+
+def _auto_sync_window_labels() -> list[str]:
+    return [f"{start:02d}:00-{end:02d}:00" for start, end in AUTO_SYNC_LOCAL_WINDOWS]
+
+
+def _is_auto_sync_local_time_allowed(now_local: datetime) -> bool:
+    hour_value = now_local.hour + (now_local.minute / 60.0) + (now_local.second / 3600.0)
+    return any(start <= hour_value < end for start, end in AUTO_SYNC_LOCAL_WINDOWS)
+
+
+def _parse_sync_time_utc(value: str | None) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _auto_sync_gate(owner: str, db_path: Path, now_utc: datetime | None = None) -> dict[str, Any]:
+    tz_name, tz_source = _owner_timezone_info(db_path)
+    zone = ZoneInfo(tz_name)
+    current_utc = now_utc.astimezone(timezone.utc) if now_utc is not None else datetime.now(timezone.utc)
+    now_local = current_utc.astimezone(zone)
+    if not _is_auto_sync_local_time_allowed(now_local):
+        return {
+            "allowed": False,
+            "reason": "outside_window",
+            "owner": owner,
+            "timezone": tz_name,
+            "timezone_source": tz_source,
+            "windows_local": _auto_sync_window_labels(),
+            "now_local": now_local.isoformat(),
+        }
+
+    last_garmin_sync = get_last_sync_for_source_like(db_path, "%garmin%")
+    last_sync_time = _parse_sync_time_utc((last_garmin_sync or {}).get("sync_time_utc"))
+    if last_sync_time is not None:
+        elapsed_seconds = (current_utc - last_sync_time).total_seconds()
+        if elapsed_seconds < AUTO_SYNC_MIN_INTERVAL_SECONDS:
+            return {
+                "allowed": False,
+                "reason": "cooldown",
+                "owner": owner,
+                "timezone": tz_name,
+                "timezone_source": tz_source,
+                "windows_local": _auto_sync_window_labels(),
+                "now_local": now_local.isoformat(),
+                "last_sync": last_garmin_sync,
+                "cooldown_remaining_seconds": max(0, int(AUTO_SYNC_MIN_INTERVAL_SECONDS - elapsed_seconds)),
+            }
+
+    return {
+        "allowed": True,
+        "reason": "ok",
+        "owner": owner,
+        "timezone": tz_name,
+        "timezone_source": tz_source,
+        "windows_local": _auto_sync_window_labels(),
+        "now_local": now_local.isoformat(),
+        "last_sync": last_garmin_sync,
+    }
 
 
 _EXTRACT_PROGRESS_LOCK = threading.Lock()
@@ -991,6 +1095,9 @@ def _run_auto_sync_once() -> None:
         if _extract_progress_get(owner).get("running"):
             return
         db_path = _db_path_for_owner(owner)
+        gate = _auto_sync_gate(owner, db_path)
+        if not bool(gate.get("allowed")):
+            return
         ctx = {"user": owner, "role": "admin"}
         garmin_email, garmin_password, credentials_source = _resolve_garmin_credentials(ctx, owner)
         if not (garmin_email and garmin_password):
@@ -1966,6 +2073,28 @@ def _segments_from_stored_or_source(
         except Exception:
             stored_segments = []
     return stored_segments
+
+
+_normalize_plan_text = _shared_normalize_plan_text
+_strip_meridiem_tokens = _shared_strip_meridiem_tokens
+_parse_dated_activity_entry = _shared_parse_dated_activity_entry
+_split_dated_activity_entries = _shared_split_dated_activity_entries
+_planned_row_signature = _shared_planned_row_signature
+
+
+def _expand_planned_segments(
+    line: str,
+    lthr_bpm: float | None = None,
+    threshold_pace_sec_per_km: float | None = None,
+    has_vdot_basis: bool = False,
+) -> tuple[list[dict[str, float | str | None]], list[str]]:
+    return _shared_expand_planned_segments(
+        line,
+        lthr_bpm=lthr_bpm,
+        threshold_pace_sec_per_km=threshold_pace_sec_per_km,
+        has_vdot_basis=has_vdot_basis,
+        named_pace_resolver=_pace_sec_per_km_from_named_vdot_token,
+    )
 
 
 def _planned_segment_metrics(
@@ -4864,6 +4993,7 @@ def settings_view(
         "lthr_curve": lthr_rows,
         "lt_pace_curve": pace_rows,
         "injury_windows": injury_rows,
+        "timezone": _owner_timezone_info(db_path)[0],
     }
 
 
@@ -4910,6 +5040,13 @@ def settings_update(
         normalized = _normalize_injury_windows(payload.injury_windows)
         save_setting(db_path, SETTINGS_KEY_INJURY_WINDOWS, _settings_json(normalized))
         updated.append("injury_windows")
+
+    if payload.timezone is not None:
+        normalized_timezone = str(payload.timezone or "").strip()
+        if normalized_timezone:
+            normalized_timezone = _normalize_timezone_name(normalized_timezone)
+        save_setting(db_path, SETTINGS_KEY_USER_TIMEZONE, normalized_timezone)
+        updated.append("timezone")
 
     return {"updated": updated}
 
@@ -5032,6 +5169,7 @@ def data_extract_status(
     current_user = str(ctx.get("user") or "").strip()
     runtime_email, runtime_password = _runtime_garmin_credentials(resolved_owner)
     garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
+    auto_sync_gate = _auto_sync_gate(resolved_owner, db_path)
     return {
         "owner": resolved_owner,
         "db_path": str(db_path),
@@ -5040,8 +5178,15 @@ def data_extract_status(
         "auto_sync": {
             "enabled": AUTO_SYNC_ENABLED,
             "interval_seconds": AUTO_SYNC_INTERVAL_SECONDS,
+            "minimum_interval_seconds": AUTO_SYNC_MIN_INTERVAL_SECONDS,
             "owner": AUTO_SYNC_OWNER,
             "days_back": AUTO_SYNC_DAYS_BACK,
+            "timezone": auto_sync_gate.get("timezone"),
+            "timezone_source": auto_sync_gate.get("timezone_source"),
+            "windows_local": auto_sync_gate.get("windows_local"),
+            "allowed_now": auto_sync_gate.get("allowed"),
+            "reason": auto_sync_gate.get("reason"),
+            "cooldown_remaining_seconds": auto_sync_gate.get("cooldown_remaining_seconds"),
         },
         "garmin_credentials_available": bool(garmin_email and garmin_password),
         "garmin_credentials_source": garmin_source,

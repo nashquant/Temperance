@@ -20,9 +20,16 @@ import type { PlannedActivityRow, PlannedMetricView } from '@/features/plan-acti
 import { queryClient } from '@/lib/query-client';
 
 function dayLabel(isoDay: string): string {
-  return new Intl.DateTimeFormat('en-US', { weekday: 'short', day: 'numeric', month: 'short' }).format(
-    new Date(`${isoDay}T00:00:00`),
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
+    new Date(`${isoDay}T00:00:00Z`),
   );
+}
+
+function addDaysToIsoDay(isoDay: string, days: number): string {
+  const [year, month, day] = isoDay.split('-').map((value) => Number(value));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 export function PlanActivitiesPage(): JSX.Element {
@@ -162,12 +169,9 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
   const selectedRows = useMemo(() => {
     if (!effectiveWeek) return [];
+    const weekEnd = addDaysToIsoDay(effectiveWeek, 6);
     return sanitizedRows.filter((row) => {
-      const day = new Date(`${row.day_utc}T00:00:00`);
-      const start = new Date(`${effectiveWeek}T00:00:00`);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 6);
-      return day >= start && day <= end;
+      return row.day_utc >= effectiveWeek && row.day_utc <= weekEnd;
     });
   }, [effectiveWeek, sanitizedRows]);
 
@@ -181,11 +185,8 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
   const chartRows = useMemo(() => {
     if (!effectiveWeek) return [];
-    const start = new Date(`${effectiveWeek}T00:00:00`);
     return Array.from({ length: 7 }).map((_, index) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + index);
-      const iso = d.toISOString().slice(0, 10);
+      const iso = addDaysToIsoDay(effectiveWeek, index);
       const rowValue = selectedRows
         .filter((row) => row.day_utc === iso)
         .reduce((sum, row) => sum + Number(row[metric] ?? 0), 0);

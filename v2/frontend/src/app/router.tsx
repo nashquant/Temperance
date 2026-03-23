@@ -39,11 +39,11 @@ export function AppRouter(): JSX.Element {
 
       <Route element={<ProtectedRoute />}>
         <Route path="/app" element={<AppLayout />}>
+          <Route path="athlete-progression" element={<AthleteProgressionPage />} />
           <Route path="week-planner" element={<WeekPlannerPage />} />
           <Route path="weekly-outlook" element={<Navigate to="/app/week-planner" replace />} />
           <Route path="plan-activities" element={<Navigate to="/app/week-planner" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="athlete-progression" element={<AthleteProgressionPage />} />
           <Route path="wellness" element={<WellnessPage />} />
           <Route path="data-extract" element={<DataExtractPage />} />
           <Route path="activities" element={<Navigate to="/app/data-extract" replace />} />

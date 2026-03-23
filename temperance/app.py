@@ -18,6 +18,14 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from activity_parsing import (
+    expand_planned_segments as _shared_expand_planned_segments,
+    normalize_plan_text as _shared_normalize_plan_text,
+    parse_dated_activity_entry as _shared_parse_dated_activity_entry,
+    planned_row_signature as _shared_planned_row_signature,
+    split_dated_activity_entries as _shared_split_dated_activity_entries,
+    strip_meridiem_tokens as _shared_strip_meridiem_tokens,
+)
 from analytics import (
     build_daily_summary,
     compute_metrics,
@@ -1794,6 +1802,14 @@ def _expand_planned_segments(
         )
         last_kind = kind
     return segments, warnings
+
+
+_normalize_plan_text = _shared_normalize_plan_text
+_strip_meridiem_tokens = _shared_strip_meridiem_tokens
+_parse_dated_activity_entry = _shared_parse_dated_activity_entry
+_split_dated_activity_entries = _shared_split_dated_activity_entries
+_planned_row_signature = _shared_planned_row_signature
+_expand_planned_segments = _shared_expand_planned_segments
 
 
 def _planned_segment_metrics(

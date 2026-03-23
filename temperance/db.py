@@ -1196,6 +1196,21 @@ def get_last_sync(db_path: Path) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def get_last_sync_for_source_like(db_path: Path, pattern: str) -> dict[str, Any] | None:
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            """
+            SELECT sync_time_utc, source, success, message
+            FROM sync_log
+            WHERE lower(source) LIKE lower(?)
+            ORDER BY sync_time_utc DESC
+            LIMIT 1
+            """,
+            (pattern,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def get_planned_activities_df(
     db_path: Path,
     start_day_utc: str | None = None,
