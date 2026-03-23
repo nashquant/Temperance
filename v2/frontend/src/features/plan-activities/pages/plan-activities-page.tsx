@@ -54,6 +54,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   const [rowSaveResults, setRowSaveResults] = useState<Record<string, { tone: 'error' | 'success'; message: string }>>({});
   const [pendingDelete, setPendingDelete] = useState<{ id: number; row: PlannedActivityRow } | null>(null);
   const [deleteResult, setDeleteResult] = useState<string | null>(null);
+  const [copyResult, setCopyResult] = useState<string | null>(null);
   const pendingDeleteTimerRef = useRef<number | null>(null);
   const pendingDeleteRef = useRef<{ id: number; row: PlannedActivityRow } | null>(null);
   const sanitizedRows = useMemo(
@@ -201,6 +202,22 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
     });
   }, [effectiveWeek, metric, selectedRows]);
 
+  const selectedWeekClipboardText = useMemo(() => {
+    return selectedRows
+      .slice()
+      .sort((left, right) => {
+        if (left.day_utc !== right.day_utc) return left.day_utc.localeCompare(right.day_utc);
+        return left.line_no - right.line_no;
+      })
+      .map((row) => {
+        const rowKey = `${row.day_utc}-${row.line_no}`;
+        const workoutText = String(editValues[rowKey] ?? row.workout_text ?? '').trim();
+        return workoutText ? `${row.day_utc}: ${workoutText}` : '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }, [editValues, selectedRows]);
+
   const goalItems = query.data
     ? [
         { label: 'TSS Goal', value: Math.round(query.data.goals.tss).toString() },
@@ -270,6 +287,20 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   useEffect(() => () => {
     clearPendingDeleteTimer();
   }, []);
+
+  const handleCopyWeekToClipboard = async () => {
+    const payload = selectedWeekClipboardText.trim();
+    if (!payload) {
+      setCopyResult('No planned activities to copy for this week.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(payload);
+      setCopyResult(`Copied ${selectedRows.length} planned activit${selectedRows.length === 1 ? 'y' : 'ies'} to clipboard.`);
+    } catch {
+      setCopyResult('Unable to copy the current week to clipboard.');
+    }
+  };
 
   return (
     <section className="space-y-6">
@@ -346,6 +377,13 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         </Alert>
       ) : null}
 
+      {copyResult ? (
+        <Alert className="border-white/15 bg-white/[0.03] text-slate-100">
+          <AlertTitle>Clipboard</AlertTitle>
+          <AlertDescription>{copyResult}</AlertDescription>
+        </Alert>
+      ) : null}
+
       {!query.isLoading && !query.isError && query.data ? (
         <>
           {weeks.length === 0 ? (
@@ -356,6 +394,14 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
             <>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
                 <PlannedWeekSelector weeks={weeks} value={effectiveWeek} onValueChange={(next) => setSelectedWeek(next)} />
+                <Button
+                  variant="outline"
+                  className="border-white/10 bg-black/15"
+                  onClick={() => void handleCopyWeekToClipboard()}
+                  disabled={!selectedWeekClipboardText.trim()}
+                >
+                  Copy Week To Clipboard
+                </Button>
               </div>
 
               {selectedWeekMeta ? (
