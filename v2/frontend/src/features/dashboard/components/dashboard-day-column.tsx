@@ -114,7 +114,7 @@ function formatActivityTitle(raw: string): string {
   if (normalized.includes('strength')) return 'Lift';
   if (normalized.includes('swim')) return 'Swim';
   if (normalized.includes('cycl')) return 'Bike';
-  if (normalized.includes('ellipt')) return 'Ellip';
+  if (normalized.includes('ellipt')) return 'Xtrain';
   if (normalized === 'run' || normalized === 'running' || normalized.includes(' run')) return 'Run';
   if (normalized === 'treadmill_running' || normalized === 'treadmill run' || normalized === 'treadmillrunning') {
     return 'Tready';

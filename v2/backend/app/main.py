@@ -1478,7 +1478,7 @@ def _plan_activity_kind(text: str) -> str:
         return "treadmill"
     if "run" in t:
         return "run"
-    if "ellipt" in t:
+    if "ellipt" in t or "xtrain" in t:
         return "elliptical"
     if "cycl" in t or "bike" in t:
         return "cycling"
@@ -3146,7 +3146,7 @@ def _metrics_for_filters(
                     return "cycling"
                 if "swim" in text:
                     return "swimming"
-                if "ellipt" in text:
+                if "ellipt" in text or "xtrain" in text:
                     return "elliptical"
                 if "strength" in text or "lift" in text:
                     return "strength_training"
