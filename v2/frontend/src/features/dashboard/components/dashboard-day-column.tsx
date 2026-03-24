@@ -783,7 +783,7 @@ export function DashboardDayColumn({
                       <div className={compactMobile ? 'mt-1 space-y-0.5' : 'mt-1.5 space-y-0.5'}>
                         <MetricRow
                           compactMobile={compactMobile}
-                          icon={<Route className="h-2.5 w-2.5 shrink-0 text-emerald-300/80" />}
+                          icon={<Clock3 className="h-2.5 w-2.5 shrink-0 text-cyan-300/80" />}
                           text={compactLine([durationLabel, formatEquivalentDistance(item.activity.distance_eqv_km, runningLike)])}
                         />
                         <MetricRow
