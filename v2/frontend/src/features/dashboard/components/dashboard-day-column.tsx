@@ -72,6 +72,37 @@ type DayMetaItem = {
   value: string;
 };
 
+function fmtMetaLines(day: DashboardDayColumnType): string[] {
+  const line1: string[] = [];
+  const line2: string[] = [];
+  const line3: string[] = [];
+
+  line1.push(`${Math.round(day.meta.distance_eqv_km || 0)} km`);
+  if ((day.meta.calories || 0) > 0) line1.push(`${Math.round(day.meta.calories)} kcal`);
+
+  if (day.meta.fitness !== null) line2.push(`Fit ${Math.round(day.meta.fitness)}`);
+  if (day.meta.fatigue !== null) line2.push(`Fatigue ${Math.round(day.meta.fatigue)}`);
+
+  if (day.meta.resting_hr !== null && day.meta.resting_hr > 0) {
+    line3.push(`RHR ${Math.round(day.meta.resting_hr)}`);
+  }
+  if (day.meta.stress_avg !== null && day.meta.stress_avg > 0) {
+    line3.push(`Stress ${Math.round(day.meta.stress_avg)}`);
+  }
+
+  if (line2.length === 0 && (day.meta.planned_duration_s || 0) > 0) {
+    line2.push(`${Math.round(day.meta.planned_duration_s / 3600)}h`);
+  }
+  if (line2.length < 2 && (day.meta.planned_if_pct || 0) > 0) {
+    line2.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
+  }
+  if (line3.length === 0 && day.meta.show_fatigue_expected && day.meta.fatigue_expected !== null) {
+    line3.push(`Fatigue exp ${Math.round(day.meta.fatigue_expected)}`);
+  }
+
+  return [line1.join(' · '), line2.join(' · '), line3.join(' · ')].filter(Boolean);
+}
+
 function fmtMeta(day: DashboardDayColumnType): DayMetaItem[] {
   const items: DayMetaItem[] = [
     {
@@ -335,6 +366,7 @@ export function DashboardDayColumn({
 }: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
   const metaItems = fmtMeta(day);
+  const metaLines = fmtMetaLines(day);
   const shouldScrollActivities = activityCount > 3;
   const actualCards: Array<
     | { type: 'activity'; activity: DashboardDayColumnType['actual_activities'][number]; index: number }
@@ -374,7 +406,7 @@ export function DashboardDayColumn({
             <p
               className={cn(
                 compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[13px] font-semibold leading-5',
-                day.is_today ? 'text-sky-100' : 'text-slate-50',
+                day.is_today ? 'text-primary' : 'text-foreground',
               )}
             >
               {day.day_label}
@@ -390,21 +422,31 @@ export function DashboardDayColumn({
               <Plus className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <div
-            className={cn(
-              'flex min-h-[20px] flex-nowrap items-center gap-2 overflow-hidden text-muted-foreground',
-              compactMobile ? 'text-[10.5px] leading-[1.2]' : 'text-[11px] leading-[1.25]',
-            )}
-          >
-            {metaItems.map((item) => (
-              <div key={item.key} className="inline-flex min-w-0 shrink items-center gap-1 whitespace-nowrap">
-                {item.icon === 'distance' ? <Route className="h-3 w-3 text-emerald-300/90" /> : null}
-                {item.icon === 'fitness' ? <Gauge className="h-3 w-3 text-sky-300/90" /> : null}
-                {item.icon === 'fatigue' ? <HeartPulse className="h-3 w-3 text-rose-300/90" /> : null}
-                <span className="font-medium text-slate-200/92 tabular-nums">{item.value}</span>
-              </div>
-            ))}
-          </div>
+          {compactMobile ? (
+            <div
+              className={cn(
+                'flex min-h-[20px] flex-nowrap items-center gap-2 overflow-hidden text-muted-foreground',
+                compactMobile ? 'text-[10.5px] leading-[1.2]' : 'text-[11px] leading-[1.25]',
+              )}
+            >
+              {metaItems.map((item) => (
+                <div key={item.key} className="inline-flex min-w-0 shrink items-center gap-1 whitespace-nowrap">
+                  {item.icon === 'distance' ? <Route className="h-3 w-3 text-emerald-300/90" /> : null}
+                  {item.icon === 'fitness' ? <Gauge className="h-3 w-3 text-sky-300/90" /> : null}
+                  {item.icon === 'fatigue' ? <HeartPulse className="h-3 w-3 text-rose-300/90" /> : null}
+                  <span className="font-medium text-slate-200/92 tabular-nums">{item.value}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="min-h-[50px] space-y-0.5 text-[12px] leading-[1.3] text-muted-foreground">
+              {metaLines.map((line) => (
+                <p key={line} className="truncate">
+                  {line}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className={cn(compactMobile && mobileFullWidth ? 'px-1' : undefined)}>
@@ -560,8 +602,8 @@ export function DashboardDayColumn({
                 <div
                   key={activity.activity_id}
                   className={cn(
-                    'relative flex cursor-pointer flex-col overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-white/[0.045] hover:shadow-[0_16px_28px_rgba(2,6,23,0.24)]',
-                    compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[94px] p-2 text-[12px]',
+                    'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
+                    compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[102px] p-2 text-[12px]',
                     activity.is_custom ? 'border-2 border-dashed outline outline-1 outline-offset-[-3px] outline-dotted' : undefined,
                     intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
                     activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
@@ -576,7 +618,6 @@ export function DashboardDayColumn({
                     }
                   }}
                 >
-                  <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
                   {activity.is_custom ? (
                     <Button
                       variant="ghost"
@@ -741,8 +782,8 @@ export function DashboardDayColumn({
                     <div
                       key={`${item.activity.day_utc}-${item.activity.line_no}`}
                       className={cn(
-                        'relative flex cursor-pointer flex-col overflow-hidden rounded-[1rem] border-2 border-dashed shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-white/[0.045] hover:shadow-[0_16px_28px_rgba(2,6,23,0.24)]',
-                        compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[94px] px-2.5 pb-2 pt-2 text-[12px]',
+                        'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border-2 border-dashed transition-colors hover:bg-white/5',
+                        compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
                         plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                       )}
                       onClick={() => onSelectActivity?.(item.activity.activity_id)}
@@ -755,7 +796,6 @@ export function DashboardDayColumn({
                         }
                       }}
                     >
-                      <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
                       <Button
                         variant="ghost"
                         size="icon"
@@ -792,12 +832,12 @@ export function DashboardDayColumn({
                         <MetricRow
                           compactMobile={compactMobile}
                           icon={<Route className="h-2.5 w-2.5 shrink-0 text-emerald-300/80" />}
-                          text={compactLine([durationLabel, `${Math.round(item.activity.distance_eqv_km)} km`])}
+                          text={compactLine([durationLabel, `${Math.round(item.activity.distance_eqv_km)} kmeq`])}
                         />
                         <MetricRow
                           compactMobile={compactMobile}
                           icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
-                          text={compactLine([item.activity.pace_label, formatIfPctLabel(item.activity.if_pct)])}
+                          text={compactLine([item.activity.pace_label, `IF ${Math.round(item.activity.if_pct)}%`])}
                         />
                       </div>
                       <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
@@ -812,7 +852,7 @@ export function DashboardDayColumn({
           )}
 
           {day.actual_activities.length === 0 && day.planned_activities.length === 0 && day.is_past ? (
-            <div className={cn('rounded-[0.95rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-2 text-center text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]', compactMobile ? 'text-[11px]' : 'text-[12px]')}>
+            <div className={cn(compactMobile ? 'rounded-[0.95rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-2 text-center text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]' : 'rounded-lg border border-border/70 bg-muted/25 p-2 text-center text-muted-foreground', compactMobile ? 'text-[11px]' : 'text-[12px]')}>
               <p className="font-semibold text-foreground">Rest Day</p>
               <p>Rest is part of training.</p>
             </div>

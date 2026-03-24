@@ -12,6 +12,7 @@ interface DashboardWeekSummaryCardProps {
   weekStart: string;
   weekEnd: string;
   summary: DashboardWeekSummary;
+  isCurrentWeek?: boolean;
 }
 
 function fmtNumber(value: number | null | undefined): string {
@@ -81,12 +82,19 @@ const summaryToneClassNames = {
   },
 } as const;
 
-export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summary }: DashboardWeekSummaryCardProps): JSX.Element {
+export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summary, isCurrentWeek = false }: DashboardWeekSummaryCardProps): JSX.Element {
   return (
     <Card className="rounded-xl border-border/80 bg-card/80 shadow-sm lg:h-[430px]">
       <CardContent className="flex h-full flex-col space-y-3 overflow-y-auto p-2.5">
         <div className="space-y-1">
-          <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-semibold tracking-wide">
+          <Badge
+            variant="outline"
+            className={`h-5 rounded-full px-2 text-[10px] font-semibold tracking-wide ${
+              isCurrentWeek
+                ? 'border-sky-300/45 bg-sky-300/12 text-sky-100 shadow-[0_0_0_1px_rgba(125,211,252,0.12),0_4px_14px_rgba(14,165,233,0.12)]'
+                : ''
+            }`}
+          >
             Week {weekNumber}
           </Badge>
           <p className="text-[13px] font-medium leading-5 text-muted-foreground">
