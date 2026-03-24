@@ -765,7 +765,7 @@ export function DashboardDayColumn({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1 top-[18px] h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        className="absolute right-1 top-[22px] h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
                         onClick={(event) => {
                           event.stopPropagation();
                           onDeletePlannedActivity?.(item.activity, item.index);
