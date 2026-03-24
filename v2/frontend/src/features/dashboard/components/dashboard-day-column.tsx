@@ -59,11 +59,11 @@ const plannedIntensityClasses: Record<string, string> = {
 };
 
 const customBorderAccentClasses: Record<string, string> = {
-  green: 'border-[rgba(221,229,238,0.72)] ring-1 ring-inset ring-white/10',
-  blue: 'border-[rgba(120,198,255,0.72)] ring-1 ring-inset ring-sky-200/14',
-  orange: 'border-[rgba(245,186,95,0.72)] ring-1 ring-inset ring-amber-200/14',
-  red: 'border-[rgba(246,135,135,0.72)] ring-1 ring-inset ring-rose-200/14',
-  purple: 'border-[rgba(168,139,250,0.72)] ring-1 ring-inset ring-violet-200/14',
+  green: 'border-[rgba(221,229,238,0.72)]',
+  blue: 'border-[rgba(120,198,255,0.72)]',
+  orange: 'border-[rgba(245,186,95,0.72)]',
+  red: 'border-[rgba(246,135,135,0.72)]',
+  purple: 'border-[rgba(168,139,250,0.72)]',
 };
 
 type DayMetaItem = {
@@ -500,7 +500,7 @@ export function DashboardDayColumn({
                     className={cn(
                       'relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
                       'px-2 py-1.5',
-                      activity.is_custom ? 'border-[1.5px]' : undefined,
+                      activity.is_custom ? 'border-[1.5px] border-dashed' : undefined,
                       intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                     )}
@@ -562,7 +562,7 @@ export function DashboardDayColumn({
                   className={cn(
                     'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
                     compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[102px] p-2 text-[12px]',
-                    activity.is_custom ? 'border-[1.5px]' : undefined,
+                    activity.is_custom ? 'border-[1.5px] border-dashed' : undefined,
                     intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
                     activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                   )}
@@ -666,7 +666,7 @@ export function DashboardDayColumn({
                 <div
                   key={`${item.activity.day_utc}-${item.activity.line_no}`}
                   className={cn(
-                    'relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
+                    'relative overflow-hidden rounded-[1rem] border border-dashed shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
                     'px-2 py-1.5',
                     plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                   )}
@@ -735,7 +735,7 @@ export function DashboardDayColumn({
                     <div
                       key={`${item.activity.day_utc}-${item.activity.line_no}`}
                       className={cn(
-                        'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
+                        'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-dashed transition-colors hover:bg-white/5',
                         compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
                         plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                       )}
