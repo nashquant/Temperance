@@ -1,4 +1,4 @@
-import { Activity, Bike, Check, Clock3, Dumbbell, Gauge, HeartPulse, PersonStanding, Plus, Route, RotateCcw, Waves, Zap, X } from 'lucide-react';
+import { Activity, Check, Clock3, Gauge, HeartPulse, Plus, Route, RotateCcw, Zap, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -94,7 +94,7 @@ function fmtMetaLines(day: DashboardDayColumnType): string[] {
     line2.push(`${Math.round(day.meta.planned_duration_s / 3600)}h`);
   }
   if (line2.length < 2 && (day.meta.planned_if_pct || 0) > 0) {
-    line2.push(`IF ${Math.round(day.meta.planned_if_pct)}%`);
+    line2.push(`${Math.round(day.meta.planned_if_pct)}%`);
   }
   if (line3.length === 0 && day.meta.show_fatigue_expected && day.meta.fatigue_expected !== null) {
     line3.push(`Fatigue exp ${Math.round(day.meta.fatigue_expected)}`);
@@ -153,25 +153,6 @@ function formatActivityTitle(raw: string): string {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
-}
-
-function activityTitleIcon(raw: string): JSX.Element {
-  const normalized = String(raw || '').trim().toLowerCase();
-
-  if (normalized.includes('strength')) {
-    return <Dumbbell className="h-3.5 w-3.5 shrink-0 text-amber-300/90" />;
-  }
-  if (normalized.includes('swim')) {
-    return <Waves className="h-3.5 w-3.5 shrink-0 text-cyan-300/90" />;
-  }
-  if (normalized.includes('cycl') || normalized.includes('bike')) {
-    return <Bike className="h-3.5 w-3.5 shrink-0 text-lime-300/90" />;
-  }
-  if (normalized.includes('run') || normalized.includes('treadmill') || normalized.includes('track')) {
-    return <PersonStanding className="h-3.5 w-3.5 shrink-0 text-rose-300/90" />;
-  }
-
-  return <Activity className="h-3.5 w-3.5 shrink-0 text-slate-300/88" />;
 }
 
 function isRunningLikeSport(raw: string): boolean {
@@ -297,7 +278,7 @@ function metricBadgeIcon(tone: MetricBadgeTone): JSX.Element {
 
 function MetricBadge({ item }: { item: MetricBadgeItem }): JSX.Element {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9.5px] font-medium leading-none text-slate-300/92">
+    <span className="inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-medium leading-none text-slate-300/92">
       {metricBadgeIcon(item.tone)}
       {item.label}
     </span>
@@ -337,7 +318,7 @@ function MetricRow({
     <p
       className={cn(
         'inline-flex min-w-0 items-center gap-1 font-medium tracking-[0.01em] text-slate-300/92',
-        compactMobile ? 'text-[9.5px] leading-[1.18]' : 'text-[10.5px] leading-[1.24]',
+        compactMobile ? 'text-[10px] leading-[1.18]' : 'text-[11px] leading-[1.24]',
       )}
     >
       {icon}
@@ -518,7 +499,6 @@ export function DashboardDayColumn({
               const timeLabel = activity.is_custom ? '' : deriveCompactTimeLabel(activity, userTimeZone);
               const durationLabel = normalizeCompactDurationLabel(activity.duration_label);
               const kindLabel = activityTypeLabel(Boolean(activity.is_custom));
-              const titleIcon = activityTitleIcon(activity.sport);
               if (compactMobile && mobileFullWidth) {
                 const metricPills: MetricBadgeItem[] = [
                   metricPillLabel(durationLabel) ? { tone: 'duration', label: metricPillLabel(durationLabel)! } : null,
@@ -568,17 +548,14 @@ export function DashboardDayColumn({
                         <X className="h-2.5 w-2.5" />
                       </Button>
                     ) : null}
-                    <div className="flex items-start gap-2 pr-6">
-                      <div className="pt-0.5">
-                        {titleIcon}
-                      </div>
+                    <div className="min-w-0 pr-6">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12px] font-semibold leading-4 text-foreground">
+                        <p className="truncate text-[13px] font-semibold leading-4.5 text-foreground">
                           {formatActivityTitle(activity.sport)}
                           {timeLabel ? ` ${timeLabel}` : ''}
                         </p>
                         {kindLabel ? (
-                          <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400/90">
+                          <p className="mt-0.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-400/90">
                             {kindLabel}
                           </p>
                         ) : null}
@@ -633,9 +610,8 @@ export function DashboardDayColumn({
                       <X className="h-1.75 w-1.75" />
                     </Button>
                   ) : null}
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    {titleIcon}
-                    <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
+                  <div className="flex min-w-0 items-center">
+                    <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[14px] leading-5')}>
                       {formatActivityTitle(activity.sport)}
                       {activity.is_custom ? '(C)' : ''}
                       {!activity.is_custom && timeLabel ? ` ${timeLabel}` : ''}
@@ -653,7 +629,7 @@ export function DashboardDayColumn({
                       text={compactLine([activity.pace_label, formatIfPctLabel(activity.if_pct), activity.vdot != null ? formatVdotLabel(activity.vdot) : null])}
                     />
                   </div>
-                  <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
+                  <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold text-foreground/95', compactMobile ? 'text-[10.5px] leading-4' : 'text-[11.5px] leading-[1.25]')}>
                     <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />
                     <span className="truncate">
                       {formatTssLabel(activity.tss, activity.rtss, !activity.is_custom && runningLike, runningLike)}
@@ -693,7 +669,6 @@ export function DashboardDayColumn({
                 (() => {
                   const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
                   const runningLike = isRunningLikeSport(item.activity.activity);
-                  const titleIcon = activityTitleIcon(item.activity.activity);
                   const metricPills: MetricBadgeItem[] = [
                     metricPillLabel(durationLabel) ? { tone: 'duration', label: metricPillLabel(durationLabel)! } : null,
                     metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`)
@@ -754,13 +729,12 @@ export function DashboardDayColumn({
                     </Button>
                   </div>
                   <div className="min-w-0 pr-12">
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      {titleIcon}
-                      <p className="truncate text-[12px] font-semibold leading-4 text-foreground">
+                    <div className="flex min-w-0 items-center">
+                      <p className="truncate text-[13px] font-semibold leading-4.5 text-foreground">
                         {formatActivityTitle(item.activity.activity)}
                       </p>
                     </div>
-                    <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400/90">
+                    <p className="mt-0.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-400/90">
                       Planned
                     </p>
                   </div>
@@ -777,7 +751,6 @@ export function DashboardDayColumn({
                 (() => {
                   const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
                   const runningLike = isRunningLikeSport(item.activity.activity);
-                  const titleIcon = activityTitleIcon(item.activity.activity);
                   return (
                     <div
                       key={`${item.activity.day_utc}-${item.activity.line_no}`}
@@ -822,9 +795,8 @@ export function DashboardDayColumn({
                       >
                         <X className="h-1.75 w-1.75" />
                       </Button>
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        {titleIcon}
-                        <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12px] leading-4' : 'text-[13px] leading-5')}>
+                      <div className="flex min-w-0 items-center">
+                        <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[14px] leading-5')}>
                           {formatActivityTitle(item.activity.activity)} <span className="text-muted-foreground">(P)</span>
                         </p>
                       </div>
@@ -837,10 +809,10 @@ export function DashboardDayColumn({
                         <MetricRow
                           compactMobile={compactMobile}
                           icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
-                          text={compactLine([item.activity.pace_label, `IF ${Math.round(item.activity.if_pct)}%`])}
+                          text={compactLine([item.activity.pace_label, `${Math.round(item.activity.if_pct)}%`])}
                         />
                       </div>
-                      <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10px] leading-4' : 'text-[11px] leading-4')}>
+                      <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10.5px] leading-4' : 'text-[11.5px] leading-[1.25]')}>
                         <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />
                         <span className="truncate">{primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike)}</span>
                       </p>
