@@ -6,6 +6,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "temperance"))
 
+from fastapi import HTTPException
+
 from db import get_conn, init_db, save_setting
 
 BACKEND_MAIN_PATH = ROOT / "v2" / "backend" / "app" / "main.py"
@@ -70,3 +72,37 @@ def test_auto_sync_gate_enforces_30_minute_cooldown(tmp_path: Path) -> None:
     assert gate["allowed"] is False
     assert gate["reason"] == "cooldown"
     assert gate["cooldown_remaining_seconds"] == 900
+
+
+def test_auto_sync_gate_blocks_when_garmin_rate_limited(tmp_path: Path) -> None:
+    db_path = tmp_path / "owner.db"
+    init_db(db_path)
+    save_setting(db_path, backend_main.SETTINGS_KEY_USER_TIMEZONE, "America/Sao_Paulo")
+    save_setting(db_path, backend_main.SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL, "2026-03-23T18:00:00+00:00")
+
+    gate = backend_main._auto_sync_gate(
+        "admin",
+        db_path,
+        now_utc=datetime(2026, 3, 23, 11, 30, tzinfo=timezone.utc),
+    )
+
+    assert gate["allowed"] is False
+    assert gate["reason"] == "rate_limited"
+    assert gate["rate_limited_until"] == "2026-03-23T18:00:00+00:00"
+    assert gate["cooldown_remaining_seconds"] == 23400
+
+
+def test_ensure_garmin_available_raises_429_when_rate_limited(tmp_path: Path) -> None:
+    db_path = tmp_path / "owner.db"
+    init_db(db_path)
+    save_setting(db_path, backend_main.SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL, "2026-03-23T18:00:00+00:00")
+
+    try:
+        backend_main._ensure_garmin_available(
+            db_path,
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 429
+        assert "Retry after 2026-03-23T18:00:00+00:00" in str(exc.detail)
+    else:
+        raise AssertionError("Expected HTTPException")

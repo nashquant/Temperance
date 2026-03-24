@@ -12,6 +12,9 @@ HOST="${V2_BACKEND_HOST:-127.0.0.1}"
 USE_CAFFEINATE="${TEMPERANCE_USE_CAFFEINATE:-1}"
 CAFFEINATE_BIN="${CAFFEINATE_BIN:-}"
 
+# Temporarily force embedded Garmin auto-sync off for backend restarts.
+export TEMPERANCE_AUTO_SYNC_ENABLED=0
+
 if [[ ! -x "${PYTHON_BIN}" ]]; then
   echo "Missing python binary: ${PYTHON_BIN}" >&2
   exit 1

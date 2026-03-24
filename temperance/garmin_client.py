@@ -41,6 +41,10 @@ class GarminWellnessChunk:
     wellness_daily: list[dict[str, Any]]
 
 
+class GarminRateLimitError(RuntimeError):
+    pass
+
+
 def _to_iso_utc(value: str | datetime) -> str:
     if isinstance(value, datetime):
         dt = value
@@ -55,7 +59,13 @@ def _to_iso_utc(value: str | datetime) -> str:
 def _safe_call(fn: Callable[..., Any], *args: Any) -> tuple[Any, str | None]:
     try:
         return fn(*args), None
+    except GarminRateLimitError:
+        raise
     except Exception as exc:  # pragma: no cover
+        message = str(exc)
+        lowered = message.lower()
+        if "429" in lowered or "too many requests" in lowered or "rate limit" in lowered:
+            raise GarminRateLimitError(message) from exc
         return None, str(exc)
 
 

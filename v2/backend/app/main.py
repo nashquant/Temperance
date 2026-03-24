@@ -87,6 +87,7 @@ from db import (  # noqa: E402
 )
 from garmin_client import (  # noqa: E402
     GarminActivityChunk,
+    GarminRateLimitError,
     fetch_garmin_comprehensive,
     fetch_garmin_runs,
     GarminWellnessChunk,
@@ -101,13 +102,17 @@ SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_USER_TIMEZONE = "user_timezone_v1"
+SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL = "garmin_rate_limit_until_v1"
 APP_TIMEZONE_NAME = str(os.getenv("TEMPERANCE_TIMEZONE") or os.getenv("TZ") or "America/Sao_Paulo").strip() or "America/Sao_Paulo"
 AUTO_SYNC_ENABLED = str(os.getenv("TEMPERANCE_AUTO_SYNC_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
 AUTO_SYNC_INTERVAL_SECONDS = max(60, int(str(os.getenv("TEMPERANCE_AUTO_SYNC_INTERVAL_SECONDS", "1800") or "1800")))
 AUTO_SYNC_OWNER = str(os.getenv("TEMPERANCE_AUTO_SYNC_OWNER", "admin") or "admin").strip() or "admin"
 AUTO_SYNC_DAYS_BACK = max(1, min(int(str(os.getenv("TEMPERANCE_AUTO_SYNC_DAYS_BACK", "2") or "2")), 7))
 AUTO_SYNC_MIN_INTERVAL_SECONDS = 30 * 60
+GARMIN_RATE_LIMIT_COOLDOWN_SECONDS = max(30 * 60, int(str(os.getenv("TEMPERANCE_GARMIN_RATE_LIMIT_COOLDOWN_SECONDS", str(12 * 60 * 60))) or (12 * 60 * 60)))
 AUTO_SYNC_LOCAL_WINDOWS = ((8, 10), (20, 22))
+AUTO_SYNC_TEMPORARILY_DISABLED = True
+AUTO_SYNC_DISABLED_REASON = "Temporarily disabled to stop background Garmin sync attempts."
 
 
 def _now_app_local() -> pd.Timestamp:
@@ -508,11 +513,79 @@ def _parse_sync_time_utc(value: str | None) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _garmin_rate_limit_state(db_path: Path, now_utc: datetime | None = None) -> dict[str, Any]:
+    current_utc = now_utc.astimezone(timezone.utc) if now_utc is not None else datetime.now(timezone.utc)
+    until_utc = _parse_sync_time_utc(get_setting(db_path, SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL))
+    if until_utc is None:
+        return {"active": False, "until_utc": None, "remaining_seconds": 0}
+    remaining_seconds = int(max(0, (until_utc - current_utc).total_seconds()))
+    return {
+        "active": remaining_seconds > 0,
+        "until_utc": until_utc.isoformat(),
+        "remaining_seconds": remaining_seconds,
+    }
+
+
+def _set_garmin_rate_limit(db_path: Path, error_message: str, now_utc: datetime | None = None) -> dict[str, Any]:
+    current_utc = now_utc.astimezone(timezone.utc) if now_utc is not None else datetime.now(timezone.utc)
+    until_utc = current_utc + timedelta(seconds=GARMIN_RATE_LIMIT_COOLDOWN_SECONDS)
+    save_setting(db_path, SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL, until_utc.isoformat())
+    return {
+        "until_utc": until_utc.isoformat(),
+        "remaining_seconds": GARMIN_RATE_LIMIT_COOLDOWN_SECONDS,
+        "message": (
+            "Garmin rate limit encountered. "
+            f"Blocking Garmin sync attempts until {until_utc.isoformat()}. Last error: {error_message}"
+        ),
+    }
+
+
+def _clear_garmin_rate_limit(db_path: Path) -> None:
+    save_setting(db_path, SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL, "")
+
+
+def _ensure_garmin_available(db_path: Path, now_utc: datetime | None = None) -> None:
+    state = _garmin_rate_limit_state(db_path, now_utc)
+    if not state["active"]:
+        return
+    raise HTTPException(
+        status_code=429,
+        detail=(
+            "Garmin sync is temporarily paused after a 429 rate limit response. "
+            f"Retry after {state['until_utc']} ({state['remaining_seconds']} seconds remaining)."
+        ),
+    )
+
+
 def _auto_sync_gate(owner: str, db_path: Path, now_utc: datetime | None = None) -> dict[str, Any]:
     tz_name, tz_source = _owner_timezone_info(db_path)
     zone = ZoneInfo(tz_name)
     current_utc = now_utc.astimezone(timezone.utc) if now_utc is not None else datetime.now(timezone.utc)
     now_local = current_utc.astimezone(zone)
+    if AUTO_SYNC_TEMPORARILY_DISABLED:
+        return {
+            "allowed": False,
+            "reason": "disabled",
+            "owner": owner,
+            "timezone": tz_name,
+            "timezone_source": tz_source,
+            "windows_local": _auto_sync_window_labels(),
+            "now_local": now_local.isoformat(),
+            "disabled_reason": AUTO_SYNC_DISABLED_REASON,
+        }
+    rate_limit = _garmin_rate_limit_state(db_path, current_utc)
+    if rate_limit["active"]:
+        return {
+            "allowed": False,
+            "reason": "rate_limited",
+            "owner": owner,
+            "timezone": tz_name,
+            "timezone_source": tz_source,
+            "windows_local": _auto_sync_window_labels(),
+            "now_local": now_local.isoformat(),
+            "rate_limited_until": rate_limit["until_utc"],
+            "cooldown_remaining_seconds": rate_limit["remaining_seconds"],
+        }
     if not _is_auto_sync_local_time_allowed(now_local):
         return {
             "allowed": False,
@@ -796,6 +869,7 @@ def _run_comprehensive_extract_background(
             target_activity_days=target_activity_days,
             target_wellness_days=target_wellness_days,
         )
+        _clear_garmin_rate_limit(db_path)
         _extract_progress_append(
             owner,
             (
@@ -824,6 +898,11 @@ def _run_comprehensive_extract_background(
         )
         log_sync(db_path, source="v2_garmin_comprehensive", success=True, message=msg)
         _extract_progress_finish(owner, msg, extract.errors[:40])
+    except GarminRateLimitError as exc:
+        state = _set_garmin_rate_limit(db_path, str(exc))
+        message = str(state["message"])
+        _extract_progress_fail(owner, message)
+        log_sync(db_path, source="v2_garmin_comprehensive", success=False, message=message)
     except Exception as exc:
         _extract_progress_fail(owner, str(exc))
         log_sync(db_path, source="v2_garmin_comprehensive", success=False, message=str(exc))
@@ -1064,6 +1143,7 @@ def _run_quick_activity_sync(
         days_back=max(1, int(days_back)),
         since_utc=latest,
     )
+    _clear_garmin_rate_limit(db_path)
     changed = upsert_activities(db_path, rows)
     total_rows = len(rows)
     message = f"total_rows={total_rows}"
@@ -1116,6 +1196,17 @@ def _run_auto_sync_once() -> None:
             source_label="v2_sync_garmin_auto_quick",
             credentials_source=credentials_source,
         )
+    except GarminRateLimitError as exc:
+        try:
+            state = _set_garmin_rate_limit(_db_path_for_owner(owner), str(exc))
+            log_sync(
+                _db_path_for_owner(owner),
+                source="v2_sync_garmin_auto_quick",
+                success=False,
+                message=str(state["message"]),
+            )
+        except Exception:
+            pass
     except Exception as exc:
         try:
             log_sync(
@@ -1139,7 +1230,7 @@ def _auto_sync_loop() -> None:
 
 def _start_auto_sync_thread() -> None:
     global _AUTO_SYNC_THREAD
-    if not AUTO_SYNC_ENABLED or _AUTO_SYNC_THREAD is not None:
+    if AUTO_SYNC_TEMPORARILY_DISABLED or not AUTO_SYNC_ENABLED or _AUTO_SYNC_THREAD is not None:
         return
     _AUTO_SYNC_STOP_EVENT.clear()
     _AUTO_SYNC_THREAD = threading.Thread(
@@ -5180,13 +5271,17 @@ def data_extract_status(
     runtime_email, runtime_password = _runtime_garmin_credentials(resolved_owner)
     garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
     auto_sync_gate = _auto_sync_gate(resolved_owner, db_path)
+    garmin_rate_limit = _garmin_rate_limit_state(db_path)
     return {
         "owner": resolved_owner,
         "db_path": str(db_path),
         "counts": counts,
         "last_sync": last_sync,
         "auto_sync": {
-            "enabled": AUTO_SYNC_ENABLED,
+            "enabled": AUTO_SYNC_ENABLED and not AUTO_SYNC_TEMPORARILY_DISABLED,
+            "configured_enabled": AUTO_SYNC_ENABLED,
+            "temporarily_disabled": AUTO_SYNC_TEMPORARILY_DISABLED,
+            "disabled_reason": AUTO_SYNC_DISABLED_REASON if AUTO_SYNC_TEMPORARILY_DISABLED else None,
             "interval_seconds": AUTO_SYNC_INTERVAL_SECONDS,
             "minimum_interval_seconds": AUTO_SYNC_MIN_INTERVAL_SECONDS,
             "owner": AUTO_SYNC_OWNER,
@@ -5197,7 +5292,9 @@ def data_extract_status(
             "allowed_now": auto_sync_gate.get("allowed"),
             "reason": auto_sync_gate.get("reason"),
             "cooldown_remaining_seconds": auto_sync_gate.get("cooldown_remaining_seconds"),
+            "rate_limited_until": auto_sync_gate.get("rate_limited_until"),
         },
+        "garmin_rate_limit": garmin_rate_limit,
         "garmin_credentials_available": bool(garmin_email and garmin_password),
         "garmin_credentials_source": garmin_source,
         "garmin_runtime_credentials_set": bool(runtime_email and runtime_password),
@@ -5278,7 +5375,19 @@ def data_extract_sync(
     garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
 
     if source in {"garmin_api", "both"}:
-        if not _AUTO_SYNC_LOCK.acquire(blocking=False):
+        garmin_rate_limit = _garmin_rate_limit_state(db_path)
+        if garmin_rate_limit["active"]:
+            messages.append(
+                "Garmin sync is paused after a 429 response. "
+                f"Retry after {garmin_rate_limit['until_utc']}."
+            )
+            details["garmin"] = {
+                "skipped": True,
+                "reason": "rate_limited",
+                "rate_limited_until": garmin_rate_limit["until_utc"],
+                "remaining_seconds": garmin_rate_limit["remaining_seconds"],
+            }
+        elif not _AUTO_SYNC_LOCK.acquire(blocking=False):
             messages.append("Garmin sync already running. Try again shortly.")
             details["garmin"] = {"skipped": True, "reason": "sync_in_progress"}
         elif not (garmin_email and garmin_password):
@@ -5339,6 +5448,16 @@ def data_extract_sync(
                         },
                     }
                     sync_completed = True
+                    _clear_garmin_rate_limit(db_path)
+            except GarminRateLimitError as exc:
+                state = _set_garmin_rate_limit(db_path, str(exc))
+                messages.append(str(state["message"]))
+                details["garmin"] = {
+                    "skipped": True,
+                    "reason": "rate_limited",
+                    "rate_limited_until": state["until_utc"],
+                    "remaining_seconds": state["remaining_seconds"],
+                }
             finally:
                 _AUTO_SYNC_LOCK.release()
 
@@ -5371,6 +5490,7 @@ def data_extract_comprehensive(
             status_code=400,
             detail="Garmin credentials missing. Add credentials for the active owner scope.",
         )
+    _ensure_garmin_available(db_path)
 
     requested_start_day = parse_supported_day_value(payload.start_day)
     if requested_start_day is None:
