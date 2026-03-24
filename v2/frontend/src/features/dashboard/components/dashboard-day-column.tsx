@@ -34,36 +34,36 @@ interface DashboardDayColumnProps {
 
 const intensityClasses: Record<string, string> = {
   green:
-    'chrome-card border-[rgba(148,163,184,0.26)] bg-[linear-gradient(180deg,rgba(66,74,84,0.97),rgba(28,34,43,0.985)_46%,rgba(8,12,20,1))] shadow-[0_18px_32px_rgba(2,6,23,0.34),inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.34)]',
+    'border-[rgba(186,198,212,0.2)] bg-[linear-gradient(180deg,rgba(31,37,45,0.985),rgba(14,18,25,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
   blue:
-    'chrome-card border-[rgba(100,116,139,0.26)] bg-[linear-gradient(180deg,rgba(61,69,82,0.97),rgba(24,31,43,0.985)_46%,rgba(7,11,20,1))] shadow-[0_18px_32px_rgba(2,6,23,0.34),inset_0_1px_0_rgba(125,211,252,0.07),inset_0_-1px_0_rgba(0,0,0,0.34)]',
+    'border-[rgba(125,146,173,0.2)] bg-[linear-gradient(180deg,rgba(26,32,42,0.985),rgba(10,14,22,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
   orange:
-    'chrome-card border-[rgba(120,113,108,0.28)] bg-[linear-gradient(180deg,rgba(76,66,57,0.97),rgba(36,30,27,0.985)_46%,rgba(11,10,12,1))] shadow-[0_18px_32px_rgba(2,6,23,0.34),inset_0_1px_0_rgba(251,191,36,0.07),inset_0_-1px_0_rgba(0,0,0,0.34)]',
+    'border-[rgba(157,135,109,0.22)] bg-[linear-gradient(180deg,rgba(42,34,29,0.985),rgba(18,14,13,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
   red:
-    'chrome-card border-[rgba(120,113,108,0.28)] bg-[linear-gradient(180deg,rgba(79,60,64,0.97),rgba(38,24,29,0.985)_46%,rgba(12,9,12,1))] shadow-[0_18px_32px_rgba(2,6,23,0.34),inset_0_1px_0_rgba(248,113,113,0.07),inset_0_-1px_0_rgba(0,0,0,0.34)]',
+    'border-[rgba(155,118,123,0.22)] bg-[linear-gradient(180deg,rgba(43,30,34,0.985),rgba(18,12,15,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
   purple:
-    'chrome-card border-[rgba(100,116,139,0.26)] bg-[linear-gradient(180deg,rgba(66,62,89,0.97),rgba(28,24,47,0.985)_46%,rgba(8,10,20,1))] shadow-[0_18px_32px_rgba(2,6,23,0.34),inset_0_1px_0_rgba(196,181,253,0.07),inset_0_-1px_0_rgba(0,0,0,0.34)]',
+    'border-[rgba(131,127,177,0.2)] bg-[linear-gradient(180deg,rgba(34,29,51,0.985),rgba(12,13,23,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
 };
 
 const plannedIntensityClasses: Record<string, string> = {
   green:
-    'chrome-card border-[rgba(148,163,184,0.3)] bg-[linear-gradient(180deg,rgba(76,86,96,0.94),rgba(34,41,50,0.97)_46%,rgba(12,17,26,0.99))] shadow-[0_16px_28px_rgba(2,6,23,0.3),inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.3)]',
+    'border-[rgba(191,201,214,0.22)] bg-[linear-gradient(180deg,rgba(34,40,48,0.985),rgba(15,19,27,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
   blue:
-    'chrome-card border-[rgba(100,116,139,0.3)] bg-[linear-gradient(180deg,rgba(72,82,94,0.94),rgba(30,38,50,0.97)_46%,rgba(11,16,26,0.99))] shadow-[0_16px_28px_rgba(2,6,23,0.3),inset_0_1px_0_rgba(125,211,252,0.06),inset_0_-1px_0_rgba(0,0,0,0.3)]',
+    'border-[rgba(130,150,177,0.22)] bg-[linear-gradient(180deg,rgba(29,36,46,0.985),rgba(11,15,24,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
   orange:
-    'chrome-card border-[rgba(120,113,108,0.3)] bg-[linear-gradient(180deg,rgba(84,73,63,0.94),rgba(41,34,30,0.97)_46%,rgba(15,13,14,0.99))] shadow-[0_16px_28px_rgba(2,6,23,0.3),inset_0_1px_0_rgba(251,191,36,0.06),inset_0_-1px_0_rgba(0,0,0,0.3)]',
+    'border-[rgba(157,136,110,0.22)] bg-[linear-gradient(180deg,rgba(45,37,32,0.985),rgba(19,16,15,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
   red:
-    'chrome-card border-[rgba(120,113,108,0.3)] bg-[linear-gradient(180deg,rgba(86,69,72,0.94),rgba(42,29,33,0.97)_46%,rgba(15,12,15,0.99))] shadow-[0_16px_28px_rgba(2,6,23,0.3),inset_0_1px_0_rgba(248,113,113,0.06),inset_0_-1px_0_rgba(0,0,0,0.3)]',
+    'border-[rgba(157,121,126,0.22)] bg-[linear-gradient(180deg,rgba(45,32,35,0.985),rgba(18,13,16,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
   purple:
-    'chrome-card border-[rgba(100,116,139,0.3)] bg-[linear-gradient(180deg,rgba(73,69,97,0.94),rgba(31,27,50,0.97)_46%,rgba(11,14,26,0.99))] shadow-[0_16px_28px_rgba(2,6,23,0.3),inset_0_1px_0_rgba(196,181,253,0.06),inset_0_-1px_0_rgba(0,0,0,0.3)]',
+    'border-[rgba(135,130,178,0.22)] bg-[linear-gradient(180deg,rgba(36,31,53,0.985),rgba(13,14,24,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
 };
 
 const customBorderAccentClasses: Record<string, string> = {
-  green: 'border-[rgba(205,213,225,0.92)] outline-[rgba(241,245,249,0.38)]',
-  blue: 'border-[rgba(79,179,255,0.76)] outline-[rgba(125,211,252,0.3)]',
-  orange: 'border-[rgba(240,166,58,0.76)] outline-[rgba(252,211,77,0.3)]',
-  red: 'border-[rgba(239,106,106,0.74)] outline-[rgba(253,164,175,0.3)]',
-  purple: 'border-[rgba(139,108,246,0.74)] outline-[rgba(196,181,253,0.3)]',
+  green: 'border-[rgba(221,229,238,0.72)] ring-1 ring-inset ring-white/10',
+  blue: 'border-[rgba(120,198,255,0.72)] ring-1 ring-inset ring-sky-200/14',
+  orange: 'border-[rgba(245,186,95,0.72)] ring-1 ring-inset ring-amber-200/14',
+  red: 'border-[rgba(246,135,135,0.72)] ring-1 ring-inset ring-rose-200/14',
+  purple: 'border-[rgba(168,139,250,0.72)] ring-1 ring-inset ring-violet-200/14',
 };
 
 type DayMetaItem = {
@@ -71,37 +71,6 @@ type DayMetaItem = {
   icon: 'distance' | 'fitness' | 'fatigue';
   value: string;
 };
-
-function fmtMetaLines(day: DashboardDayColumnType): string[] {
-  const line1: string[] = [];
-  const line2: string[] = [];
-  const line3: string[] = [];
-
-  line1.push(`${Math.round(day.meta.distance_eqv_km || 0)} km`);
-  if ((day.meta.calories || 0) > 0) line1.push(`${Math.round(day.meta.calories)} kcal`);
-
-  if (day.meta.fitness !== null) line2.push(`Fit ${Math.round(day.meta.fitness)}`);
-  if (day.meta.fatigue !== null) line2.push(`Fatigue ${Math.round(day.meta.fatigue)}`);
-
-  if (day.meta.resting_hr !== null && day.meta.resting_hr > 0) {
-    line3.push(`RHR ${Math.round(day.meta.resting_hr)}`);
-  }
-  if (day.meta.stress_avg !== null && day.meta.stress_avg > 0) {
-    line3.push(`Stress ${Math.round(day.meta.stress_avg)}`);
-  }
-
-  if (line2.length === 0 && (day.meta.planned_duration_s || 0) > 0) {
-    line2.push(`${Math.round(day.meta.planned_duration_s / 3600)}h`);
-  }
-  if (line2.length < 2 && (day.meta.planned_if_pct || 0) > 0) {
-    line2.push(`${Math.round(day.meta.planned_if_pct)}%`);
-  }
-  if (line3.length === 0 && day.meta.show_fatigue_expected && day.meta.fatigue_expected !== null) {
-    line3.push(`Fatigue exp ${Math.round(day.meta.fatigue_expected)}`);
-  }
-
-  return [line1.join(' · '), line2.join(' · '), line3.join(' · ')].filter(Boolean);
-}
 
 function fmtMeta(day: DashboardDayColumnType): DayMetaItem[] {
   const items: DayMetaItem[] = [
@@ -112,11 +81,14 @@ function fmtMeta(day: DashboardDayColumnType): DayMetaItem[] {
     },
   ];
 
-  if (day.meta.fitness !== null) {
+  const fitnessValue = day.meta.show_fatigue_expected && day.meta.fitness_expected !== null
+    ? day.meta.fitness_expected
+    : day.meta.fitness;
+  if (fitnessValue !== null) {
     items.push({
       key: 'fitness',
       icon: 'fitness',
-      value: `${Math.round(day.meta.fitness)}`,
+      value: `${Math.round(fitnessValue)}`,
     });
   }
 
@@ -142,6 +114,7 @@ function formatActivityTitle(raw: string): string {
   if (normalized.includes('strength')) return 'Lift';
   if (normalized.includes('swim')) return 'Swim';
   if (normalized.includes('cycl')) return 'Bike';
+  if (normalized.includes('ellipt')) return 'Ellip';
   if (normalized === 'run' || normalized === 'running' || normalized.includes(' run')) return 'Run';
   if (normalized === 'treadmill_running' || normalized === 'treadmill run' || normalized === 'treadmillrunning') {
     return 'Tready';
@@ -174,6 +147,10 @@ function compactLine(parts: Array<string | null | undefined>): string {
 
 function compactDistanceLabel(label: string | null | undefined): string {
   return String(label || '').trim().replace(/\/km\b/gi, '').replace(/km\s*eqv\.?/gi, 'km');
+}
+
+function formatEquivalentDistance(distanceEqvKm: number, runningLike: boolean): string {
+  return `${Math.round(distanceEqvKm)} ${runningLike ? 'km' : "km'"}`;
 }
 
 function compactPaceLabel(label: string | null | undefined): string {
@@ -347,7 +324,7 @@ export function DashboardDayColumn({
 }: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
   const metaItems = fmtMeta(day);
-  const metaLines = fmtMetaLines(day);
+  const desktopMetaItems = metaItems.filter((item) => item.icon === 'fitness' || item.icon === 'fatigue');
   const shouldScrollActivities = activityCount > 3;
   const actualCards: Array<
     | { type: 'activity'; activity: DashboardDayColumnType['actual_activities'][number]; index: number }
@@ -420,12 +397,17 @@ export function DashboardDayColumn({
               ))}
             </div>
           ) : (
-            <div className="min-h-[50px] space-y-0.5 text-[12px] leading-[1.3] text-muted-foreground">
-              {metaLines.map((line) => (
-                <p key={line} className="truncate">
-                  {line}
-                </p>
-              ))}
+            <div className="flex items-start">
+              <div className="flex flex-wrap items-center gap-2 text-[12px] leading-[1.2] text-slate-300/84">
+                {desktopMetaItems.map((item, index) => (
+                  <div key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
+                    {item.icon === 'fitness' ? <Gauge className="h-3 w-3 text-sky-300/90" /> : null}
+                    {item.icon === 'fatigue' ? <HeartPulse className="h-3 w-3 text-rose-300/90" /> : null}
+                    <span className="font-medium tabular-nums text-slate-100/92">{item.value}</span>
+                    {index < desktopMetaItems.length - 1 ? <span className="text-slate-500/80">•</span> : null}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -473,7 +455,7 @@ export function DashboardDayColumn({
               <div
                 key={`undo-actual-${day.day_utc}-${undoActivity?.lineNo ?? item.slotIndex}`}
                 className={cn(
-                  'relative flex flex-col overflow-hidden rounded-lg border-2 border-dashed border-sky-300/35 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),rgba(15,23,42,0.45)] transition-all duration-200',
+                  'relative flex flex-col overflow-hidden rounded-lg border border-sky-300/35 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),rgba(15,23,42,0.45)] transition-all duration-200',
                   compactMobile ? 'h-[88px] px-2 pb-2 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
                   undoVisible ? 'opacity-100' : 'opacity-85',
                 )}
@@ -518,7 +500,7 @@ export function DashboardDayColumn({
                     className={cn(
                       'relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
                       'px-2 py-1.5',
-                      activity.is_custom ? 'border-2 border-dashed outline outline-1 outline-offset-[-3px] outline-dotted' : undefined,
+                      activity.is_custom ? 'border-[1.5px]' : undefined,
                       intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                     )}
@@ -532,7 +514,6 @@ export function DashboardDayColumn({
                       }
                     }}
                   >
-                    <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
                     {activity.is_custom ? (
                       <Button
                         variant="ghost"
@@ -581,7 +562,7 @@ export function DashboardDayColumn({
                   className={cn(
                     'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
                     compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[102px] p-2 text-[12px]',
-                    activity.is_custom ? 'border-2 border-dashed outline outline-1 outline-offset-[-3px] outline-dotted' : undefined,
+                    activity.is_custom ? 'border-[1.5px]' : undefined,
                     intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
                     activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                   )}
@@ -645,7 +626,7 @@ export function DashboardDayColumn({
               <div
                 key={`undo-planned-${day.day_utc}-${undoActivity?.lineNo ?? item.slotIndex}`}
                 className={cn(
-                  'relative flex flex-col overflow-hidden rounded-lg border-2 border-dashed border-sky-300/35 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),rgba(15,23,42,0.45)] transition-all duration-200',
+                  'relative flex flex-col overflow-hidden rounded-lg border border-sky-300/35 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),rgba(15,23,42,0.45)] transition-all duration-200',
                   compactMobile ? 'h-[88px] px-2 pb-2 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
                   undoVisible ? 'opacity-100' : 'opacity-85',
                 )}
@@ -671,8 +652,8 @@ export function DashboardDayColumn({
                   const runningLike = isRunningLikeSport(item.activity.activity);
                   const metricPills: MetricBadgeItem[] = [
                     metricPillLabel(durationLabel) ? { tone: 'duration', label: metricPillLabel(durationLabel)! } : null,
-                    metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`)
-                      ? { tone: 'distance', label: metricPillLabel(`${Math.round(item.activity.distance_eqv_km)} km`)! }
+                    metricPillLabel(formatEquivalentDistance(item.activity.distance_eqv_km, runningLike))
+                      ? { tone: 'distance', label: metricPillLabel(formatEquivalentDistance(item.activity.distance_eqv_km, runningLike))! }
                       : null,
                     metricPillLabel(compactPaceLabel(item.activity.pace_label))
                       ? { tone: 'pace', label: metricPillLabel(compactPaceLabel(item.activity.pace_label))! }
@@ -685,7 +666,7 @@ export function DashboardDayColumn({
                 <div
                   key={`${item.activity.day_utc}-${item.activity.line_no}`}
                   className={cn(
-                    'relative overflow-hidden rounded-[1rem] border-2 border-dashed shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
+                    'relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
                     'px-2 py-1.5',
                     plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                   )}
@@ -699,7 +680,6 @@ export function DashboardDayColumn({
                     }
                   }}
                 >
-                  <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
                   <div className="absolute right-1.5 top-1.5 flex gap-1">
                     <Button
                       variant="ghost"
@@ -755,7 +735,7 @@ export function DashboardDayColumn({
                     <div
                       key={`${item.activity.day_utc}-${item.activity.line_no}`}
                       className={cn(
-                        'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border-2 border-dashed transition-colors hover:bg-white/5',
+                        'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
                         compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
                         plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                       )}
@@ -804,7 +784,7 @@ export function DashboardDayColumn({
                         <MetricRow
                           compactMobile={compactMobile}
                           icon={<Route className="h-2.5 w-2.5 shrink-0 text-emerald-300/80" />}
-                          text={compactLine([durationLabel, `${Math.round(item.activity.distance_eqv_km)} kmeq`])}
+                          text={compactLine([durationLabel, formatEquivalentDistance(item.activity.distance_eqv_km, runningLike)])}
                         />
                         <MetricRow
                           compactMobile={compactMobile}

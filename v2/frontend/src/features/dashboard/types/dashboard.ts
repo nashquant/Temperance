@@ -59,6 +59,7 @@ export interface DashboardDayMeta {
   distance_eqv_km: number;
   calories: number;
   fitness: number | null;
+  fitness_expected: number | null;
   fatigue: number | null;
   fatigue_expected: number | null;
   resting_hr: number | null;

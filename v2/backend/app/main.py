@@ -4059,6 +4059,7 @@ def _build_activity_dashboard_payload(
 
     latest_actual_day = pd.Timestamp(max_day).normalize()
     current_week_start = _week_start_monday(today_local)
+    fitness_expected_lookup: dict[pd.Timestamp, float] = {}
     fatigue_expected_lookup: dict[pd.Timestamp, float] = {}
     last_planned_day: pd.Timestamp | None = (
         max(planned_tss_lookup.keys()) if planned_tss_lookup else None
@@ -4089,7 +4090,11 @@ def _build_activity_dashboard_payload(
                 index=projection_days,
                 dtype="float64",
             )
-            projected_fatigue = ema_multi(projected_tss, [7])[7]
+            projected_models = ema_multi(projected_tss, [7, 42])
+            projected_fatigue = projected_models[7]
+            projected_fitness = projected_models[42]
+            for day, value in projected_fitness.items():
+                fitness_expected_lookup[pd.Timestamp(day).normalize()] = _safe_float(value)
             for day, value in projected_fatigue.items():
                 fatigue_expected_lookup[pd.Timestamp(day).normalize()] = _safe_float(value)
 
@@ -4248,6 +4253,11 @@ def _build_activity_dashboard_payload(
                         "distance_eqv_km": round(_safe_float(day_stats.get("distance_eqv_km")), 1),
                         "calories": round(_safe_float(day_stats.get("calories")), 0),
                         "fitness": round(_safe_float(fitfat.get("fitness")), 1) if fitfat else None,
+                        "fitness_expected": (
+                            round(_safe_float(fitness_expected_lookup.get(day)), 1)
+                            if day in fitness_expected_lookup
+                            else None
+                        ),
                         "fatigue": round(_safe_float(fitfat.get("fatigue")), 1) if fitfat else None,
                         "fatigue_expected": (
                             round(_safe_float(fatigue_expected_lookup.get(day)), 1)
