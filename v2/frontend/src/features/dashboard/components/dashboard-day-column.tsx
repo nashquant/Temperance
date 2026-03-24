@@ -34,28 +34,28 @@ interface DashboardDayColumnProps {
 
 const intensityClasses: Record<string, string> = {
   green:
-    'border-[rgba(186,198,212,0.2)] bg-[linear-gradient(180deg,rgba(31,37,45,0.985),rgba(14,18,25,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
+    'border-[rgba(160,176,194,0.28)] bg-[linear-gradient(180deg,rgba(34,41,48,0.985),rgba(16,20,27,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
   blue:
-    'border-[rgba(125,146,173,0.2)] bg-[linear-gradient(180deg,rgba(26,32,42,0.985),rgba(10,14,22,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
+    'border-[rgba(104,157,214,0.3)] bg-[linear-gradient(180deg,rgba(24,34,48,0.985),rgba(9,14,23,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
   orange:
-    'border-[rgba(157,135,109,0.22)] bg-[linear-gradient(180deg,rgba(42,34,29,0.985),rgba(18,14,13,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
+    'border-[rgba(180,134,86,0.3)] bg-[linear-gradient(180deg,rgba(46,36,29,0.985),rgba(20,15,13,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
   red:
-    'border-[rgba(155,118,123,0.22)] bg-[linear-gradient(180deg,rgba(43,30,34,0.985),rgba(18,12,15,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
+    'border-[rgba(183,103,116,0.3)] bg-[linear-gradient(180deg,rgba(46,31,36,0.985),rgba(19,12,15,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
   purple:
-    'border-[rgba(131,127,177,0.2)] bg-[linear-gradient(180deg,rgba(34,29,51,0.985),rgba(12,13,23,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
+    'border-[rgba(136,122,201,0.3)] bg-[linear-gradient(180deg,rgba(34,29,54,0.985),rgba(12,13,24,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.24)]',
 };
 
 const plannedIntensityClasses: Record<string, string> = {
   green:
-    'border-[rgba(191,201,214,0.22)] bg-[linear-gradient(180deg,rgba(34,40,48,0.985),rgba(15,19,27,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
+    'border-[rgba(171,185,202,0.28)] bg-[linear-gradient(180deg,rgba(38,44,52,0.985),rgba(17,21,29,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
   blue:
-    'border-[rgba(130,150,177,0.22)] bg-[linear-gradient(180deg,rgba(29,36,46,0.985),rgba(11,15,24,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
+    'border-[rgba(111,163,221,0.28)] bg-[linear-gradient(180deg,rgba(28,37,50,0.985),rgba(11,15,25,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
   orange:
-    'border-[rgba(157,136,110,0.22)] bg-[linear-gradient(180deg,rgba(45,37,32,0.985),rgba(19,16,15,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
+    'border-[rgba(187,140,92,0.28)] bg-[linear-gradient(180deg,rgba(48,39,33,0.985),rgba(20,17,15,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
   red:
-    'border-[rgba(157,121,126,0.22)] bg-[linear-gradient(180deg,rgba(45,32,35,0.985),rgba(18,13,16,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
+    'border-[rgba(189,110,123,0.28)] bg-[linear-gradient(180deg,rgba(48,34,37,0.985),rgba(19,13,16,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
   purple:
-    'border-[rgba(135,130,178,0.22)] bg-[linear-gradient(180deg,rgba(36,31,53,0.985),rgba(13,14,24,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
+    'border-[rgba(145,129,210,0.28)] bg-[linear-gradient(180deg,rgba(36,31,56,0.985),rgba(13,14,25,0.99))] shadow-[0_12px_24px_rgba(2,6,23,0.22)]',
 };
 
 const customBorderAccentClasses: Record<string, string> = {
