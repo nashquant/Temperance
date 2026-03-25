@@ -526,7 +526,7 @@ export function DashboardDayColumn({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1.5 top-1.5 h-5 w-5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        className="absolute right-1 top-1 h-4.5 w-4.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
                         onClick={(event) => {
                           event.stopPropagation();
                           onDeleteCustomActivity?.(activity, item.index);
@@ -534,7 +534,7 @@ export function DashboardDayColumn({
                         disabled={deletingCustomActivity}
                         aria-label="Delete custom activity"
                       >
-                        <X className="h-2.5 w-2.5" />
+                        <X className="h-2 w-2" />
                       </Button>
                     ) : isInvalid ? (
                       <>
@@ -559,7 +559,7 @@ export function DashboardDayColumn({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1.5 top-1.5 h-5 w-5 shrink-0 rounded-full border border-white/10 bg-black/30 text-slate-300 transition-colors hover:border-white/18 hover:bg-black/45 hover:text-white"
+                        className="absolute right-1 top-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
                         onClick={(event) => {
                           event.stopPropagation();
                           onToggleActivityInvalid?.(activity, true);
@@ -567,7 +567,7 @@ export function DashboardDayColumn({
                         disabled={togglingActivityInvalid}
                         aria-label="Mark activity invalid"
                       >
-                        <X className="h-2.5 w-2.5" />
+                        <X className="h-1.5 w-1.5" />
                       </Button>
                     )}
                     <div className={cn('min-w-0', activity.is_custom || !isInvalid ? 'pr-6' : 'px-6')}>
@@ -621,7 +621,7 @@ export function DashboardDayColumn({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute -right-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                      className="absolute right-1 top-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
                       onClick={(event) => {
                         event.stopPropagation();
                         onDeleteCustomActivity?.(activity, item.index);
@@ -629,7 +629,7 @@ export function DashboardDayColumn({
                       disabled={deletingCustomActivity}
                       aria-label="Delete custom activity"
                     >
-                      <X className="h-1.75 w-1.75" />
+                      <X className="h-1.5 w-1.5" />
                     </Button>
                   ) : isInvalid ? (
                     <>
@@ -654,7 +654,7 @@ export function DashboardDayColumn({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute -right-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-black/30 text-slate-300 transition-colors hover:border-white/18 hover:bg-black/45 hover:text-white"
+                      className="absolute right-1 top-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
                       onClick={(event) => {
                         event.stopPropagation();
                         onToggleActivityInvalid?.(activity, true);
@@ -662,7 +662,7 @@ export function DashboardDayColumn({
                       disabled={togglingActivityInvalid}
                       aria-label="Mark activity invalid"
                     >
-                      <X className="h-1.75 w-1.75" />
+                      <X className="h-1.5 w-1.5" />
                     </Button>
                   )}
                   <div className="flex min-w-0 items-center">
