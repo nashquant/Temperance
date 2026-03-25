@@ -2877,7 +2877,7 @@ def cached_filtered_views(
         if float(rtss_series.abs().sum()) <= 1e-9:
             rtss_series = pd.to_numeric(filtered_daily.get("tss_total"), errors="coerce").fillna(0.0)
         rtss_ema = ema_multi(rtss_series, [100, 7, 10])
-        filtered_daily["leg_elasticity"] = rtss_ema[100]
+        filtered_daily["durability"] = rtss_ema[100]
         filtered_daily["pounding"] = rtss_ema[7]
         filtered_daily["injury_risk"] = (rtss_ema[10] - daily_target).clip(lower=0.0)
     return filtered_metrics, filtered_daily
@@ -4124,18 +4124,18 @@ if view in {"Dashboard", "Model Metrics"}:
                 ordered_fitness_container.caption("No fitness/fatigue data to plot.")
 
         if render_injury:
-            ordered_leg_pounding_container.subheader("Leg Elasticity vs Pounding")
-            if not filtered_daily_range.empty and "leg_elasticity" in filtered_daily_range.columns and "pounding" in filtered_daily_range.columns:
+            ordered_leg_pounding_container.subheader("Durability vs Pounding")
+            if not filtered_daily_range.empty and "durability" in filtered_daily_range.columns and "pounding" in filtered_daily_range.columns:
                 weekly_rff_long = _section_long_series(
                     filtered_daily_range,
-                    value_cols=["leg_elasticity", "pounding"],
-                    label_map={"leg_elasticity": "Leg Elasticity", "pounding": "Pounding"},
+                    value_cols=["durability", "pounding"],
+                    label_map={"durability": "Durability", "pounding": "Pounding"},
                     use_weekly=weekly_toggle,
                     start_day=start_ts,
                     end_day=end_ts,
                 )
                 if weekly_rff_long.empty:
-                    st.caption("No Leg Elasticity/Pounding data in this range.")
+                    st.caption("No Durability/Pounding data in this range.")
                 else:
                     # Keep threshold on the same scale users expect for this chart.
                     rff_threshold_value = float(derived_daily_tss_target)
@@ -4164,7 +4164,7 @@ if view in {"Dashboard", "Model Metrics"}:
                             color=alt.Color(
                                 "series:N",
                                 legend=alt.Legend(title=None, orient="bottom", direction="horizontal"),
-                                scale=alt.Scale(domain=["Leg Elasticity", "Pounding"], range=["#22c55e", "#ef4444"]),
+                                scale=alt.Scale(domain=["Durability", "Pounding"], range=["#22c55e", "#ef4444"]),
                             ),
                             tooltip=["period_start:T", "series:N", alt.Tooltip("value:Q", format=".0f")],
                         )
@@ -4188,7 +4188,7 @@ if view in {"Dashboard", "Model Metrics"}:
                         key="dashboard_injury_leg_pounding",
                     )
             else:
-                ordered_leg_pounding_container.caption("No Leg Elasticity/Pounding data to plot.")
+                ordered_leg_pounding_container.caption("No Durability/Pounding data to plot.")
 
         if render_summary:
             ordered_distance_container.subheader("Distance vs Distance Eqv.")

@@ -19,7 +19,7 @@ export interface AthleteProgressionPoint {
   fatigue: number;
   overreach: number;
   injury_risk: number;
-  leg_elasticity: number;
+  durability: number;
   pounding: number;
   vdot: number | null;
   vdot_max: number | null;

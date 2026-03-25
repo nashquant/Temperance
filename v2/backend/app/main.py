@@ -3668,7 +3668,7 @@ def _build_athlete_progression_payload(
     model_df["fatigue"] = tss_emas[7]
     model_df["overreach"] = (tss_emas[10] - daily_tss_target_series).clip(lower=0.0)
     model_df["injury_risk"] = (rtss_emas[10] - daily_tss_target_series).clip(lower=0.0)
-    model_df["leg_elasticity"] = rtss_emas[100]
+    model_df["durability"] = rtss_emas[100]
     model_df["pounding"] = rtss_emas[7]
 
     model_df["zone_low_aerobic_h"] = model_df["hr_time_in_zone_1"] / 3600.0
@@ -3699,7 +3699,7 @@ def _build_athlete_progression_payload(
                 fatigue=("fatigue", "mean"),
                 overreach=("overreach", "mean"),
                 injury_risk=("injury_risk", "mean"),
-                leg_elasticity=("leg_elasticity", "mean"),
+                durability=("durability", "mean"),
                 pounding=("pounding", "mean"),
                 vdot=("vdot", "max"),
                 vdot_max=("vdot_max", "max"),
@@ -3743,7 +3743,7 @@ def _build_athlete_progression_payload(
                 "fatigue": round(_safe_float(row.get("fatigue")), 3),
                 "overreach": round(_safe_float(row.get("overreach")), 3),
                 "injury_risk": round(_safe_float(row.get("injury_risk")), 3),
-                "leg_elasticity": round(_safe_float(row.get("leg_elasticity")), 3),
+                "durability": round(_safe_float(row.get("durability")), 3),
                 "pounding": round(_safe_float(row.get("pounding")), 3),
                 "vdot": (
                     int(round(_safe_float(row.get("vdot"))))
