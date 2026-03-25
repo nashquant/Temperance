@@ -68,7 +68,10 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   );
 
   const refetchPlan = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['plan-activities'] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['plan-activities'] }),
+      queryClient.invalidateQueries({ queryKey: ['weekly-outlook'] }),
+    ]);
   };
 
   const manualDoneMutation = useMutation({

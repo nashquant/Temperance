@@ -15,7 +15,7 @@ import {
   updateCustomActivityWorkout,
 } from '@/features/custom-activities/services/custom-activities-api';
 import { useDataExtractStatusQuery } from '@/features/data-extract/hooks/use-data-extract-status';
-import { runComprehensiveExtract, setGarminCredentials } from '@/features/data-extract/services/data-extract-api';
+import { resetGarminAuth, runComprehensiveExtract, setGarminCredentials } from '@/features/data-extract/services/data-extract-api';
 import { PlannedMetricSelector } from '@/features/plan-activities/components/planned-metric-selector';
 import { PlannedWeekChart } from '@/features/plan-activities/components/planned-week-chart';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
@@ -51,6 +51,7 @@ export function DataExtractPage(): JSX.Element {
   const [result, setResult] = useState<string | null>(null);
   const [customResult, setCustomResult] = useState<string | null>(null);
   const [garminCredResult, setGarminCredResult] = useState<string | null>(null);
+  const [garminResetResult, setGarminResetResult] = useState<string | null>(null);
   const [customEditValues, setCustomEditValues] = useState<Record<string, string>>({});
   const [extractLogs, setExtractLogs] = useState<string[]>([]);
   const lastProgressLogCountRef = useRef(0);
@@ -204,6 +205,28 @@ export function DataExtractPage(): JSX.Element {
     },
     onError: (error) => {
       setGarminCredResult(error instanceof Error ? error.message : 'Unable to update Garmin credentials.');
+    },
+  });
+
+  const resetGarminAuthMutation = useMutation({
+    mutationFn: async () => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return resetGarminAuth({
+        token: session.token,
+        owner: profile?.owner,
+      });
+    },
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
+      setGarminPassword('');
+      setGarminResetResult(
+        response.garmin_rate_limit?.active
+          ? `${response.message}. Garmin rate limit remains active until ${response.garmin_rate_limit.until_utc ?? 'later'}.`
+          : response.message,
+      );
+    },
+    onError: (error) => {
+      setGarminResetResult(error instanceof Error ? error.message : 'Unable to reset Garmin auth.');
     },
   });
 
@@ -387,6 +410,20 @@ export function DataExtractPage(): JSX.Element {
               <p className="text-xs text-muted-foreground">
                 Current source: <span className="font-medium text-foreground">{status?.garmin_credentials_source ?? 'missing'}</span>
               </p>
+              <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => resetGarminAuthMutation.mutate()}
+                  disabled={resetGarminAuthMutation.isPending}
+                >
+                  {resetGarminAuthMutation.isPending ? 'Resetting...' : 'Reset Garmin auth'}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Clears cached Garmin session/tokens for this backend process.
+                </p>
+              </div>
+              {garminResetResult ? <p className="text-xs text-muted-foreground">{garminResetResult}</p> : null}
             </>
           ) : (
             <>
@@ -432,11 +469,22 @@ export function DataExtractPage(): JSX.Element {
                 >
                   Clear
                 </Button>
+                {isAdmin ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => resetGarminAuthMutation.mutate()}
+                    disabled={resetGarminAuthMutation.isPending}
+                  >
+                    {resetGarminAuthMutation.isPending ? 'Resetting...' : 'Reset Garmin auth'}
+                  </Button>
+                ) : null}
                 <p className="text-xs text-muted-foreground">
                   Active source: <span className="font-medium text-foreground">{status?.garmin_credentials_source ?? 'missing'}</span>
                 </p>
               </div>
               {garminCredResult ? <p className="text-xs text-muted-foreground">{garminCredResult}</p> : null}
+              {garminResetResult ? <p className="text-xs text-muted-foreground">{garminResetResult}</p> : null}
             </>
           )}
         </CardContent>

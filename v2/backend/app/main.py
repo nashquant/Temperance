@@ -92,6 +92,7 @@ from garmin_client import (  # noqa: E402
     fetch_garmin_runs,
     GarminWellnessChunk,
     import_runs_from_folder,
+    reset_garmin_auth,
 )
 
 DEFAULT_LTHR = 178.0
@@ -5346,6 +5347,37 @@ def data_extract_credentials(
         "updated": True,
         "source": "session",
         "message": "Owner credentials saved in memory only." if role == "admin" else "Session credentials saved in memory only.",
+    }
+
+
+@app.post("/api/v1/data-extract/garmin-auth/reset")
+def data_extract_garmin_auth_reset(
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    role = str(ctx.get("role") or "viewer").strip().lower()
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    rate_limit_state = _garmin_rate_limit_state(db_path)
+
+    reset_garmin_auth()
+    log_sync(
+        db_path,
+        source="v2_garmin_auth_reset",
+        success=True,
+        message="Garmin auth fully reset via API.",
+    )
+
+    return {
+        "success": True,
+        "owner": resolved_owner,
+        "process_wide": True,
+        "message": "Garmin auth fully reset",
+        "garmin_rate_limit": rate_limit_state,
     }
 
 

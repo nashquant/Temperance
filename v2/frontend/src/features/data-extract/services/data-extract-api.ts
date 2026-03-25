@@ -4,6 +4,7 @@ import type {
   ComprehensiveExtractRequest,
   ComprehensiveExtractResponse,
   DataExtractStatusResponse,
+  GarminAuthResetResponse,
   GarminCredentialsRequest,
   GarminCredentialsResponse,
   SyncRequest,
@@ -53,5 +54,12 @@ export async function setGarminCredentials({
     method: 'POST',
     token,
     body: payload,
+  });
+}
+
+export async function resetGarminAuth({ token, owner }: BaseParams): Promise<GarminAuthResetResponse> {
+  return apiRequest<GarminAuthResetResponse>(withOwner(API_CONFIG.endpoints.dataExtractGarminAuthReset, owner), {
+    method: 'POST',
+    token,
   });
 }

@@ -3,6 +3,10 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import logging
+import os
+import time
+import threading
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass
@@ -14,6 +18,16 @@ try:
     from fitparse import FitFile
 except Exception:  # pragma: no cover
     FitFile = None
+
+
+logger = logging.getLogger(__name__)
+
+_GARMIN_AUTH_LOCK = threading.RLock()
+_GARMIN_SHARED_CLIENT: Any | None = None
+_GARMIN_SHARED_EMAIL_HASH: str | None = None
+_GARMIN_LOGIN_ATTEMPTED = False
+_GARMIN_LOGIN_COMPLETED = False
+_GARMIN_LOGIN_RATE_LIMITED = False
 
 
 @dataclass
@@ -45,6 +59,270 @@ class GarminRateLimitError(RuntimeError):
     pass
 
 
+def _garmin_session_dir() -> Path:
+    root = os.getenv("TEMPERANCE_GARMIN_SESSION_DIR")
+    if root:
+        return Path(root).expanduser()
+    return Path.home() / ".temperance" / "garmin_auth"
+
+
+def _garmin_session_file() -> Path:
+    return _garmin_session_dir() / "session.json"
+
+
+def _garmin_legacy_token_files() -> list[Path]:
+    session_dir = _garmin_session_dir()
+    return [
+        _garmin_session_file(),
+        session_dir / "oauth1_token.json",
+        session_dir / "oauth2_token.json",
+    ]
+
+
+def _email_hash(email: str) -> str:
+    return hashlib.sha256(str(email or "").strip().lower().encode("utf-8")).hexdigest()
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "429" in message or "too many requests" in message or "rate limit" in message
+
+
+def _sleep_with_backoff(attempt_number: int) -> None:
+    delay_seconds = max(2 ** max(attempt_number, 0), 1)
+    logger.warning("Garmin 429 encountered; backing off for %ss", delay_seconds)
+    time.sleep(delay_seconds)
+
+
+def _call_with_rate_limit_backoff(
+    fn: Callable[..., Any],
+    *args: Any,
+    is_login: bool = False,
+    max_attempts: int = 3,
+) -> Any:
+    for attempt in range(max_attempts):
+        try:
+            return fn(*args)
+        except GarminRateLimitError:
+            logger.warning("Garmin 429 encountered during %s", "login" if is_login else "API call")
+            if is_login or attempt >= max_attempts - 1:
+                raise
+            _sleep_with_backoff(attempt + 1)
+        except Exception as exc:
+            if not _is_rate_limit_error(exc):
+                raise
+            logger.warning("Garmin 429 encountered during %s: %s", "login" if is_login else "API call", exc)
+            if is_login or attempt >= max_attempts - 1:
+                raise GarminRateLimitError(str(exc)) from exc
+            _sleep_with_backoff(attempt + 1)
+    raise GarminRateLimitError("Garmin request failed after repeated 429 responses.")
+
+
+def _populate_client_identity(client: Any) -> None:
+    profile = _call_with_rate_limit_backoff(lambda: client.garth.profile)
+    client.display_name = profile["displayName"]
+    client.full_name = profile["fullName"]
+    settings = _call_with_rate_limit_backoff(
+        lambda: client.garth.connectapi("/userprofile-service/userprofile/user-settings")
+    )
+    client.unit_system = settings["userData"]["measurementSystem"]
+
+
+def _persist_session_to_disk(client: Any, email: str) -> None:
+    session_dir = _garmin_session_dir()
+    session_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "email_hash": _email_hash(email),
+        "saved_at_utc": datetime.now(timezone.utc).isoformat(),
+        "garth_tokens": client.garth.dumps(),
+        "display_name": client.display_name,
+        "full_name": client.full_name,
+        "unit_system": client.unit_system,
+    }
+    _garmin_session_file().write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _clear_client_state(client: Any | None) -> None:
+    if client is None:
+        return
+    try:
+        sess = getattr(getattr(client, "garth", None), "sess", None)
+        if sess is not None:
+            try:
+                sess.cookies.clear()
+            except Exception:
+                pass
+            try:
+                sess.headers.clear()
+            except Exception:
+                pass
+            try:
+                sess.close()
+            except Exception:
+                pass
+        garth_client = getattr(client, "garth", None)
+        if garth_client is not None:
+            garth_client.oauth1_token = None
+            garth_client.oauth2_token = None
+            garth_client._profile = None
+        client.display_name = None
+        client.full_name = None
+        client.unit_system = None
+    except Exception:
+        logger.debug("Garmin client cleanup encountered a non-fatal error.", exc_info=True)
+
+
+def _build_fresh_garmin_client(email: str, password: str) -> Any:
+    import garth
+    import requests
+    from garminconnect import Garmin
+
+    fresh_session = requests.Session()
+    fresh_session.cookies.clear()
+    fresh_session.headers.clear()
+
+    client = Garmin(email=email, password=password)
+    client.garth = garth.Client(session=fresh_session)
+    client.garth.configure(domain="garmin.com", retries=0)
+    client.display_name = None
+    client.full_name = None
+    client.unit_system = None
+    return client
+
+
+def _restore_session_from_disk(client: Any, email: str) -> bool:
+    session_file = _garmin_session_file()
+    if not session_file.exists():
+        return False
+
+    try:
+        payload = json.loads(session_file.read_text(encoding="utf-8"))
+    except Exception:
+        logger.warning("Garmin session cache is unreadable. Removing it.")
+        session_file.unlink(missing_ok=True)
+        return False
+
+    if payload.get("email_hash") != _email_hash(email):
+        logger.info("Garmin session cache belongs to a different account. Removing it.")
+        session_file.unlink(missing_ok=True)
+        return False
+
+    token_blob = str(payload.get("garth_tokens") or "").strip()
+    if not token_blob:
+        logger.info("Garmin session cache is empty. Removing it.")
+        session_file.unlink(missing_ok=True)
+        return False
+
+    try:
+        client.garth.loads(token_blob)
+        _populate_client_identity(client)
+        logger.info("Reusing Garmin session from disk cache.")
+        return True
+    except GarminRateLimitError:
+        logger.warning("Garmin 429 encountered while restoring cached auth state.")
+        raise
+    except Exception:
+        logger.warning("Garmin cached auth state is invalid. Removing it.")
+        session_file.unlink(missing_ok=True)
+        _clear_client_state(client)
+        return False
+
+
+def reset_garmin_auth() -> None:
+    global _GARMIN_SHARED_CLIENT
+    global _GARMIN_SHARED_EMAIL_HASH
+    global _GARMIN_LOGIN_ATTEMPTED
+    global _GARMIN_LOGIN_COMPLETED
+    global _GARMIN_LOGIN_RATE_LIMITED
+
+    with _GARMIN_AUTH_LOCK:
+        logger.info("Cleaning up Garmin auth state.")
+        for path in _garmin_legacy_token_files():
+            try:
+                if path.exists():
+                    path.unlink()
+                    logger.info("Deleted Garmin auth artifact: %s", path)
+            except Exception:
+                logger.warning("Failed to delete Garmin auth artifact: %s", path, exc_info=True)
+        _clear_client_state(_GARMIN_SHARED_CLIENT)
+        _GARMIN_SHARED_CLIENT = None
+        _GARMIN_SHARED_EMAIL_HASH = None
+        _GARMIN_LOGIN_ATTEMPTED = False
+        _GARMIN_LOGIN_COMPLETED = False
+        _GARMIN_LOGIN_RATE_LIMITED = False
+        logger.info("Garmin auth fully reset")
+
+
+def login(email: str, password: str, client: Any | None = None) -> Any:
+    global _GARMIN_SHARED_CLIENT
+    global _GARMIN_SHARED_EMAIL_HASH
+    global _GARMIN_LOGIN_ATTEMPTED
+    global _GARMIN_LOGIN_COMPLETED
+    global _GARMIN_LOGIN_RATE_LIMITED
+
+    email_identity = _email_hash(email)
+
+    with _GARMIN_AUTH_LOCK:
+        if _GARMIN_SHARED_CLIENT is not None and _GARMIN_SHARED_EMAIL_HASH == email_identity:
+            logger.info("Reusing Garmin session already loaded in memory.")
+            return _GARMIN_SHARED_CLIENT
+
+        if _GARMIN_LOGIN_RATE_LIMITED:
+            raise GarminRateLimitError("Garmin login is blocked after a previous 429 response in this process.")
+
+        if _GARMIN_LOGIN_ATTEMPTED and not _GARMIN_LOGIN_COMPLETED:
+            raise RuntimeError("Garmin login already attempted in this process. Call reset_garmin_auth() before retrying.")
+
+        _GARMIN_LOGIN_ATTEMPTED = True
+        client = client or _build_fresh_garmin_client(email, password)
+        logger.info("Creating fresh Garmin session and performing login.")
+
+        try:
+            _call_with_rate_limit_backoff(client.login, is_login=True, max_attempts=1)
+            _populate_client_identity(client)
+            _persist_session_to_disk(client, email)
+        except GarminRateLimitError:
+            _GARMIN_LOGIN_RATE_LIMITED = True
+            _clear_client_state(client)
+            logger.warning("Garmin login hit HTTP 429. Aborting without retrying SSO.")
+            raise
+        except Exception:
+            _clear_client_state(client)
+            raise
+
+        _GARMIN_LOGIN_COMPLETED = True
+        _GARMIN_SHARED_CLIENT = client
+        _GARMIN_SHARED_EMAIL_HASH = email_identity
+        logger.info("Garmin login succeeded and session was persisted to disk.")
+        return client
+
+
+def get_session(email: str, password: str) -> Any:
+    global _GARMIN_SHARED_CLIENT
+    global _GARMIN_SHARED_EMAIL_HASH
+
+    email_identity = _email_hash(email)
+
+    with _GARMIN_AUTH_LOCK:
+        if _GARMIN_SHARED_CLIENT is not None and _GARMIN_SHARED_EMAIL_HASH == email_identity:
+            logger.info("Reusing Garmin session from memory.")
+            return _GARMIN_SHARED_CLIENT
+
+        if _GARMIN_SHARED_CLIENT is not None and _GARMIN_SHARED_EMAIL_HASH != email_identity:
+            logger.info("Garmin account changed. Resetting cached auth state before creating a new session.")
+            reset_garmin_auth()
+
+        client = _build_fresh_garmin_client(email, password)
+
+        if _restore_session_from_disk(client, email):
+            _GARMIN_SHARED_CLIENT = client
+            _GARMIN_SHARED_EMAIL_HASH = email_identity
+            logger.info("Reused Garmin session from disk without logging in again.")
+            return client
+
+    return login(email, password, client=client)
+
+
 def _to_iso_utc(value: str | datetime) -> str:
     if isinstance(value, datetime):
         dt = value
@@ -58,7 +336,7 @@ def _to_iso_utc(value: str | datetime) -> str:
 
 def _safe_call(fn: Callable[..., Any], *args: Any) -> tuple[Any, str | None]:
     try:
-        return fn(*args), None
+        return _call_with_rate_limit_backoff(fn, *args), None
     except GarminRateLimitError:
         raise
     except Exception as exc:  # pragma: no cover
@@ -693,8 +971,6 @@ def fetch_garmin_comprehensive(
     - optional daily sleep/wellness endpoints
     - raw endpoint payload archival to disk for rebuilds
     """
-    from garminconnect import Garmin
-
     end_day = end_day or datetime.now(timezone.utc).date()
 
     def _progress(payload: dict[str, Any]) -> None:
@@ -705,8 +981,7 @@ def fetch_garmin_comprehensive(
         except Exception:
             return
 
-    client = Garmin(email=email, password=password)
-    client.login()
+    client = get_session(email=email, password=password)
 
     activity_day_filter = set(target_activity_days) if target_activity_days is not None else None
     activity_min_day = min(activity_day_filter) if activity_day_filter else start_day

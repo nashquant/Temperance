@@ -76,3 +76,16 @@ export interface GarminCredentialsResponse {
   source: 'env' | 'session' | 'missing';
   message: string;
 }
+
+export interface GarminAuthResetResponse {
+  success: boolean;
+  owner: string;
+  process_wide: boolean;
+  message: string;
+  garmin_rate_limit?: {
+    active?: boolean;
+    until_utc?: string | null;
+    remaining_seconds?: number;
+    last_error?: string | null;
+  };
+}

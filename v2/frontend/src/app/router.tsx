@@ -39,8 +39,8 @@ export function AppRouter(): JSX.Element {
 
       <Route element={<ProtectedRoute />}>
         <Route path="/app" element={<AppLayout />}>
-          <Route path="athlete-progression" element={<AthleteProgressionPage />} />
           <Route path="week-planner" element={<WeekPlannerPage />} />
+          <Route path="athlete-progression" element={<AthleteProgressionPage />} />
           <Route path="weekly-outlook" element={<Navigate to="/app/week-planner" replace />} />
           <Route path="plan-activities" element={<Navigate to="/app/week-planner" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />

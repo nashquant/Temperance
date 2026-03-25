@@ -13,6 +13,7 @@ export const API_CONFIG = {
     vdot: '/vdot',
     dataExtractStatus: '/data-extract/status',
     dataExtractCredentials: '/data-extract/credentials',
+    dataExtractGarminAuthReset: '/data-extract/garmin-auth/reset',
     dataExtractSync: '/data-extract/sync',
     dataExtractComprehensive: '/data-extract/comprehensive',
     customActivities: '/custom-activities',
