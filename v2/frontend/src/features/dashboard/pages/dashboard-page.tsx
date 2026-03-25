@@ -9,7 +9,7 @@ import { deleteCustomActivity, ingestCustomActivities } from '@/features/custom-
 import { ActivitySplitsDrawer } from '@/features/dashboard/components/activity-splits-drawer';
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
-import { getDashboard } from '@/features/dashboard/services/dashboard-api';
+import { getDashboard, toggleActivityInvalid } from '@/features/dashboard/services/dashboard-api';
 import { generateActivitySuggestion } from '@/features/dashboard/services/generated-activity-api';
 import type { DashboardActivityCard, DashboardResponse } from '@/features/dashboard/types/dashboard';
 import {
@@ -164,7 +164,8 @@ export function DashboardPage(): JSX.Element {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
       queryClient.invalidateQueries({ queryKey: ['planned-activities'] }),
       queryClient.invalidateQueries({ queryKey: ['custom-activities'] }),
-      queryClient.invalidateQueries({ queryKey: ['week-outlook'] }),
+      queryClient.invalidateQueries({ queryKey: ['weekly-outlook'] }),
+      queryClient.invalidateQueries({ queryKey: ['athlete-progression'] }),
       queryClient.invalidateQueries({ queryKey: ['data-extract-status'] }),
     ]);
   };
@@ -408,6 +409,20 @@ export function DashboardPage(): JSX.Element {
         owner: profile?.owner,
         dayUtc,
         lineNo,
+      });
+    },
+    onSuccess: async () => {
+      await refreshDashboardViews();
+    },
+  });
+  const toggleActivityInvalidMutation = useMutation({
+    mutationFn: async ({ activityId, isInvalid }: { activityId: string; isInvalid: boolean }) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return toggleActivityInvalid({
+        token: session.token,
+        owner: profile?.owner,
+        activityId,
+        isInvalid,
       });
     },
     onSuccess: async () => {
@@ -736,11 +751,19 @@ export function DashboardPage(): JSX.Element {
                             })()
                           : undefined
                       }
+                      onToggleActivityInvalid={(activity, nextInvalid) => {
+                        if (activity.is_custom) return;
+                        toggleActivityInvalidMutation.mutate(
+                          { activityId: activity.activity_id, isInvalid: nextInvalid },
+                          { onError: () => void refreshDashboardViews() },
+                        );
+                      }}
                       onSelectActivity={(activityId) => setSelectedActivityId(activityId)}
                       addingPlannedActivity={plannedCreateMutation.isPending}
                       markingPlannedDone={plannedDoneMutation.isPending}
                       deletingPlannedActivity={plannedDeleteMutation.isPending}
                       deletingCustomActivity={customDeleteMutation.isPending}
+                      togglingActivityInvalid={toggleActivityInvalidMutation.isPending}
                       userTimeZone={userTimeZone}
                       undoActivity={
                         undoState?.dayUtc && typeof undoState.lineNo === 'number' && typeof undoState.slotIndex === 'number'

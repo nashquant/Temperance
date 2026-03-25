@@ -75,6 +75,7 @@ from db import (  # noqa: E402
     get_wellness_df,
     log_sync,
     save_setting,
+    set_activity_invalid,
     upsert_activities,
     upsert_activity_details,
     upsert_activity_records,
@@ -151,6 +152,11 @@ class PlannedManualDoneRequest(BaseModel):
     day_utc: str
     line_no: int
     manual_done: bool
+
+
+class ActivityInvalidRequest(BaseModel):
+    activity_id: str
+    is_invalid: bool
 
 
 class PlannedIngestRequest(BaseModel):
@@ -3148,6 +3154,7 @@ def _metrics_for_filters(
     start_day: str | None,
     end_day: str | None,
     sport: str | None,
+    include_invalid: bool = False,
 ) -> pd.DataFrame:
     if not db_path.exists():
         return pd.DataFrame()
@@ -3170,7 +3177,7 @@ def _metrics_for_filters(
 
     metrics_parts: list[pd.DataFrame] = []
 
-    runs_df = get_runs_df(db_path)
+    runs_df = get_runs_df(db_path, include_invalid=include_invalid)
     if not runs_df.empty:
         runs_metrics_df = compute_metrics(
             runs_df=runs_df,
@@ -3969,8 +3976,17 @@ def _build_activity_dashboard_payload(
         start_day=None,
         end_day=None,
         sport=sport,
+        include_invalid=False,
     )
-    if metrics_df.empty:
+    actual_metrics_df = _metrics_for_filters(
+        db_path=db_path,
+        days=3650,
+        start_day=None,
+        end_day=None,
+        sport=sport,
+        include_invalid=True,
+    )
+    if metrics_df.empty and actual_metrics_df.empty:
         return {
             "weeks_total": 0,
             "weeks_visible": 0,
@@ -3986,26 +4002,44 @@ def _build_activity_dashboard_payload(
         }
 
     metrics_df = metrics_df.copy()
+    actual_metrics_df = actual_metrics_df.copy()
     local_start_map = get_activity_local_start_map(
         db_path=db_path,
-        activity_ids=metrics_df.get("activity_id", pd.Series(dtype=object)).astype(str).tolist(),
+        activity_ids=actual_metrics_df.get("activity_id", pd.Series(dtype=object)).astype(str).tolist(),
     )
-    metrics_df["start_local"] = (
-        metrics_df.get("activity_id", pd.Series(index=metrics_df.index, dtype=object))
+    actual_metrics_df["start_local"] = (
+        actual_metrics_df.get("activity_id", pd.Series(index=actual_metrics_df.index, dtype=object))
         .astype(str)
         .map(local_start_map)
     )
-    metrics_df["start_local"] = pd.to_datetime(metrics_df["start_local"], errors="coerce").fillna(
-        pd.to_datetime(metrics_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
+    actual_metrics_df["start_local"] = pd.to_datetime(actual_metrics_df["start_local"], errors="coerce").fillna(
+        pd.to_datetime(actual_metrics_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
     )
-    metrics_df = metrics_df.dropna(subset=["start_local"]).copy()
-    metrics_df["day"] = metrics_df["start_local"].dt.normalize()
-    sport_lower = metrics_df["sport_type"].fillna("").astype(str).str.lower()
+    actual_metrics_df = actual_metrics_df.dropna(subset=["start_local"]).copy()
+    actual_metrics_df["day"] = actual_metrics_df["start_local"].dt.normalize()
+    sport_lower = actual_metrics_df["sport_type"].fillna("").astype(str).str.lower()
     is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
-    metrics_df["distance_km_running"] = (
-        pd.to_numeric(metrics_df.get("distance_m"), errors="coerce").fillna(0.0).where(is_running_like, 0.0) / 1000.0
+    actual_metrics_df["distance_km_running"] = (
+        pd.to_numeric(actual_metrics_df.get("distance_m"), errors="coerce").fillna(0.0).where(is_running_like, 0.0) / 1000.0
     )
-    if metrics_df.empty:
+    if not metrics_df.empty:
+        metrics_df["start_local"] = (
+            metrics_df.get("activity_id", pd.Series(index=metrics_df.index, dtype=object))
+            .astype(str)
+            .map(local_start_map)
+        )
+        metrics_df["start_local"] = pd.to_datetime(metrics_df["start_local"], errors="coerce").fillna(
+            pd.to_datetime(metrics_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
+        )
+        metrics_df = metrics_df.dropna(subset=["start_local"]).copy()
+        metrics_df["day"] = metrics_df["start_local"].dt.normalize()
+        valid_sport_lower = metrics_df["sport_type"].fillna("").astype(str).str.lower()
+        valid_running_like = valid_sport_lower.str.contains("run") | valid_sport_lower.str.contains("treadmill")
+        metrics_df["distance_km_running"] = (
+            pd.to_numeric(metrics_df.get("distance_m"), errors="coerce").fillna(0.0).where(valid_running_like, 0.0) / 1000.0
+        )
+
+    if actual_metrics_df.empty:
         return {
             "weeks_total": 0,
             "weeks_visible": 0,
@@ -4020,8 +4054,8 @@ def _build_activity_dashboard_payload(
             "weeks": [],
         }
 
-    min_day = pd.to_datetime(metrics_df["day"], errors="coerce").min()
-    max_day = pd.to_datetime(metrics_df["day"], errors="coerce").max()
+    min_day = pd.to_datetime(actual_metrics_df["day"], errors="coerce").min()
+    max_day = pd.to_datetime(actual_metrics_df["day"], errors="coerce").max()
     if pd.isna(min_day) or pd.isna(max_day):
         return {
             "weeks_total": 0,
@@ -4045,11 +4079,16 @@ def _build_activity_dashboard_payload(
     )
     latest_lt_pace = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
     daily_tss_target = max(_weekly_tss_target_from_lt_pace(latest_lt_pace) / 7.0, 0.0)
-    day_agg, fitfat_lookup, model_lookup = _day_lookup_with_daily_model(
-        metrics_df=metrics_df,
-        daily_tss_target=daily_tss_target,
-        db_path=db_path,
-    )
+    if metrics_df.empty:
+        day_agg = pd.DataFrame()
+        fitfat_lookup = {}
+        model_lookup = {}
+    else:
+        day_agg, fitfat_lookup, model_lookup = _day_lookup_with_daily_model(
+            metrics_df=metrics_df,
+            daily_tss_target=daily_tss_target,
+            db_path=db_path,
+        )
 
     day_stats_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     for _, row in day_agg.iterrows():
@@ -4192,7 +4231,7 @@ def _build_activity_dashboard_payload(
 
     actual_week_starts = {
         _week_start_monday(pd.Timestamp(day))
-        for day in pd.to_datetime(metrics_df.get("day"), errors="coerce").dropna().tolist()
+        for day in pd.to_datetime(actual_metrics_df.get("day"), errors="coerce").dropna().tolist()
     }
     planned_week_starts = {
         _week_start_monday(pd.Timestamp(day))
@@ -4233,12 +4272,13 @@ def _build_activity_dashboard_payload(
         ws = pd.Timestamp(ws).normalize()
         we = ws + pd.Timedelta(days=6)
         week_df = metrics_df[(metrics_df["day"] >= ws) & (metrics_df["day"] <= we)].copy()
+        week_actual_df = actual_metrics_df[(actual_metrics_df["day"] >= ws) & (actual_metrics_df["day"] <= we)].copy()
         has_planned_week = any(
             ((ws + pd.Timedelta(days=offset)) in planned_summary_lookup)
             or ((ws + pd.Timedelta(days=offset)) in planned_by_day)
             for offset in range(7)
         )
-        if week_df.empty and not has_planned_week and ws != current_week_start:
+        if week_df.empty and week_actual_df.empty and not has_planned_week and ws != current_week_start:
             continue
 
         week_duration_s = float(pd.to_numeric(week_df.get("duration_s"), errors="coerce").fillna(0.0).sum())
@@ -4266,7 +4306,7 @@ def _build_activity_dashboard_payload(
         day_cards: list[dict[str, Any]] = []
         for offset in range(7):
             day = ws + pd.Timedelta(days=offset)
-            day_df = week_df[week_df["day"] == day].sort_values("start_local", ascending=False)
+            day_df = week_actual_df[week_actual_df["day"] == day].sort_values("start_local", ascending=False)
             day_is_today = bool(day == today_local)
             day_stats = day_stats_lookup.get(day, {})
             fitfat = fitfat_lookup.get(day, {})
@@ -4301,6 +4341,7 @@ def _build_activity_dashboard_payload(
                         "activity_id": _normalize_activity_id(act.get("activity_id")),
                         "sport": sport_raw or "Activity",
                         "is_custom": bool(str(act.get("source") or "").strip().lower() == "custom"),
+                        "is_invalid": bool(_safe_float(act.get("is_invalid")) > 0),
                         "day_utc": day.date().isoformat() if bool(str(act.get("source") or "").strip().lower() == "custom") else None,
                         "line_no": (
                             _parse_custom_activity_id(_normalize_activity_id(act.get("activity_id")))[1]
@@ -6258,6 +6299,26 @@ def custom_activity_delete(
     if deleted <= 0:
         raise HTTPException(status_code=404, detail="Custom activity not found")
     return {"deleted": int(deleted)}
+
+
+@app.patch("/api/v1/activities/invalid")
+def activity_invalid_update(
+    payload: ActivityInvalidRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+
+    updated = set_activity_invalid(
+        db_path=db_path,
+        activity_id=str(payload.activity_id or "").strip(),
+        is_invalid=bool(payload.is_invalid),
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    return {"updated": True, "activity_id": str(payload.activity_id or "").strip(), "is_invalid": bool(payload.is_invalid)}
 
 
 @app.get("/api/v1/activities/{activity_id}")

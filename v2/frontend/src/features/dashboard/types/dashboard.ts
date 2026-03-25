@@ -23,6 +23,7 @@ export interface DashboardActivityCard {
   activity_id: string;
   sport: string;
   is_custom?: boolean;
+  is_invalid?: boolean;
   day_utc?: string;
   line_no?: number;
   activity_text?: string;

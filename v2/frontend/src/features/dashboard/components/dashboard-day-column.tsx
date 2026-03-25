@@ -13,11 +13,13 @@ interface DashboardDayColumnProps {
   onMarkPlannedDone?: (activity: DashboardDayColumnType['planned_activities'][number], index: number) => void;
   onDeletePlannedActivity?: (activity: DashboardDayColumnType['planned_activities'][number], index: number) => void;
   onDeleteCustomActivity?: (activity: DashboardDayColumnType['actual_activities'][number], index: number) => void;
+  onToggleActivityInvalid?: (activity: DashboardDayColumnType['actual_activities'][number], nextInvalid: boolean) => void;
   onSelectActivity?: (activityId: string) => void;
   addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
   deletingPlannedActivity?: boolean;
   deletingCustomActivity?: boolean;
+  togglingActivityInvalid?: boolean;
   userTimeZone?: string;
   compactMobile?: boolean;
   mobileFullWidth?: boolean;
@@ -65,6 +67,9 @@ const customBorderAccentClasses: Record<string, string> = {
   red: 'border-[rgba(246,135,135,0.72)]',
   purple: 'border-[rgba(168,139,250,0.72)]',
 };
+
+const invalidActivityCardClasses =
+  'border-[1.5px] border-dashed border-rose-300/45 bg-[linear-gradient(180deg,rgba(38,23,27,0.98),rgba(19,11,14,0.995))] shadow-[0_10px_22px_rgba(2,6,23,0.14)]';
 
 type DayMetaItem = {
   key: string;
@@ -310,11 +315,13 @@ export function DashboardDayColumn({
   onMarkPlannedDone,
   onDeletePlannedActivity,
   onDeleteCustomActivity,
+  onToggleActivityInvalid,
   onSelectActivity,
   addingPlannedActivity,
   markingPlannedDone,
   deletingPlannedActivity,
   deletingCustomActivity,
+  togglingActivityInvalid,
   userTimeZone,
   compactMobile = false,
   mobileFullWidth = false,
@@ -481,6 +488,7 @@ export function DashboardDayColumn({
               const timeLabel = activity.is_custom ? '' : deriveCompactTimeLabel(activity, userTimeZone);
               const durationLabel = normalizeCompactDurationLabel(activity.duration_label);
               const kindLabel = activityTypeLabel(Boolean(activity.is_custom));
+              const isInvalid = Boolean(activity.is_invalid);
               if (compactMobile && mobileFullWidth) {
                 const metricPills: MetricBadgeItem[] = [
                   metricPillLabel(durationLabel) ? { tone: 'duration', label: metricPillLabel(durationLabel)! } : null,
@@ -500,8 +508,8 @@ export function DashboardDayColumn({
                     className={cn(
                       'relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
                       'px-2 py-1.5',
-                      activity.is_custom ? 'border-[1.5px] border-dashed' : undefined,
-                      intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
+                      activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
+                      isInvalid ? invalidActivityCardClasses : (intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20'),
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                     )}
                     onClick={() => onSelectActivity?.(activity.activity_id)}
@@ -528,10 +536,43 @@ export function DashboardDayColumn({
                       >
                         <X className="h-2.5 w-2.5" />
                       </Button>
-                    ) : null}
-                    <div className="min-w-0 pr-6">
+                    ) : isInvalid ? (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute left-1.5 top-1.5 h-5 w-5 shrink-0 rounded-full border border-white/10 bg-black/30 text-slate-300 transition-colors hover:border-white/18 hover:bg-black/45 hover:text-white"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onToggleActivityInvalid?.(activity, false);
+                          }}
+                          disabled={togglingActivityInvalid}
+                          aria-label="Restore activity"
+                        >
+                          <RotateCcw className="h-2.5 w-2.5" />
+                        </Button>
+                        <span className="absolute right-2 top-2 inline-flex h-5 w-5 items-center justify-center rounded-full border border-rose-300/35 bg-rose-400/10 text-rose-200/90">
+                          <X className="h-2.5 w-2.5" />
+                        </span>
+                      </>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1.5 top-1.5 h-5 w-5 shrink-0 rounded-full border border-white/10 bg-black/30 text-slate-300 transition-colors hover:border-white/18 hover:bg-black/45 hover:text-white"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleActivityInvalid?.(activity, true);
+                        }}
+                        disabled={togglingActivityInvalid}
+                        aria-label="Mark activity invalid"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </Button>
+                    )}
+                    <div className={cn('min-w-0', activity.is_custom || !isInvalid ? 'pr-6' : 'px-6')}>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-semibold leading-4.5 text-foreground">
+                        <p className={cn('truncate text-[13px] font-semibold leading-4.5 text-foreground', isInvalid ? 'text-rose-100/92' : undefined)}>
                           {formatActivityTitle(activity.sport)}
                           {timeLabel ? ` ${timeLabel}` : ''}
                         </p>
@@ -559,11 +600,11 @@ export function DashboardDayColumn({
               return (
                 <div
                   key={activity.activity_id}
-                  className={cn(
-                    'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
-                    compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[102px] p-2 text-[12px]',
-                    activity.is_custom ? 'border-[1.5px] border-dashed' : undefined,
-                    intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20',
+                    className={cn(
+                      'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
+                      compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[102px] p-2 text-[12px]',
+                    activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
+                    isInvalid ? invalidActivityCardClasses : (intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20'),
                     activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                   )}
                   onClick={() => onSelectActivity?.(activity.activity_id)}
@@ -590,9 +631,42 @@ export function DashboardDayColumn({
                     >
                       <X className="h-1.75 w-1.75" />
                     </Button>
-                  ) : null}
+                  ) : isInvalid ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute -left-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-black/30 text-slate-300 transition-colors hover:border-white/18 hover:bg-black/45 hover:text-white"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleActivityInvalid?.(activity, false);
+                        }}
+                        disabled={togglingActivityInvalid}
+                        aria-label="Restore activity"
+                      >
+                        <RotateCcw className="h-1.75 w-1.75" />
+                      </Button>
+                      <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-300/35 bg-rose-400/10 text-rose-200/90">
+                        <X className="h-1.75 w-1.75" />
+                      </span>
+                    </>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute -right-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-black/30 text-slate-300 transition-colors hover:border-white/18 hover:bg-black/45 hover:text-white"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onToggleActivityInvalid?.(activity, true);
+                      }}
+                      disabled={togglingActivityInvalid}
+                      aria-label="Mark activity invalid"
+                    >
+                      <X className="h-1.75 w-1.75" />
+                    </Button>
+                  )}
                   <div className="flex min-w-0 items-center">
-                    <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[14px] leading-5')}>
+                    <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[14px] leading-5', isInvalid ? 'text-rose-100/92' : undefined)}>
                       {formatActivityTitle(activity.sport)}
                       {activity.is_custom ? '(C)' : ''}
                       {!activity.is_custom && timeLabel ? ` ${timeLabel}` : ''}

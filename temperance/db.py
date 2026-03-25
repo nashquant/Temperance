@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS activities (
     intensity_minutes_vigorous REAL,
     intensity_minutes_moderate REAL,
     trimp REAL,
+    is_invalid INTEGER NOT NULL DEFAULT 0,
     source TEXT NOT NULL,
     raw_json TEXT,
     created_at TEXT NOT NULL,
@@ -320,6 +321,17 @@ def run_migrations(db_path: Path) -> None:
             ON custom_activities(day_utc)
             """
         )
+        activity_cols = {
+            str(r["name"])
+            for r in conn.execute("PRAGMA table_info(activities)").fetchall()
+        }
+        if "is_invalid" not in activity_cols:
+            conn.execute(
+                """
+                ALTER TABLE activities
+                ADD COLUMN is_invalid INTEGER NOT NULL DEFAULT 0
+                """
+            )
         conn.commit()
 
 
@@ -755,7 +767,7 @@ def upsert_wellness_daily(
         return changed
 
 
-def get_runs_df(db_path: Path) -> pd.DataFrame:
+def get_runs_df(db_path: Path, include_invalid: bool = False) -> pd.DataFrame:
     with closing(get_conn(db_path)) as conn:
         # Avoid loading heavy raw payload blobs on every rerun; charts/metrics do not use raw_json.
         cols = [
@@ -764,10 +776,33 @@ def get_runs_df(db_path: Path) -> pd.DataFrame:
             if str(row["name"]) != "raw_json"
         ]
         col_sql = ", ".join([f'"{c}"' for c in cols]) if cols else "*"
+        where_sql = "" if include_invalid else "WHERE COALESCE(is_invalid, 0) = 0"
         return pd.read_sql_query(
-            f"SELECT {col_sql} FROM activities ORDER BY start_time_utc DESC",
+            f"SELECT {col_sql} FROM activities {where_sql} ORDER BY start_time_utc DESC",
             conn,
         )
+
+
+def set_activity_invalid(
+    db_path: Path,
+    activity_id: str,
+    is_invalid: bool,
+) -> bool:
+    with closing(get_conn(db_path)) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE activities
+            SET is_invalid = ?, updated_at = ?
+            WHERE activity_id = ?
+            """,
+            (
+                int(bool(is_invalid)),
+                UTC_NOW(),
+                str(activity_id or "").strip(),
+            ),
+        )
+        conn.commit()
+        return max(int(cursor.rowcount or 0), 0) > 0
 
 
 def upsert_activity_trimp(db_path: Path, rows: list[dict[str, Any]]) -> int:

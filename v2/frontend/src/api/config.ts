@@ -8,6 +8,7 @@ export const API_CONFIG = {
     generatedActivity: '/generated-activity',
     wellness: '/wellness',
     activities: '/activities',
+    activityInvalid: '/activities/invalid',
     athleteProgression: '/athlete-progression',
     settings: '/settings',
     vdot: '/vdot',
