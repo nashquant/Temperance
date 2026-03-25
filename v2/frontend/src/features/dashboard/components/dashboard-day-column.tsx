@@ -537,24 +537,19 @@ export function DashboardDayColumn({
                         <X className="h-2 w-2" />
                       </Button>
                     ) : isInvalid ? (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute left-1.5 top-1.5 h-5 w-5 shrink-0 rounded-full border border-white/10 bg-black/30 text-slate-300 transition-colors hover:border-white/18 hover:bg-black/45 hover:text-white"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onToggleActivityInvalid?.(activity, false);
-                          }}
-                          disabled={togglingActivityInvalid}
-                          aria-label="Restore activity"
-                        >
-                          <RotateCcw className="h-2.5 w-2.5" />
-                        </Button>
-                        <span className="absolute right-2 top-2 inline-flex h-5 w-5 items-center justify-center rounded-full border border-rose-300/35 bg-rose-400/10 text-rose-200/90">
-                          <X className="h-2.5 w-2.5" />
-                        </span>
-                      </>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1 h-4.5 w-4.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleActivityInvalid?.(activity, false);
+                        }}
+                        disabled={togglingActivityInvalid}
+                        aria-label="Restore activity"
+                      >
+                        <RotateCcw className="h-2 w-2" />
+                      </Button>
                     ) : (
                       <Button
                         variant="ghost"
@@ -570,7 +565,7 @@ export function DashboardDayColumn({
                         <X className="h-1.5 w-1.5" />
                       </Button>
                     )}
-                    <div className={cn('min-w-0', activity.is_custom || !isInvalid ? 'pr-6' : 'px-6')}>
+                    <div className="min-w-0 pr-6">
                       <div className="min-w-0 flex-1">
                         <p className={cn('truncate text-[13px] font-semibold leading-4.5 text-foreground', isInvalid ? 'text-rose-100/92' : undefined)}>
                           {formatActivityTitle(activity.sport)}
@@ -632,24 +627,19 @@ export function DashboardDayColumn({
                       <X className="h-1.5 w-1.5" />
                     </Button>
                   ) : isInvalid ? (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute -left-0.5 -top-0.5 h-4 w-4 shrink-0 rounded-full border border-white/10 bg-black/30 text-slate-300 transition-colors hover:border-white/18 hover:bg-black/45 hover:text-white"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onToggleActivityInvalid?.(activity, false);
-                        }}
-                        disabled={togglingActivityInvalid}
-                        aria-label="Restore activity"
-                      >
-                        <RotateCcw className="h-1.75 w-1.75" />
-                      </Button>
-                      <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-300/35 bg-rose-400/10 text-rose-200/90">
-                        <X className="h-1.75 w-1.75" />
-                      </span>
-                    </>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onToggleActivityInvalid?.(activity, false);
+                      }}
+                      disabled={togglingActivityInvalid}
+                      aria-label="Restore activity"
+                    >
+                      <RotateCcw className="h-1.5 w-1.5" />
+                    </Button>
                   ) : (
                     <Button
                       variant="ghost"
