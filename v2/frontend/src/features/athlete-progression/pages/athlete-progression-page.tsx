@@ -176,13 +176,13 @@ export function AthleteProgressionPage(): JSX.Element {
               />
 
               <ProgressionLineChartCard
-                title="Bounce vs Pounding"
+                title="Durability vs Pounding"
                 data={normalizedChartData}
                 yLabel="Load"
                 targetKey="pounding_target_tss"
                 targetLabel="Daily Target"
                 series={[
-                  { key: 'leg_elasticity', label: 'Bounce', color: PROGRESSION_CHART_COLORS.blueAlt },
+                  { key: 'leg_elasticity', label: 'Durability', color: PROGRESSION_CHART_COLORS.blueAlt },
                   { key: 'pounding', label: 'Pounding', color: PROGRESSION_CHART_COLORS.redMuted },
                 ]}
               />
