@@ -94,20 +94,13 @@ function activityCardToneStyle(intensityKey: string, planned = false): Record<st
   const isRecovery = normalized === 'green' || normalized === 'recovery';
   const [r, g, b] = hexToRgb(zoneHexForIntensity(intensityKey));
   const borderAlpha = planned ? (isRecovery ? 0.5 : 0.46) : (isRecovery ? 0.58 : 0.54);
-  const topAlpha = planned ? (isRecovery ? 0.24 : 0.2) : (isRecovery ? 0.3 : 0.26);
-  const glowAlpha = planned ? (isRecovery ? 0.14 : 0.1) : (isRecovery ? 0.18 : 0.13);
-  const bottomMix = planned ? (isRecovery ? 0.12 : 0.08) : (isRecovery ? 0.16 : 0.12);
-  const midToneAlpha = planned ? (isRecovery ? 0.14 : 0.11) : (isRecovery ? 0.18 : 0.14);
+  const fillAlpha = planned ? (isRecovery ? 0.1 : 0.08) : (isRecovery ? 0.16 : 0.13);
   return {
     borderColor: `rgba(${r}, ${g}, ${b}, ${borderAlpha})`,
-    backgroundImage: [
-      `radial-gradient(circle at top left, rgba(${r}, ${g}, ${b}, ${glowAlpha}), transparent 46%)`,
-      `linear-gradient(180deg, rgba(${r}, ${g}, ${b}, ${topAlpha}), rgba(${r}, ${g}, ${b}, ${midToneAlpha}) 34%, rgba(18, 26, 43, 0.9) 62%, rgba(15, 23, 42, 0.97) 100%)`,
-      `linear-gradient(180deg, rgba(255,255,255,0.02), rgba(${r}, ${g}, ${b}, ${bottomMix}))`,
-    ].join(', '),
+    backgroundColor: `rgba(${r}, ${g}, ${b}, ${fillAlpha})`,
     boxShadow: planned
-      ? `0 14px 30px rgba(2, 6, 23, 0.18), inset 0 1px 0 rgba(${r}, ${g}, ${b}, 0.1)`
-      : `0 16px 34px rgba(2, 6, 23, 0.22), inset 0 1px 0 rgba(${r}, ${g}, ${b}, 0.12)`,
+      ? `0 14px 30px rgba(2, 6, 23, 0.18)`
+      : `0 16px 34px rgba(2, 6, 23, 0.22)`,
   };
 }
 

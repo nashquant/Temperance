@@ -1,7 +1,7 @@
 export const intensityHexPalette = {
   recovery: '#d7e4f2',
   easy: '#67b7ff',
-  steady: '#ffb13f',
+  steady: '#d79a4a',
   threshold: '#ff7c78',
   vo2max: '#9a78ff',
 } as const;
