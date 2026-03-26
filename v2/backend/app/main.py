@@ -4170,6 +4170,7 @@ def _build_activity_dashboard_payload(
                             "duration_s": _safe_float(row.get("duration_s")),
                             "distance_eqv_km": _safe_float(row.get("distance_proxy_km")),
                             "if_proxy": _safe_float(row.get("if_proxy")),
+                            "avg_hr_bpm": _safe_float(row.get("avg_hr_bpm")),
                             "pace_label": _format_pace_short(_safe_float(row.get("pace_proxy_sec_per_km"))),
                             "tss": _safe_float(row.get("tss")),
                             "rtss": _safe_float(row.get("rtss")),
