@@ -1,9 +1,9 @@
 export const intensityHexPalette = {
-  recovery: '#8f9bad',
-  easy: '#4fb3ff',
-  steady: '#f0a63a',
-  threshold: '#ef6a6a',
-  vo2max: '#8b6cf6',
+  recovery: '#d7e4f2',
+  easy: '#67b7ff',
+  steady: '#ffb13f',
+  threshold: '#ff7c78',
+  vo2max: '#9a78ff',
 } as const;
 
 export function intensityHexFromKey(key: string): string {
