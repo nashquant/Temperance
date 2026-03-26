@@ -74,6 +74,18 @@ def test_expand_planned_segments_supports_xtrain_alias_for_elliptical() -> None:
     assert float(segments[0]["duration_min"]) == pytest.approx(70.0)
     assert float(segments[0]["if_input"]) == pytest.approx(0.78)
 
+    hyphen_segments, hyphen_warnings = expand_planned_segments(
+        "70min x-train @ 78%",
+        lthr_bpm=178.0,
+        threshold_pace_sec_per_km=300.0,
+    )
+
+    assert hyphen_warnings == []
+    assert len(hyphen_segments) == 1
+    assert hyphen_segments[0]["kind"] == "elliptical"
+    assert float(hyphen_segments[0]["duration_min"]) == pytest.approx(70.0)
+    assert float(hyphen_segments[0]["if_input"]) == pytest.approx(0.78)
+
 
 def test_bulk_schedule_sample_parses_cleanly() -> None:
     entries = split_dated_activity_entries(SAMPLE_BLOCK)
