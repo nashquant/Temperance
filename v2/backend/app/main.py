@@ -3045,6 +3045,23 @@ def _zone_key_from_if_proxy(if_proxy: float | int | None, thresholds: dict[str, 
     return "Z5"
 
 
+def _zone_summary_rows(zone_seconds: dict[str, float | int | None]) -> list[dict[str, float | str]]:
+    ordered = ["Z1", "Z2", "Z3", "Z4", "Z5"]
+    total = float(sum(max(_safe_float(zone_seconds.get(zone)), 0.0) for zone in ordered))
+    rows: list[dict[str, float | str]] = []
+    for zone in ordered:
+        seconds = float(max(_safe_float(zone_seconds.get(zone)), 0.0))
+        pct = (seconds / total * 100.0) if total > 0 else 0.0
+        rows.append(
+            {
+                "zone": zone,
+                "seconds": round(seconds, 1),
+                "pct": round(pct, 1),
+            }
+        )
+    return rows
+
+
 def _activity_intensity_token(if_proxy: float, tss: float) -> str:
     if if_proxy <= 0:
         return "gray"
@@ -6430,6 +6447,7 @@ def activity_detail(
         pace_weight_seconds = 0.0
         hr_weighted_sum = 0.0
         hr_weight_seconds = 0.0
+        zone_seconds = {"Z1": 0.0, "Z2": 0.0, "Z3": 0.0, "Z4": 0.0, "Z5": 0.0}
         split_rows: list[dict[str, Any]] = []
         lap_dtos: list[dict[str, Any]] = []
         kinds_seen: list[str] = []
@@ -6475,6 +6493,8 @@ def activity_detail(
             if avg_hr > 0:
                 hr_weighted_sum += avg_hr * duration_s
                 hr_weight_seconds += duration_s
+            zone_key = _zone_key_from_if_proxy(if_proxy, if_thresholds)
+            zone_seconds[zone_key] = zone_seconds.get(zone_key, 0.0) + duration_s
 
             split_rows.append(
                 {
@@ -6536,6 +6556,7 @@ def activity_detail(
                 "split": {"lapDTOs": lap_dtos},
                 "split_summaries": {"splitSummaries": lap_dtos},
             },
+            "zone_summary": _zone_summary_rows(zone_seconds),
             "split_rows": split_rows,
         }
 
@@ -6584,6 +6605,7 @@ def activity_detail(
         pace_weight_seconds = 0.0
         hr_weighted_sum = 0.0
         hr_weight_seconds = 0.0
+        zone_seconds = {"Z1": 0.0, "Z2": 0.0, "Z3": 0.0, "Z4": 0.0, "Z5": 0.0}
         split_rows: list[dict[str, Any]] = []
         lap_dtos: list[dict[str, Any]] = []
         kinds_seen: list[str] = []
@@ -6629,6 +6651,8 @@ def activity_detail(
             if avg_hr > 0:
                 hr_weighted_sum += avg_hr * duration_s
                 hr_weight_seconds += duration_s
+            zone_key = _zone_key_from_if_proxy(if_proxy, if_thresholds)
+            zone_seconds[zone_key] = zone_seconds.get(zone_key, 0.0) + duration_s
 
             split_rows.append(
                 {
@@ -6690,6 +6714,7 @@ def activity_detail(
                 "split": {"lapDTOs": lap_dtos},
                 "split_summaries": {"splitSummaries": lap_dtos},
             },
+            "zone_summary": _zone_summary_rows(zone_seconds),
             "split_rows": split_rows,
         }
 
@@ -6840,6 +6865,13 @@ def activity_detail(
         )
 
     split_rows = sorted(split_rows, key=lambda row: int(_safe_float(row.get("lap"))))
+    actual_zone_seconds = {
+        "Z1": _safe_float(selected_base.get("hr_time_in_zone_1")),
+        "Z2": _safe_float(selected_base.get("hr_time_in_zone_2")),
+        "Z3": _safe_float(selected_base.get("hr_time_in_zone_3")),
+        "Z4": _safe_float(selected_base.get("hr_time_in_zone_4")),
+        "Z5": _safe_float(selected_base.get("hr_time_in_zone_5")),
+    }
 
     return {
         "owner": resolved_owner,
@@ -6861,5 +6893,6 @@ def activity_detail(
         "raw": get_activity_raw(db_path, selected_activity_id) or {},
         "details": get_activity_detail_raw(db_path, selected_activity_id) or {},
         "splits": splits_raw,
+        "zone_summary": _zone_summary_rows(actual_zone_seconds),
         "split_rows": split_rows,
     }

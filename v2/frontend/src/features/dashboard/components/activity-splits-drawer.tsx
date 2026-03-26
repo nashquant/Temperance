@@ -8,7 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { ActivitySplitsBarChart } from '@/features/dashboard/components/activity-splits-bar-chart';
 import { useActivityDetailQuery } from '@/features/dashboard/hooks/use-activity-detail-query';
-import type { ActivityDetailResponse } from '@/features/dashboard/types/activity-detail';
+import type { ActivityDetailResponse, ActivityDetailZoneRow } from '@/features/dashboard/types/activity-detail';
+import { zoneHexFromLabel } from '@/features/dashboard/utils/intensity-palette';
 import { updateCustomActivityWorkout } from '@/features/custom-activities/services/custom-activities-api';
 import { updatePlannedWorkout } from '@/features/plan-activities/services/plan-activities-api';
 import { queryClient } from '@/lib/query-client';
@@ -32,6 +33,14 @@ type DrawerLapRow = {
   pace_label: string;
   pace_eqv_label: string;
   display_mode: 'running' | 'eqv';
+};
+
+const zoneTrackClassNames: Record<string, string> = {
+  Z1: 'border-slate-500/30 bg-slate-500/8',
+  Z2: 'border-sky-500/28 bg-sky-500/8',
+  Z3: 'border-amber-500/28 bg-amber-500/8',
+  Z4: 'border-rose-500/28 bg-rose-500/8',
+  Z5: 'border-violet-500/28 bg-violet-500/8',
 };
 
 function formatActivityTitle(raw: string): string {
@@ -196,6 +205,57 @@ function normalizedLapRows(detail: ActivityDetailResponse | undefined): DrawerLa
     .filter((lap) => lap.duration_label !== fmtDurationSeconds(0) || lap.distance_km > 0);
 }
 
+function fmtZoneSeconds(seconds: number): string {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.round((total % 3600) / 60);
+  if (hours > 0) return `${hours}h${String(minutes).padStart(2, '0')}'`;
+  return `${minutes}'`;
+}
+
+function zoneFromIfPct(ifPct: number): string {
+  const value = Number(ifPct) || 0;
+  if (value <= 0) return 'Z1';
+  if (value < 75) return 'Z1';
+  if (value < 85) return 'Z2';
+  if (value < 95) return 'Z3';
+  if (value < 103) return 'Z4';
+  return 'Z5';
+}
+
+function fallbackZoneSummaryFromLaps(laps: DrawerLapRow[]): ActivityDetailZoneRow[] {
+  const totals: Record<string, number> = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0 };
+  for (const lap of laps) {
+    const duration = Number(lap.duration_seconds) || parseDurationLabelSeconds(lap.duration_label);
+    if (duration <= 0) continue;
+    const zone = zoneFromIfPct(Number(lap.if_pct) || 0);
+    totals[zone] += duration;
+  }
+  const totalSeconds = Object.values(totals).reduce((sum, value) => sum + value, 0);
+  return ['Z1', 'Z2', 'Z3', 'Z4', 'Z5'].map((zone) => {
+    const seconds = totals[zone] || 0;
+    return {
+      zone,
+      seconds,
+      pct: totalSeconds > 0 ? (seconds / totalSeconds) * 100 : 0,
+    };
+  });
+}
+
+function resolveZoneSummary(
+  detail: ActivityDetailResponse | undefined,
+  laps: DrawerLapRow[],
+): ActivityDetailZoneRow[] {
+  if (Array.isArray(detail?.zone_summary) && detail.zone_summary.length > 0) {
+    return detail.zone_summary.map((row) => ({
+      zone: String(row.zone || '').toUpperCase() || 'Z1',
+      seconds: Number(row.seconds) || 0,
+      pct: Number(row.pct) || 0,
+    }));
+  }
+  return fallbackZoneSummaryFromLaps(laps);
+}
+
 export function ActivitySplitsDrawer({
   activityId,
   open,
@@ -235,6 +295,7 @@ export function ActivitySplitsDrawer({
       : activityHeaderDateTime;
   const laps = normalizedLapRows(detailQuery.data);
   const useEqv = laps.length > 0 && laps.some((lap) => lap.display_mode === 'eqv');
+  const zoneSummary = resolveZoneSummary(detailQuery.data, laps);
   const updateMutation = useMutation({
     mutationFn: async (nextText: string) => {
       if (!session?.token) throw new Error('Missing auth token');
@@ -320,22 +381,57 @@ export function ActivitySplitsDrawer({
 
         {!detailQuery.isLoading && !detailQuery.isError && detailQuery.data ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-xl border border-white/10 bg-black/15 p-3">
-                <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />TSS</p>
-                <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.tss ?? 0)}</p>
+            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_200px]">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />TSS</p>
+                  <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.tss ?? 0)}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />rTSS</p>
+                  <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.rtss ?? 0)}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Route className="h-3 w-3" />Pace</p>
+                  <p className="mt-1 font-semibold text-foreground">{activity?.avg_pace_display || '-'}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><HeartPulse className="h-3 w-3" />HR</p>
+                  <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.avg_hr ?? 0)} bpm</p>
+                </div>
               </div>
               <div className="rounded-xl border border-white/10 bg-black/15 p-3">
-                <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />rTSS</p>
-                <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.rtss ?? 0)}</p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-black/15 p-3">
-                <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Route className="h-3 w-3" />Pace</p>
-                <p className="mt-1 font-semibold text-foreground">{activity?.avg_pace_display || '-'}</p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-black/15 p-3">
-                <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><HeartPulse className="h-3 w-3" />HR</p>
-                <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.avg_hr ?? 0)} bpm</p>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">Zones</p>
+                  <p className="text-[11px] text-slate-300/60">Time spent</p>
+                </div>
+                <div className="space-y-1.5">
+                  {zoneSummary.map((zone) => (
+                    <div
+                      key={zone.zone}
+                      className="grid grid-cols-[28px_minmax(0,1fr)_40px_28px] items-center gap-1 text-[11px] leading-4 text-slate-300/72"
+                    >
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-200/92">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: zoneHexFromLabel(zone.zone) }}
+                        />
+                        {zone.zone}
+                      </span>
+                      <div className={`h-1.5 w-full overflow-hidden rounded-full border ${zoneTrackClassNames[zone.zone] ?? 'border-white/10 bg-white/5'}`}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            backgroundColor: zoneHexFromLabel(zone.zone),
+                            width: `${zone.pct > 0 ? Math.max(3, Math.min(100, zone.pct)) : 0}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-right font-medium tabular-nums text-slate-200/92">{fmtZoneSeconds(zone.seconds)}</span>
+                      <span className="text-right tabular-nums">{Math.round(zone.pct)}%</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 

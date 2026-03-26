@@ -9,6 +9,12 @@ export interface ActivityDetailLapRow {
   calories: number;
 }
 
+export interface ActivityDetailZoneRow {
+  zone: string;
+  seconds: number;
+  pct: number;
+}
+
 export interface ActivityDetailResponse {
   owner: string;
   activity: {
@@ -48,6 +54,7 @@ export interface ActivityDetailResponse {
       [key: string]: unknown;
     } | Record<string, unknown>;
   };
+  zone_summary?: ActivityDetailZoneRow[];
   split_rows?: Array<{
     lap: number;
     description: string;
