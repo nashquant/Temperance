@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { formatCompactDurationHours } from '@/features/dashboard/utils/format-duration';
-import { intensityHexFromKey } from '@/features/dashboard/utils/intensity-palette';
+import { zoneHexFromLabel } from '@/features/dashboard/utils/intensity-palette';
 import type { DashboardWeekSummary } from '@/features/dashboard/types/dashboard';
 
 interface DashboardWeekSummaryCardProps {
@@ -29,11 +29,11 @@ function fmtSeconds(seconds: number): string {
 }
 
 const zoneColors: Record<string, string> = {
-  Z1: '#d7e4f2',
-  Z2: intensityHexFromKey('blue'),
-  Z3: intensityHexFromKey('orange'),
-  Z4: intensityHexFromKey('red'),
-  Z5: intensityHexFromKey('purple'),
+  Z1: zoneHexFromLabel('Z1'),
+  Z2: zoneHexFromLabel('Z2'),
+  Z3: zoneHexFromLabel('Z3'),
+  Z4: zoneHexFromLabel('Z4'),
+  Z5: zoneHexFromLabel('Z5'),
 };
 
 const zoneTrackClassNames: Record<string, string> = {
@@ -131,7 +131,7 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
               <span className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-200/92">
                 <span
                   className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: zoneColors[zone.zone] ?? intensityHexFromKey('green') }}
+                  style={{ backgroundColor: zoneColors[zone.zone] ?? zoneHexFromLabel('Z1') }}
                 />
                 {zone.zone}
               </span>
@@ -141,7 +141,7 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
                 <div
                   className="h-full rounded-full"
                   style={{
-                    backgroundColor: zoneColors[zone.zone] ?? intensityHexFromKey('green'),
+                    backgroundColor: zoneColors[zone.zone] ?? zoneHexFromLabel('Z1'),
                     width: `${zone.pct > 0 ? Math.max(3, Math.min(100, zone.pct)) : 0}%`,
                   }}
                 />

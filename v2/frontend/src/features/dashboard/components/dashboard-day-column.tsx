@@ -3,7 +3,7 @@ import { Activity, Check, Clock3, Flame, Gauge, Heart, HeartPulse, Plus, Route, 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { intensityHexFromKey } from '@/features/dashboard/utils/intensity-palette';
+import { zoneHexFromKey } from '@/features/dashboard/utils/intensity-palette';
 import { cn } from '@/lib/utils';
 import type { DashboardDayColumn as DashboardDayColumnType } from '@/features/dashboard/types/dashboard';
 import { normalizeCompactDurationLabel } from '@/features/dashboard/utils/format-duration';
@@ -35,32 +35,6 @@ interface DashboardDayColumnProps {
   onUndoActivity?: () => void;
 }
 
-const intensityClasses: Record<string, string> = {
-  green:
-    'border-[rgba(215,228,242,0.44)] bg-[linear-gradient(180deg,rgba(76,87,102,0.99),rgba(44,52,64,0.995))] shadow-[0_16px_34px_rgba(8,14,26,0.24)]',
-  blue:
-    'border-[rgba(79,179,255,0.42)] bg-[linear-gradient(180deg,rgba(39,69,102,0.99),rgba(18,36,60,0.995))] shadow-[0_16px_34px_rgba(8,15,28,0.24)]',
-  orange:
-    'border-[rgba(240,166,58,0.42)] bg-[linear-gradient(180deg,rgba(89,63,35,0.99),rgba(48,33,19,0.995))] shadow-[0_16px_34px_rgba(14,12,16,0.24)]',
-  red:
-    'border-[rgba(239,106,106,0.42)] bg-[linear-gradient(180deg,rgba(92,46,53,0.99),rgba(49,22,28,0.995))] shadow-[0_16px_34px_rgba(12,10,18,0.24)]',
-  purple:
-    'border-[rgba(139,108,246,0.42)] bg-[linear-gradient(180deg,rgba(68,52,102,0.99),rgba(35,27,54,0.995))] shadow-[0_16px_34px_rgba(10,13,24,0.24)]',
-};
-
-const plannedIntensityClasses: Record<string, string> = {
-  green:
-    'border-[rgba(215,228,242,0.4)] bg-[linear-gradient(180deg,rgba(66,77,91,0.88),rgba(38,46,58,0.93))] shadow-[0_16px_30px_rgba(8,14,26,0.2)]',
-  blue:
-    'border-[rgba(79,179,255,0.38)] bg-[linear-gradient(180deg,rgba(34,58,86,0.88),rgba(17,32,52,0.93))] shadow-[0_16px_30px_rgba(8,15,28,0.2)]',
-  orange:
-    'border-[rgba(240,166,58,0.38)] bg-[linear-gradient(180deg,rgba(75,54,31,0.88),rgba(39,27,18,0.93))] shadow-[0_16px_30px_rgba(14,12,16,0.2)]',
-  red:
-    'border-[rgba(239,106,106,0.38)] bg-[linear-gradient(180deg,rgba(78,42,48,0.88),rgba(40,20,26,0.93))] shadow-[0_16px_30px_rgba(12,10,18,0.2)]',
-  purple:
-    'border-[rgba(139,108,246,0.38)] bg-[linear-gradient(180deg,rgba(58,46,86,0.88),rgba(29,23,44,0.93))] shadow-[0_16px_30px_rgba(10,13,24,0.2)]',
-};
-
 const customBorderAccentClasses: Record<string, string> = {
   green: 'border-[rgba(229,236,245,0.86)]',
   blue: 'border-[rgba(122,197,255,0.86)]',
@@ -83,16 +57,10 @@ function hexToRgb(hex: string): [number, number, number] {
   ];
 }
 
-function zoneHexForIntensity(key: string): string {
-  const normalized = String(key || '').trim().toLowerCase();
-  if (normalized === 'green' || normalized === 'recovery') return intensityHexFromKey('green');
-  return intensityHexFromKey(normalized);
-}
-
 function activityCardToneStyle(intensityKey: string, planned = false): Record<string, string> {
   const normalized = String(intensityKey || '').trim().toLowerCase();
   const isRecovery = normalized === 'green' || normalized === 'recovery';
-  const [r, g, b] = hexToRgb(zoneHexForIntensity(intensityKey));
+  const [r, g, b] = hexToRgb(zoneHexFromKey(intensityKey));
   const borderAlpha = planned ? (isRecovery ? 0.5 : 0.46) : (isRecovery ? 0.58 : 0.54);
   const fillAlpha = planned ? (isRecovery ? 0.1 : 0.08) : (isRecovery ? 0.16 : 0.13);
   return {
@@ -598,7 +566,7 @@ export function DashboardDayColumn({
                       'relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
                       'px-2 py-1.5',
                       activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
-                      isInvalid ? invalidActivityCardClasses : (intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20'),
+                      isInvalid ? invalidActivityCardClasses : undefined,
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                     )}
                     style={isInvalid ? undefined : activityCardToneStyle(activity.intensity, false)}
@@ -688,9 +656,9 @@ export function DashboardDayColumn({
                     className={cn(
                       'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
                       compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[102px] p-2 text-[12px]',
-                    activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
-                    isInvalid ? invalidActivityCardClasses : (intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20'),
-                    activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
+                      activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
+                      isInvalid ? invalidActivityCardClasses : undefined,
+                      activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                   )}
                   style={isInvalid ? undefined : activityCardToneStyle(activity.intensity, false)}
                   onClick={() => onSelectActivity?.(activity.activity_id)}
@@ -823,7 +791,6 @@ export function DashboardDayColumn({
                   className={cn(
                     'relative overflow-hidden rounded-[1rem] border border-dashed shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
                     'px-2 py-1.5',
-                    plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                   )}
                   style={activityCardToneStyle(item.activity.intensity, true)}
                   onClick={() => onSelectActivity?.(item.activity.activity_id)}
@@ -893,7 +860,6 @@ export function DashboardDayColumn({
                       className={cn(
                         'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-dashed transition-colors hover:bg-white/5',
                         compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
-                        plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                       )}
                       style={activityCardToneStyle(item.activity.intensity, true)}
                       onClick={() => onSelectActivity?.(item.activity.activity_id)}
