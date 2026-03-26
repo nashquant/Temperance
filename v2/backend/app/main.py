@@ -4173,7 +4173,7 @@ def _build_activity_dashboard_payload(
                     ),
                 }
 
-    wellness_lookup: dict[pd.Timestamp, dict[str, float]] = {}
+    wellness_lookup: dict[pd.Timestamp, dict[str, float | None]] = {}
     wellness_df = get_wellness_df(db_path=db_path)
     if not wellness_df.empty:
         wellness_df = wellness_df.copy()
@@ -4182,9 +4182,9 @@ def _build_activity_dashboard_payload(
         for _, row in wellness_df.iterrows():
             d = pd.Timestamp(row["day"]).normalize()
             wellness_lookup[d] = {
-                "resting_hr": _safe_float(row.get("resting_hr")),
-                "hrv_status": _safe_float(row.get("hrv_status")),
-                "stress_avg": _safe_float(row.get("stress_avg")),
+                "resting_hr": _rounded_optional(row.get("resting_hr")),
+                "hrv_status": _rounded_optional(row.get("hrv_status")),
+                "stress_avg": _rounded_optional(row.get("stress_avg")),
             }
 
     latest_actual_day = pd.Timestamp(max_day).normalize()
@@ -4404,17 +4404,17 @@ def _build_activity_dashboard_payload(
                         "resting_hr": (
                             None
                             if day_is_today
-                            else (round(_safe_float(wellness.get("resting_hr")), 1) if wellness else None)
+                            else (_rounded_optional(wellness.get("resting_hr"), 1) if wellness else None)
                         ),
                         "hrv_status": (
                             None
                             if day_is_today
-                            else (round(_safe_float(wellness.get("hrv_status")), 1) if wellness else None)
+                            else (_rounded_optional(wellness.get("hrv_status"), 1) if wellness else None)
                         ),
                         "stress_avg": (
                             None
                             if day_is_today
-                            else (round(_safe_float(wellness.get("stress_avg")), 1) if wellness else None)
+                            else (_rounded_optional(wellness.get("stress_avg"), 1) if wellness else None)
                         ),
                         "planned_duration_s": round(_safe_float(planned_summary.get("duration_s")), 1) if show_planned_meta else 0.0,
                         "planned_if_pct": round(_safe_float(planned_summary.get("if_proxy")) * 100.0, 1) if show_planned_meta else 0.0,
