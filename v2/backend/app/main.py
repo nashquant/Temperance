@@ -1521,8 +1521,6 @@ def _apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, f
         "tss",
         "mechanical_load",
         "training_load_garmin",
-        "calories_active",
-        "calories_total",
         "intensity_minutes_vigorous",
         "intensity_minutes_moderate",
         "hr_time_in_zone_1",
@@ -4184,7 +4182,6 @@ def _build_activity_dashboard_payload(
         for _, row in wellness_df.iterrows():
             d = pd.Timestamp(row["day"]).normalize()
             wellness_lookup[d] = {
-                "sleep_score": _safe_float(row.get("sleep_score")),
                 "resting_hr": _safe_float(row.get("resting_hr")),
                 "hrv_status": _safe_float(row.get("hrv_status")),
                 "stress_avg": _safe_float(row.get("stress_avg")),
@@ -4413,11 +4410,6 @@ def _build_activity_dashboard_payload(
                             None
                             if day_is_today
                             else (round(_safe_float(wellness.get("hrv_status")), 1) if wellness else None)
-                        ),
-                        "sleep_score": (
-                            None
-                            if day_is_today
-                            else (round(_safe_float(wellness.get("sleep_score")), 1) if wellness else None)
                         ),
                         "stress_avg": (
                             None

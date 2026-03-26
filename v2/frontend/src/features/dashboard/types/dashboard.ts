@@ -66,7 +66,6 @@ export interface DashboardDayMeta {
   fatigue_expected: number | null;
   resting_hr: number | null;
   hrv_status: number | null;
-  sleep_score: number | null;
   stress_avg: number | null;
   planned_duration_s: number;
   planned_if_pct: number;

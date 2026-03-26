@@ -1,4 +1,4 @@
-import { Activity, Check, Clock3, Gauge, Heart, HeartPulse, MoonStar, Plus, Route, RotateCcw, Zap, X } from 'lucide-react';
+import { Activity, Check, Clock3, Flame, Gauge, Heart, HeartPulse, Plus, Route, RotateCcw, Zap, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -73,18 +73,12 @@ const invalidActivityCardClasses =
 
 type DayMetaItem = {
   key: string;
-  icon: 'distance' | 'fitness' | 'fatigue' | 'tss' | 'resting_hr' | 'hrv_status' | 'sleep_score';
+  icon: 'distance' | 'fitness' | 'fatigue' | 'tss' | 'resting_hr' | 'hrv_status' | 'calories';
   value: string;
 };
 
 function fmtMeta(day: DashboardDayColumnType): DayMetaItem[] {
-  const items: DayMetaItem[] = [
-    {
-      key: 'distance',
-      icon: 'distance',
-      value: `${Math.round(day.meta.distance_eqv_km || 0)}km`,
-    },
-  ];
+  const items: DayMetaItem[] = [];
 
   if (day.meta.tss > 0) {
     items.push({
@@ -132,11 +126,11 @@ function fmtMeta(day: DashboardDayColumnType): DayMetaItem[] {
     });
   }
 
-  if (day.meta.sleep_score !== null) {
+  if (day.meta.calories > 0) {
     items.push({
-      key: 'sleep_score',
-      icon: 'sleep_score',
-      value: `${Math.round(day.meta.sleep_score)}`,
+      key: 'calories',
+      icon: 'calories',
+      value: `${Math.round(day.meta.calories)}`,
     });
   }
 
@@ -363,11 +357,9 @@ export function DashboardDayColumn({
 }: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
   const metaItems = fmtMeta(day);
-  const desktopPrimaryMetaItems = metaItems.filter(
-    (item) => item.icon === 'fitness' || item.icon === 'fatigue' || item.icon === 'tss',
-  );
+  const desktopPrimaryMetaItems = metaItems.filter((item) => item.icon === 'tss' || item.icon === 'fatigue' || item.icon === 'fitness');
   const wellnessMetaItems = metaItems.filter(
-    (item) => item.icon === 'resting_hr' || item.icon === 'hrv_status' || item.icon === 'sleep_score',
+    (item) => item.icon === 'resting_hr' || item.icon === 'hrv_status' || item.icon === 'calories',
   );
   const shouldScrollActivities = activityCount > 3;
   const actualCards: Array<
@@ -439,34 +431,32 @@ export function DashboardDayColumn({
                   {item.icon === 'fatigue' ? <HeartPulse className="h-3 w-3 text-rose-300/90" /> : null}
                   {item.icon === 'resting_hr' ? <Heart className="h-3 w-3 text-rose-300/90" /> : null}
                   {item.icon === 'hrv_status' ? <HeartPulse className="h-3 w-3 text-fuchsia-300/90" /> : null}
-                  {item.icon === 'sleep_score' ? <MoonStar className="h-3 w-3 text-indigo-300/90" /> : null}
+                  {item.icon === 'calories' ? <Flame className="h-3 w-3 text-amber-300/90" /> : null}
                   <span className="font-medium text-slate-200/92 tabular-nums">{item.value}</span>
                 </div>
               ))}
             </div>
           ) : (
             <div className="flex items-start">
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2 text-[12px] leading-[1.2] text-slate-300/84">
+              <div className="w-full space-y-0.5">
+                <div className="grid min-h-[16px] grid-cols-3 items-center gap-x-1.5 text-[11px] leading-none text-slate-300/84">
                   {desktopPrimaryMetaItems.map((item, index) => (
-                    <div key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
+                    <div key={item.key} className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap">
                       {item.icon === 'tss' ? <Activity className="h-3 w-3 text-cyan-300/90" /> : null}
                       {item.icon === 'fitness' ? <Gauge className="h-3 w-3 text-sky-300/90" /> : null}
                       {item.icon === 'fatigue' ? <HeartPulse className="h-3 w-3 text-rose-300/90" /> : null}
                       <span className="font-medium tabular-nums text-slate-100/92">{item.value}</span>
-                      {index < desktopPrimaryMetaItems.length - 1 ? <span className="text-slate-500/80">•</span> : null}
                     </div>
                   ))}
                 </div>
                 {wellnessMetaItems.length > 0 ? (
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] leading-[1.2] text-slate-300/72">
-                    {wellnessMetaItems.map((item, index) => (
-                      <div key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
+                  <div className="grid min-h-[15px] grid-cols-3 items-center gap-x-1.5 text-[10px] leading-none text-slate-300/72">
+                    {wellnessMetaItems.map((item) => (
+                      <div key={item.key} className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap">
                         {item.icon === 'resting_hr' ? <Heart className="h-3 w-3 text-rose-300/85" /> : null}
                         {item.icon === 'hrv_status' ? <HeartPulse className="h-3 w-3 text-fuchsia-300/85" /> : null}
-                        {item.icon === 'sleep_score' ? <MoonStar className="h-3 w-3 text-indigo-300/85" /> : null}
+                        {item.icon === 'calories' ? <Flame className="h-3 w-3 text-amber-300/85" /> : null}
                         <span className="font-medium tabular-nums text-slate-300/92">{item.value}</span>
-                        {index < wellnessMetaItems.length - 1 ? <span className="text-slate-500/70">•</span> : null}
                       </div>
                     ))}
                   </div>
