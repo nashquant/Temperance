@@ -4184,7 +4184,9 @@ def _build_activity_dashboard_payload(
         for _, row in wellness_df.iterrows():
             d = pd.Timestamp(row["day"]).normalize()
             wellness_lookup[d] = {
+                "sleep_score": _safe_float(row.get("sleep_score")),
                 "resting_hr": _safe_float(row.get("resting_hr")),
+                "hrv_status": _safe_float(row.get("hrv_status")),
                 "stress_avg": _safe_float(row.get("stress_avg")),
             }
 
@@ -4385,6 +4387,11 @@ def _build_activity_dashboard_payload(
                     "meta": {
                         "distance_eqv_km": round(_safe_float(day_stats.get("distance_eqv_km")), 1),
                         "calories": round(_safe_float(day_stats.get("calories")), 0),
+                        "tss": (
+                            round(_safe_float(planned_tss_lookup.get(day)), 1)
+                            if show_planned_meta
+                            else round(_safe_float(day_stats.get("tss")), 1)
+                        ),
                         "fitness": round(_safe_float(fitfat.get("fitness")), 1) if fitfat else None,
                         "fitness_expected": (
                             round(_safe_float(fitness_expected_lookup.get(day)), 1)
@@ -4401,6 +4408,16 @@ def _build_activity_dashboard_payload(
                             None
                             if day_is_today
                             else (round(_safe_float(wellness.get("resting_hr")), 1) if wellness else None)
+                        ),
+                        "hrv_status": (
+                            None
+                            if day_is_today
+                            else (round(_safe_float(wellness.get("hrv_status")), 1) if wellness else None)
+                        ),
+                        "sleep_score": (
+                            None
+                            if day_is_today
+                            else (round(_safe_float(wellness.get("sleep_score")), 1) if wellness else None)
                         ),
                         "stress_avg": (
                             None

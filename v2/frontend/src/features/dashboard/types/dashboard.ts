@@ -59,11 +59,14 @@ export interface DashboardPlannedCard {
 export interface DashboardDayMeta {
   distance_eqv_km: number;
   calories: number;
+  tss: number;
   fitness: number | null;
   fitness_expected: number | null;
   fatigue: number | null;
   fatigue_expected: number | null;
   resting_hr: number | null;
+  hrv_status: number | null;
+  sleep_score: number | null;
   stress_avg: number | null;
   planned_duration_s: number;
   planned_if_pct: number;

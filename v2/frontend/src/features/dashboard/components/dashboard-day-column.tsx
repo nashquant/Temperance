@@ -1,4 +1,4 @@
-import { Activity, Check, Clock3, Gauge, HeartPulse, Plus, Route, RotateCcw, Zap, X } from 'lucide-react';
+import { Activity, Check, Clock3, Gauge, Heart, HeartPulse, MoonStar, Plus, Route, RotateCcw, Zap, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -73,7 +73,7 @@ const invalidActivityCardClasses =
 
 type DayMetaItem = {
   key: string;
-  icon: 'distance' | 'fitness' | 'fatigue';
+  icon: 'distance' | 'fitness' | 'fatigue' | 'tss' | 'resting_hr' | 'hrv_status' | 'sleep_score';
   value: string;
 };
 
@@ -85,6 +85,14 @@ function fmtMeta(day: DashboardDayColumnType): DayMetaItem[] {
       value: `${Math.round(day.meta.distance_eqv_km || 0)}km`,
     },
   ];
+
+  if (day.meta.tss > 0) {
+    items.push({
+      key: 'tss',
+      icon: 'tss',
+      value: `${Math.round(day.meta.tss)}`,
+    });
+  }
 
   const fitnessValue = day.meta.show_fatigue_expected && day.meta.fitness_expected !== null
     ? day.meta.fitness_expected
@@ -105,6 +113,30 @@ function fmtMeta(day: DashboardDayColumnType): DayMetaItem[] {
       key: 'fatigue',
       icon: 'fatigue',
       value: `${Math.round(fatigueValue)}`,
+    });
+  }
+
+  if (day.meta.resting_hr !== null) {
+    items.push({
+      key: 'resting_hr',
+      icon: 'resting_hr',
+      value: `${Math.round(day.meta.resting_hr)}`,
+    });
+  }
+
+  if (day.meta.hrv_status !== null) {
+    items.push({
+      key: 'hrv_status',
+      icon: 'hrv_status',
+      value: `${Math.round(day.meta.hrv_status)}`,
+    });
+  }
+
+  if (day.meta.sleep_score !== null) {
+    items.push({
+      key: 'sleep_score',
+      icon: 'sleep_score',
+      value: `${Math.round(day.meta.sleep_score)}`,
     });
   }
 
@@ -331,7 +363,12 @@ export function DashboardDayColumn({
 }: DashboardDayColumnProps): JSX.Element {
   const activityCount = day.actual_activities.length + day.planned_activities.length;
   const metaItems = fmtMeta(day);
-  const desktopMetaItems = metaItems.filter((item) => item.icon === 'fitness' || item.icon === 'fatigue');
+  const desktopPrimaryMetaItems = metaItems.filter(
+    (item) => item.icon === 'fitness' || item.icon === 'fatigue' || item.icon === 'tss',
+  );
+  const wellnessMetaItems = metaItems.filter(
+    (item) => item.icon === 'resting_hr' || item.icon === 'hrv_status' || item.icon === 'sleep_score',
+  );
   const shouldScrollActivities = activityCount > 3;
   const actualCards: Array<
     | { type: 'activity'; activity: DashboardDayColumnType['actual_activities'][number]; index: number }
@@ -397,23 +434,43 @@ export function DashboardDayColumn({
               {metaItems.map((item) => (
                 <div key={item.key} className="inline-flex min-w-0 shrink items-center gap-1 whitespace-nowrap">
                   {item.icon === 'distance' ? <Route className="h-3 w-3 text-emerald-300/90" /> : null}
+                  {item.icon === 'tss' ? <Activity className="h-3 w-3 text-cyan-300/90" /> : null}
                   {item.icon === 'fitness' ? <Gauge className="h-3 w-3 text-sky-300/90" /> : null}
                   {item.icon === 'fatigue' ? <HeartPulse className="h-3 w-3 text-rose-300/90" /> : null}
+                  {item.icon === 'resting_hr' ? <Heart className="h-3 w-3 text-rose-300/90" /> : null}
+                  {item.icon === 'hrv_status' ? <HeartPulse className="h-3 w-3 text-fuchsia-300/90" /> : null}
+                  {item.icon === 'sleep_score' ? <MoonStar className="h-3 w-3 text-indigo-300/90" /> : null}
                   <span className="font-medium text-slate-200/92 tabular-nums">{item.value}</span>
                 </div>
               ))}
             </div>
           ) : (
             <div className="flex items-start">
-              <div className="flex flex-wrap items-center gap-2 text-[12px] leading-[1.2] text-slate-300/84">
-                {desktopMetaItems.map((item, index) => (
-                  <div key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
-                    {item.icon === 'fitness' ? <Gauge className="h-3 w-3 text-sky-300/90" /> : null}
-                    {item.icon === 'fatigue' ? <HeartPulse className="h-3 w-3 text-rose-300/90" /> : null}
-                    <span className="font-medium tabular-nums text-slate-100/92">{item.value}</span>
-                    {index < desktopMetaItems.length - 1 ? <span className="text-slate-500/80">•</span> : null}
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2 text-[12px] leading-[1.2] text-slate-300/84">
+                  {desktopPrimaryMetaItems.map((item, index) => (
+                    <div key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
+                      {item.icon === 'tss' ? <Activity className="h-3 w-3 text-cyan-300/90" /> : null}
+                      {item.icon === 'fitness' ? <Gauge className="h-3 w-3 text-sky-300/90" /> : null}
+                      {item.icon === 'fatigue' ? <HeartPulse className="h-3 w-3 text-rose-300/90" /> : null}
+                      <span className="font-medium tabular-nums text-slate-100/92">{item.value}</span>
+                      {index < desktopPrimaryMetaItems.length - 1 ? <span className="text-slate-500/80">•</span> : null}
+                    </div>
+                  ))}
+                </div>
+                {wellnessMetaItems.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] leading-[1.2] text-slate-300/72">
+                    {wellnessMetaItems.map((item, index) => (
+                      <div key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
+                        {item.icon === 'resting_hr' ? <Heart className="h-3 w-3 text-rose-300/85" /> : null}
+                        {item.icon === 'hrv_status' ? <HeartPulse className="h-3 w-3 text-fuchsia-300/85" /> : null}
+                        {item.icon === 'sleep_score' ? <MoonStar className="h-3 w-3 text-indigo-300/85" /> : null}
+                        <span className="font-medium tabular-nums text-slate-300/92">{item.value}</span>
+                        {index < wellnessMetaItems.length - 1 ? <span className="text-slate-500/70">•</span> : null}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                ) : null}
               </div>
             </div>
           )}
