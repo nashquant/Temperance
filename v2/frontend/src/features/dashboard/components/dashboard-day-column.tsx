@@ -195,6 +195,16 @@ function compactPaceLabel(label: string | null | undefined): string {
   return cleaned.replace(/(\d{1,2}):(\d{2})/, "$1'$2''");
 }
 
+function preferredEffortLabel(
+  runningLike: boolean,
+  paceLabel: string | null | undefined,
+  hrLabel?: string | null | undefined,
+): string {
+  const hr = String(hrLabel || '').trim();
+  if (!runningLike && hr && hr !== '-') return hr;
+  return String(paceLabel || '').trim();
+}
+
 function deriveCompactTimeLabel(
   activity: DashboardDayColumnType['actual_activities'][number],
   userTimeZone?: string,
@@ -266,7 +276,7 @@ function formatVdotLabel(vdot: number): string {
   return `${Math.round(vdot)}v.`;
 }
 
-type MetricBadgeTone = 'duration' | 'distance' | 'pace' | 'load' | 'if' | 'vdot';
+type MetricBadgeTone = 'duration' | 'distance' | 'pace' | 'hr' | 'load' | 'if' | 'vdot';
 
 interface MetricBadgeItem {
   tone: MetricBadgeTone;
@@ -281,6 +291,8 @@ function metricBadgeIcon(tone: MetricBadgeTone): JSX.Element {
       return <Route className="h-2.5 w-2.5 shrink-0 text-emerald-300/80" />;
     case 'pace':
       return <Gauge className="h-2.5 w-2.5 shrink-0 text-violet-300/80" />;
+    case 'hr':
+      return <Heart className="h-2.5 w-2.5 shrink-0 text-rose-300/80" />;
     case 'load':
       return <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />;
     case 'if':
@@ -552,8 +564,8 @@ export function DashboardDayColumn({
                   metricPillLabel(compactDistanceLabel(activity.distance_label))
                     ? { tone: 'distance', label: metricPillLabel(compactDistanceLabel(activity.distance_label))! }
                     : null,
-                  metricPillLabel(compactPaceLabel(activity.pace_label))
-                    ? { tone: 'pace', label: metricPillLabel(compactPaceLabel(activity.pace_label))! }
+                    metricPillLabel(preferredEffortLabel(runningLike, compactPaceLabel(activity.pace_label), activity.hr_label))
+                    ? { tone: runningLike ? 'pace' : 'hr', label: metricPillLabel(preferredEffortLabel(runningLike, compactPaceLabel(activity.pace_label), activity.hr_label))! }
                     : null,
                   metricPillLabel(primaryLoadLabel(activity.tss, activity.rtss, runningLike))
                     ? { tone: 'load', label: metricPillLabel(primaryLoadLabel(activity.tss, activity.rtss, runningLike))! }
@@ -729,8 +741,12 @@ export function DashboardDayColumn({
                     />
                     <MetricRow
                       compactMobile={compactMobile}
-                      icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
-                      text={compactLine([activity.pace_label, formatIfPctLabel(activity.if_pct), activity.vdot != null ? formatVdotLabel(activity.vdot) : null])}
+                      icon={
+                        runningLike
+                          ? <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />
+                          : <Heart className="h-2.5 w-2.5 shrink-0 text-rose-300/80" />
+                      }
+                      text={compactLine([preferredEffortLabel(runningLike, activity.pace_label, activity.hr_label), formatIfPctLabel(activity.if_pct), activity.vdot != null ? formatVdotLabel(activity.vdot) : null])}
                     />
                   </div>
                   <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold text-foreground/95', compactMobile ? 'text-[10.5px] leading-4' : 'text-[11.5px] leading-[1.25]')}>
@@ -778,8 +794,8 @@ export function DashboardDayColumn({
                     metricPillLabel(formatEquivalentDistance(item.activity.distance_eqv_km, runningLike))
                       ? { tone: 'distance', label: metricPillLabel(formatEquivalentDistance(item.activity.distance_eqv_km, runningLike))! }
                       : null,
-                    metricPillLabel(compactPaceLabel(item.activity.pace_label))
-                      ? { tone: 'pace', label: metricPillLabel(compactPaceLabel(item.activity.pace_label))! }
+                    metricPillLabel(preferredEffortLabel(runningLike, compactPaceLabel(item.activity.pace_label), item.activity.hr_label))
+                      ? { tone: runningLike ? 'pace' : 'hr', label: metricPillLabel(preferredEffortLabel(runningLike, compactPaceLabel(item.activity.pace_label), item.activity.hr_label))! }
                       : null,
                     metricPillLabel(primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike))
                       ? { tone: 'load', label: metricPillLabel(primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike))! }
@@ -911,8 +927,12 @@ export function DashboardDayColumn({
                         />
                         <MetricRow
                           compactMobile={compactMobile}
-                          icon={<Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />}
-                          text={compactLine([item.activity.pace_label, `${Math.round(item.activity.if_pct)}%`])}
+                          icon={
+                            runningLike
+                              ? <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />
+                              : <Heart className="h-2.5 w-2.5 shrink-0 text-rose-300/80" />
+                          }
+                          text={compactLine([preferredEffortLabel(runningLike, item.activity.pace_label, item.activity.hr_label), `${Math.round(item.activity.if_pct)}%`])}
                         />
                       </div>
                       <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10.5px] leading-4' : 'text-[11.5px] leading-[1.25]')}>

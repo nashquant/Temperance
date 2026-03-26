@@ -2322,13 +2322,14 @@ def _compute_planned_rows_metrics_df(
     specificity_profile: dict[str, float],
 ) -> pd.DataFrame:
     if planned_rows.empty:
-        return pd.DataFrame(columns=["day_utc", "tss", "rtss", "distance_proxy_km", "duration_s", "if_proxy"])
+        return pd.DataFrame(columns=["day_utc", "tss", "rtss", "distance_proxy_km", "duration_s", "if_proxy", "avg_hr_bpm"])
 
     out = planned_rows.copy()
     tss_vals: list[float] = []
     rtss_vals: list[float] = []
     dist_eqv_vals: list[float] = []
     if_vals: list[float] = []
+    hr_vals: list[float] = []
     pace_proxy_vals: list[float] = []
     dur_vals: list[float] = []
     for _, row in out.iterrows():
@@ -2353,6 +2354,8 @@ def _compute_planned_rows_metrics_df(
         total_dist_eqv = 0.0
         if_weighted_sum = 0.0
         if_weight_seconds = 0.0
+        hr_weighted_sum = 0.0
+        hr_weight_seconds = 0.0
         for seg in segments:
             seg_kind = str(seg.get("kind") or "").strip().lower()
             seg_spec = _specificity_factor_for_plan_kind(seg_kind, specificity_profile)
@@ -2365,12 +2368,16 @@ def _compute_planned_rows_metrics_df(
             )
             seg_duration = float(m.get("duration_s") or 0.0)
             seg_if = float(m.get("if_proxy") or 0.0)
+            seg_hr = _safe_float(seg_for_metrics.get("avg_hr_bpm"))
             total_tss += float(m.get("tss") or 0.0) * float(seg_spec)
             total_rtss += float(m.get("rtss") or 0.0) * float(seg_spec)
             total_dist_eqv += float(m.get("distance_eqv_km") or 0.0)
             if seg_duration > 0:
                 if_weighted_sum += seg_if * seg_duration
                 if_weight_seconds += seg_duration
+                if seg_hr > 0:
+                    hr_weighted_sum += seg_hr * seg_duration
+                    hr_weight_seconds += seg_duration
 
         tss_vals.append(total_tss)
         rtss_vals.append(total_rtss)
@@ -2378,6 +2385,7 @@ def _compute_planned_rows_metrics_df(
         dur_vals.append(if_weight_seconds)
         row_if = if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0
         if_vals.append(row_if)
+        hr_vals.append((hr_weighted_sum / hr_weight_seconds) if hr_weight_seconds > 0 else 0.0)
         if row_if > 0 and lt_pace_for_day > 0:
             pace_proxy_vals.append(float(lt_pace_for_day / row_if))
         else:
@@ -2388,6 +2396,7 @@ def _compute_planned_rows_metrics_df(
     out["distance_proxy_km"] = dist_eqv_vals
     out["duration_s"] = dur_vals
     out["if_proxy"] = if_vals
+    out["avg_hr_bpm"] = hr_vals
     out["pace_proxy_sec_per_km"] = pace_proxy_vals
     return out
 
@@ -4360,7 +4369,7 @@ def _build_activity_dashboard_payload(
                             if is_running and dist_km > 0
                             else (f"{dist_eqv:.0f} km eqv." if dist_eqv > 0 else "0 km")
                         ),
-                        "hr_label": f"{hr:.0f} bpm" if hr > 0 else "-",
+                        "hr_label": f"{hr:.0f}b" if hr > 0 else "-",
                         "pace_label": (
                             _format_pace_short(avg_pace if avg_pace > 0 else None)
                             if is_running
@@ -4435,6 +4444,11 @@ def _build_activity_dashboard_payload(
                             "duration_label": _format_duration_short(_safe_float(row.get("duration_s"))),
                             "distance_eqv_km": round(_safe_float(row.get("distance_eqv_km")), 1),
                             "if_pct": round(_safe_float(row.get("if_proxy")) * 100.0, 1),
+                            "hr_label": (
+                                f"{_safe_float(row.get('avg_hr_bpm')):.0f}b"
+                                if _safe_float(row.get("avg_hr_bpm")) > 0
+                                else "-"
+                            ),
                             "pace_label": str(
                                 row.get("pace_label")
                                 or _format_pace_short(_safe_float(row.get("pace_proxy_sec_per_km")))

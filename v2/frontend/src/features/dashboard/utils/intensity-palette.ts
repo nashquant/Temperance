@@ -1,9 +1,9 @@
 export const intensityHexPalette = {
-recovery:  '#bcd4ec',  // cooler, still soft but less washed
-easy:      '#3ea0ff',  // more saturated blue, clearer identity
-steady:    '#c46a1f',  // richer copper, less muddy
-threshold: '#ff5a52',  // sharper red, more urgency
-vo2max:    '#7a5cff',  // deeper violet, more punch
+recovery:  '#9aa6b2', // neutral cool gray, softer and integrated
+easy:      '#3b82f6', // controlled blue (less neon, more UI-native)
+steady:    '#a1622a', // warmer, less muddy copper
+threshold: '#d75959', // clean, balanced red (no brown, no neon)
+vo2max:    '#6d5bd0', // slightly muted violet, more premium
 } as const;
 
 export function intensityHexFromKey(key: string): string {

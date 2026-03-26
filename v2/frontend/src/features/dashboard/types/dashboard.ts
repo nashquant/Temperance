@@ -49,6 +49,7 @@ export interface DashboardPlannedCard {
   duration_label: string;
   distance_eqv_km: number;
   if_pct: number;
+  hr_label: string;
   pace_label: string;
   tss: number;
   rtss: number;
