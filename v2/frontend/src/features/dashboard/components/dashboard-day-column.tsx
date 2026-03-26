@@ -202,6 +202,7 @@ function preferredEffortLabel(
 ): string {
   const hr = String(hrLabel || '').trim();
   if (!runningLike && hr && hr !== '-') return hr;
+  if (!runningLike) return '';
   return String(paceLabel || '').trim();
 }
 
