@@ -381,26 +381,26 @@ export function ActivitySplitsDrawer({
 
         {!detailQuery.isLoading && !detailQuery.isError && detailQuery.data ? (
           <div className="space-y-4">
-            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_200px]">
+            <div className="grid grid-cols-[minmax(0,1fr)_190px] gap-2 max-[560px]:grid-cols-1">
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
                   <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />TSS</p>
-                  <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.tss ?? 0)}</p>
+                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{Math.round(activity?.tss ?? 0)}</p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
                   <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />rTSS</p>
-                  <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.rtss ?? 0)}</p>
+                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{Math.round(activity?.rtss ?? 0)}</p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
                   <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Route className="h-3 w-3" />Pace</p>
-                  <p className="mt-1 font-semibold text-foreground">{activity?.avg_pace_display || '-'}</p>
+                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{activity?.avg_pace_display || '-'}</p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
                   <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><HeartPulse className="h-3 w-3" />HR</p>
-                  <p className="mt-1 font-semibold text-foreground">{Math.round(activity?.avg_hr ?? 0)} bpm</p>
+                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{Math.round(activity?.avg_hr ?? 0)} bpm</p>
                 </div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+              <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-foreground">Zones</p>
                   <p className="text-[11px] text-slate-300/60">Time spent</p>
@@ -409,7 +409,7 @@ export function ActivitySplitsDrawer({
                   {zoneSummary.map((zone) => (
                     <div
                       key={zone.zone}
-                      className="grid grid-cols-[28px_minmax(0,1fr)_40px_28px] items-center gap-1 text-[11px] leading-4 text-slate-300/72"
+                      className="grid grid-cols-[26px_minmax(0,1fr)_34px_24px] items-center gap-1 text-[10.5px] leading-4 text-slate-300/72"
                     >
                       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-200/92">
                         <span

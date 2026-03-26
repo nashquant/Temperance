@@ -72,7 +72,7 @@ def _plan_activity_kind(text: str) -> str:
         return "treadmill"
     if "run" in lower:
         return "run"
-    if "ellipt" in lower:
+    if "ellipt" in lower or "xtrain" in lower or "x-train" in lower or "cross train" in lower or "cross-train" in lower:
         return "elliptical"
     if "cycl" in lower or "bike" in lower:
         return "cycling"

@@ -61,6 +61,20 @@ def test_expand_planned_segments_supports_parenthetical_recovery_blocks() -> Non
     assert [float(segment["pace_s_per_km"]) for segment in segments[2:5:2]] == pytest.approx([280.0, 280.0])
 
 
+def test_expand_planned_segments_supports_xtrain_alias_for_elliptical() -> None:
+    segments, warnings = expand_planned_segments(
+        "70min xtrain @ 78%",
+        lthr_bpm=178.0,
+        threshold_pace_sec_per_km=300.0,
+    )
+
+    assert warnings == []
+    assert len(segments) == 1
+    assert segments[0]["kind"] == "elliptical"
+    assert float(segments[0]["duration_min"]) == pytest.approx(70.0)
+    assert float(segments[0]["if_input"]) == pytest.approx(0.78)
+
+
 def test_bulk_schedule_sample_parses_cleanly() -> None:
     entries = split_dated_activity_entries(SAMPLE_BLOCK)
 
