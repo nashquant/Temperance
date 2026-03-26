@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -12,6 +13,8 @@ import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-quer
 import { getDashboard, toggleActivityInvalid } from '@/features/dashboard/services/dashboard-api';
 import { generateActivitySuggestion } from '@/features/dashboard/services/generated-activity-api';
 import type { DashboardActivityCard, DashboardResponse } from '@/features/dashboard/types/dashboard';
+import { useDataExtractStatusQuery } from '@/features/data-extract/hooks/use-data-extract-status';
+import { runComprehensiveExtract } from '@/features/data-extract/services/data-extract-api';
 import {
   deletePlannedActivity,
   ingestPlannedActivities,
@@ -77,6 +80,13 @@ function formatLongDate(dayUtc: string): string {
   }).format(parsed);
 }
 
+function startDayFromPreset(monthsBack: number): string {
+  const now = new Date();
+  const start = new Date(now);
+  start.setMonth(start.getMonth() - monthsBack);
+  return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+}
+
 export function DashboardPage(): JSX.Element {
   const dashboardPageSize = 10;
   const dashboardYearWindowWeeks = 52;
@@ -91,6 +101,9 @@ export function DashboardPage(): JSX.Element {
   const [addGeneratedActivityType, setAddGeneratedActivityType] = useState<'running' | 'elliptical' | 'bike'>('running');
   const [lastGeneratedActivityText, setLastGeneratedActivityText] = useState<string>('');
   const [addActivityResult, setAddActivityResult] = useState<string | null>(null);
+  const [dashboardReloadResult, setDashboardReloadResult] = useState<string | null>(null);
+  const [dashboardReloadQueued, setDashboardReloadQueued] = useState(false);
+  const [dashboardReloadSawRunning, setDashboardReloadSawRunning] = useState(false);
   const [undoState, setUndoState] = useState<{
     id: number;
     lane: 'planned' | 'actual';
@@ -124,6 +137,7 @@ export function DashboardPage(): JSX.Element {
   }, [selectedYearWindow]);
   const weekOffset = selectedYearWindowIndex * dashboardYearWindowWeeks;
   const query = useDashboardQuery(visibleWeeks, 'all', weekOffset);
+  const extractStatusQuery = useDataExtractStatusQuery();
   const userTimeZone = useMemo(() => {
     const profileAny = profile as unknown as Record<string, unknown> | null;
     const tzFromProfile =
@@ -169,6 +183,41 @@ export function DashboardPage(): JSX.Element {
       queryClient.invalidateQueries({ queryKey: ['data-extract-status'] }),
     ]);
   };
+  const dashboardReloadMutation = useMutation({
+    mutationFn: async () => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return runComprehensiveExtract({
+        token: session.token,
+        owner: profile?.owner,
+        payload: {
+          start_day: startDayFromPreset(1),
+          incremental_only: true,
+          include_details: true,
+          include_wellness: true,
+          verify_raw_integrity: false,
+        },
+      });
+    },
+    onMutate: () => {
+      setDashboardReloadResult(null);
+      setDashboardReloadQueued(false);
+      setDashboardReloadSawRunning(false);
+    },
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
+      if (response.summary === 'No missing dates to fetch.') {
+        setDashboardReloadResult('Dashboard already up to date.');
+        await refreshDashboardViews();
+        return;
+      }
+      setDashboardReloadResult('Background reload started.');
+      setDashboardReloadQueued(true);
+      setDashboardReloadSawRunning(false);
+    },
+    onError: (error) => {
+      setDashboardReloadResult(error instanceof Error ? error.message : 'Unable to start reload.');
+    },
+  });
   const patchDashboardCaches = (
     updater: (payload: DashboardResponse) => DashboardResponse,
   ) => {
@@ -314,6 +363,25 @@ export function DashboardPage(): JSX.Element {
   useEffect(() => {
     undoStateRef.current = undoState;
   }, [undoState]);
+  useEffect(() => {
+    const progress = extractStatusQuery.data?.extract_progress;
+    if (!dashboardReloadQueued || !progress) return;
+    if (progress.running) {
+      if (!dashboardReloadSawRunning) {
+        setDashboardReloadSawRunning(true);
+      }
+      return;
+    }
+    if (!dashboardReloadSawRunning) return;
+    setDashboardReloadQueued(false);
+    setDashboardReloadSawRunning(false);
+    setDashboardReloadResult('Dashboard reloaded.');
+    void refreshDashboardViews();
+  }, [
+    dashboardReloadQueued,
+    dashboardReloadSawRunning,
+    extractStatusQuery.data?.extract_progress,
+  ]);
   const handleUndo = async () => {
     const pending = undoState;
     if (!pending) return;
@@ -603,6 +671,8 @@ export function DashboardPage(): JSX.Element {
     observer.observe(node);
     return () => observer.disconnect();
   }, [dashboardMaxWeeks, dashboardPageSize, query.data?.has_more_weeks, query.isFetching, visibleWeeks]);
+  const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
+  const reloadButtonBusy = dashboardReloadMutation.isPending || extractRunning || dashboardReloadQueued;
 
   return (
     <section className="space-y-6">
@@ -629,23 +699,43 @@ export function DashboardPage(): JSX.Element {
             </div>
           ) : (
             <div className="space-y-4">
-              {totalYearWindows > 1 ? (
-                <div className="flex justify-end">
-                  <div className="w-full max-w-[220px]">
-                    <Select value={selectedYearWindow} onValueChange={setSelectedYearWindow}>
-                      <SelectTrigger className="w-full max-w-[220px]">
-                        <SelectValue placeholder="Select year window" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from({ length: totalYearWindows }).map((_, index) => (
-                          <SelectItem key={index} value={String(index)}>
-                            {index === 0 ? 'Latest year' : `${index}-${index + 1} years ago`}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+              <div className="flex justify-end">
+                <div className="flex w-full flex-wrap items-center justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-10 w-10 border-white/10 bg-black/20 px-0 text-slate-100"
+                    onClick={() => dashboardReloadMutation.mutate()}
+                    disabled={!session?.token || reloadButtonBusy}
+                    aria-label={reloadButtonBusy ? 'Reloading dashboard data' : 'Reload dashboard data'}
+                    title={reloadButtonBusy ? 'Reloading dashboard data' : 'Reload dashboard data'}
+                  >
+                    {reloadButtonBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                  </Button>
+                  {totalYearWindows > 1 ? (
+                    <div className="w-full max-w-[220px] sm:w-auto">
+                      <Select value={selectedYearWindow} onValueChange={setSelectedYearWindow}>
+                        <SelectTrigger className="w-full max-w-[220px]">
+                          <SelectValue placeholder="Select year window" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: totalYearWindows }).map((_, index) => (
+                            <SelectItem key={index} value={String(index)}>
+                              {index === 0 ? 'Latest year' : `${index}-${index + 1} years ago`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
                 </div>
+              </div>
+              {dashboardReloadResult ? (
+                <p className="text-right text-xs text-slate-300/72">{dashboardReloadResult}</p>
               ) : null}
               {dashboardRows.map((row) =>
                 row.type === 'gap' ? (

@@ -4439,21 +4439,9 @@ def _build_activity_dashboard_payload(
                             if day in fatigue_expected_lookup
                             else None
                         ),
-                        "resting_hr": (
-                            None
-                            if day_is_today
-                            else (_rounded_optional(wellness.get("resting_hr"), 1) if wellness else None)
-                        ),
-                        "hrv_status": (
-                            None
-                            if day_is_today
-                            else (_rounded_optional(wellness.get("hrv_status"), 1) if wellness else None)
-                        ),
-                        "stress_avg": (
-                            None
-                            if day_is_today
-                            else (_rounded_optional(wellness.get("stress_avg"), 1) if wellness else None)
-                        ),
+                        "resting_hr": _rounded_optional(wellness.get("resting_hr"), 1) if wellness else None,
+                        "hrv_status": _rounded_optional(wellness.get("hrv_status"), 1) if wellness else None,
+                        "stress_avg": _rounded_optional(wellness.get("stress_avg"), 1) if wellness else None,
                         "planned_duration_s": round(_safe_float(planned_summary.get("duration_s")), 1) if show_planned_meta else 0.0,
                         "planned_if_pct": round(_safe_float(planned_summary.get("if_proxy")) * 100.0, 1) if show_planned_meta else 0.0,
                         "show_fatigue_expected": bool(
