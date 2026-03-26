@@ -1541,18 +1541,7 @@ def _curve_value_at(
     at_dt: datetime | pd.Timestamp | None,
 ) -> float:
     if at_dt is None or pd.isna(at_dt):
-    return float(default_value)
-
-
-def _target_hr_bpm(avg_hr_bpm: Any, if_proxy: float | int | None, lthr_bpm: float | int | None) -> float:
-    explicit_hr = _safe_float(avg_hr_bpm)
-    if explicit_hr > 0:
-        return explicit_hr
-    derived_if = _safe_float(if_proxy)
-    threshold_hr = _safe_float(lthr_bpm)
-    if derived_if > 0 and threshold_hr > 0:
-        return derived_if * threshold_hr
-    return 0.0
+        return float(default_value)
     ts = at_dt.to_pydatetime() if isinstance(at_dt, pd.Timestamp) else at_dt
     if ts.tzinfo is not None:
         ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
@@ -1564,6 +1553,17 @@ def _target_hr_bpm(avg_hr_bpm: Any, if_proxy: float | int | None, lthr_bpm: floa
         else:
             break
     return float(chosen)
+
+
+def _target_hr_bpm(avg_hr_bpm: Any, if_proxy: float | int | None, lthr_bpm: float | int | None) -> float:
+    explicit_hr = _safe_float(avg_hr_bpm)
+    if explicit_hr > 0:
+        return explicit_hr
+    derived_if = _safe_float(if_proxy)
+    threshold_hr = _safe_float(lthr_bpm)
+    if derived_if > 0 and threshold_hr > 0:
+        return derived_if * threshold_hr
+    return 0.0
 
 
 def _pace_mmss_to_sec(value: str) -> float:
