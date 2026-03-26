@@ -3,6 +3,7 @@ import { Activity, Check, Clock3, Flame, Gauge, Heart, HeartPulse, Plus, Route, 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { intensityHexFromKey } from '@/features/dashboard/utils/intensity-palette';
 import { cn } from '@/lib/utils';
 import type { DashboardDayColumn as DashboardDayColumnType } from '@/features/dashboard/types/dashboard';
 import { normalizeCompactDurationLabel } from '@/features/dashboard/utils/format-duration';
@@ -36,40 +37,76 @@ interface DashboardDayColumnProps {
 
 const intensityClasses: Record<string, string> = {
   green:
-    'border-[rgba(217,225,234,0.4)] bg-[linear-gradient(180deg,rgba(72,81,94,0.98),rgba(40,48,60,0.985))] shadow-[0_14px_30px_rgba(10,16,28,0.2)]',
+    'border-[rgba(215,228,242,0.44)] bg-[linear-gradient(180deg,rgba(76,87,102,0.99),rgba(44,52,64,0.995))] shadow-[0_16px_34px_rgba(8,14,26,0.24)]',
   blue:
-    'border-[rgba(134,184,233,0.42)] bg-[linear-gradient(180deg,rgba(49,67,90,0.98),rgba(24,36,54,0.985))] shadow-[0_14px_30px_rgba(9,16,30,0.22)]',
+    'border-[rgba(79,179,255,0.42)] bg-[linear-gradient(180deg,rgba(39,69,102,0.99),rgba(18,36,60,0.995))] shadow-[0_16px_34px_rgba(8,15,28,0.24)]',
   orange:
-    'border-[rgba(214,171,118,0.42)] bg-[linear-gradient(180deg,rgba(76,60,46,0.98),rgba(40,31,25,0.985))] shadow-[0_14px_30px_rgba(14,12,16,0.22)]',
+    'border-[rgba(240,166,58,0.42)] bg-[linear-gradient(180deg,rgba(89,63,35,0.99),rgba(48,33,19,0.995))] shadow-[0_16px_34px_rgba(14,12,16,0.24)]',
   red:
-    'border-[rgba(214,129,145,0.4)] bg-[linear-gradient(180deg,rgba(76,47,58,0.98),rgba(38,22,29,0.985))] shadow-[0_14px_30px_rgba(12,12,20,0.22)]',
+    'border-[rgba(239,106,106,0.42)] bg-[linear-gradient(180deg,rgba(92,46,53,0.99),rgba(49,22,28,0.995))] shadow-[0_16px_34px_rgba(12,10,18,0.24)]',
   purple:
-    'border-[rgba(170,151,230,0.4)] bg-[linear-gradient(180deg,rgba(59,49,87,0.98),rgba(28,25,47,0.985))] shadow-[0_14px_30px_rgba(10,14,26,0.22)]',
+    'border-[rgba(139,108,246,0.42)] bg-[linear-gradient(180deg,rgba(68,52,102,0.99),rgba(35,27,54,0.995))] shadow-[0_16px_34px_rgba(10,13,24,0.24)]',
 };
 
 const plannedIntensityClasses: Record<string, string> = {
   green:
-    'border-[rgba(217,225,234,0.34)] bg-[linear-gradient(180deg,rgba(58,67,79,0.78),rgba(30,38,49,0.84))] shadow-[0_14px_28px_rgba(10,16,28,0.16)]',
+    'border-[rgba(215,228,242,0.4)] bg-[linear-gradient(180deg,rgba(66,77,91,0.88),rgba(38,46,58,0.93))] shadow-[0_16px_30px_rgba(8,14,26,0.2)]',
   blue:
-    'border-[rgba(134,184,233,0.38)] bg-[linear-gradient(180deg,rgba(41,56,74,0.78),rgba(19,29,44,0.84))] shadow-[0_14px_28px_rgba(9,16,30,0.16)]',
+    'border-[rgba(79,179,255,0.38)] bg-[linear-gradient(180deg,rgba(34,58,86,0.88),rgba(17,32,52,0.93))] shadow-[0_16px_30px_rgba(8,15,28,0.2)]',
   orange:
-    'border-[rgba(214,171,118,0.38)] bg-[linear-gradient(180deg,rgba(64,52,40,0.78),rgba(33,27,22,0.84))] shadow-[0_14px_28px_rgba(14,12,16,0.16)]',
+    'border-[rgba(240,166,58,0.38)] bg-[linear-gradient(180deg,rgba(75,54,31,0.88),rgba(39,27,18,0.93))] shadow-[0_16px_30px_rgba(14,12,16,0.2)]',
   red:
-    'border-[rgba(214,129,145,0.38)] bg-[linear-gradient(180deg,rgba(64,43,51,0.78),rgba(32,20,25,0.84))] shadow-[0_14px_28px_rgba(12,12,20,0.16)]',
+    'border-[rgba(239,106,106,0.38)] bg-[linear-gradient(180deg,rgba(78,42,48,0.88),rgba(40,20,26,0.93))] shadow-[0_16px_30px_rgba(12,10,18,0.2)]',
   purple:
-    'border-[rgba(170,151,230,0.38)] bg-[linear-gradient(180deg,rgba(51,44,76,0.78),rgba(24,22,40,0.84))] shadow-[0_14px_28px_rgba(10,14,26,0.16)]',
+    'border-[rgba(139,108,246,0.38)] bg-[linear-gradient(180deg,rgba(58,46,86,0.88),rgba(29,23,44,0.93))] shadow-[0_16px_30px_rgba(10,13,24,0.2)]',
 };
 
 const customBorderAccentClasses: Record<string, string> = {
-  green: 'border-[rgba(238,243,249,0.8)]',
-  blue: 'border-[rgba(170,214,255,0.8)]',
-  orange: 'border-[rgba(248,208,146,0.8)]',
-  red: 'border-[rgba(248,171,180,0.8)]',
-  purple: 'border-[rgba(198,176,255,0.8)]',
+  green: 'border-[rgba(229,236,245,0.86)]',
+  blue: 'border-[rgba(122,197,255,0.86)]',
+  orange: 'border-[rgba(246,186,96,0.86)]',
+  red: 'border-[rgba(247,136,136,0.86)]',
+  purple: 'border-[rgba(164,138,255,0.86)]',
 };
 
 const invalidActivityCardClasses =
   'border-[1.5px] border-dashed border-rose-300/45 bg-[linear-gradient(180deg,rgba(38,23,27,0.98),rgba(19,11,14,0.995))] shadow-[0_10px_22px_rgba(2,6,23,0.14)]';
+
+function hexToRgb(hex: string): [number, number, number] {
+  const cleaned = String(hex || '').trim().replace('#', '');
+  const normalized = cleaned.length === 3 ? cleaned.split('').map((char) => `${char}${char}`).join('') : cleaned;
+  const safe = normalized.padEnd(6, '0').slice(0, 6);
+  return [
+    Number.parseInt(safe.slice(0, 2), 16),
+    Number.parseInt(safe.slice(2, 4), 16),
+    Number.parseInt(safe.slice(4, 6), 16),
+  ];
+}
+
+function zoneHexForIntensity(key: string): string {
+  const normalized = String(key || '').trim().toLowerCase();
+  if (normalized === 'green' || normalized === 'recovery') return '#d7e4f2';
+  return intensityHexFromKey(normalized);
+}
+
+function activityCardToneStyle(intensityKey: string, planned = false): Record<string, string> {
+  const [r, g, b] = hexToRgb(zoneHexForIntensity(intensityKey));
+  const borderAlpha = planned ? 0.52 : 0.62;
+  const topAlpha = planned ? 0.18 : 0.24;
+  const glowAlpha = planned ? 0.08 : 0.12;
+  const bottomMix = planned ? 0.2 : 0.28;
+  return {
+    borderColor: `rgba(${r}, ${g}, ${b}, ${borderAlpha})`,
+    backgroundImage: [
+      `radial-gradient(circle at top left, rgba(${r}, ${g}, ${b}, ${glowAlpha}), transparent 42%)`,
+      `linear-gradient(180deg, rgba(${r}, ${g}, ${b}, ${topAlpha}), rgba(15, 23, 42, 0.9) 44%, rgba(15, 23, 42, 0.97) 100%)`,
+      `linear-gradient(180deg, rgba(255,255,255,0.015), rgba(${r}, ${g}, ${b}, ${bottomMix}))`,
+    ].join(', '),
+    boxShadow: planned
+      ? `0 14px 30px rgba(2, 6, 23, 0.18), inset 0 1px 0 rgba(${r}, ${g}, ${b}, 0.08)`
+      : `0 16px 34px rgba(2, 6, 23, 0.22), inset 0 1px 0 rgba(${r}, ${g}, ${b}, 0.1)`,
+  };
+}
 
 type DayMetaItem = {
   key: string;
@@ -568,6 +605,7 @@ export function DashboardDayColumn({
                       isInvalid ? invalidActivityCardClasses : (intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20'),
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                     )}
+                    style={isInvalid ? undefined : activityCardToneStyle(activity.intensity, false)}
                     onClick={() => onSelectActivity?.(activity.activity_id)}
                     role="button"
                     tabIndex={0}
@@ -658,6 +696,7 @@ export function DashboardDayColumn({
                     isInvalid ? invalidActivityCardClasses : (intensityClasses[activity.intensity] ?? 'border-border/70 bg-muted/20'),
                     activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
                   )}
+                  style={isInvalid ? undefined : activityCardToneStyle(activity.intensity, false)}
                   onClick={() => onSelectActivity?.(activity.activity_id)}
                   role="button"
                   tabIndex={0}
@@ -790,6 +829,7 @@ export function DashboardDayColumn({
                     'px-2 py-1.5',
                     plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                   )}
+                  style={activityCardToneStyle(item.activity.intensity, true)}
                   onClick={() => onSelectActivity?.(item.activity.activity_id)}
                   role="button"
                   tabIndex={0}
@@ -859,6 +899,7 @@ export function DashboardDayColumn({
                         compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
                         plannedIntensityClasses[item.activity.intensity] ?? 'border-border/70 bg-muted/20',
                       )}
+                      style={activityCardToneStyle(item.activity.intensity, true)}
                       onClick={() => onSelectActivity?.(item.activity.activity_id)}
                       role="button"
                       tabIndex={0}
