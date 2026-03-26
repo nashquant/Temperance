@@ -1541,7 +1541,18 @@ def _curve_value_at(
     at_dt: datetime | pd.Timestamp | None,
 ) -> float:
     if at_dt is None or pd.isna(at_dt):
-        return float(default_value)
+    return float(default_value)
+
+
+def _target_hr_bpm(avg_hr_bpm: Any, if_proxy: float | int | None, lthr_bpm: float | int | None) -> float:
+    explicit_hr = _safe_float(avg_hr_bpm)
+    if explicit_hr > 0:
+        return explicit_hr
+    derived_if = _safe_float(if_proxy)
+    threshold_hr = _safe_float(lthr_bpm)
+    if derived_if > 0 and threshold_hr > 0:
+        return derived_if * threshold_hr
+    return 0.0
     ts = at_dt.to_pydatetime() if isinstance(at_dt, pd.Timestamp) else at_dt
     if ts.tzinfo is not None:
         ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
@@ -2368,7 +2379,7 @@ def _compute_planned_rows_metrics_df(
             )
             seg_duration = float(m.get("duration_s") or 0.0)
             seg_if = float(m.get("if_proxy") or 0.0)
-            seg_hr = _safe_float(seg_for_metrics.get("avg_hr_bpm"))
+            seg_hr = _target_hr_bpm(seg_for_metrics.get("avg_hr_bpm"), seg_if, lthr_for_day)
             total_tss += float(m.get("tss") or 0.0) * float(seg_spec)
             total_rtss += float(m.get("rtss") or 0.0) * float(seg_spec)
             total_dist_eqv += float(m.get("distance_eqv_km") or 0.0)
@@ -6447,7 +6458,7 @@ def activity_detail(
             pace_eqv_s_per_km = (threshold_pace_for_day / if_proxy) if (threshold_pace_for_day > 0 and if_proxy > 0) else 0.0
             pace_label_s_per_km = pace_raw if pace_raw > 0 else pace_eqv_s_per_km
             distance_km = distance_eqv_km
-            avg_hr = _safe_float(seg_for_metrics.get("avg_hr_bpm"))
+            avg_hr = _target_hr_bpm(seg_for_metrics.get("avg_hr_bpm"), if_proxy, lthr_for_day)
             avg_speed_mps = (1000.0 / pace_label_s_per_km) if pace_label_s_per_km > 0 else 0.0
 
             total_duration_s += duration_s
@@ -6601,7 +6612,7 @@ def activity_detail(
             pace_eqv_s_per_km = (threshold_pace_for_day / if_proxy) if (threshold_pace_for_day > 0 and if_proxy > 0) else 0.0
             pace_label_s_per_km = pace_raw if pace_raw > 0 else pace_eqv_s_per_km
             distance_km = distance_eqv_km
-            avg_hr = _safe_float(seg_for_metrics.get("avg_hr_bpm"))
+            avg_hr = _target_hr_bpm(seg_for_metrics.get("avg_hr_bpm"), if_proxy, lthr_for_day)
             avg_speed_mps = (1000.0 / pace_label_s_per_km) if pace_label_s_per_km > 0 else 0.0
 
             total_duration_s += duration_s
