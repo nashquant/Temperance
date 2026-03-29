@@ -2848,39 +2848,431 @@ def _generated_activity_bucket(
     return "easy"
 
 
-def _generated_activity_preferred_buckets(day_utc: str) -> list[str]:
+def _generated_activity_context(
+    db_path: Path,
+    day_utc: str,
+    threshold_pace_sec_per_km: float,
+    activity_type: str | None = None,
+) -> dict[str, Any]:
+    selected_day = pd.to_datetime(day_utc, errors="coerce")
+    if pd.isna(selected_day):
+        return {}
+    selected_day = pd.Timestamp(selected_day).normalize()
+    week_start = _week_start_monday(selected_day)
+    week_end = week_start + pd.Timedelta(days=6)
+    recent_start = selected_day - pd.Timedelta(days=84)
+    base_weekly_goal_tss = _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10 if threshold_pace_sec_per_km > 0 else 350.0
+    base_weekly_goal_rtss = _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 0.90 if threshold_pace_sec_per_km > 0 else 280.0
+    base_daily_goal_tss = max(float(base_weekly_goal_tss) / 7.0, 0.0)
+
+    metrics_df = _metrics_for_filters(
+        db_path=db_path,
+        days=120,
+        start_day=recent_start.date().isoformat(),
+        end_day=selected_day.date().isoformat(),
+        sport=None,
+        include_invalid=False,
+    )
+    day_lookup: dict[pd.Timestamp, dict[str, float]] = {}
+    model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
+    if not metrics_df.empty:
+        _, _, model_lookup = _day_lookup_with_daily_model(
+            metrics_df=metrics_df,
+            daily_tss_target=base_daily_goal_tss,
+            db_path=db_path,
+        )
+        day_agg = metrics_df.copy()
+        day_agg["day"] = pd.to_datetime(day_agg.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+        day_agg = day_agg.dropna(subset=["day"]).copy()
+        if not day_agg.empty:
+            daily = (
+                day_agg.groupby("day", as_index=False)
+                .agg(
+                    tss=("tss", "sum"),
+                    rtss=("rtss", "sum"),
+                    duration_s=("duration_s", "sum"),
+                )
+                .sort_values("day")
+            )
+            for _, row in daily.iterrows():
+                day_key = pd.Timestamp(row.get("day")).normalize()
+                day_lookup[day_key] = {
+                    "tss": _safe_float(row.get("tss")),
+                    "rtss": _safe_float(row.get("rtss")),
+                    "duration_s": _safe_float(row.get("duration_s")),
+                }
+
+    planned_rows = get_planned_activities_df(
+        db_path=db_path,
+        start_day_utc=week_start.date().isoformat(),
+        end_day_utc=week_end.date().isoformat(),
+    )
+    planned_by_day: dict[pd.Timestamp, dict[str, float]] = {}
+    if not planned_rows.empty:
+        lthr_curve = _load_curve_points(
+            db_path=db_path,
+            key=SETTINGS_KEY_LTHR_CURVE,
+            value_key="lthr_bpm",
+            fallback_value=DEFAULT_LTHR,
+        )
+        pace_curve = _load_curve_points(
+            db_path=db_path,
+            key=SETTINGS_KEY_LT_PACE_CURVE,
+            value_key="lt_pace_sec",
+            fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        )
+        specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+        planned_metrics = _compute_planned_rows_metrics_df(
+            planned_rows=planned_rows,
+            lthr_curve_points=lthr_curve,
+            lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+            lt_pace_curve_points=pace_curve,
+            lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+            specificity_profile=specificity_profile,
+        )
+        if not planned_metrics.empty:
+            planned_metrics["day"] = pd.to_datetime(planned_metrics.get("day_utc"), errors="coerce").dt.normalize()
+            planned_metrics = planned_metrics.dropna(subset=["day"]).copy()
+            planned_metrics = _filter_effective_planned_rows(
+                planned_df=planned_metrics,
+                today_local_day=_now_app_local().normalize(),
+            )
+            if not planned_metrics.empty:
+                daily_planned = (
+                    planned_metrics.groupby("day", as_index=False)
+                    .agg(
+                        tss=("tss", "sum"),
+                        rtss=("rtss", "sum"),
+                        duration_s=("duration_s", "sum"),
+                    )
+                )
+                for _, row in daily_planned.iterrows():
+                    day_key = pd.Timestamp(row.get("day")).normalize()
+                    planned_by_day[day_key] = {
+                        "tss": _safe_float(row.get("tss")),
+                        "rtss": _safe_float(row.get("rtss")),
+                        "duration_s": _safe_float(row.get("duration_s")),
+                    }
+
+    def _sum_actual(days_back: int, key: str) -> float:
+        start = selected_day - pd.Timedelta(days=days_back)
+        return float(
+            sum(
+                _safe_float(values.get(key))
+                for day, values in day_lookup.items()
+                if day >= start and day < selected_day
+            )
+        )
+
+    actual_week_tss_to_date = float(
+        sum(
+            _safe_float(values.get("tss"))
+            for day, values in day_lookup.items()
+            if day >= week_start and day < selected_day
+        )
+    )
+    actual_week_rtss_to_date = float(
+        sum(
+            _safe_float(values.get("rtss"))
+            for day, values in day_lookup.items()
+            if day >= week_start and day < selected_day
+        )
+    )
+    planned_other_tss = float(
+        sum(
+            _safe_float(values.get("tss"))
+            for day, values in planned_by_day.items()
+            if day >= week_start and day <= week_end and day != selected_day
+        )
+    )
+    planned_other_rtss = float(
+        sum(
+            _safe_float(values.get("rtss"))
+            for day, values in planned_by_day.items()
+            if day >= week_start and day <= week_end and day != selected_day
+        )
+    )
+    days_remaining_in_week = max(int((week_end - selected_day).days) + 1, 1)
+    week_gap_tss = float(base_weekly_goal_tss - actual_week_tss_to_date - planned_other_tss)
+    week_gap_rtss = float(base_weekly_goal_rtss - actual_week_rtss_to_date - planned_other_rtss)
+    week_balanced_daily_tss = max(week_gap_tss / days_remaining_in_week, 0.0)
+
+    previous_day = selected_day - pd.Timedelta(days=1)
+    next_day = selected_day + pd.Timedelta(days=1)
+    second_next_day = selected_day + pd.Timedelta(days=2)
+    prev_day_load = _safe_float(day_lookup.get(previous_day, {}).get("tss")) + _safe_float(planned_by_day.get(previous_day, {}).get("tss"))
+    next_day_load = _safe_float(planned_by_day.get(next_day, {}).get("tss"))
+    next_two_day_load = next_day_load + _safe_float(planned_by_day.get(second_next_day, {}).get("tss"))
+
+    latest_model_day = max((day for day in model_lookup.keys() if day <= selected_day), default=None)
+    latest_model = model_lookup.get(latest_model_day, {}) if latest_model_day is not None else {}
+    latest_wellness: dict[str, float] = {}
+    wellness_df = get_wellness_df(db_path=db_path)
+    if not wellness_df.empty:
+        wellness_df = wellness_df.copy()
+        wellness_df["day"] = pd.to_datetime(wellness_df.get("day_utc"), errors="coerce").dt.normalize()
+        wellness_df = wellness_df.dropna(subset=["day"])
+        wellness_df = wellness_df[wellness_df["day"] <= selected_day].sort_values("day")
+        if not wellness_df.empty:
+            row = wellness_df.iloc[-1]
+            latest_wellness = {
+                "sleep_score": _safe_float(row.get("sleep_score")),
+                "training_readiness": _safe_float(row.get("training_readiness")),
+                "stress_avg": _safe_float(row.get("stress_avg")),
+                "body_battery_end": _safe_float(row.get("body_battery_end")),
+            }
+
+    recent_tss_7 = _sum_actual(7, "tss")
+    recent_tss_14 = _sum_actual(14, "tss")
+    recent_tss_28 = _sum_actual(28, "tss")
+    recent_rtss_7 = _sum_actual(7, "rtss")
+    recent_rtss_14 = _sum_actual(14, "rtss")
+    recent_rtss_28 = _sum_actual(28, "rtss")
+    recent_load_ratio = (
+        ((recent_tss_14 / 14.0) / (recent_tss_28 / 28.0))
+        if recent_tss_28 > 0
+        else 1.0
+    )
+
+    fatigue = _safe_float(latest_model.get("fatigue"))
+    fitness = _safe_float(latest_model.get("fitness"))
+    overreach = _safe_float(latest_model.get("overreach"))
+    injury_risk = _safe_float(latest_model.get("injury_risk"))
+    training_readiness = _safe_float(latest_wellness.get("training_readiness"))
+    sleep_score = _safe_float(latest_wellness.get("sleep_score"))
+    stress_avg = _safe_float(latest_wellness.get("stress_avg"))
+    recovery_alert = (
+        (training_readiness > 0 and training_readiness <= 35.0)
+        or (sleep_score > 0 and sleep_score <= 62.0)
+        or (stress_avg >= 65.0)
+        or (overreach >= base_daily_goal_tss * 0.70)
+        or (injury_risk >= base_daily_goal_tss * 0.70)
+    )
+    adjacent_hard_days = (
+        prev_day_load >= base_daily_goal_tss * 1.05
+        or next_day_load >= base_daily_goal_tss * 1.05
+        or next_two_day_load >= base_daily_goal_tss * 1.95
+    )
+    mild_easy_bias = (
+        (training_readiness > 0 and training_readiness <= 52.0)
+        or (sleep_score > 0 and sleep_score <= 72.0)
+        or (stress_avg >= 52.0)
+        or (fitness > 0 and fatigue >= fitness * 1.18)
+    )
+    progression_green = (
+        not recovery_alert
+        and not adjacent_hard_days
+        and (training_readiness == 0 or training_readiness >= 68.0)
+        and (sleep_score == 0 or sleep_score >= 74.0)
+        and stress_avg <= 42.0
+        and overreach < base_daily_goal_tss * 0.35
+        and injury_risk < base_daily_goal_tss * 0.35
+        and recent_load_ratio <= 1.12
+    )
+    easy_bias = bool((recovery_alert or adjacent_hard_days or mild_easy_bias) and not progression_green)
+
+    return {
+        "activity_type": str(activity_type or "").strip().lower(),
+        "base_weekly_goal_tss": float(base_weekly_goal_tss),
+        "base_weekly_goal_rtss": float(base_weekly_goal_rtss),
+        "base_daily_goal_tss": float(base_daily_goal_tss),
+        "week_gap_tss": float(week_gap_tss),
+        "week_gap_rtss": float(week_gap_rtss),
+        "week_balanced_daily_tss": float(week_balanced_daily_tss),
+        "days_remaining_in_week": int(days_remaining_in_week),
+        "actual_week_tss_to_date": float(actual_week_tss_to_date),
+        "actual_week_rtss_to_date": float(actual_week_rtss_to_date),
+        "planned_other_tss": float(planned_other_tss),
+        "planned_other_rtss": float(planned_other_rtss),
+        "prev_day_load": float(prev_day_load),
+        "next_day_load": float(next_day_load),
+        "next_two_day_load": float(next_two_day_load),
+        "recent_tss_7": float(recent_tss_7),
+        "recent_tss_14": float(recent_tss_14),
+        "recent_tss_28": float(recent_tss_28),
+        "recent_rtss_7": float(recent_rtss_7),
+        "recent_rtss_14": float(recent_rtss_14),
+        "recent_rtss_28": float(recent_rtss_28),
+        "recent_load_ratio": float(recent_load_ratio),
+        "fitness": float(fitness),
+        "fatigue": float(fatigue),
+        "overreach": float(overreach),
+        "injury_risk": float(injury_risk),
+        "sleep_score": float(sleep_score),
+        "training_readiness": float(training_readiness),
+        "stress_avg": float(stress_avg),
+        "recovery_alert": bool(recovery_alert),
+        "adjacent_hard_days": bool(adjacent_hard_days),
+        "easy_bias": bool(easy_bias),
+        "progression_green": bool(progression_green),
+        "week_behind": bool(week_gap_tss > base_daily_goal_tss * 0.60),
+    }
+
+
+def _generated_activity_preferred_buckets(day_utc: str, context: dict[str, Any] | None = None) -> list[str]:
     day_ts = pd.to_datetime(day_utc, errors="coerce")
     if pd.isna(day_ts):
         return []
     weekday = int(pd.Timestamp(day_ts).weekday())
     weekday_map: dict[int, list[str]] = {
-        0: ["recovery", "easy", "aerobic"],  # Monday
+        0: ["easy", "recovery", "aerobic"],  # Monday
         1: ["intervals", "fartlek", "tempo", "steady"],  # Tuesday
-        2: ["easy", "recovery", "aerobic"],  # Wednesday
+        2: ["easy", "aerobic", "recovery"],  # Wednesday
         3: ["intervals", "fartlek", "tempo", "steady"],  # Thursday
-        4: ["easy", "recovery", "aerobic"],  # Friday
-        5: ["long", "fartlek", "easy", "tempo"],  # Saturday
+        4: ["easy", "aerobic", "recovery"],  # Friday
+        5: ["long", "tempo", "steady", "easy"],  # Saturday
         6: ["long"],  # Sunday
     }
-    return weekday_map.get(weekday, [])
+    base = weekday_map.get(weekday, [])
+    if not context:
+        return base
+    if bool(context.get("recovery_alert")):
+        return ["recovery", "easy", "aerobic"]
+    if bool(context.get("progression_green")) and bool(context.get("week_behind")):
+        if weekday in {1, 3}:
+            return ["intervals", "fartlek", "tempo", "steady"]
+        if weekday in {5, 6}:
+            return ["long", "tempo", "steady", "easy"]
+        return ["steady", "tempo", "aerobic", "easy"]
+    if bool(context.get("easy_bias")):
+        return ["easy", "aerobic", "steady", "recovery"]
+    return base
 
 
-def _generated_activity_day_goal_tss(day_utc: str, threshold_pace_sec_per_km: float) -> float:
+def _generated_activity_day_goal_tss(
+    day_utc: str,
+    threshold_pace_sec_per_km: float,
+    context: dict[str, Any] | None = None,
+) -> float:
     base_daily_goal = (_weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10) / 7.0 if threshold_pace_sec_per_km > 0 else 50.0
     day_ts = pd.to_datetime(day_utc, errors="coerce")
     if pd.isna(day_ts):
         return float(base_daily_goal)
     weekday = int(pd.Timestamp(day_ts).weekday())
     multipliers = {
-        0: 0.70,  # Monday
-        1: 0.90,  # Tuesday
-        2: 0.70,  # Wednesday
-        3: 0.90,  # Thursday
-        4: 0.70,  # Friday
-        5: 1.00,  # Saturday
-        6: 1.20,  # Sunday
+        0: 0.92,  # Monday
+        1: 1.06,  # Tuesday
+        2: 0.94,  # Wednesday
+        3: 1.06,  # Thursday
+        4: 0.92,  # Friday
+        5: 0.98,  # Saturday
+        6: 1.12,  # Sunday
     }
-    return float(base_daily_goal * multipliers.get(weekday, 1.0))
+    target = float(base_daily_goal * multipliers.get(weekday, 1.0))
+    if not context:
+        return target
+    week_balanced_target = float(context.get("week_balanced_daily_tss") or 0.0)
+    base_goal = float(context.get("base_daily_goal_tss") or base_daily_goal or 50.0)
+    if week_balanced_target > 0:
+        target = max(target, week_balanced_target * 0.95)
+    if not bool(context.get("recovery_alert")):
+        target = max(target, base_goal * 0.90)
+    if bool(context.get("easy_bias")):
+        target = min(target, max(base_goal * 0.95, week_balanced_target or 0.0))
+    if bool(context.get("recovery_alert")):
+        target = min(target, max(base_goal * 0.80, week_balanced_target * 0.85 if week_balanced_target > 0 else 0.0))
+    if bool(context.get("progression_green")) and bool(context.get("week_behind")) and week_balanced_target > 0:
+        target = max(target, min(week_balanced_target * 1.05, base_goal * 1.18))
+    if bool(context.get("adjacent_hard_days")):
+        target = min(target, max(base_goal * 0.92, week_balanced_target or 0.0))
+    return float(max(target, 15.0))
+
+
+def _generated_activity_selection_penalty(item: dict[str, Any], context: dict[str, Any] | None) -> float:
+    if not context:
+        return 0.0
+    penalty = 0.0
+    bucket = str(item.get("bucket") or "").strip().lower()
+    priority = int(item.get("priority") or 0)
+    estimated_tss = float(item.get("estimated_tss") or 0.0)
+    if bool(context.get("recovery_alert")):
+        if bucket not in {"recovery", "easy", "aerobic"}:
+            penalty += 42.0
+        if priority >= 2:
+            penalty += 24.0
+    elif bool(context.get("easy_bias")):
+        if bucket in {"intervals", "tempo", "fartlek"}:
+            penalty += 18.0
+        if priority >= 2:
+            penalty += 10.0
+    if bool(context.get("adjacent_hard_days")) and priority >= 2:
+        penalty += 14.0
+    if str(context.get("activity_type") or "") == "running" and float(context.get("week_gap_rtss") or 0.0) <= 0:
+        if bucket in {"intervals", "tempo", "fartlek", "long"}:
+            penalty += 12.0
+    if bool(context.get("progression_green")) and bool(context.get("week_behind")):
+        if bucket == "recovery":
+            penalty += 10.0
+        if priority == 0 and estimated_tss < float(context.get("base_daily_goal_tss") or 0.0) * 0.85:
+            penalty += 12.0
+    return penalty
+
+
+def _generated_activity_preference_penalty(
+    item: dict[str, Any],
+    preferred_buckets: list[str] | None,
+    context: dict[str, Any] | None,
+) -> float:
+    penalty = 0.0
+    bucket = str(item.get("bucket") or "").strip().lower()
+    if preferred_buckets:
+        if bucket in preferred_buckets:
+            penalty += float(preferred_buckets.index(bucket)) * 4.0
+        else:
+            penalty += 18.0
+
+    priority = int(item.get("priority") or 0)
+    if context and bool(context.get("progression_green")) and bool(context.get("week_behind")):
+        priority_penalties = {0: 3.0, 1: 0.0, 2: 2.0, 3: 12.0}
+    elif context and bool(context.get("recovery_alert")):
+        priority_penalties = {0: 0.0, 1: 4.0, 2: 16.0, 3: 28.0}
+    elif context and bool(context.get("easy_bias")):
+        priority_penalties = {0: 0.0, 1: 3.0, 2: 10.0, 3: 22.0}
+    else:
+        priority_penalties = {0: 0.0, 1: 2.0, 2: 6.0, 3: 16.0}
+    penalty += float(priority_penalties.get(priority, max(priority, 0) * 8.0))
+    return penalty
+
+
+def _generated_activity_candidate_score(
+    item: dict[str, Any],
+    target_tss: float,
+    preferred_buckets: list[str] | None,
+    context: dict[str, Any] | None,
+) -> float:
+    return float(
+        abs(float(item.get("estimated_tss") or 0.0) - target_tss)
+        + _generated_activity_preference_penalty(item, preferred_buckets, context)
+        + _generated_activity_selection_penalty(item, context)
+    )
+
+
+def _generated_activity_shortlist(
+    suggestions: list[dict[str, Any]],
+    target_tss: float,
+    preferred_buckets: list[str] | None,
+    context: dict[str, Any] | None,
+) -> list[tuple[float, dict[str, Any]]]:
+    scored = sorted(
+        (
+            (
+                _generated_activity_candidate_score(
+                    item=item,
+                    target_tss=target_tss,
+                    preferred_buckets=preferred_buckets,
+                    context=context,
+                ),
+                item,
+            )
+            for item in suggestions
+        ),
+        key=lambda pair: pair[0],
+    )
+    if not scored:
+        return []
+    best_score = float(scored[0][0])
+    shortlist = [pair for pair in scored if float(pair[0]) <= best_score + 18.0][:3]
+    return shortlist or scored[:1]
 
 
 def _generated_activity_candidates(
@@ -6116,6 +6508,13 @@ def generated_activity(
     pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
     pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
 
+    generator_context = _generated_activity_context(
+        db_path=db_path,
+        day_utc=day_utc,
+        threshold_pace_sec_per_km=pace_for_day,
+        activity_type=activity_type,
+    )
+
     suggestions = _generated_activity_candidates(
         db_path=db_path,
         mode=mode,
@@ -6124,44 +6523,86 @@ def generated_activity(
     )
     if not suggestions:
         fallback_suggestions = _generated_activity_fallbacks(activity_type=activity_type, mode=mode)
-        fallback_bucket = (_generated_activity_preferred_buckets(day_utc) or ["easy"])[0]
-        fallback_goal = _generated_activity_day_goal_tss(day_utc=day_utc, threshold_pace_sec_per_km=pace_for_day)
+        fallback_bucket = (_generated_activity_preferred_buckets(day_utc, generator_context) or ["easy"])[0]
+        fallback_goal = _generated_activity_day_goal_tss(
+            day_utc=day_utc,
+            threshold_pace_sec_per_km=pace_for_day,
+            context=generator_context,
+        )
         suggestions = [{"activity_text": text, "priority": 0, "bucket": fallback_bucket, "estimated_tss": fallback_goal} for text in fallback_suggestions]
     if not suggestions:
         raise HTTPException(status_code=404, detail="No activities available to generate from")
 
-    preferred_buckets = _generated_activity_preferred_buckets(day_utc)
-    eligible = suggestions
-    if preferred_buckets:
-        for preferred_bucket in preferred_buckets:
-            bucket_matches = [item for item in suggestions if str(item.get("bucket") or "") == preferred_bucket]
-            if bucket_matches:
-                eligible = bucket_matches
-                break
+    preferred_buckets = _generated_activity_preferred_buckets(day_utc, generator_context)
 
-    preferred_priorities = [0, 1, 2, 3]
-    for priority in preferred_priorities:
-        priority_matches = [item for item in eligible if int(item.get("priority") or 0) == priority]
-        if priority_matches:
-            eligible = priority_matches
-            break
-
-    target_tss = random.gauss(_generated_activity_day_goal_tss(day_utc=day_utc, threshold_pace_sec_per_km=pace_for_day), 10.0)
-    ranked_by_tss = sorted(
-        eligible,
-        key=lambda item: abs(float(item.get("estimated_tss") or 0.0) - target_tss),
+    target_tss = random.gauss(
+        _generated_activity_day_goal_tss(
+            day_utc=day_utc,
+            threshold_pace_sec_per_km=pace_for_day,
+            context=generator_context,
+        ),
+        8.0,
     )
-    eligible = ranked_by_tss[: min(5, len(ranked_by_tss))] if ranked_by_tss else eligible
+    shortlisted = _generated_activity_shortlist(
+        suggestions=suggestions,
+        target_tss=target_tss,
+        preferred_buckets=preferred_buckets,
+        context=generator_context,
+    )
+    eligible = [item for _, item in shortlisted] if shortlisted else suggestions
     if previous_activity_text:
         rotated = [
             item
             for item in eligible
             if str(item.get("activity_text") or "").strip().lower() != previous_activity_text.lower()
         ]
+        if not rotated and shortlisted:
+            rotated = [
+                item
+                for _, item in _generated_activity_shortlist(
+                    suggestions=[
+                        candidate
+                        for candidate in suggestions
+                        if str(candidate.get("activity_text") or "").strip().lower() != previous_activity_text.lower()
+                    ],
+                    target_tss=target_tss,
+                    preferred_buckets=preferred_buckets,
+                    context=generator_context,
+                )
+            ]
         if rotated:
             eligible = rotated
 
-    suggestion = random.choice(eligible)
+    if shortlisted:
+        eligible_scores = {
+            str(item.get("activity_text") or "").strip().lower(): float(score)
+            for score, item in shortlisted
+        }
+        scored_eligible = [
+            (
+                eligible_scores.get(
+                    str(item.get("activity_text") or "").strip().lower(),
+                    _generated_activity_candidate_score(
+                        item=item,
+                        target_tss=target_tss,
+                        preferred_buckets=preferred_buckets,
+                        context=generator_context,
+                    ),
+                ),
+                item,
+            )
+            for item in eligible
+        ]
+        scored_eligible = sorted(scored_eligible, key=lambda pair: pair[0])
+        best_score = float(scored_eligible[0][0]) if scored_eligible else 0.0
+        weights = [math.exp(-max(float(score) - best_score, 0.0) / 6.0) for score, _ in scored_eligible]
+        suggestion = random.choices(
+            [item for _, item in scored_eligible],
+            weights=weights,
+            k=1,
+        )[0]
+    else:
+        suggestion = random.choice(eligible)
     return {
         "owner": resolved_owner,
         "mode": mode,

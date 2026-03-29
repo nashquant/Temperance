@@ -87,6 +87,46 @@ function startDayFromPreset(monthsBack: number): string {
   return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
 }
 
+function composerActivityKeyword(activityType: 'running' | 'elliptical' | 'bike'): 'run' | 'elliptical' | 'bike' {
+  if (activityType === 'elliptical') return 'elliptical';
+  if (activityType === 'bike') return 'bike';
+  return 'run';
+}
+
+function chunkHasExplicitActivity(text: string): boolean {
+  const normalized = String(text || '').toLowerCase();
+  return /\btreadmill\b|\brun\b|\bellipt(?:ical)?\b|\bx-?train\b|\bcross(?:\s|-)?train\b|\bbike\b|\bcycl(?:ing)?\b/.test(normalized);
+}
+
+function applyComposerActivityFallback(
+  workoutText: string,
+  activityType: 'running' | 'elliptical' | 'bike',
+): string {
+  const fallbackActivity = composerActivityKeyword(activityType);
+  return String(workoutText || '')
+    .split(/(\n|;|,)/)
+    .map((entry) => {
+      if (entry === '\n' || entry === ';' || entry === ',') return entry;
+      const trimmedEntry = entry.trim();
+      if (!trimmedEntry) return entry;
+
+      let lastExplicitActivity = '';
+      const nextChunks = trimmedEntry.split(/\s*\+\s*/).map((chunk) => {
+        const trimmedChunk = chunk.trim();
+        if (!trimmedChunk) return trimmedChunk;
+        if (chunkHasExplicitActivity(trimmedChunk)) {
+          lastExplicitActivity = trimmedChunk;
+          return trimmedChunk;
+        }
+        if (lastExplicitActivity) return trimmedChunk;
+        return `${fallbackActivity} ${trimmedChunk}`;
+      });
+
+      return nextChunks.join(' + ');
+    })
+    .join('');
+}
+
 export function DashboardPage(): JSX.Element {
   const dashboardPageSize = 10;
   const dashboardYearWindowWeeks = 52;
@@ -441,17 +481,18 @@ export function DashboardPage(): JSX.Element {
       mode: 'planned' | 'custom';
     }) => {
       if (!session?.token) throw new Error('Missing auth token');
+      const normalizedWorkoutText = applyComposerActivityFallback(workoutText, addGeneratedActivityType);
       if (mode === 'custom') {
         return ingestCustomActivities({
           token: session.token,
           owner: profile?.owner,
-          entryText: `${dayUtc}: ${workoutText}`,
+          entryText: `${dayUtc}: ${normalizedWorkoutText}`,
         });
       }
       return ingestPlannedActivities({
         token: session.token,
         owner: profile?.owner,
-        entryText: `${dayUtc}: ${workoutText}`,
+        entryText: `${dayUtc}: ${normalizedWorkoutText}`,
       });
     },
     onSuccess: async (response, variables) => {
