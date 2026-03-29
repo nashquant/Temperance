@@ -1,15 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { AnalyticsToolbar } from '@/components/ui/analytics-toolbar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProgressionLineChartCard } from '@/features/athlete-progression/components/progression-line-chart-card';
 import { useAthleteProgressionQuery } from '@/features/athlete-progression/hooks/use-athlete-progression-query';
@@ -79,6 +72,7 @@ export function AthleteProgressionPage(): JSX.Element {
       };
     });
   }, [aggregation, chartData]);
+  const deferredNormalizedChartData = useDeferredValue(normalizedChartData);
   const hasVdotData = useMemo(
     () => normalizedChartData.some((row) => Number.isFinite(Number(row.vdot_max ?? row.vdot)) && Number(row.vdot_max ?? row.vdot) > 0),
     [normalizedChartData],
@@ -91,55 +85,21 @@ export function AthleteProgressionPage(): JSX.Element {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Athlete Progression</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <Select value={String(days)} onValueChange={(value) => setDays(Number(value))}>
-            <SelectTrigger className="w-[130px]"><SelectValue placeholder="Lookback" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="30">1 month</SelectItem>
-              <SelectItem value="90">3 months</SelectItem>
-              <SelectItem value="180">6 months</SelectItem>
-              <SelectItem value="365">1 year</SelectItem>
-              <SelectItem value="730">2 years</SelectItem>
-              <SelectItem value="3000">ALL</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="inline-flex rounded-lg border border-white/10 bg-black/15 p-1">
-            <Button
-              variant={aggregation === 'weekly' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 rounded-md px-2.5 text-xs"
-              onClick={() => setAggregation('weekly')}
-            >
-              Weekly
-            </Button>
-            <Button
-              variant={aggregation === 'daily' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 rounded-md px-2.5 text-xs"
-              onClick={() => setAggregation('daily')}
-            >
-              Daily
-            </Button>
-          </div>
-          <div className="inline-flex items-center rounded-lg border border-white/10 bg-black/15 p-1">
-            <Button
-              variant={includeCurrentPeriod ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 rounded-md px-2.5 text-xs"
-              onClick={() => setIncludeCurrentPeriod(true)}
-            >
-              T
-            </Button>
-            <Button
-              variant={!includeCurrentPeriod ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 rounded-md px-2.5 text-xs"
-              onClick={() => setIncludeCurrentPeriod(false)}
-            >
-              T-1
-            </Button>
-          </div>
-        </div>
+        <AnalyticsToolbar
+          days={days}
+          onDaysChange={setDays}
+          aggregation={aggregation}
+          onAggregationChange={setAggregation}
+          currentPeriodControl={{
+            value: includeCurrentPeriod,
+            onValueChange: setIncludeCurrentPeriod,
+            label: 'Current Period',
+            includeLabel: 'T',
+            excludeLabel: 'T-1',
+            includeAriaLabel: 'Include current period',
+            excludeAriaLabel: 'Show completed periods only',
+          }}
+        />
       </div>
 
       {query.isLoading ? (
@@ -165,7 +125,7 @@ export function AthleteProgressionPage(): JSX.Element {
             <div className="grid gap-4">
               <ProgressionLineChartCard
                 title="Stress Score: TSS vs rTSS"
-                data={normalizedChartData}
+                data={deferredNormalizedChartData}
                 yLabel={aggregation === 'weekly' ? 'Weekly Stress' : 'Daily Stress'}
                 targetKey="stress_target_tss"
                 targetLabel={aggregation === 'weekly' ? 'Weekly Target' : 'Daily Target'}
@@ -177,7 +137,7 @@ export function AthleteProgressionPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Durability vs Pounding"
-                data={normalizedChartData}
+                data={deferredNormalizedChartData}
                 yLabel="Load"
                 targetKey="pounding_target_tss"
                 targetLabel="Daily Target"
@@ -189,7 +149,7 @@ export function AthleteProgressionPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Distance vs Dist Eqv"
-                data={normalizedChartData}
+                data={deferredNormalizedChartData}
                 yLabel="km"
                 targetKey="target_distance_km"
                 targetLabel="Distance Target"
@@ -201,7 +161,7 @@ export function AthleteProgressionPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Fitness vs Fatigue"
-                data={normalizedChartData}
+                data={deferredNormalizedChartData}
                 yLabel="Load"
                 series={[
                   { key: 'fitness', label: 'Fitness', color: PROGRESSION_CHART_COLORS.blue },
@@ -211,7 +171,7 @@ export function AthleteProgressionPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Overreach vs Injury Risk"
-                data={normalizedChartData}
+                data={deferredNormalizedChartData}
                 yLabel="Risk"
                 series={[
                   { key: 'overreach', label: 'Overreach', color: PROGRESSION_CHART_COLORS.blue },
@@ -221,7 +181,7 @@ export function AthleteProgressionPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Garmin TL vs Total Calories"
-                data={normalizedChartData}
+                data={deferredNormalizedChartData}
                 yLabel="Training Load"
                 rightAxisLabel="Calories"
                 series={[
@@ -232,7 +192,7 @@ export function AthleteProgressionPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Time in Zones"
-                data={normalizedChartData}
+                data={deferredNormalizedChartData}
                 yLabel="Hours"
                 series={[
                   { key: 'zone_low_aerobic_h', label: 'Easy', color: PROGRESSION_CHART_COLORS.blueSoft },
@@ -245,7 +205,7 @@ export function AthleteProgressionPage(): JSX.Element {
               {hasVdotData ? (
                 <ProgressionLineChartCard
                   title="VDOT Evolution"
-                  data={normalizedChartData}
+                  data={deferredNormalizedChartData}
                   yLabel="VDOT"
                   series={[
                     { key: 'vdot', label: 'VDOT', color: PROGRESSION_CHART_COLORS.gray, dashed: true, strokeOpacity: 0.3, dotOpacity: 0.25, strokeWidth: 1.5 },

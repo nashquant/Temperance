@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AnalyticsToolbar } from '@/components/ui/analytics-toolbar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProgressionLineChartCard } from '@/features/athlete-progression/components/progression-line-chart-card';
 import { useWellnessQuery } from '@/features/wellness/hooks/use-wellness-query';
@@ -50,6 +49,7 @@ export function WellnessPage(): JSX.Element {
       label: formatDay(row.period_start, aggregation),
     }));
   }, [aggregation, query.data?.points]);
+  const deferredChartData = useDeferredValue(chartData);
 
   const summaryItems = useMemo(
     () => [
@@ -72,37 +72,12 @@ export function WellnessPage(): JSX.Element {
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Wellness</h1>
-        <div className="flex items-center gap-2">
-          <Select value={String(days)} onValueChange={(value) => setDays(Number(value))}>
-            <SelectTrigger className="w-[130px]"><SelectValue placeholder="Lookback" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="30">1 month</SelectItem>
-              <SelectItem value="90">3 months</SelectItem>
-              <SelectItem value="180">6 months</SelectItem>
-              <SelectItem value="365">1 year</SelectItem>
-              <SelectItem value="730">2 years</SelectItem>
-              <SelectItem value="3000">ALL</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="inline-flex rounded-lg border border-white/10 bg-black/15 p-1">
-            <Button
-              variant={aggregation === 'weekly' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 rounded-md px-2.5 text-xs"
-              onClick={() => setAggregation('weekly')}
-            >
-              Weekly
-            </Button>
-            <Button
-              variant={aggregation === 'daily' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 rounded-md px-2.5 text-xs"
-              onClick={() => setAggregation('daily')}
-            >
-              Daily
-            </Button>
-          </div>
-        </div>
+        <AnalyticsToolbar
+          days={days}
+          onDaysChange={setDays}
+          aggregation={aggregation}
+          onAggregationChange={setAggregation}
+        />
       </div>
 
       {query.isLoading ? (
@@ -167,7 +142,7 @@ export function WellnessPage(): JSX.Element {
             <div className="grid gap-4">
               <ProgressionLineChartCard
                 title="Recovery Scores"
-                data={chartData}
+                data={deferredChartData}
                 yLabel="Score"
                 series={[
                   { key: 'sleep_score', label: 'Sleep Score', color: WELLNESS_CHART_COLORS.blue },
@@ -177,7 +152,7 @@ export function WellnessPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Stress & Resting HR"
-                data={chartData}
+                data={deferredChartData}
                 yLabel="Level"
                 series={[
                   { key: 'stress_avg', label: 'Stress', color: WELLNESS_CHART_COLORS.grayDeep },
@@ -187,7 +162,7 @@ export function WellnessPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Sleep Patterns"
-                data={chartData}
+                data={deferredChartData}
                 yLabel={aggregation === 'weekly' ? 'Avg Hours' : 'Hours'}
                 series={[
                   { key: 'sleep_duration_h', label: 'Total', color: WELLNESS_CHART_COLORS.graySoft, dashed: true },
@@ -199,7 +174,7 @@ export function WellnessPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Battery & HRV"
-                data={chartData}
+                data={deferredChartData}
                 yLabel="Index"
                 series={[
                   { key: 'body_battery_end', label: 'Battery End', color: WELLNESS_CHART_COLORS.blue },
@@ -210,7 +185,7 @@ export function WellnessPage(): JSX.Element {
 
               <ProgressionLineChartCard
                 title="Steps vs Calories"
-                data={chartData}
+                data={deferredChartData}
                 yLabel="Steps"
                 rightAxisLabel="Calories"
                 series={[

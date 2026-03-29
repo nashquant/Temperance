@@ -977,7 +977,7 @@ export function DashboardPage(): JSX.Element {
                   }}
                   disabled={plannedCreateMutation.isPending || generateActivityMutation.isPending}
                 >
-                  {generateActivityMutation.isPending ? 'Generating...' : 'Generate'}
+                  {generateActivityMutation.isPending ? 'Generating…' : 'Generate'}
                 </Button>
               </div>
               <textarea
@@ -987,8 +987,7 @@ export function DashboardPage(): JSX.Element {
                   if (addActivityResult) setAddActivityResult(null);
                   setAddActivityText(event.target.value);
                 }}
-                placeholder={addActivityMode === 'planned' ? 'Type the planned workout...' : 'Type the custom activity...'}
-                autoFocus
+                placeholder={addActivityMode === 'planned' ? 'Type the planned workout…' : 'Type the custom activity…'}
               />
               {addActivityResult ? (
                 <p className="text-sm text-red-400">

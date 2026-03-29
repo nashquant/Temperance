@@ -45,6 +45,7 @@ export function LoginForm(): JSX.Element {
             <Label htmlFor="username">Username</Label>
             <Input
               id="username"
+              name="username"
               autoComplete="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
@@ -55,6 +56,7 @@ export function LoginForm(): JSX.Element {
             <Label htmlFor="password">Password</Label>
             <Input
               id="password"
+              name="password"
               type="password"
               autoComplete="current-password"
               value={password}
@@ -69,7 +71,7 @@ export function LoginForm(): JSX.Element {
             </Alert>
           ) : null}
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign in'}
+            {loading ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
       </CardContent>
