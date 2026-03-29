@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { CalendarDays } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -32,11 +33,68 @@ function dayLabel(isoDay: string): string {
   );
 }
 
+function compactDayLabel(isoDay: string): string {
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', day: 'numeric', timeZone: 'UTC' }).format(
+    new Date(`${isoDay}T00:00:00Z`),
+  );
+}
+
 function addDaysToIsoDay(isoDay: string, days: number): string {
   const [year, month, day] = isoDay.split('-').map((value) => Number(value));
   const date = new Date(Date.UTC(year, month - 1, day));
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function defaultPlannedActivityDay(weekStart?: string): string {
+  if (!weekStart) return new Date().toISOString().slice(0, 10);
+  const weekEnd = addDaysToIsoDay(weekStart, 6);
+  const today = new Date().toISOString().slice(0, 10);
+  if (today >= weekStart && today <= weekEnd) return today;
+  return weekStart;
+}
+
+type QuickAddActivityType = 'run' | 'xtrain';
+
+const QUICK_ADD_ACTIVITY_OPTIONS: Array<{ value: QuickAddActivityType; label: string; token: string }> = [
+  { value: 'run', label: 'Run', token: 'run' },
+  { value: 'xtrain', label: 'X-Train', token: 'xtrain' },
+];
+
+function workoutTextHasExplicitActivity(text: string): boolean {
+  const normalized = String(text || '').toLowerCase();
+  return /(treadmill|run|ellipt|xtrain|x-train|cross train|cross-train|cycl|bike)/.test(normalized);
+}
+
+function buildQuickAddWorkoutText(workoutText: string, activityType: QuickAddActivityType): string {
+  const normalizedWorkout = String(workoutText || '').trim();
+  if (!normalizedWorkout) return '';
+  if (workoutTextHasExplicitActivity(normalizedWorkout)) return normalizedWorkout;
+  const prefix = QUICK_ADD_ACTIVITY_OPTIONS.find((option) => option.value === activityType)?.token ?? 'run';
+  return `${prefix} ${normalizedWorkout}`.trim();
+}
+
+function splitWorkoutDateOverride(text: string): { dateText: string | null; workoutText: string } {
+  const raw = String(text || '').trim();
+  const match = raw.match(
+    /^\s*((?:today|tomorrow|yesterday|t(?:[+-]\d+)?|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}|\d{1,2}[A-Za-z]{3}\d{2}))\s*:\s*(.+)$/i,
+  );
+  if (!match) return { dateText: null, workoutText: raw };
+  return {
+    dateText: String(match[1] || '').trim(),
+    workoutText: String(match[2] || '').trim(),
+  };
+}
+
+function buildQuickAddEntryText(
+  quickAddDay: string,
+  quickAddWorkout: string,
+  quickAddActivityType: QuickAddActivityType,
+): string {
+  const { dateText, workoutText } = splitWorkoutDateOverride(quickAddWorkout);
+  const resolvedDateText = dateText || quickAddDay;
+  const resolvedWorkoutText = buildQuickAddWorkoutText(workoutText, quickAddActivityType);
+  return `${resolvedDateText}: ${resolvedWorkoutText}`.trim();
 }
 
 export function PlanActivitiesPage(): JSX.Element {
@@ -54,6 +112,9 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   const [metric, setMetric] = useState<PlannedMetricView>('tss');
   const [selectedWeek, setSelectedWeek] = useState<string>('');
   const [entryText, setEntryText] = useState('');
+  const [quickAddDay, setQuickAddDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const [quickAddActivityType, setQuickAddActivityType] = useState<QuickAddActivityType>('run');
+  const [quickAddWorkout, setQuickAddWorkout] = useState('');
   const [ingestResult, setIngestResult] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [rowSaveResults, setRowSaveResults] = useState<Record<string, { tone: 'error' | 'success'; message: string }>>({});
@@ -107,7 +168,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   });
 
   const ingestMutation = useMutation({
-    mutationFn: async (text: string) => {
+    mutationFn: async ({ text }: { text: string; source: 'composer' | 'inline-row' }) => {
       if (!session?.token) throw new Error('Missing auth token');
       return ingestPlannedActivities({
         token: session.token,
@@ -115,7 +176,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         entryText: text,
       });
     },
-    onSuccess: async (response) => {
+    onSuccess: async (response, variables) => {
       await refetchPlan();
       if (response.errors.length > 0 && response.saved_count <= 0) {
         setIngestResult(response.errors[0] ?? 'Unable to save planned activities.');
@@ -124,7 +185,13 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       } else {
         setIngestResult(`Saved ${response.saved_count} planned activit${response.saved_count === 1 ? 'y' : 'ies'}.`);
       }
-      if (response.saved_count > 0) setEntryText('');
+      if (response.saved_count > 0) {
+        if (variables.source === 'composer') {
+          setEntryText('');
+        } else {
+          setQuickAddWorkout('');
+        }
+      }
     },
     onError: (error) => {
       setIngestResult(error instanceof Error ? error.message : 'Unable to save planned activities.');
@@ -191,6 +258,10 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
     });
     setEditValues(next);
   }, [selectedRows]);
+
+  useEffect(() => {
+    setQuickAddDay(defaultPlannedActivityDay(effectiveWeek));
+  }, [effectiveWeek]);
 
   const chartRows = useMemo(() => {
     if (!effectiveWeek) return [];
@@ -355,7 +426,11 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <p className="text-xs text-muted-foreground">Multiple entries are supported with new lines, `;`, or `,`.</p>
             <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <Button className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`} onClick={() => ingestMutation.mutate(entryText)} disabled={ingestMutation.isPending || !entryText.trim()}>
+              <Button
+                className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`}
+                onClick={() => ingestMutation.mutate({ text: entryText, source: 'composer' })}
+                disabled={ingestMutation.isPending || !entryText.trim()}
+              >
                 {ingestMutation.isPending ? 'Saving...' : 'Save'}
               </Button>
               {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
@@ -446,8 +521,8 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                     <table className="min-w-[980px] w-full table-fixed text-sm">
                       <colgroup>
                         <col className="w-[64px]" />
-                        <col className="w-[108px]" />
-                        <col className="w-[120px]" />
+                        <col className="w-[74px]" />
+                        <col className="w-[132px]" />
                         <col className="w-auto" />
                         <col className="w-[82px]" />
                         <col className="w-[82px]" />
@@ -469,6 +544,81 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                         </tr>
                       </thead>
                       <tbody>
+                        <tr className="border-t border-white/10 bg-white/[0.03]">
+                          <td className="px-2 py-2 sm:px-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] text-base font-semibold text-slate-200">
+                              +
+                            </div>
+                          </td>
+                          <td className="px-2 py-2 sm:px-3">
+                            <label
+                              className="relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-white/10 bg-black/20 text-slate-200 transition hover:bg-white/[0.05]"
+                              title={`Selected day: ${dayLabel(quickAddDay)}`}
+                              aria-label={`Select planned day. Current day is ${dayLabel(quickAddDay)}.`}
+                            >
+                              <CalendarDays className="pointer-events-none h-4 w-4" />
+                              <input
+                                type="date"
+                                value={quickAddDay}
+                                onChange={(event) => setQuickAddDay(event.target.value)}
+                                className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
+                                aria-hidden="true"
+                                tabIndex={-1}
+                              />
+                            </label>
+                          </td>
+                          <td className="px-2 py-2 sm:px-3">
+                            <div className="inline-flex rounded-xl bg-white/[0.03] p-1">
+                              {QUICK_ADD_ACTIVITY_OPTIONS.map((option) => {
+                                const isActive = quickAddActivityType === option.value;
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    className={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold leading-none whitespace-nowrap transition ${
+                                      isActive
+                                        ? 'bg-white/10 text-slate-50'
+                                        : 'text-slate-300/62 hover:text-slate-100'
+                                    }`}
+                                    onClick={() => setQuickAddActivityType(option.value)}
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td className="px-2 py-2 sm:px-3">
+                            <input
+                              className="min-w-[260px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-slate-400/55 focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                              value={quickAddWorkout}
+                              onChange={(event) => setQuickAddWorkout(event.target.value)}
+                              placeholder="e.g. 10min @ 4:30/km + 3x10min @ 3:45/km"
+                            />
+                          </td>
+                          <td className="px-2 py-2 text-right text-slate-300/45 sm:px-3">-</td>
+                          <td className="px-2 py-2 text-right text-slate-300/45 sm:px-3">-</td>
+                          <td className="px-2 py-2 text-right text-slate-300/45 sm:px-3">-</td>
+                          <td className="px-2 py-2 text-right text-slate-300/45 sm:px-3">-</td>
+                          <td className="px-2 py-2 text-right sm:px-3">
+                            <div className="flex justify-end gap-1.5">
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="px-3"
+                                onClick={() =>
+                                  ingestMutation.mutate({
+                                    text: buildQuickAddEntryText(quickAddDay, quickAddWorkout, quickAddActivityType),
+                                    source: 'inline-row',
+                                  })
+                                }
+                                disabled={ingestMutation.isPending || !quickAddDay.trim() || !quickAddWorkout.trim()}
+                              >
+                                Add
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
                         {selectedRows.map((row) => {
                           const rowKey = `${row.day_utc}-${row.line_no}`;
                           const workoutText = editValues[rowKey] ?? '';
@@ -496,7 +646,9 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                                   }
                                 />
                               </td>
-                              <td className="px-2 py-2 sm:px-3">{dayLabel(row.day_utc)}</td>
+                              <td className="px-2 py-2 whitespace-nowrap sm:px-3" title={dayLabel(row.day_utc)}>
+                                {compactDayLabel(row.day_utc)}
+                              </td>
                               <td className="px-2 py-2 sm:px-3">{row.activity}</td>
                               <td className="px-2 py-2 sm:px-3">
                                 <input
