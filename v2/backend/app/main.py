@@ -3738,11 +3738,14 @@ def _build_athlete_progression_payload(
                 pounding=("pounding", "mean"),
                 vdot=("vdot", "max"),
                 vdot_max=("vdot_max", "max"),
-                target_tss=("target_tss", "sum"),
-                target_distance_km=("target_distance_km", "sum"),
+                target_tss_daily=("target_tss", "mean"),
+                target_distance_km_daily=("target_distance_km", "mean"),
             )
             .sort_values("period_start")
         )
+        points_df["target_tss"] = pd.to_numeric(points_df.get("target_tss_daily"), errors="coerce").fillna(0.0) * 7.0
+        points_df["target_distance_km"] = pd.to_numeric(points_df.get("target_distance_km_daily"), errors="coerce").fillna(0.0) * 7.0
+        points_df = points_df.drop(columns=["target_tss_daily", "target_distance_km_daily"], errors="ignore")
     else:
         points_df = model_df.rename(columns={"day": "period_start"}).copy()
 
