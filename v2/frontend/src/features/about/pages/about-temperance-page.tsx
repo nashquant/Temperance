@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
+import { SecondaryPageHeader, secondaryPageSurfaceClassName } from '@/components/ui/secondary-page';
 import { cn } from '@/lib/utils';
 
 type AboutBodyItem =
@@ -228,9 +229,7 @@ function renderInlineCode(content: string): JSX.Element {
 }
 
 export function AboutTemperancePage(): JSX.Element {
-  const surfaceClassName =
-    'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
-  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['overview']));
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set([aboutBlocks[0]?.id ?? '']));
 
   const toggleSection = (sectionId: string) => {
     setOpenSections((current) => {
@@ -243,8 +242,12 @@ export function AboutTemperancePage(): JSX.Element {
 
   return (
     <section className="space-y-6">
+      <SecondaryPageHeader
+        title="About Temperance"
+        description="Context for the training model, the workflow behind each tab, and the syntax used throughout the app."
+      />
 
-      <Card className={surfaceClassName}>
+      <Card className={secondaryPageSurfaceClassName}>
         <CardContent className="p-0">
           <div className="divide-y divide-white/8">
             {aboutBlocks.map((block, index) => {
@@ -284,7 +287,7 @@ export function AboutTemperancePage(): JSX.Element {
                   </button>
 
                   {isOpen ? (
-                    <div className="pb-4 pl-[3.25rem] sm:pl-[3.5rem]">
+                    <div className="pb-4 pl-10 sm:pl-12">
                       <div className="rounded-2xl border border-white/8 bg-black/15 px-5 py-4">
                         <div className="space-y-4 text-[15px] leading-7 text-slate-300/80">
                           {block.body.map((item, itemIndex) => (
@@ -292,7 +295,6 @@ export function AboutTemperancePage(): JSX.Element {
                               <p
                                 key={`${block.id}-${itemIndex}`}
                                 className={cn(
-                                  'max-w-[70ch]',
                                   block.id === 'The Syntax' ? 'text-slate-300/76' : '',
                                   block.id === 'The Philosophy' ? 'text-slate-200/86' : '',
                                   block.id === 'The Model' ? 'text-slate-200/84' : '',
@@ -303,7 +305,7 @@ export function AboutTemperancePage(): JSX.Element {
                             ) : (
                               <div
                                 key={`${block.id}-${item.label}`}
-                                className="max-w-[72ch] pl-4"
+                                className="pl-2"
                               >
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100/88">
                                   {item.label}

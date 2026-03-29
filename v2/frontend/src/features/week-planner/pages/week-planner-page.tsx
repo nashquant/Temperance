@@ -1,18 +1,19 @@
 import { Separator } from '@/components/ui/separator';
+import { SecondaryPageHeader } from '@/components/ui/secondary-page';
 import { PlanActivitiesSection } from '@/features/plan-activities/pages/plan-activities-page';
 import { WeeklyOutlookSection } from '@/features/weekly-outlook/pages/weekly-outlook-page';
 
 export function WeekPlannerPage(): JSX.Element {
   return (
     <section className="space-y-6">
+      <SecondaryPageHeader
+        title="Week Planner"
+        description="Plan the week ahead, then compare how the structure is tracking against the target."
+      />
+
       <PlanActivitiesSection embedded />
 
       <Separator />
-
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Week Planner</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Weekly outlook plus planned activities in one place.</p>
-      </div>
 
       <WeeklyOutlookSection embedded />
     </section>

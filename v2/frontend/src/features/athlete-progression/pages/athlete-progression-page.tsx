@@ -3,6 +3,7 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { AnalyticsToolbar } from '@/components/ui/analytics-toolbar';
+import { SecondaryPageHeader } from '@/components/ui/secondary-page';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProgressionLineChartCard } from '@/features/athlete-progression/components/progression-line-chart-card';
 import { useAthleteProgressionQuery } from '@/features/athlete-progression/hooks/use-athlete-progression-query';
@@ -81,26 +82,27 @@ export function AthleteProgressionPage(): JSX.Element {
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Athlete Progression</h1>
-        </div>
-        <AnalyticsToolbar
-          days={days}
-          onDaysChange={setDays}
-          aggregation={aggregation}
-          onAggregationChange={setAggregation}
-          currentPeriodControl={{
-            value: includeCurrentPeriod,
-            onValueChange: setIncludeCurrentPeriod,
-            label: 'Current Period',
-            includeLabel: 'T',
-            excludeLabel: 'T-1',
-            includeAriaLabel: 'Include current period',
-            excludeAriaLabel: 'Show completed periods only',
-          }}
-        />
-      </div>
+      <SecondaryPageHeader
+        title="Athlete Progression"
+        description="Review long-term training load, fitness, and durability using the same page shell as the rest of the analytics tabs."
+        actions={(
+          <AnalyticsToolbar
+            days={days}
+            onDaysChange={setDays}
+            aggregation={aggregation}
+            onAggregationChange={setAggregation}
+            currentPeriodControl={{
+              value: includeCurrentPeriod,
+              onValueChange: setIncludeCurrentPeriod,
+              label: 'Current Period',
+              includeLabel: 'T',
+              excludeLabel: 'T-1',
+              includeAriaLabel: 'Include current period',
+              excludeAriaLabel: 'Show completed periods only',
+            }}
+          />
+        )}
+      />
 
       {query.isLoading ? (
         <div className="space-y-3">

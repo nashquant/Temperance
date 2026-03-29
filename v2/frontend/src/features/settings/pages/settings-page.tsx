@@ -7,6 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { CompactDateInput } from '@/components/ui/compact-date-input';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  SecondaryPageHeader,
+  secondaryPageActionButtonClassName,
+  secondaryPageFieldLabelClassName,
+  secondaryPageInputClassName,
+  secondaryPageSurfaceClassName,
+} from '@/components/ui/secondary-page';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useSettingsQuery } from '@/features/settings/hooks/use-settings-query';
@@ -82,16 +90,10 @@ function formatSpecificityLabel(key: keyof SpecificityProfile): string {
 const mobileCurveFieldLabelClassName = 'text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-300/58 sm:hidden';
 
 export function SettingsPage(): JSX.Element {
-  const surfaceClassName =
-    'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
-  const controlButtonClassName =
-    'h-9 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(30,41,59,0.88),rgba(15,23,42,0.96))] px-3 text-[12px] font-medium text-slate-100 shadow-[0_8px_18px_rgba(2,6,23,0.22)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(51,65,85,0.92),rgba(15,23,42,0.98))] sm:h-10 sm:px-4';
   const addRowButtonClassName =
     'h-8 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-semibold text-slate-200 hover:bg-white/[0.08] sm:h-9 sm:px-3';
   const removeRowButtonClassName =
     'h-7 w-7 justify-self-end self-end rounded-full border border-white/10 bg-white/[0.03] p-0 text-slate-300 hover:bg-rose-500/10 hover:text-rose-100 sm:h-8 sm:w-8';
-  const fieldLabelClassName = 'mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74';
-  const fieldHintClassName = 'text-[11px] text-slate-300/58';
   const { session, profile } = useAuth();
   const query = useSettingsQuery();
   const vdotQuery = useVdotQuery();
@@ -253,13 +255,14 @@ export function SettingsPage(): JSX.Element {
 
   return (
     <section className="space-y-4 sm:space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      </div>
+      <SecondaryPageHeader
+        title="Settings"
+        description="Configure thresholds, specificity, and pace curves so the rest of the app reads your training consistently."
+      />
 
       {saveMsg ? <p className="text-sm text-muted-foreground">{saveMsg}</p> : null}
 
-      <Card className={surfaceClassName}>
+      <Card className={secondaryPageSurfaceClassName}>
         <CardContent className="space-y-2.5 p-3 sm:space-y-3 sm:p-4">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-medium">Temperance Guide</p>
@@ -382,18 +385,19 @@ export function SettingsPage(): JSX.Element {
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
-        <Card className={surfaceClassName}>
+        <Card className={secondaryPageSurfaceClassName}>
           <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-4">
             <p className="text-sm font-medium">Stress Zones and VDOT</p>
             <div className="grid gap-2 sm:gap-3 lg:grid-cols-5">
               {(['z1_max', 'z2_max', 'z3_max', 'z4_max'] as const).map((key) => (
                 <div key={key} className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
-                  <p className={fieldLabelClassName}>{formatIfZoneLabel(key)}</p>
+                  <Label htmlFor={`if-zone-${key}`} className={secondaryPageFieldLabelClassName}>{formatIfZoneLabel(key)}</Label>
                   <div className="relative">
                     <Input
+                      id={`if-zone-${key}`}
                       type="number"
                       step="1"
-                      className="h-9 rounded-lg border-white/10 bg-black/15 pr-14 sm:h-10 sm:rounded-md sm:border-input sm:bg-transparent"
+                      className={`h-9 pr-14 sm:h-10 ${secondaryPageInputClassName}`}
                       value={Math.round((Number(ifZones[key]) || 0) * 100)}
                       onChange={(event) =>
                         setIfZones((previous) => ({
@@ -409,14 +413,15 @@ export function SettingsPage(): JSX.Element {
                 </div>
               ))}
               <div className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 lg:w-[96px] lg:justify-self-end">
-                <p className={fieldLabelClassName}>VDOT Days</p>
+                <Label htmlFor="vdot-lookback-days" className={secondaryPageFieldLabelClassName}>VDOT Days</Label>
                 <div className="relative">
                   <Input
+                    id="vdot-lookback-days"
                     type="number"
                     min="1"
                     max="3650"
                     step="1"
-                    className="h-9 rounded-lg border-white/10 bg-black/15 sm:h-10 sm:rounded-md sm:border-input sm:bg-transparent"
+                    className={`h-9 sm:h-10 ${secondaryPageInputClassName}`}
                     value={Math.round(Number(vdotLookbackDays) || 0)}
                     onChange={(event) => setVdotLookbackDays(Number(event.target.value) || 0)}
                   />
@@ -425,7 +430,7 @@ export function SettingsPage(): JSX.Element {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
-                className={`${controlButtonClassName} w-full sm:w-auto`}
+                className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`}
                 onClick={() => saveMutation.mutate({ if_zone_thresholds: ifZones, vdot_lookback_days: vdotLookbackDays })}
                 disabled={saveMutation.isPending}
               >
@@ -435,18 +440,19 @@ export function SettingsPage(): JSX.Element {
           </CardContent>
         </Card>
 
-        <Card className={surfaceClassName}>
+        <Card className={secondaryPageSurfaceClassName}>
           <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-4">
             <p className="text-sm font-medium">Specificity Factors</p>
             <div className="grid gap-2 sm:gap-3 md:grid-cols-4">
               {(['non_running', 'treadmill', 'elliptical', 'cycling'] as const).map((key) => (
                 <div key={key} className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
-                  <p className={fieldLabelClassName}>{formatSpecificityLabel(key)}</p>
+                  <Label htmlFor={`specificity-${key}`} className={secondaryPageFieldLabelClassName}>{formatSpecificityLabel(key)}</Label>
                   <div className="relative">
                     <Input
+                      id={`specificity-${key}`}
                       type="number"
                       step="1"
-                      className="h-9 rounded-lg border-white/10 bg-black/15 pr-16 sm:h-10 sm:rounded-md sm:border-input sm:bg-transparent"
+                      className={`h-9 pr-16 sm:h-10 ${secondaryPageInputClassName}`}
                       value={Math.round((Number(specificity[key]) || 0) * 100)}
                       onChange={(event) =>
                         setSpecificity((previous) => ({
@@ -462,13 +468,13 @@ export function SettingsPage(): JSX.Element {
                 </div>
               ))}
             </div>
-            <Button className={`${controlButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save</Button>
+            <Button className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save</Button>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
-        <Card className={surfaceClassName}>
+        <Card className={secondaryPageSurfaceClassName}>
           <CardContent className="space-y-3 p-3 sm:p-4">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium">LTHR Curve</p>
@@ -498,9 +504,10 @@ export function SettingsPage(): JSX.Element {
                     />
                   </div>
                   <div className="space-y-0.5">
-                    <p className={mobileCurveFieldLabelClassName}>LTHR</p>
+                    <Label htmlFor={`lthr-bpm-${row.id}`} className={mobileCurveFieldLabelClassName}>LTHR</Label>
                     <Input
-                      className="h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px] sm:h-10 sm:max-w-[132px] sm:rounded-md sm:border-input sm:bg-transparent sm:px-3 sm:text-sm"
+                      id={`lthr-bpm-${row.id}`}
+                      className={`h-8 px-2.5 text-[13px] sm:h-10 sm:max-w-[132px] sm:px-3 sm:text-sm ${secondaryPageInputClassName}`}
                       type="number"
                       step="1"
                       min={0}
@@ -524,11 +531,11 @@ export function SettingsPage(): JSX.Element {
                 </div>
               ))}
             </div>
-            <Button className={`${controlButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save</Button>
+            <Button className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save</Button>
           </CardContent>
         </Card>
 
-        <Card className={surfaceClassName}>
+        <Card className={secondaryPageSurfaceClassName}>
           <CardContent className="space-y-3 p-3 sm:p-4">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium">LT Pace Curve</p>
@@ -558,9 +565,10 @@ export function SettingsPage(): JSX.Element {
                     />
                   </div>
                   <div className="space-y-0.5">
-                    <p className={mobileCurveFieldLabelClassName}>LT Pace</p>
+                    <Label htmlFor={`lt-pace-value-${row.id}`} className={mobileCurveFieldLabelClassName}>LT Pace</Label>
                     <Input
-                      className="h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px] sm:h-10 sm:max-w-[148px] sm:rounded-md sm:border-input sm:bg-transparent sm:px-3 sm:text-sm"
+                      id={`lt-pace-value-${row.id}`}
+                      className={`h-8 px-2.5 text-[13px] sm:h-10 sm:max-w-[148px] sm:px-3 sm:text-sm ${secondaryPageInputClassName}`}
                       type="text"
                       value={row.pace_input}
                       onChange={(event) =>
@@ -586,7 +594,7 @@ export function SettingsPage(): JSX.Element {
             </div>
             {parsedCurves.paceError ? <p className="text-xs text-red-400">{parsedCurves.paceError}</p> : null}
             <Button
-              className={`${controlButtonClassName} w-full sm:w-auto`}
+              className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`}
               onClick={() => {
                 if (parsedCurves.paceError) {
                   setSaveMsg(parsedCurves.paceError);

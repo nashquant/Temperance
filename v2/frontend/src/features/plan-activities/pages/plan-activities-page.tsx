@@ -5,6 +5,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  secondaryPageActionButtonClassName,
+  secondaryPageInsetClassName,
+  secondaryPageMutedInsetClassName,
+  secondaryPageSurfaceClassName,
+  secondaryPageTextAreaClassName,
+} from '@/components/ui/secondary-page';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { PlannedWeekChart } from '@/features/plan-activities/components/planned-week-chart';
@@ -42,8 +49,6 @@ interface PlanActivitiesSectionProps {
 
 export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectionProps): JSX.Element {
   const deleteUndoWindowMs = 6000;
-  const surfaceClassName =
-    'overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]';
   const { session, profile } = useAuth();
   const query = usePlanActivitiesQuery(4);
   const [metric, setMetric] = useState<PlannedMetricView>('tss');
@@ -317,12 +322,12 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
       {!query.isLoading && !query.isError && query.data ? (
         <>
-          <Card className={`${surfaceClassName} sm:hidden`}>
+          <Card className={`${secondaryPageSurfaceClassName} sm:hidden`}>
             <CardContent className="grid gap-2 p-4">
               {goalItems.map((item) => (
                 <div
                   key={item.label}
-                  className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5"
+                  className={`flex items-center justify-between ${secondaryPageMutedInsetClassName} px-3 py-2.5`}
                 >
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.label}</p>
                   <p className="text-sm font-semibold text-slate-50">{item.value}</p>
@@ -338,11 +343,11 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         </>
       ) : null}
 
-      <Card className={surfaceClassName}>
+      <Card className={secondaryPageSurfaceClassName}>
         <CardContent className="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-3 sm:space-y-4 sm:p-5">
           <h2 className="text-lg font-semibold text-foreground">Add Planned Activity</h2>
           <textarea
-            className="min-h-[104px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20 sm:min-h-[120px] sm:py-3"
+            className={`min-h-[104px] ${secondaryPageTextAreaClassName} sm:min-h-[120px]`}
             placeholder="e.g. 3Mar26: 80min elliptical @140bpm; 2026-03-26: 10min run @4:50 + 5x6min @3:40/km"
             value={entryText}
             onChange={(event) => setEntryText(event.target.value)}
@@ -350,7 +355,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <p className="text-xs text-muted-foreground">Multiple entries are supported with new lines, `;`, or `,`.</p>
             <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <Button className="w-full sm:w-auto" onClick={() => ingestMutation.mutate(entryText)} disabled={ingestMutation.isPending || !entryText.trim()}>
+              <Button className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`} onClick={() => ingestMutation.mutate(entryText)} disabled={ingestMutation.isPending || !entryText.trim()}>
                 {ingestMutation.isPending ? 'Saving...' : 'Save'}
               </Button>
               {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
@@ -390,7 +395,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       {!query.isLoading && !query.isError && query.data ? (
         <>
           {weeks.length === 0 ? (
-              <Card className={surfaceClassName}>
+              <Card className={secondaryPageSurfaceClassName}>
                 <CardContent className="p-8 text-sm text-slate-300/72">No planned activities found in this time window.</CardContent>
               </Card>
           ) : (
@@ -408,13 +413,13 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               </div>
 
               {selectedWeekMeta ? (
-                <Card className={surfaceClassName}>
+                <Card className={secondaryPageSurfaceClassName}>
                   <CardContent className="p-4">
                     <div className="grid gap-2 md:hidden">
                       {selectedWeekItems.map((item) => (
                         <div
                           key={item.label}
-                          className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5"
+                          className={`flex items-center justify-between ${secondaryPageMutedInsetClassName} px-3 py-2.5`}
                         >
                           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.label}</p>
                           <p className="text-sm font-semibold text-slate-50 text-right">{item.value}</p>
@@ -422,12 +427,12 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                       ))}
                     </div>
                     <div className="hidden gap-3 md:grid md:grid-cols-6">
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Week</p><p className="font-medium text-foreground">{selectedWeekMeta.week_label}</p></div>
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Activities</p><p className="font-medium text-foreground">{selectedWeekMeta.planned_activities}</p></div>
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Duration</p><p className="font-medium text-foreground">{selectedWeekMeta.duration_h.toFixed(1)}h</p></div>
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">TSS</p><p className="font-medium text-foreground">{Math.round(selectedWeekMeta.tss)}</p></div>
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">rTSS</p><p className="font-medium text-foreground">{Math.round(selectedWeekMeta.rtss)}</p></div>
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-3"><p className="text-xs text-slate-300/72">Dist Eqv</p><p className="font-medium text-foreground">{selectedWeekMeta.distance_eqv_km.toFixed(1)} km</p></div>
+                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">Week</p><p className="font-medium text-foreground">{selectedWeekMeta.week_label}</p></div>
+                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">Activities</p><p className="font-medium text-foreground">{selectedWeekMeta.planned_activities}</p></div>
+                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">Duration</p><p className="font-medium text-foreground">{selectedWeekMeta.duration_h.toFixed(1)}h</p></div>
+                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">TSS</p><p className="font-medium text-foreground">{Math.round(selectedWeekMeta.tss)}</p></div>
+                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">rTSS</p><p className="font-medium text-foreground">{Math.round(selectedWeekMeta.rtss)}</p></div>
+                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">Dist Eqv</p><p className="font-medium text-foreground">{selectedWeekMeta.distance_eqv_km.toFixed(1)} km</p></div>
                     </div>
                   </CardContent>
                 </Card>
@@ -435,7 +440,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
               <PlannedWeekChart data={chartRows} metric={metric} onMetricChange={setMetric} />
 
-              <Card className={surfaceClassName}>
+              <Card className={secondaryPageSurfaceClassName}>
                 <CardContent className="p-0">
                   <div className="overflow-x-auto rounded-2xl pb-1">
                     <table className="min-w-[980px] w-full table-fixed text-sm">

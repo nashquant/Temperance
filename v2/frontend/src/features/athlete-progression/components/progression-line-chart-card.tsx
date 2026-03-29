@@ -14,6 +14,7 @@ import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { secondaryPageSurfaceClassName } from '@/components/ui/secondary-page';
 
 interface SeriesConfig {
   key: string;
@@ -199,7 +200,7 @@ export function ProgressionLineChartCard({
   }) as Array<Record<string, number | string | null | undefined>>;
   const labelMap = new Map(chartData.map((row) => [String(row._x ?? ''), String(row['label'] ?? row._x ?? '')]));
   return (
-    <Card className="overflow-hidden rounded-2xl border-border/70 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(2,6,23,0.32)]">
+    <Card className={secondaryPageSurfaceClassName}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium text-slate-200/88">{title}</CardTitle>
       </CardHeader>
