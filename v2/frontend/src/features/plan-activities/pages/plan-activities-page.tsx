@@ -113,6 +113,32 @@ function clipboardSportToken(rawSport: string): string {
   return normalized.replace(/[_-]+/g, ' ').split(/\s+/)[0] || 'activity';
 }
 
+function parseClipboardDurationLabelSeconds(label: string): number {
+  const raw = String(label || '').trim().toLowerCase();
+  if (!raw) return 0;
+  const quotedMatch = raw.match(/^(?:(\d+)\s*h\s*)?(?:(\d+)\s*')?\s*(?:(\d+)\s*")?$/);
+  if (quotedMatch) {
+    const hours = Number(quotedMatch[1] || 0);
+    const minutes = Number(quotedMatch[2] || 0);
+    const seconds = Number(quotedMatch[3] || 0);
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+  const colonMatch = raw.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+  if (colonMatch) {
+    const hours = Number(colonMatch[1] || 0);
+    const minutes = Number(colonMatch[2] || 0);
+    const seconds = Number(colonMatch[3] || 0);
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+  const hourMatch = raw.match(/(\d+)\s*h/);
+  const minuteMatch = raw.match(/(\d+)\s*m/);
+  const secondMatch = raw.match(/(\d+)\s*s/);
+  const hours = Number(hourMatch?.[1] || 0);
+  const minutes = Number(minuteMatch?.[1] || 0);
+  const seconds = Number(secondMatch?.[1] || 0);
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
 function formatRoundedClipboardDuration(durationSeconds: number): { label: string; roundedSeconds: number } {
   const totalSeconds = Math.max(0, Math.round(Number(durationSeconds) || 0));
   if (totalSeconds < 60) {
@@ -130,7 +156,7 @@ function formatRoundedClipboardDuration(durationSeconds: number): { label: strin
       return (left % 60 === 0 ? -1 : 1) - (right % 60 === 0 ? -1 : 1);
     });
 
-  const rounded = candidates.find((candidate) => Math.abs(candidate - totalSeconds) / totalSeconds <= 0.01) ?? totalSeconds;
+  const rounded = candidates.find((candidate) => Math.abs(candidate - totalSeconds) / totalSeconds <= 0.005) ?? totalSeconds;
   const hours = Math.floor(rounded / 3600);
   const minutes = Math.floor((rounded % 3600) / 60);
   const seconds = rounded % 60;
@@ -228,8 +254,10 @@ function buildActualClipboardTextFromDetail(detail: ActivityDetailResponse): str
   const laps = Array.isArray(detail.split_rows) ? detail.split_rows : [];
   const chunks = laps
     .map((lap, index) => {
-      const roundedDuration = formatRoundedClipboardDuration(Number(lap.duration_seconds) || 0);
-      const durationLabel = String(roundedDuration.label || '').trim();
+      const durationSeconds = Number(lap.duration_seconds) || parseClipboardDurationLabelSeconds(lap.duration_label);
+      const rawDurationLabel = String(lap.duration_label || '').trim();
+      const roundedDuration = durationSeconds > 0 ? formatRoundedClipboardDuration(durationSeconds) : null;
+      const durationLabel = String(roundedDuration?.label || rawDurationLabel).trim();
       if (!durationLabel) return null;
 
       let intensityLabel = '';
@@ -253,7 +281,7 @@ function buildActualClipboardTextFromDetail(detail: ActivityDetailResponse): str
       return {
         index,
         durationLabel,
-        roundedDurationSeconds: roundedDuration.roundedSeconds,
+        roundedDurationSeconds: roundedDuration?.roundedSeconds ?? durationSeconds,
         intensityKind: parsedIntensity.kind,
         intensityValue: parsedIntensity.value,
         intensityLabel: parsedIntensity.text,
