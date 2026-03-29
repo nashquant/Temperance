@@ -7,14 +7,18 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
+  SecondaryStatCard,
   secondaryPageActionButtonClassName,
-  secondaryPageInsetClassName,
   secondaryPageMutedInsetClassName,
   secondaryPageSurfaceClassName,
   secondaryPageTextAreaClassName,
 } from '@/components/ui/secondary-page';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import { getActivityDetail } from '@/features/dashboard/services/activity-detail-api';
+import { getDashboard } from '@/features/dashboard/services/dashboard-api';
+import type { ActivityDetailResponse } from '@/features/dashboard/types/activity-detail';
+import type { DashboardActivityCard } from '@/features/dashboard/types/dashboard';
 import { PlannedWeekChart } from '@/features/plan-activities/components/planned-week-chart';
 import { PlannedWeekSelector } from '@/features/plan-activities/components/planned-week-selector';
 import { usePlanActivitiesQuery } from '@/features/plan-activities/hooks/use-plan-activities-query';
@@ -97,6 +101,231 @@ function buildQuickAddEntryText(
   return `${resolvedDateText}: ${resolvedWorkoutText}`.trim();
 }
 
+function clipboardSportToken(rawSport: string): string {
+  const normalized = String(rawSport || '').trim().toLowerCase();
+  if (!normalized) return 'activity';
+  if (normalized.includes('treadmill')) return 'treadmill';
+  if (normalized.includes('run')) return 'run';
+  if (normalized.includes('ellipt')) return 'elliptical';
+  if (normalized.includes('cycl') || normalized.includes('bike')) return 'bike';
+  if (normalized.includes('swim')) return 'swim';
+  if (normalized.includes('strength') || normalized.includes('lift')) return 'strength';
+  return normalized.replace(/[_-]+/g, ' ').split(/\s+/)[0] || 'activity';
+}
+
+function formatRoundedClipboardDuration(durationSeconds: number): { label: string; roundedSeconds: number } {
+  const totalSeconds = Math.max(0, Math.round(Number(durationSeconds) || 0));
+  if (totalSeconds < 60) {
+    return { label: `0'${String(totalSeconds).padStart(2, '0')}"`, roundedSeconds: totalSeconds };
+  }
+
+  const nearestMinute = Math.round(totalSeconds / 60) * 60;
+  const nearestHalfMinute = Math.round(totalSeconds / 30) * 30;
+  const candidates = [nearestMinute, nearestHalfMinute]
+    .filter((candidate) => candidate > 0)
+    .sort((left, right) => {
+      const leftError = Math.abs(left - totalSeconds);
+      const rightError = Math.abs(right - totalSeconds);
+      if (leftError !== rightError) return leftError - rightError;
+      return (left % 60 === 0 ? -1 : 1) - (right % 60 === 0 ? -1 : 1);
+    });
+
+  const rounded = candidates.find((candidate) => Math.abs(candidate - totalSeconds) / totalSeconds <= 0.01) ?? totalSeconds;
+  const hours = Math.floor(rounded / 3600);
+  const minutes = Math.floor((rounded % 3600) / 60);
+  const seconds = rounded % 60;
+
+  if (hours > 0) {
+    if (seconds === 0) return { label: `${hours}h${String(minutes).padStart(2, '0')}'`, roundedSeconds: rounded };
+    return { label: `${hours}h${String(minutes).padStart(2, '0')}'${String(seconds).padStart(2, '0')}"`, roundedSeconds: rounded };
+  }
+  if (seconds === 0) return { label: `${minutes}'`, roundedSeconds: rounded };
+  return { label: `${minutes}'${String(seconds).padStart(2, '0')}"`, roundedSeconds: rounded };
+}
+
+function parseClipboardIntensity(label: string): { kind: 'pace' | 'hr' | 'other'; value: number; text: string } {
+  const raw = String(label || '').trim();
+  if (!raw) return { kind: 'other', value: 0, text: '' };
+  const hrMatch = raw.match(/^(\d+)\s*bpm$/i);
+  if (hrMatch) {
+    return { kind: 'hr', value: Number(hrMatch[1] || 0), text: `${Math.round(Number(hrMatch[1] || 0))}bpm` };
+  }
+  const paceMatch = raw.match(/^(\d+):(\d{2})\/km$/i);
+  if (paceMatch) {
+    const minutes = Number(paceMatch[1] || 0);
+    const seconds = Number(paceMatch[2] || 0);
+    return { kind: 'pace', value: minutes * 60 + seconds, text: `${minutes}:${String(seconds).padStart(2, '0')}/km` };
+  }
+  return { kind: 'other', value: 0, text: raw };
+}
+
+function formatClipboardIntensity(kind: 'pace' | 'hr' | 'other', value: number, fallbackText: string): string {
+  if (kind === 'hr') return `${Math.round(value)}bpm`;
+  if (kind === 'pace') {
+    const totalSeconds = Math.max(0, Math.round(value));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}/km`;
+  }
+  return fallbackText;
+}
+
+type ClipboardChunk = {
+  durationLabel: string;
+  roundedDurationSeconds: number;
+  intensityKind: 'pace' | 'hr' | 'other';
+  intensityValue: number;
+  intensityLabel: string;
+};
+
+function clipboardChunksCanRepeat(left: ClipboardChunk, right: ClipboardChunk): boolean {
+  if (left.roundedDurationSeconds !== right.roundedDurationSeconds) return false;
+  if (left.intensityKind !== right.intensityKind) return false;
+  if (left.intensityKind === 'pace') return Math.abs(left.intensityValue - right.intensityValue) <= 2;
+  if (left.intensityKind === 'hr') return Math.abs(left.intensityValue - right.intensityValue) <= 2;
+  return left.intensityLabel === right.intensityLabel;
+}
+
+function compressClipboardChunks(chunks: ClipboardChunk[]): Array<{ count: number; durationLabel: string; intensityLabel: string }> {
+  const groups: Array<{ count: number; durationLabel: string; intensityLabel: string }> = [];
+  let index = 0;
+
+  while (index < chunks.length) {
+    const current = chunks[index];
+    let end = index + 1;
+    while (end < chunks.length && clipboardChunksCanRepeat(current, chunks[end])) {
+      end += 1;
+    }
+
+    const group = chunks.slice(index, end);
+    const representative = group[Math.floor(group.length / 2)] ?? current;
+    const averagedIntensity =
+      representative.intensityKind === 'other'
+        ? representative.intensityLabel
+        : formatClipboardIntensity(
+            representative.intensityKind,
+            group.reduce((sum, item) => sum + item.intensityValue, 0) / group.length,
+            representative.intensityLabel,
+          );
+
+    groups.push({
+      count: group.length,
+      durationLabel: representative.durationLabel,
+      intensityLabel: averagedIntensity,
+    });
+    index = end;
+  }
+
+  return groups;
+}
+
+function buildActualClipboardTextFromDetail(detail: ActivityDetailResponse): string {
+  const rawSource = String(detail.raw?.workout_text || detail.raw?.activity_text || '').trim();
+  if (rawSource) return rawSource;
+
+  const sportToken = clipboardSportToken(String(detail.activity?.sport_type || ''));
+  const runningLike = sportToken === 'run' || sportToken === 'treadmill';
+  const laps = Array.isArray(detail.split_rows) ? detail.split_rows : [];
+  const chunks = laps
+    .map((lap, index) => {
+      const roundedDuration = formatRoundedClipboardDuration(Number(lap.duration_seconds) || 0);
+      const durationLabel = String(roundedDuration.label || '').trim();
+      if (!durationLabel) return null;
+
+      let intensityLabel = '';
+      if (runningLike) {
+        const paceLabel = String(lap.pace_label || '').trim();
+        if (paceLabel && paceLabel !== '-') {
+          intensityLabel = paceLabel;
+        } else if (Number(lap.avg_hr) > 0) {
+          intensityLabel = `${Math.round(Number(lap.avg_hr))}bpm`;
+        }
+      } else if (Number(lap.avg_hr) > 0) {
+        intensityLabel = `${Math.round(Number(lap.avg_hr))}bpm`;
+      } else {
+        const paceEqvLabel = String(lap.pace_eqv_label || '').trim();
+        if (paceEqvLabel && paceEqvLabel !== '-') {
+          intensityLabel = paceEqvLabel;
+        }
+      }
+
+      const parsedIntensity = parseClipboardIntensity(intensityLabel);
+      return {
+        index,
+        durationLabel,
+        roundedDurationSeconds: roundedDuration.roundedSeconds,
+        intensityKind: parsedIntensity.kind,
+        intensityValue: parsedIntensity.value,
+        intensityLabel: parsedIntensity.text,
+      };
+    })
+    .filter((chunk): chunk is ClipboardChunk & { index: number } => chunk !== null);
+
+  if (chunks.length > 0) {
+    return compressClipboardChunks(chunks).map((chunk, index) => {
+      const head = index === 0 ? `${sportToken} ` : '';
+      const body = chunk.count > 1 ? `${chunk.count}x${chunk.durationLabel}` : chunk.durationLabel;
+      return `${head}${body}${chunk.intensityLabel ? ` @${chunk.intensityLabel}` : ''}`.trim();
+    }).join(' + ');
+  }
+
+  const durationMinutes = Math.max(0, Math.round(Number(detail.activity?.duration_min) || 0));
+  const durationLabel = durationMinutes > 0 ? `${durationMinutes}min` : 'activity';
+  const paceLabel = String(detail.activity?.avg_pace_display || '').trim();
+  const avgHr = Math.round(Number(detail.activity?.avg_hr) || 0);
+  const intensityLabel = runningLike
+    ? (paceLabel && paceLabel !== '-' ? paceLabel : avgHr > 0 ? `${avgHr}bpm` : '')
+    : avgHr > 0
+      ? `${avgHr}bpm`
+      : '';
+
+  return `${sportToken} ${durationLabel}${intensityLabel ? ` @${intensityLabel}` : ''}`.trim();
+}
+
+function buildActualClipboardTextFromCard(activity: DashboardActivityCard): string {
+  const sportToken = clipboardSportToken(String(activity.sport || ''));
+  const durationLabel = String(activity.duration_label || '').trim() || 'activity';
+  const paceLabel = String(activity.pace_label || '').trim();
+  const hrLabel = String(activity.hr_label || '').trim();
+  const runningLike = sportToken === 'run' || sportToken === 'treadmill';
+  const intensityLabel = runningLike
+    ? (paceLabel && paceLabel !== '-' ? paceLabel : hrLabel && hrLabel !== '-' ? hrLabel : '')
+    : hrLabel && hrLabel !== '-'
+      ? hrLabel
+      : paceLabel && paceLabel !== '-'
+        ? paceLabel
+        : '';
+
+  return `${sportToken} ${durationLabel}${intensityLabel ? ` @${intensityLabel}` : ''}`.trim();
+}
+
+async function writeClipboardText(payload: string): Promise<void> {
+  const text = String(payload || '');
+  if (!text.trim()) throw new Error('Nothing to copy');
+
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-9999px';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+
+    const didCopy = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    if (!didCopy) {
+      throw new Error('Clipboard write failed');
+    }
+  }
+}
+
 export function PlanActivitiesPage(): JSX.Element {
   return <PlanActivitiesSection />;
 }
@@ -121,6 +350,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   const [pendingDelete, setPendingDelete] = useState<{ id: number; row: PlannedActivityRow } | null>(null);
   const [deleteResult, setDeleteResult] = useState<string | null>(null);
   const [copyResult, setCopyResult] = useState<string | null>(null);
+  const [copyMode, setCopyMode] = useState<'planned' | 'actual' | null>(null);
   const pendingDeleteTimerRef = useRef<number | null>(null);
   const pendingDeleteRef = useRef<{ id: number; row: PlannedActivityRow } | null>(null);
   const sanitizedRows = useMemo(
@@ -307,7 +537,6 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
   const selectedWeekItems = selectedWeekMeta
     ? [
-        { label: 'Week', value: selectedWeekMeta.week_label },
         { label: 'Activities', value: String(selectedWeekMeta.planned_activities) },
         { label: 'Duration', value: `${selectedWeekMeta.duration_h.toFixed(1)}h` },
         { label: 'TSS', value: String(Math.round(selectedWeekMeta.tss)) },
@@ -368,16 +597,101 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
   }, []);
 
   const handleCopyWeekToClipboard = async () => {
+    setCopyMode('planned');
     const payload = selectedWeekClipboardText.trim();
     if (!payload) {
       setCopyResult('No planned activities to copy for this week.');
+      setCopyMode(null);
       return;
     }
     try {
-      await navigator.clipboard.writeText(payload);
+      await writeClipboardText(payload);
       setCopyResult(`Copied ${selectedRows.length} planned activit${selectedRows.length === 1 ? 'y' : 'ies'} to clipboard.`);
     } catch {
       setCopyResult('Unable to copy the current week to clipboard.');
+    } finally {
+      setCopyMode(null);
+    }
+  };
+
+  const handleCopyActualWeekToClipboard = async () => {
+    if (!session?.token) {
+      setCopyResult('Missing auth token.');
+      return;
+    }
+
+    setCopyMode('actual');
+    try {
+      const cachedDashboardEntries = queryClient.getQueriesData<Awaited<ReturnType<typeof getDashboard>>>({
+        queryKey: ['dashboard', profile?.owner],
+      });
+      const cachedDashboardPayload = cachedDashboardEntries
+        .map(([, data]) => data)
+        .find((data) => data?.weeks?.some((week) => week.week_start === effectiveWeek));
+      const dashboardPayload =
+        cachedDashboardPayload
+        ?? (await queryClient.fetchQuery({
+          queryKey: ['dashboard', profile?.owner, Math.max(4, weeks.length || 0), 0, 'all'],
+          queryFn: () =>
+            getDashboard({
+              token: session.token,
+              owner: profile?.owner,
+              weeks: Math.max(4, weeks.length || 0),
+            }),
+        }));
+      if (!dashboardPayload) {
+        setCopyResult('Unable to load the selected week’s actual activities.');
+        return;
+      }
+
+      const selectedDashboardWeek = dashboardPayload.weeks.find((week) => week.week_start === effectiveWeek);
+      const actualRows = (selectedDashboardWeek?.days ?? []).flatMap((day) =>
+        day.actual_activities.map((activity) => ({
+          dayUtc: day.day_utc,
+          activity,
+        })),
+      );
+
+      if (actualRows.length === 0) {
+        setCopyResult('No actual activities to copy for this week.');
+        return;
+      }
+
+      const lineResults = await Promise.allSettled(
+          actualRows.map(async ({ dayUtc, activity }) => {
+            try {
+              const detail = await queryClient.fetchQuery({
+                queryKey: ['activity-detail', profile?.owner, activity.activity_id],
+                queryFn: () =>
+                  getActivityDetail({
+                    token: session.token,
+                    owner: profile?.owner,
+                    activityId: activity.activity_id,
+                  }),
+              });
+              const encoded = buildActualClipboardTextFromDetail(detail);
+              return encoded ? `${dayUtc}: ${encoded}` : '';
+            } catch {
+              const fallback = buildActualClipboardTextFromCard(activity);
+              return fallback ? `${dayUtc}: ${fallback}` : '';
+            }
+          }),
+      );
+      const lines = lineResults
+        .flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+        .filter(Boolean);
+
+      if (lines.length === 0) {
+        setCopyResult('Unable to build clipboard text for the selected week’s actual activities.');
+        return;
+      }
+
+      await writeClipboardText(lines.join('\n'));
+      setCopyResult(`Copied ${lines.length} actual activit${lines.length === 1 ? 'y' : 'ies'} to clipboard.`);
+    } catch {
+      setCopyResult('Unable to copy actual activities for the selected week.');
+    } finally {
+      setCopyMode(null);
     }
   };
 
@@ -481,33 +795,32 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                   variant="outline"
                   className="border-white/10 bg-black/15"
                   onClick={() => void handleCopyWeekToClipboard()}
-                  disabled={!selectedWeekClipboardText.trim()}
+                  disabled={copyMode !== null || !selectedWeekClipboardText.trim()}
                 >
-                  Copy Week To Clipboard
+                  {copyMode === 'planned' ? 'Copying planned…' : 'Copy Planned'}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-white/10 bg-black/15"
+                  onClick={() => void handleCopyActualWeekToClipboard()}
+                  disabled={copyMode !== null || !effectiveWeek}
+                >
+                  {copyMode === 'actual' ? 'Copying actual…' : 'Copy Actual'}
                 </Button>
               </div>
 
               {selectedWeekMeta ? (
                 <Card className={secondaryPageSurfaceClassName}>
                   <CardContent className="p-4">
-                    <div className="grid gap-2 md:hidden">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                       {selectedWeekItems.map((item) => (
-                        <div
+                        <SecondaryStatCard
                           key={item.label}
-                          className={`flex items-center justify-between ${secondaryPageMutedInsetClassName} px-3 py-2.5`}
-                        >
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.label}</p>
-                          <p className="text-sm font-semibold text-slate-50 text-right">{item.value}</p>
-                        </div>
+                          label={item.label}
+                          value={item.value}
+                          className="min-h-[unset]"
+                        />
                       ))}
-                    </div>
-                    <div className="hidden gap-3 md:grid md:grid-cols-6">
-                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">Week</p><p className="font-medium text-foreground">{selectedWeekMeta.week_label}</p></div>
-                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">Activities</p><p className="font-medium text-foreground">{selectedWeekMeta.planned_activities}</p></div>
-                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">Duration</p><p className="font-medium text-foreground">{selectedWeekMeta.duration_h.toFixed(1)}h</p></div>
-                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">TSS</p><p className="font-medium text-foreground">{Math.round(selectedWeekMeta.tss)}</p></div>
-                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">rTSS</p><p className="font-medium text-foreground">{Math.round(selectedWeekMeta.rtss)}</p></div>
-                      <div className={`${secondaryPageInsetClassName} p-3`}><p className="text-xs text-slate-300/72">Dist Eqv</p><p className="font-medium text-foreground">{selectedWeekMeta.distance_eqv_km.toFixed(1)} km</p></div>
                     </div>
                   </CardContent>
                 </Card>
