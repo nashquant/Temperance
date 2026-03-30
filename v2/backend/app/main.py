@@ -3582,6 +3582,7 @@ def _metrics_for_filters(
     end_day: str | None,
     sport: str | None,
     include_invalid: bool = False,
+    include_mechanical_load: bool = True,
 ) -> pd.DataFrame:
     if not db_path.exists():
         return pd.DataFrame()
@@ -3612,6 +3613,7 @@ def _metrics_for_filters(
             threshold_pace_sec_per_km=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
             lthr_curve_points=lthr_curve,
             threshold_pace_curve_points=pace_curve,
+            include_mechanical_load=include_mechanical_load,
         )
         if not runs_metrics_df.empty:
             runs_metrics_df = _apply_specificity_factor(runs_metrics_df, specificity_profile=specificity_profile)
@@ -3792,6 +3794,54 @@ def _metrics_for_filters(
         metrics_df = metrics_df[mask]
 
     return metrics_df
+
+
+def _dashboard_metrics_frames(
+    db_path: Path,
+    sport: str | None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    actual_metrics_df = _metrics_for_filters(
+        db_path=db_path,
+        days=3650,
+        start_day=None,
+        end_day=None,
+        sport=sport,
+        include_invalid=True,
+        include_mechanical_load=False,
+    )
+    if actual_metrics_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    actual_metrics_df = actual_metrics_df.copy()
+    local_start_map = get_activity_local_start_map(
+        db_path=db_path,
+        activity_ids=actual_metrics_df.get("activity_id", pd.Series(dtype=object)).astype(str).tolist(),
+    )
+    actual_metrics_df["start_local"] = (
+        actual_metrics_df.get("activity_id", pd.Series(index=actual_metrics_df.index, dtype=object))
+        .astype(str)
+        .map(local_start_map)
+    )
+    actual_metrics_df["start_local"] = pd.to_datetime(actual_metrics_df["start_local"], errors="coerce").fillna(
+        pd.to_datetime(actual_metrics_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
+    )
+    actual_metrics_df = actual_metrics_df.dropna(subset=["start_local"]).copy()
+    if actual_metrics_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    actual_metrics_df["day"] = actual_metrics_df["start_local"].dt.normalize()
+    sport_lower = actual_metrics_df["sport_type"].fillna("").astype(str).str.lower()
+    is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
+    actual_metrics_df["distance_km_running"] = (
+        pd.to_numeric(actual_metrics_df.get("distance_m"), errors="coerce").fillna(0.0).where(is_running_like, 0.0) / 1000.0
+    )
+
+    invalid_values = pd.Series(0.0, index=actual_metrics_df.index, dtype="float64")
+    if "is_invalid" in actual_metrics_df.columns:
+        invalid_values = pd.to_numeric(actual_metrics_df["is_invalid"], errors="coerce").fillna(0.0)
+
+    metrics_df = actual_metrics_df.loc[invalid_values <= 0].copy()
+    return metrics_df, actual_metrics_df
 
 
 def _filter_metrics_by_activity(metrics_df: pd.DataFrame, activity_filter: str | None) -> pd.DataFrame:
@@ -4400,21 +4450,9 @@ def _build_activity_dashboard_payload(
     week_offset: int,
     sport: str | None,
 ) -> dict[str, Any]:
-    metrics_df = _metrics_for_filters(
+    metrics_df, actual_metrics_df = _dashboard_metrics_frames(
         db_path=db_path,
-        days=3650,
-        start_day=None,
-        end_day=None,
         sport=sport,
-        include_invalid=False,
-    )
-    actual_metrics_df = _metrics_for_filters(
-        db_path=db_path,
-        days=3650,
-        start_day=None,
-        end_day=None,
-        sport=sport,
-        include_invalid=True,
     )
     if metrics_df.empty and actual_metrics_df.empty:
         return {
@@ -4430,44 +4468,6 @@ def _build_activity_dashboard_payload(
             },
             "weeks": [],
         }
-
-    metrics_df = metrics_df.copy()
-    actual_metrics_df = actual_metrics_df.copy()
-    local_start_map = get_activity_local_start_map(
-        db_path=db_path,
-        activity_ids=actual_metrics_df.get("activity_id", pd.Series(dtype=object)).astype(str).tolist(),
-    )
-    actual_metrics_df["start_local"] = (
-        actual_metrics_df.get("activity_id", pd.Series(index=actual_metrics_df.index, dtype=object))
-        .astype(str)
-        .map(local_start_map)
-    )
-    actual_metrics_df["start_local"] = pd.to_datetime(actual_metrics_df["start_local"], errors="coerce").fillna(
-        pd.to_datetime(actual_metrics_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
-    )
-    actual_metrics_df = actual_metrics_df.dropna(subset=["start_local"]).copy()
-    actual_metrics_df["day"] = actual_metrics_df["start_local"].dt.normalize()
-    sport_lower = actual_metrics_df["sport_type"].fillna("").astype(str).str.lower()
-    is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
-    actual_metrics_df["distance_km_running"] = (
-        pd.to_numeric(actual_metrics_df.get("distance_m"), errors="coerce").fillna(0.0).where(is_running_like, 0.0) / 1000.0
-    )
-    if not metrics_df.empty:
-        metrics_df["start_local"] = (
-            metrics_df.get("activity_id", pd.Series(index=metrics_df.index, dtype=object))
-            .astype(str)
-            .map(local_start_map)
-        )
-        metrics_df["start_local"] = pd.to_datetime(metrics_df["start_local"], errors="coerce").fillna(
-            pd.to_datetime(metrics_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
-        )
-        metrics_df = metrics_df.dropna(subset=["start_local"]).copy()
-        metrics_df["day"] = metrics_df["start_local"].dt.normalize()
-        valid_sport_lower = metrics_df["sport_type"].fillna("").astype(str).str.lower()
-        valid_running_like = valid_sport_lower.str.contains("run") | valid_sport_lower.str.contains("treadmill")
-        metrics_df["distance_km_running"] = (
-            pd.to_numeric(metrics_df.get("distance_m"), errors="coerce").fillna(0.0).where(valid_running_like, 0.0) / 1000.0
-        )
 
     if actual_metrics_df.empty:
         return {

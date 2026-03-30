@@ -28,9 +28,9 @@ export function useDashboardQuery(weeks: number, sportFilter: DashboardSportFilt
       });
     },
     enabled: Boolean(session?.token),
-    staleTime: 0,
-    refetchOnWindowFocus: 'always',
-    refetchOnMount: 'always',
-    refetchOnReconnect: 'always',
+    placeholderData: (previousData, previousQuery) => {
+      const previousOwner = Array.isArray(previousQuery?.queryKey) ? previousQuery.queryKey[1] : undefined;
+      return previousOwner === profile?.owner ? previousData : undefined;
+    },
   });
 }

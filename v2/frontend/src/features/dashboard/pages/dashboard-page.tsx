@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { deleteCustomActivity, ingestCustomActivities } from '@/features/custom-activities/services/custom-activities-api';
-import { ActivitySplitsDrawer } from '@/features/dashboard/components/activity-splits-drawer';
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
 import { getDashboard, toggleActivityInvalid } from '@/features/dashboard/services/dashboard-api';
@@ -21,6 +20,10 @@ import {
   setPlannedManualDone,
 } from '@/features/plan-activities/services/plan-activities-api';
 import { queryClient } from '@/lib/query-client';
+
+const ActivitySplitsDrawer = lazy(async () => ({
+  default: (await import('@/features/dashboard/components/activity-splits-drawer')).ActivitySplitsDrawer,
+}));
 
 function timeHintFromWorkoutText(workoutText: string): 'AM' | 'PM' | null {
   const match = String(workoutText || '').match(/(^|[^A-Za-z0-9_])(AM|PM)([^A-Za-z0-9_]|$)/i);
@@ -687,8 +690,9 @@ export function DashboardPage(): JSX.Element {
   }, [dashboardMaxWeeks, dashboardPageSize, profile?.owner, query.data?.has_more_weeks, session?.token, visibleWeeks, weekOffset]);
 
   useEffect(() => {
-    setVisibleWeeks(dashboardYearWindowWeeks);
-  }, [dashboardYearWindowWeeks, weekOffset]);
+    lastAnchoredWeekRef.current = '';
+    setVisibleWeeks(dashboardPageSize);
+  }, [dashboardPageSize, weekOffset]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -918,12 +922,16 @@ export function DashboardPage(): JSX.Element {
           )}
         </>
       ) : null}
-      <ActivitySplitsDrawer
-        activityId={selectedActivityId}
-        open={Boolean(selectedActivityId)}
-        onClose={() => setSelectedActivityId(null)}
-        userTimeZone={userTimeZone}
-      />
+      {selectedActivityId ? (
+        <Suspense fallback={null}>
+          <ActivitySplitsDrawer
+            activityId={selectedActivityId}
+            open
+            onClose={() => setSelectedActivityId(null)}
+            userTimeZone={userTimeZone}
+          />
+        </Suspense>
+      ) : null}
       {addActivityDayUtc ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button

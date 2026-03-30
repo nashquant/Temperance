@@ -19,6 +19,7 @@ def compute_metrics(
     lthr_bpm: float = 178.0,
     threshold_pace_curve_points: list[tuple[datetime, float]] | None = None,
     lthr_curve_points: list[tuple[datetime, float]] | None = None,
+    include_mechanical_load: bool = True,
 ) -> pd.DataFrame:
     if runs_df.empty:
         return runs_df
@@ -161,7 +162,7 @@ def compute_metrics(
     df.loc[non_run_if_valid, "if_proxy"] = tp_series[non_run_if_valid] / solved_pace[non_run_if_valid]
 
     df["mechanical_load"] = pd.NA
-    if running_idx.any():
+    if include_mechanical_load and running_idx.any():
         df.loc[running_idx, "mechanical_load"] = df.loc[running_idx].apply(
             lambda r: mechanical_load(
                 distance_m=float(r.get("distance_m") or 0),
