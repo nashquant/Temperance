@@ -40,8 +40,8 @@ export function LoginForm(): JSX.Element {
         <CardDescription>Use your Temperance backend credentials.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div className="space-y-2">
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="username">Username</Label>
             <Input
               id="username"
@@ -52,7 +52,7 @@ export function LoginForm(): JSX.Element {
               required
             />
           </div>
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="password">Password</Label>
             <Input
               id="password"
@@ -65,9 +65,9 @@ export function LoginForm(): JSX.Element {
             />
           </div>
           {error ? (
-            <Alert className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300">
+            <Alert className="border-destructive/50 text-destructive">
               <AlertTitle>Login failed</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription className="text-destructive/90">{error}</AlertDescription>
             </Alert>
           ) : null}
           <Button type="submit" className="w-full" disabled={loading}>

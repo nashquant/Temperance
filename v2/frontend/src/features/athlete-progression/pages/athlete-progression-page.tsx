@@ -91,6 +91,7 @@ export function AthleteProgressionPage(): JSX.Element {
             onDaysChange={setDays}
             aggregation={aggregation}
             onAggregationChange={setAggregation}
+            compactLabels={false}
             currentPeriodControl={{
               value: includeCurrentPeriod,
               onValueChange: setIncludeCurrentPeriod,

@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { WeeklyMetric } from '@/features/weekly-outlook/types/weekly-outlook';
 
 interface MetricSelectorProps {
@@ -21,25 +21,37 @@ export function MetricSelector({
   ];
 
   return (
-    <div className={`${compact ? 'w-auto' : 'grid w-full gap-1.5 sm:flex sm:w-auto sm:items-center sm:gap-3'}`}>
+    <div
+      className={
+        compact
+          ? 'w-auto'
+          : 'grid w-full gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.86),rgba(2,6,23,0.94))] p-3 sm:flex sm:w-auto sm:items-center sm:gap-3'
+      }
+    >
       {showLabel ? (
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74 sm:text-sm sm:font-normal sm:tracking-normal sm:text-muted-foreground">
           Metric
         </p>
       ) : null}
-      <div className={`inline-flex rounded-lg border border-white/10 bg-black/15 p-1 ${compact ? 'w-auto' : 'w-full sm:w-auto'}`}>
+      <ToggleGroup
+        type="single"
+        value={value}
+        onValueChange={(next) => {
+          if (next) onValueChange(next as WeeklyMetric);
+        }}
+        className={compact ? 'w-auto' : 'w-full sm:w-auto'}
+      >
         {items.map((item) => (
-          <Button
+          <ToggleGroupItem
             key={item.value}
-            variant={value === item.value ? 'secondary' : 'ghost'}
+            value={item.value}
             size="sm"
-            className={`rounded-md px-2.5 text-xs ${compact ? 'h-7' : 'h-8 flex-1 sm:flex-none'}`}
-            onClick={() => onValueChange(item.value)}
+            className={compact ? 'h-7' : 'flex-1 sm:flex-none'}
           >
             {item.label}
-          </Button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
     </div>
   );
 }

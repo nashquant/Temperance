@@ -80,12 +80,13 @@ export function WellnessPage(): JSX.Element {
             onDaysChange={setDays}
             aggregation={aggregation}
             onAggregationChange={setAggregation}
+            compactLabels={false}
           />
         )}
       />
 
       {query.isLoading ? (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-64 w-full" />
           <Skeleton className="h-64 w-full" />
@@ -93,9 +94,11 @@ export function WellnessPage(): JSX.Element {
       ) : null}
 
       {query.isError ? (
-        <Alert className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300">
+        <Alert className="border-destructive/50 text-destructive">
           <AlertTitle>Unable to load wellness</AlertTitle>
-          <AlertDescription>{query.error instanceof Error ? query.error.message : 'Unexpected error.'}</AlertDescription>
+          <AlertDescription className="text-destructive/90">
+            {query.error instanceof Error ? query.error.message : 'Unexpected error.'}
+          </AlertDescription>
         </Alert>
       ) : null}
 
