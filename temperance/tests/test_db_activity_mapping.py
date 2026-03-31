@@ -1,9 +1,6 @@
 from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from db import get_conn, init_db, upsert_activities
+from temperance.db import get_conn, init_db, upsert_activities
 
 
 def test_upsert_activity_maps_primary_garmin_fields(tmp_path: Path) -> None:

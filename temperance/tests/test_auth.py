@@ -1,4 +1,4 @@
-from auth import build_users, normalize_password_hash, password_matches, resolve_garmin_credentials, resolve_user
+from temperance.auth import build_users, normalize_password_hash, password_matches, resolve_garmin_credentials, resolve_user
 
 
 def test_normalize_password_hash_accepts_sha_prefix_and_case() -> None:

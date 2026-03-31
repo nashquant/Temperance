@@ -9,7 +9,6 @@ import os
 import random
 import re
 import sqlite3
-import sys
 import threading
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -20,17 +19,10 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from app.date_parsing import parse_supported_day_value
-
-TEMPERANCE_SRC = Path(__file__).resolve().parents[3] / "temperance"
-if str(TEMPERANCE_SRC) not in sys.path:
-    sys.path.insert(0, str(TEMPERANCE_SRC))
-
-from config import load_config  # noqa: E402
-from app.planning_parsing import (  # noqa: E402
+from backend.app.date_parsing import parse_supported_day_value
+from backend.app.planning_parsing import (
     expand_planned_segments as _shared_expand_planned_segments,
     normalize_plan_text as _shared_normalize_plan_text,
     parse_dated_activity_entry as _shared_parse_dated_activity_entry,
@@ -38,63 +30,64 @@ from app.planning_parsing import (  # noqa: E402
     split_dated_activity_entries as _shared_split_dated_activity_entries,
     strip_meridiem_tokens as _shared_strip_meridiem_tokens,
 )
+from temperance.analytics import build_daily_summary, compute_metrics, display_table, ema_multi, weekly_summary
+from temperance.auth import build_users, password_matches, resolve_user
+from temperance.config import load_config
+from temperance.db import (
+    delete_custom_activities,
+    delete_planned_activities,
+    get_activity_days,
+    get_activity_detail_raw,
+    get_activity_local_start_map,
+    get_activity_raw,
+    get_activity_records_df,
+    get_activity_splits_raw,
+    get_custom_activities_df,
+    get_last_sync,
+    get_last_sync_for_source_like,
+    get_latest_activity_time,
+    get_latest_recovery_day,
+    get_planned_activities_df,
+    get_recovery_days,
+    get_runs_df,
+    get_setting,
+    get_sleep_df,
+    get_table_counts,
+    get_wellness_df,
+    init_db,
+    log_sync,
+    save_setting,
+    set_activity_invalid,
+    set_planned_activity_manual_done,
+    upsert_activities,
+    upsert_activity_details,
+    upsert_activity_records,
+    upsert_activity_splits,
+    upsert_custom_activities_rows,
+    upsert_planned_activities_rows,
+    upsert_sleep_daily,
+    upsert_wellness_daily,
+)
+from temperance.garmin_client import (
+    GarminActivityChunk,
+    GarminRateLimitError,
+    GarminWellnessChunk,
+    fetch_garmin_comprehensive,
+    fetch_garmin_runs,
+    import_runs_from_folder,
+    reset_garmin_auth,
+)
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
 
 def _default_db_path() -> Path:
     try:
         return Path(load_config().db_path)
     except Exception:
-        return TEMPERANCE_SRC / "data" / "private" / "temperance.db"
+        return ROOT_DIR / "temperance" / "data" / "private" / "temperance.db"
 
 
 DB_PATH = Path(str(os.getenv("TEMPERANCE_DB_PATH") or _default_db_path()))
-
-from analytics import build_daily_summary, compute_metrics, display_table, ema_multi, weekly_summary  # noqa: E402
-from auth import build_users, password_matches, resolve_user  # noqa: E402
-from db import (  # noqa: E402
-    delete_custom_activities,
-    delete_planned_activities,
-    init_db,
-    get_custom_activities_df,
-    get_activity_days,
-    get_last_sync,
-    get_latest_activity_time,
-    get_latest_recovery_day,
-    get_recovery_days,
-    get_activity_detail_raw,
-    get_activity_local_start_map,
-    get_activity_splits_raw,
-    get_activity_raw,
-    get_activity_records_df,
-    get_planned_activities_df,
-    get_runs_df,
-    get_last_sync_for_source_like,
-    get_sleep_df,
-    get_setting,
-    get_table_counts,
-    get_wellness_df,
-    log_sync,
-    save_setting,
-    set_activity_invalid,
-    upsert_activities,
-    upsert_activity_details,
-    upsert_activity_records,
-    upsert_activity_splits,
-    set_planned_activity_manual_done,
-    upsert_sleep_daily,
-    upsert_wellness_daily,
-    upsert_planned_activities_rows,
-    upsert_custom_activities_rows,
-)
-from garmin_client import (  # noqa: E402
-    GarminActivityChunk,
-    GarminRateLimitError,
-    fetch_garmin_comprehensive,
-    fetch_garmin_runs,
-    GarminWellnessChunk,
-    import_runs_from_folder,
-    reset_garmin_auth,
-)
 
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
@@ -216,7 +209,7 @@ class GarminCredentialsRequest(BaseModel):
     password: str
 
 
-app = FastAPI(title="Temperance v2 API", version="0.2.0")
+app = FastAPI(title="Temperance API", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -5377,7 +5370,7 @@ def _build_planned_activities_payload(
             "rows": [],
         }
 
-    # v2 UI expects full week history in selectors/tables (not only a narrow window around current week).
+    # The current UI expects full week history in selectors/tables (not only a narrow window around current week).
     # Keep all planned rows in scope so users can choose any prior/future week.
     in_scope_rows = planned_rows.copy()
 
@@ -5460,8 +5453,8 @@ def health() -> dict[str, str]:
 
 
 @app.get("/")
-def root_redirect() -> RedirectResponse:
-    return RedirectResponse(url="/v2/", status_code=307)
+def root() -> dict[str, str]:
+    return {"name": "Temperance API", "status": "ok"}
 
 
 @app.post("/api/v1/auth/login")

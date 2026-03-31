@@ -1,11 +1,7 @@
-from pathlib import Path
-import sys
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from activity_parsing import expand_planned_segments, parse_dated_activity_entry, split_dated_activity_entries
+from backend.app.planning_parsing import expand_planned_segments as backend_expand_planned_segments
+from temperance.activity_parsing import expand_planned_segments, parse_dated_activity_entry, split_dated_activity_entries
 
 
 SAMPLE_BLOCK = """2026-03-25:45’ elliptical @ 65%;
@@ -88,9 +84,6 @@ def test_expand_planned_segments_supports_xtrain_alias_for_elliptical() -> None:
 
 
 def test_shared_parser_returns_current_segment_schema_keys() -> None:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".." / "v2" / "backend"))
-    from app.planning_parsing import expand_planned_segments as backend_expand_planned_segments
-
     segments, warnings = backend_expand_planned_segments(
         "70min xtrain @ 138bpm",
         lthr_bpm=178.0,
