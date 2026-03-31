@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -26,7 +27,13 @@ import {
   updateCustomActivityWorkout,
 } from '@/features/custom-activities/services/custom-activities-api';
 import { useDataExtractStatusQuery } from '@/features/data-extract/hooks/use-data-extract-status';
-import { resetGarminAuth, runComprehensiveExtract, setGarminCredentials } from '@/features/data-extract/services/data-extract-api';
+import {
+  disconnectGarminOAuth,
+  resetGarminAuth,
+  runComprehensiveExtract,
+  setGarminCredentials,
+  startGarminOAuth,
+} from '@/features/data-extract/services/data-extract-api';
 import { PlannedMetricSelector } from '@/features/plan-activities/components/planned-metric-selector';
 import { PlannedWeekChart } from '@/features/plan-activities/components/planned-week-chart';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
@@ -42,6 +49,8 @@ function startDayFromPreset(monthsBack: number): string {
 
 export function DataExtractPage(): JSX.Element {
   const { session, profile } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const statusQuery = useDataExtractStatusQuery();
   const customActivitiesQuery = useCustomActivitiesQuery();
 
@@ -59,6 +68,7 @@ export function DataExtractPage(): JSX.Element {
   const [customResult, setCustomResult] = useState<string | null>(null);
   const [garminCredResult, setGarminCredResult] = useState<string | null>(null);
   const [garminResetResult, setGarminResetResult] = useState<string | null>(null);
+  const [garminOAuthResult, setGarminOAuthResult] = useState<string | null>(null);
   const [customEditValues, setCustomEditValues] = useState<Record<string, string>>({});
   const [extractLogs, setExtractLogs] = useState<string[]>([]);
   const lastProgressLogCountRef = useRef(0);
@@ -131,6 +141,24 @@ export function DataExtractPage(): JSX.Element {
       lastFinishedAtRef.current = progress.finished_at;
     }
   }, [statusQuery.data]);
+
+  useEffect(() => {
+    const search = new URLSearchParams(location.search);
+    const oauthStatus = search.get('garmin_oauth');
+    const oauthMessage = search.get('garmin_oauth_message');
+    if (!oauthStatus && !oauthMessage) return;
+    setGarminOAuthResult(oauthMessage ?? (oauthStatus === 'success' ? 'Garmin OAuth connected.' : 'Garmin OAuth failed.'));
+    const nextSearch = new URLSearchParams(location.search);
+    nextSearch.delete('garmin_oauth');
+    nextSearch.delete('garmin_oauth_message');
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch.toString() ? `?${nextSearch.toString()}` : '',
+      },
+      { replace: true },
+    );
+  }, [location.pathname, location.search, navigate]);
 
   const customIngestMutation = useMutation({
     mutationFn: async () => {
@@ -212,6 +240,39 @@ export function DataExtractPage(): JSX.Element {
     },
     onError: (error) => {
       setGarminCredResult(error instanceof Error ? error.message : 'Unable to update Garmin credentials.');
+    },
+  });
+
+  const startGarminOAuthMutation = useMutation({
+    mutationFn: async () => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return startGarminOAuth({
+        token: session.token,
+        owner: profile?.owner,
+      });
+    },
+    onSuccess: (response) => {
+      window.location.assign(response.authorization_url);
+    },
+    onError: (error) => {
+      setGarminOAuthResult(error instanceof Error ? error.message : 'Unable to start Garmin OAuth.');
+    },
+  });
+
+  const disconnectGarminOAuthMutation = useMutation({
+    mutationFn: async () => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return disconnectGarminOAuth({
+        token: session.token,
+        owner: profile?.owner,
+      });
+    },
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: ['data-extract-status'] });
+      setGarminOAuthResult(response.message);
+    },
+    onError: (error) => {
+      setGarminOAuthResult(error instanceof Error ? error.message : 'Unable to disconnect Garmin OAuth.');
     },
   });
 
@@ -302,6 +363,13 @@ export function DataExtractPage(): JSX.Element {
   const isAdmin = session?.role === 'admin';
   const isAdminOwnScope = isAdmin && profile?.owner === session?.user;
   const extractRunning = Boolean(status?.extract_progress?.running);
+  const garminOauthConnected = Boolean(status?.garmin_oauth?.connected);
+  const garminCapabilities = status?.garmin_capabilities;
+  const legacyFallbackAvailable = Boolean(status?.garmin_credentials_available);
+  const oauthBlocksExtract =
+    status?.garmin_connection_mode === 'oauth'
+    && !legacyFallbackAvailable
+    && (!garminCapabilities?.activities || (includeWellness && !garminCapabilities?.wellness) || !garminCapabilities?.comprehensive);
 
   return (
     <section className="space-y-4 sm:space-y-6">
@@ -328,7 +396,7 @@ export function DataExtractPage(): JSX.Element {
               type="button"
               className={`${secondaryPageActionButtonClassName} relative z-10 w-full rounded-xl sm:w-auto`}
               onClick={() => comprehensiveMutation.mutate()}
-              disabled={comprehensiveMutation.isPending || extractRunning}
+              disabled={comprehensiveMutation.isPending || extractRunning || oauthBlocksExtract}
             >
               {extractRunning || comprehensiveMutation.isPending ? 'Running...' : 'Run extract'}
             </Button>
@@ -379,6 +447,11 @@ export function DataExtractPage(): JSX.Element {
             </div>
           </div>
           {result ? <p className="text-sm text-slate-200/82">{result}</p> : null}
+          {oauthBlocksExtract ? (
+            <p className="text-xs text-amber-200/84">
+              {garminCapabilities?.reason ?? 'Garmin OAuth is connected, but extract endpoints are not configured for this deployment.'}
+            </p>
+          ) : null}
           <div className={`${secondaryPageInsetClassName} p-2`}>
             <div className="mb-1 flex items-center justify-between gap-2">
               <p className="text-xs font-medium text-muted-foreground">Extraction logs</p>
@@ -404,6 +477,53 @@ export function DataExtractPage(): JSX.Element {
             </div>
           </div>
       </SecondaryPageSectionCard>
+
+      {!isAdmin ? (
+        <SecondaryPageSectionCard contentClassName="space-y-3 p-3 sm:p-4">
+          <h2 className="text-lg font-semibold text-foreground">Garmin OAuth</h2>
+          <div className={`${secondaryPageMutedInsetClassName} space-y-2 p-3`}>
+            <p className="text-xs text-muted-foreground">
+              Status:{' '}
+              <span className="font-medium text-foreground">
+                {garminOauthConnected ? `Connected${status?.garmin_oauth?.account_email ? ` as ${status.garmin_oauth.account_email}` : ''}` : 'Not connected'}
+              </span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Active source: <span className="font-medium text-foreground">{status?.garmin_connection_mode ?? 'missing'}</span>
+            </p>
+            {status?.garmin_oauth?.expires_at ? (
+              <p className="text-xs text-muted-foreground">Token expiry: {status.garmin_oauth.expires_at}</p>
+            ) : null}
+            {status?.garmin_oauth?.scopes?.length ? (
+              <p className="text-xs text-muted-foreground">Scopes: {status.garmin_oauth.scopes.join(', ')}</p>
+            ) : null}
+            {garminCapabilities?.reason ? (
+              <p className="text-xs text-muted-foreground">{garminCapabilities.reason}</p>
+            ) : null}
+          </div>
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <Button
+              className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`}
+              onClick={() => startGarminOAuthMutation.mutate()}
+              disabled={startGarminOAuthMutation.isPending || garminOauthConnected}
+            >
+              {startGarminOAuthMutation.isPending ? 'Redirecting...' : 'Connect Garmin'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => disconnectGarminOAuthMutation.mutate()}
+              disabled={disconnectGarminOAuthMutation.isPending || !garminOauthConnected}
+            >
+              {disconnectGarminOAuthMutation.isPending ? 'Disconnecting...' : 'Disconnect Garmin'}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            OAuth is preferred when available. Session credentials below remain the compatibility fallback when OAuth extract support is unavailable in this deployment.
+          </p>
+          {garminOAuthResult ? <p className="text-xs text-muted-foreground">{garminOAuthResult}</p> : null}
+        </SecondaryPageSectionCard>
+      ) : null}
 
       <SecondaryPageSectionCard contentClassName="space-y-3 p-3 sm:p-4">
           <h2 className="text-lg font-semibold text-foreground">Garmin Credentials</h2>
@@ -486,7 +606,7 @@ export function DataExtractPage(): JSX.Element {
                   </Button>
                 ) : null}
                 <p className="text-xs text-muted-foreground">
-                  Active source: <span className="font-medium text-foreground">{status?.garmin_credentials_source ?? 'missing'}</span>
+                  Active source: <span className="font-medium text-foreground">{status?.garmin_connection_mode ?? status?.garmin_credentials_source ?? 'missing'}</span>
                 </p>
               </div>
               {garminCredResult ? <p className="text-xs text-muted-foreground">{garminCredResult}</p> : null}

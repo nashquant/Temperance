@@ -3,6 +3,8 @@ import { apiRequest } from '@/api/http-client';
 import type {
   ComprehensiveExtractRequest,
   ComprehensiveExtractResponse,
+  GarminOAuthDisconnectResponse,
+  GarminOAuthStartResponse,
   DataExtractStatusResponse,
   GarminAuthResetResponse,
   GarminCredentialsRequest,
@@ -59,6 +61,20 @@ export async function setGarminCredentials({
 
 export async function resetGarminAuth({ token, owner }: BaseParams): Promise<GarminAuthResetResponse> {
   return apiRequest<GarminAuthResetResponse>(withOwner(API_CONFIG.endpoints.dataExtractGarminAuthReset, owner), {
+    method: 'POST',
+    token,
+  });
+}
+
+export async function startGarminOAuth({ token, owner }: BaseParams): Promise<GarminOAuthStartResponse> {
+  return apiRequest<GarminOAuthStartResponse>(withOwner(API_CONFIG.endpoints.garminOauthStart, owner), {
+    method: 'POST',
+    token,
+  });
+}
+
+export async function disconnectGarminOAuth({ token, owner }: BaseParams): Promise<GarminOAuthDisconnectResponse> {
+  return apiRequest<GarminOAuthDisconnectResponse>(withOwner(API_CONFIG.endpoints.garminOauthDisconnect, owner), {
     method: 'POST',
     token,
   });
