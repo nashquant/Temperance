@@ -121,6 +121,126 @@ The embedded auto-sync does not fetch sleep, HRV, training readiness, or other w
 
 After backend or frontend path changes, reinstall or restart the keepalive services so launch agents stop pointing at stale workspace paths.
 
+## MCP experiment
+
+There is now an initial MCP server prototype at `backend/app/mcp_server.py`.
+
+Current MVP tools:
+- `get_today_status`
+- `get_recent_activities`
+- `get_planned_activities`
+- `get_week_outlook`
+- `get_load_trend`
+- `get_recovery_trend`
+- `recommend_training`
+- `explain_recommendation`
+- `get_activity_detail`
+
+Run it over stdio from the repo root:
+
+```bash
+cd /Users/matheus/Temperance
+python3 -m backend.app.mcp_server --stdio
+```
+
+This first pass intentionally reuses existing Temperance analytics and payload builders instead of adding a second data layer. It is a thin wrapper meant to prove the chat-to-metrics workflow before we harden the interface.
+
+### Why the server now imports more cleanly
+
+`backend/app/mcp_server.py` now keeps its pure JSON-RPC and recommendation helpers importable without importing `backend.app.main` at module import time. That means you can run lightweight helper tests even on machines that do not currently have the FastAPI stack installed, as long as the tests avoid the data-backed tool handlers.
+
+### Lightweight helper tests
+
+These tests only cover pure formatting / recommendation / JSON-RPC helpers and are meant to be runnable without live API dependencies:
+
+```bash
+cd /Users/matheus/Temperance
+python3 -m unittest backend.tests.test_mcp_server -v
+```
+
+### Minimal MCP client smoke example
+
+You can manually speak JSON-RPC over stdio to confirm the handshake shape:
+
+```bash
+cd /Users/matheus/Temperance
+python3 -m backend.app.mcp_server --stdio <<'EOF'
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"manual-smoke","version":"0.0.1"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+EOF
+```
+
+### Example `recommend_training` request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "recommend_training",
+    "arguments": {
+      "owner": "admin",
+      "activity_type": "running"
+    }
+  }
+}
+```
+
+Response shape now includes:
+- `headline`: short human-facing summary
+- `rationale`: primary decision reason
+- `explanation`: compact metric trace explaining the call
+- `suggestion`: workout wording tuned to the chosen activity family
+- `decision_trace`: explanation-oriented signal breakdown for clients that want to show *why* the choice was made
+
+That split is deliberate: chat clients can show the short summary first, then expose the detailed explanation when needed.
+
+### Example `explain_recommendation` request
+
+Use this when the client wants the same recommendation context, but with the explanation surfaced first:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "tools/call",
+  "params": {
+    "name": "explain_recommendation",
+    "arguments": {
+      "owner": "admin",
+      "activity_type": "running"
+    }
+  }
+}
+```
+
+### Example `get_activity_detail` request
+
+This tool delegates to the existing Temperance activity-detail backend path and returns the same high-value payload shape for real, planned, or custom activities:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "tools/call",
+  "params": {
+    "name": "get_activity_detail",
+    "arguments": {
+      "owner": "admin",
+      "activity_id": "run-123",
+      "include_records": true,
+      "records_limit": 300
+    }
+  }
+}
+```
+
+### Dependency note for MCP-only setups
+
+`backend/requirements-mcp.txt` currently just includes `requirements.txt`. If we want a truly standalone MCP environment later, the next step is to break out a smaller optional dependency set around pandas/pydantic plus Temperance core imports while keeping FastAPI optional.
+
 ## Tests
 
 Python tests:
