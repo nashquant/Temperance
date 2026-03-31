@@ -1,12 +1,7 @@
-from pathlib import Path
-import sys
-
 import pandas as pd
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from analytics import compute_metrics, ema, ema_alpha_from_days, parse_ma_windows, sma
+from temperance.analytics import compute_metrics, ema, ema_alpha_from_days, parse_ma_windows, sma
 
 
 def test_sma_basic() -> None:

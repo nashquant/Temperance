@@ -1,9 +1,6 @@
 from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from db import init_db, upsert_activities, upsert_activity_details
+from temperance.db import init_db, upsert_activities, upsert_activity_details
 
 
 def test_upsert_activity_details_skips_unchanged_updates(tmp_path: Path) -> None:

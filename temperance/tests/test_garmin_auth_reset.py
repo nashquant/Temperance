@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
-import sys
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import garmin_client
+import temperance.garmin_client as garmin_client
 
 
 class FakeSession:

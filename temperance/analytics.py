@@ -7,7 +7,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
-from models import mechanical_load
+from temperance.models import mechanical_load
 
 
 def compute_metrics(

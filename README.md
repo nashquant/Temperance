@@ -2,37 +2,35 @@
 
 Temperance is a local-first training and recovery app built around a Garmin-backed SQLite archive.
 
-The current app surface lives in `v2/` as a FastAPI backend plus a React/Vite frontend. The original Streamlit app and most of the shared Python data pipeline still live in `temperance/`.
+The project now has one supported product surface:
 
-## Current shape
-
-- `v2/backend/`: FastAPI API for auth, dashboard, wellness, planning, and Garmin sync flows
-- `v2/frontend/`: React/Vite client for the active UI
-- `temperance/`: legacy Streamlit app plus shared Garmin extraction, SQLite schema, migrations, analytics, auth, and ops scripts
+- `backend/`: FastAPI API for auth, dashboard, wellness, planning, and Garmin sync flows
+- `frontend/`: React/Vite client
+- `temperance/`: shared Python domain logic, SQLite schema, migrations, Garmin extraction, assets, and ops scripts
 - `temperance/data/private/`: local databases, logs, and private exports; gitignored by default
 
 ## Repo layout
 
 ```text
 Temperance/
-├── v2/
-│   ├── backend/     FastAPI app
-│   └── frontend/    React + Vite app
+├── backend/         FastAPI app
+├── frontend/        React + Vite app
 └── temperance/
-    ├── app.py       Legacy Streamlit UI
-    ├── garmin_client.py
-    ├── db.py
     ├── analytics.py
+    ├── auth.py
+    ├── config.py
+    ├── db.py
+    ├── garmin_client.py
     ├── migrate.py
     └── scripts/     launchd and maintenance helpers
 ```
 
 ## Quick start
 
-### 1. Run the v2 backend
+### 1. Run the backend
 
 ```bash
-cd /Users/matheus/Temperance/v2/backend
+cd /Users/matheus/Temperance/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -41,10 +39,10 @@ pip install -r requirements.txt
 
 Backend URL: `http://127.0.0.1:8000`
 
-### 2. Run the v2 frontend
+### 2. Run the frontend
 
 ```bash
-cd /Users/matheus/Temperance/v2/frontend
+cd /Users/matheus/Temperance/frontend
 npm install
 npm run dev
 ```
@@ -69,36 +67,20 @@ You can also keep these in `temperance/.env` for local use.
 - Private logs: `temperance/data/private/logs/`
 - Private exports and imports stay under `temperance/data/` and are gitignored
 
-The v2 backend resolves owner-scoped databases first and falls back to the base DB for the default owner when needed.
+The backend resolves owner-scoped databases first and falls back to the base DB for the default owner when needed.
 
 ## Garmin sync modes
 
-There are two different sync concepts in the current stack:
-
 - Comprehensive Garmin sync: full backfill path for activities, details, FIT records, sleep, and wellness
-- Embedded auto-sync in the v2 backend: lightweight incremental activity sync only
+- Embedded auto-sync in the backend: lightweight incremental activity sync only
 
-Important: the embedded auto-sync does not fetch sleep, HRV, training readiness, or other wellness endpoints. If recovery data for the current day is blank, run a comprehensive sync before assuming the UI is wrong.
-
-## Legacy Streamlit app
-
-The original Streamlit app is still available and shares the same Python modules and SQLite data layer.
-
-```bash
-cd /Users/matheus/Temperance/temperance
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-Use the legacy app when you specifically need the older workflow or want to work directly against the original Streamlit surface.
+The embedded auto-sync does not fetch sleep, HRV, training readiness, or other wellness endpoints. If recovery data for the current day is blank, run a comprehensive sync before assuming the UI is wrong.
 
 ## Operations
 
-- `temperance/scripts/install_keepalive.sh`: macOS `launchd` setup for the v2 backend, v2 frontend, and Cloudflare tunnel
+- `temperance/scripts/install_keepalive.sh`: macOS `launchd` setup for the backend, frontend, and Cloudflare tunnel
 - `temperance/scripts/install_autoupdate.sh`: hourly fast-forward updater for machines that should track `origin/main`
-- `temperance/run_remote.sh`: older helper for running the Streamlit app in the background
+- `temperance/README.md`: shared Python package notes, data locations, and migration entry points
 
 ## Tests
 
@@ -112,11 +94,10 @@ pytest temperance/tests -q
 Frontend build check:
 
 ```bash
-cd /Users/matheus/Temperance/v2/frontend
+cd /Users/matheus/Temperance/frontend
 npm run build
 ```
 
-## Additional notes
+## Follow-up
 
-- `v2/README.md` contains backend/frontend-specific notes and API details.
-- `temperance/README.md` covers the legacy Python stack and shared modules.
+The API remains on `/api/v1` during this consolidation. A future cleanup can flatten that prefix to `/api` once the unified layout is stable.

@@ -1,9 +1,6 @@
 from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from db import get_conn, get_setting, init_db, save_setting_if_changed
+from temperance.db import get_conn, get_setting, init_db, save_setting_if_changed
 
 
 def test_save_setting_if_changed_only_updates_when_value_differs(tmp_path: Path) -> None:

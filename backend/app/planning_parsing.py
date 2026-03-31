@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 import pandas as pd
 
-from app.date_parsing import parse_supported_day_value
+from backend.app.date_parsing import parse_supported_day_value
 
 
 def _pace_mmss_to_sec(text: str) -> float:
