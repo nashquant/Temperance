@@ -6,3 +6,4 @@ python-dotenv>=1.0.1
 eval_type_backport>=0.2.0
 garminconnect==0.2.8
 fitparse>=1.2.0
+cryptography>=43.0.0

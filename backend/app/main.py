@@ -13,15 +13,33 @@ import threading
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from backend.app.date_parsing import parse_supported_day_value
+from backend.app.garmin_oauth import (
+    GarminOAuthConfigurationError,
+    GarminOAuthError,
+    build_authorization_url as build_garmin_oauth_authorization_url,
+    build_state as build_garmin_oauth_state,
+    capabilities as garmin_oauth_capabilities,
+    connection_metadata as garmin_oauth_connection_metadata,
+    decrypt_token_payload as decrypt_garmin_oauth_token_payload,
+    encrypt_token_payload as encrypt_garmin_oauth_token_payload,
+    exchange_code_for_tokens as exchange_garmin_oauth_code_for_tokens,
+    fetch_normalized_activities as fetch_garmin_oauth_normalized_activities,
+    fetch_normalized_wellness as fetch_garmin_oauth_normalized_wellness,
+    fetch_userinfo as fetch_garmin_oauth_userinfo,
+    maybe_refresh_token_payload as maybe_refresh_garmin_oauth_token_payload,
+    parse_state as parse_garmin_oauth_state,
+)
 from backend.app.planning_parsing import (
     expand_planned_segments as _shared_expand_planned_segments,
     normalize_plan_text as _shared_normalize_plan_text,
@@ -35,6 +53,7 @@ from temperance.auth import build_users, password_matches, resolve_user
 from temperance.config import load_config
 from temperance.db import (
     delete_custom_activities,
+    delete_oauth_connection,
     delete_planned_activities,
     get_activity_days,
     get_activity_detail_raw,
@@ -47,6 +66,7 @@ from temperance.db import (
     get_last_sync_for_source_like,
     get_latest_activity_time,
     get_latest_recovery_day,
+    get_oauth_connection,
     get_planned_activities_df,
     get_recovery_days,
     get_runs_df,
@@ -59,6 +79,7 @@ from temperance.db import (
     save_setting,
     set_activity_invalid,
     set_planned_activity_manual_done,
+    upsert_oauth_connection,
     upsert_activities,
     upsert_activity_details,
     upsert_activity_records,
@@ -98,6 +119,7 @@ SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_USER_TIMEZONE = "user_timezone_v1"
 SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL = "garmin_rate_limit_until_v1"
+GARMIN_OAUTH_PROVIDER = "garmin"
 APP_TIMEZONE_NAME = str(os.getenv("TEMPERANCE_TIMEZONE") or os.getenv("TZ") or "America/Sao_Paulo").strip() or "America/Sao_Paulo"
 AUTO_SYNC_ENABLED = str(os.getenv("TEMPERANCE_AUTO_SYNC_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
 AUTO_SYNC_INTERVAL_SECONDS = max(60, int(str(os.getenv("TEMPERANCE_AUTO_SYNC_INTERVAL_SECONDS", "1800") or "1800")))
@@ -918,6 +940,80 @@ def _run_comprehensive_extract_background(
         log_sync(db_path, source="v2_garmin_comprehensive", success=False, message=str(exc))
 
 
+def _run_oauth_comprehensive_extract_background(
+    *,
+    owner: str,
+    db_path: Path,
+    start_day: date,
+    end_day: date,
+    include_wellness: bool,
+) -> None:
+    try:
+        token_payload, _connection = _garmin_oauth_token_payload(db_path)
+        access_token = str(token_payload.get("access_token") or "")
+        _extract_progress_append(owner, f"[oauth] fetching activities from {start_day.isoformat()} to {end_day.isoformat()}")
+        activity_payload = fetch_garmin_oauth_normalized_activities(
+            access_token,
+            start_day=start_day.isoformat(),
+            end_day=end_day.isoformat(),
+        )
+        activities = list(activity_payload.get("activities") or [])
+        details_rows = list(activity_payload.get("activity_details") or [])
+        records_rows = list(activity_payload.get("activity_records") or [])
+        split_rows = list(activity_payload.get("activity_splits") or [])
+        _extract_progress_append(
+            owner,
+            (
+                f"[oauth] fetched activities={len(activities)} details={len(details_rows)} "
+                f"records={len(records_rows)} splits={len(split_rows)}"
+            ),
+        )
+        activity_changes = upsert_activities(db_path, activities)
+        details_changes = upsert_activity_details(db_path, details_rows)
+        record_changes = upsert_activity_records(db_path, records_rows)
+        split_changes = upsert_activity_splits(db_path, split_rows)
+
+        sleep_rows: list[dict[str, Any]] = []
+        wellness_rows: list[dict[str, Any]] = []
+        sleep_changes = 0
+        wellness_changes = 0
+        if include_wellness:
+            _extract_progress_append(owner, f"[oauth] fetching wellness from {start_day.isoformat()} to {end_day.isoformat()}")
+            wellness_payload = fetch_garmin_oauth_normalized_wellness(
+                access_token,
+                start_day=start_day.isoformat(),
+                end_day=end_day.isoformat(),
+            )
+            sleep_rows = list(wellness_payload.get("sleep_daily") or [])
+            wellness_rows = list(wellness_payload.get("wellness_daily") or [])
+            _extract_progress_append(
+                owner,
+                f"[oauth] fetched sleep={len(sleep_rows)} wellness={len(wellness_rows)}",
+            )
+            sleep_changes = upsert_sleep_daily(db_path, sleep_rows)
+            wellness_changes = upsert_wellness_daily(db_path, wellness_rows)
+
+        msg = (
+            f"activities={len(activities)}({activity_changes}), details={len(details_rows)}({details_changes}), "
+            f"records={len(records_rows)}({record_changes}), splits={len(split_rows)}({split_changes}), "
+            f"sleep={len(sleep_rows)}({sleep_changes}), wellness={len(wellness_rows)}({wellness_changes}), errors=0"
+        )
+        log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=True, message=msg)
+        _extract_progress_finish(owner, msg, [])
+    except GarminOAuthConfigurationError as exc:
+        _extract_progress_fail(owner, str(exc))
+        log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=False, message=str(exc))
+    except GarminOAuthError as exc:
+        _extract_progress_fail(owner, str(exc))
+        log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=False, message=str(exc))
+    except HTTPException as exc:
+        _extract_progress_fail(owner, str(exc.detail))
+        log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=False, message=str(exc.detail))
+    except Exception as exc:
+        _extract_progress_fail(owner, str(exc))
+        log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=False, message=str(exc))
+
+
 def _iter_date_range(start_day: date, end_day: date) -> list[date]:
     if end_day < start_day:
         return []
@@ -1135,6 +1231,245 @@ def _resolve_garmin_credentials(ctx: dict[str, str], owner: str) -> tuple[str, s
     if runtime_email and runtime_password:
         return runtime_email, runtime_password, "session"
     return "", "", "missing"
+
+
+def _load_garmin_oauth_connection(db_path: Path) -> dict[str, Any] | None:
+    row = get_oauth_connection(db_path, GARMIN_OAUTH_PROVIDER)
+    if not row:
+        return None
+    try:
+        scopes = json.loads(str(row.get("scopes_json") or "[]"))
+    except Exception:
+        scopes = []
+    row["scopes"] = [str(scope).strip() for scope in scopes if str(scope).strip()]
+    return row
+
+
+def _save_garmin_oauth_connection(
+    db_path: Path,
+    *,
+    token_payload: dict[str, Any],
+    userinfo_payload: dict[str, Any] | None = None,
+    existing_connection: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata = garmin_oauth_connection_metadata(token_payload, userinfo_payload)
+    account_subject = str(metadata.get("account_subject") or "").strip() or str((existing_connection or {}).get("account_subject") or "").strip() or None
+    account_email = str(metadata.get("account_email") or "").strip() or str((existing_connection or {}).get("account_email") or "").strip() or None
+    scopes = [str(scope).strip() for scope in (metadata.get("scopes") or []) if str(scope).strip()]
+    upsert_oauth_connection(
+        db_path,
+        provider=GARMIN_OAUTH_PROVIDER,
+        account_subject=account_subject,
+        account_email=account_email,
+        scopes_json=json.dumps(scopes, ensure_ascii=True, separators=(",", ":")),
+        token_ciphertext=encrypt_garmin_oauth_token_payload(token_payload),
+        token_expires_at=metadata.get("token_expires_at"),
+        refresh_expires_at=metadata.get("refresh_expires_at"),
+    )
+    return _load_garmin_oauth_connection(db_path) or {
+        "provider": GARMIN_OAUTH_PROVIDER,
+        "account_subject": account_subject,
+        "account_email": account_email,
+        "scopes": scopes,
+        "token_expires_at": metadata.get("token_expires_at"),
+        "refresh_expires_at": metadata.get("refresh_expires_at"),
+    }
+
+
+def _garmin_oauth_connection_public(row: dict[str, Any] | None) -> dict[str, Any]:
+    if not row:
+        return {
+            "connected": False,
+            "account_email": None,
+            "scopes": [],
+            "expires_at": None,
+        }
+    return {
+        "connected": True,
+        "account_email": str(row.get("account_email") or "").strip() or None,
+        "scopes": list(row.get("scopes") or []),
+        "expires_at": str(row.get("token_expires_at") or "").strip() or None,
+    }
+
+
+def _legacy_capabilities(reason: str | None = None) -> dict[str, Any]:
+    return {
+        "activities": True,
+        "wellness": True,
+        "details": True,
+        "comprehensive": True,
+        "reason": reason,
+        "configured": True,
+    }
+
+
+def _missing_capabilities(reason: str) -> dict[str, Any]:
+    return {
+        "activities": False,
+        "wellness": False,
+        "details": False,
+        "comprehensive": False,
+        "reason": reason,
+        "configured": False,
+    }
+
+
+def _garmin_connection_state(ctx: dict[str, str], owner: str, db_path: Path) -> dict[str, Any]:
+    role = str(ctx.get("role") or "viewer").strip().lower()
+    oauth_connection = _load_garmin_oauth_connection(db_path)
+    garmin_email, garmin_password, legacy_source = _resolve_garmin_credentials(ctx, owner)
+    legacy_available = bool(garmin_email and garmin_password)
+
+    if role == "admin":
+        mode = legacy_source if legacy_source in {"env", "session"} else "missing"
+        capabilities = _legacy_capabilities() if legacy_available else _missing_capabilities("Garmin legacy credentials are not configured.")
+    else:
+        mode = "oauth" if oauth_connection is not None else (legacy_source if legacy_source == "session" else "missing")
+        if oauth_connection is not None:
+            capabilities = garmin_oauth_capabilities()
+        elif legacy_available:
+            capabilities = _legacy_capabilities()
+        else:
+            capabilities = _missing_capabilities("Connect Garmin OAuth or provide session credentials to sync Garmin data.")
+
+    return {
+        "mode": mode,
+        "legacy_source": legacy_source,
+        "legacy_available": legacy_available,
+        "legacy_email": garmin_email,
+        "legacy_password": garmin_password,
+        "oauth_connection": oauth_connection,
+        "oauth_public": _garmin_oauth_connection_public(oauth_connection),
+        "capabilities": capabilities,
+    }
+
+
+def _resolve_garmin_sync_source(
+    ctx: dict[str, str],
+    owner: str,
+    db_path: Path,
+    *,
+    require_wellness: bool,
+    require_comprehensive: bool,
+) -> dict[str, Any]:
+    state = _garmin_connection_state(ctx, owner, db_path)
+    mode = str(state.get("mode") or "missing")
+    capabilities = dict(state.get("capabilities") or {})
+    oauth_connection = state.get("oauth_connection")
+
+    oauth_supported = (
+        mode == "oauth"
+        and oauth_connection is not None
+        and bool(capabilities.get("activities"))
+        and (not require_wellness or bool(capabilities.get("wellness")))
+        and (not require_comprehensive or bool(capabilities.get("comprehensive")))
+    )
+    if oauth_supported:
+        return {"mode": "oauth", "state": state}
+
+    legacy_available = bool(state.get("legacy_available"))
+    if legacy_available:
+        return {
+            "mode": str(state.get("legacy_source") or "session"),
+            "state": state,
+            "email": str(state.get("legacy_email") or ""),
+            "password": str(state.get("legacy_password") or ""),
+            "credentials_source": str(state.get("legacy_source") or "session"),
+        }
+
+    if mode == "oauth" and oauth_connection is not None:
+        return {
+            "mode": "oauth",
+            "state": state,
+            "unsupported_reason": str(capabilities.get("reason") or "Garmin OAuth sync is not configured for this deployment."),
+        }
+
+    return {"mode": "missing", "state": state}
+
+
+def _garmin_oauth_token_payload(db_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    connection = _load_garmin_oauth_connection(db_path)
+    if connection is None:
+        raise HTTPException(status_code=400, detail="Garmin OAuth is not connected for this owner.")
+    ciphertext = str(connection.get("token_ciphertext") or "").strip()
+    if not ciphertext:
+        raise HTTPException(status_code=400, detail="Stored Garmin OAuth token is missing.")
+    try:
+        token_payload = decrypt_garmin_oauth_token_payload(ciphertext)
+        refreshed_payload, refreshed = maybe_refresh_garmin_oauth_token_payload(token_payload)
+    except GarminOAuthConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except GarminOAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if refreshed:
+        connection = _save_garmin_oauth_connection(
+            db_path,
+            token_payload=refreshed_payload,
+            existing_connection=connection,
+        )
+        token_payload = refreshed_payload
+    access_token = str(token_payload.get("access_token") or "").strip()
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Garmin OAuth access token is missing.")
+    return token_payload, connection
+
+
+def _garmin_oauth_redirect_url(status: str, message: str) -> str:
+    return f"/app/data-extract?{urlencode({'garmin_oauth': status, 'garmin_oauth_message': message[:240]})}"
+
+
+def _run_quick_oauth_sync(
+    db_path: Path,
+    *,
+    days_back: int,
+    source_label: str,
+) -> dict[str, Any]:
+    token_payload, _connection = _garmin_oauth_token_payload(db_path)
+    end_day = datetime.now(timezone.utc).date()
+    start_day = end_day - timedelta(days=max(1, int(days_back)))
+    try:
+        payload = fetch_garmin_oauth_normalized_activities(
+            str(token_payload.get("access_token") or ""),
+            start_day=start_day.isoformat(),
+            end_day=end_day.isoformat(),
+        )
+    except GarminOAuthConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except GarminOAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    activities = list(payload.get("activities") or [])
+    details_rows = list(payload.get("activity_details") or [])
+    records_rows = list(payload.get("activity_records") or [])
+    split_rows = list(payload.get("activity_splits") or [])
+    changed = upsert_activities(db_path, activities)
+    details_changed = upsert_activity_details(db_path, details_rows)
+    records_changed = upsert_activity_records(db_path, records_rows)
+    splits_changed = upsert_activity_splits(db_path, split_rows)
+    message = f"total_rows={len(activities)}"
+    log_sync(db_path, source=source_label, success=True, message=message)
+    return {
+        "success": True,
+        "messages": [],
+        "total_rows": len(activities),
+        "details": {
+            "garmin": {
+                "profile": "quick",
+                "rows": len(activities),
+                "db_changes": int(changed),
+                "details_rows": len(details_rows),
+                "details_db_changes": int(details_changed),
+                "record_rows": len(records_rows),
+                "record_db_changes": int(records_changed),
+                "split_rows": len(split_rows),
+                "split_db_changes": int(splits_changed),
+                "credentials_source": "oauth",
+                "days_back": max(1, int(days_back)),
+                "start_day": start_day.isoformat(),
+                "end_day": end_day.isoformat(),
+            }
+        },
+    }
 
 
 def _run_quick_activity_sync(
@@ -5503,6 +5838,90 @@ def auth_owners(authorization: str | None = Header(default=None, alias="Authoriz
     return {"owners": [ctx["user"]]}
 
 
+@app.post("/api/v1/garmin/oauth/start")
+def garmin_oauth_start(
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    role = str(ctx.get("role") or "viewer").strip().lower()
+    if role == "admin":
+        raise HTTPException(status_code=403, detail="Garmin OAuth is only available for non-admin users.")
+    resolved_owner = _resolve_owner(ctx, owner)
+    if resolved_owner != str(ctx.get("user") or "").strip():
+        raise HTTPException(status_code=403, detail="Garmin OAuth can only be linked for the active user.")
+    try:
+        state = build_garmin_oauth_state(
+            user=str(ctx.get("user") or ""),
+            role=role,
+            owner=resolved_owner,
+        )
+        authorization_url = build_garmin_oauth_authorization_url(state)
+    except GarminOAuthConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        "owner": resolved_owner,
+        "authorization_url": authorization_url,
+        "expires_in_seconds": 600,
+    }
+
+
+@app.get("/api/v1/garmin/oauth/callback")
+def garmin_oauth_callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    error_description: str | None = Query(default=None),
+) -> RedirectResponse:
+    if error:
+        message = str(error_description or error or "Garmin OAuth was cancelled.")
+        return RedirectResponse(url=_garmin_oauth_redirect_url("error", message), status_code=303)
+    if not code or not state:
+        return RedirectResponse(
+            url=_garmin_oauth_redirect_url("error", "Garmin OAuth callback is missing code or state."),
+            status_code=303,
+        )
+    try:
+        parsed_state = parse_garmin_oauth_state(state)
+        if str(parsed_state.get("r") or "").strip().lower() == "admin":
+            raise GarminOAuthError("Garmin OAuth is only supported for non-admin users.")
+        resolved_owner = str(parsed_state.get("o") or "").strip()
+        db_path = _db_path_for_owner(resolved_owner)
+        token_payload = exchange_garmin_oauth_code_for_tokens(code)
+        access_token = str(token_payload.get("access_token") or "").strip()
+        userinfo_payload = fetch_garmin_oauth_userinfo(access_token) if access_token else None
+        connection = _save_garmin_oauth_connection(db_path, token_payload=token_payload, userinfo_payload=userinfo_payload)
+        account_email = str(connection.get("account_email") or "").strip()
+        message = f"Garmin OAuth connected for {account_email or resolved_owner}."
+        log_sync(db_path, source="v2_garmin_oauth_connect", success=True, message=message)
+        return RedirectResponse(url=_garmin_oauth_redirect_url("success", message), status_code=303)
+    except GarminOAuthConfigurationError as exc:
+        return RedirectResponse(url=_garmin_oauth_redirect_url("error", str(exc)), status_code=303)
+    except GarminOAuthError as exc:
+        return RedirectResponse(url=_garmin_oauth_redirect_url("error", str(exc)), status_code=303)
+    except Exception as exc:
+        return RedirectResponse(url=_garmin_oauth_redirect_url("error", str(exc)), status_code=303)
+
+
+@app.post("/api/v1/garmin/oauth/disconnect")
+def garmin_oauth_disconnect(
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    role = str(ctx.get("role") or "viewer").strip().lower()
+    if role == "admin":
+        raise HTTPException(status_code=403, detail="Garmin OAuth is only available for non-admin users.")
+    resolved_owner = _resolve_owner(ctx, owner)
+    if resolved_owner != str(ctx.get("user") or "").strip():
+        raise HTTPException(status_code=403, detail="Garmin OAuth can only be disconnected for the active user.")
+    db_path = _db_path_for_owner(resolved_owner)
+    deleted = delete_oauth_connection(db_path, GARMIN_OAUTH_PROVIDER)
+    message = "Garmin OAuth disconnected." if deleted else "Garmin OAuth was not connected."
+    log_sync(db_path, source="v2_garmin_oauth_disconnect", success=True, message=message)
+    return {"success": True, "owner": resolved_owner, "disconnected": deleted, "message": message}
+
+
 @app.get("/api/v1/overview")
 def overview(
     owner: str | None = Query(default=None),
@@ -5780,6 +6199,7 @@ def data_extract_status(
     current_user = str(ctx.get("user") or "").strip()
     runtime_email, runtime_password = _runtime_garmin_credentials(resolved_owner)
     garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
+    garmin_state = _garmin_connection_state(ctx, resolved_owner, db_path)
     auto_sync_gate = _auto_sync_gate(resolved_owner, db_path)
     garmin_rate_limit = _garmin_rate_limit_state(db_path)
     return {
@@ -5808,6 +6228,9 @@ def data_extract_status(
         "garmin_credentials_available": bool(garmin_email and garmin_password),
         "garmin_credentials_source": garmin_source,
         "garmin_runtime_credentials_set": bool(runtime_email and runtime_password),
+        "garmin_oauth": garmin_state["oauth_public"],
+        "garmin_connection_mode": garmin_state["mode"],
+        "garmin_capabilities": garmin_state["capabilities"],
         "garmin_credentials_hint": (
             "Using configured Garmin credentials for this owner scope."
             if role == "admin" and resolved_owner == current_user
@@ -5913,7 +6336,6 @@ def data_extract_sync(
     total_rows = 0
     sync_completed = False
     sync_logged = False
-    garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
 
     if source in {"garmin_api", "both"}:
         garmin_rate_limit = _garmin_rate_limit_state(db_path)
@@ -5931,19 +6353,85 @@ def data_extract_sync(
         elif not _AUTO_SYNC_LOCK.acquire(blocking=False):
             messages.append("Garmin sync already running. Try again shortly.")
             details["garmin"] = {"skipped": True, "reason": "sync_in_progress"}
-        elif not (garmin_email and garmin_password):
-            messages.append("Garmin credentials missing. Add credentials for the active owner scope.")
-            details["garmin"] = {"skipped": True, "reason": "credentials_missing"}
         else:
+            selection = _resolve_garmin_sync_source(
+                ctx,
+                resolved_owner,
+                db_path,
+                require_wellness=(profile == "deep"),
+                require_comprehensive=(profile == "deep"),
+            )
             try:
-                if profile == "quick":
+                if selection["mode"] == "oauth" and "unsupported_reason" in selection:
+                    messages.append(str(selection["unsupported_reason"]))
+                    details["garmin"] = {
+                        "skipped": True,
+                        "reason": "oauth_unsupported",
+                        "connection_mode": "oauth",
+                    }
+                elif selection["mode"] == "oauth" and profile == "quick":
+                    sync_result = _run_quick_oauth_sync(
+                        db_path,
+                        days_back=days_back,
+                        source_label=f"v2_sync_{source}_{profile}_oauth",
+                    )
+                    total_rows += int(sync_result.get("total_rows") or 0)
+                    details["garmin"] = dict(sync_result.get("details") or {}).get("garmin") or {}
+                    sync_completed = True
+                    sync_logged = True
+                elif selection["mode"] == "oauth":
+                    token_payload, _connection = _garmin_oauth_token_payload(db_path)
+                    deep_start = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
+                    access_token = str(token_payload.get("access_token") or "")
+                    activity_payload = fetch_garmin_oauth_normalized_activities(
+                        access_token,
+                        start_day=deep_start.isoformat(),
+                        end_day=datetime.now(timezone.utc).date().isoformat(),
+                    )
+                    wellness_payload = fetch_garmin_oauth_normalized_wellness(
+                        access_token,
+                        start_day=deep_start.isoformat(),
+                        end_day=datetime.now(timezone.utc).date().isoformat(),
+                    )
+                    n_a = upsert_activities(db_path, list(activity_payload.get("activities") or []))
+                    n_d = upsert_activity_details(db_path, list(activity_payload.get("activity_details") or []))
+                    n_r = upsert_activity_records(db_path, list(activity_payload.get("activity_records") or []))
+                    n_sp = upsert_activity_splits(db_path, list(activity_payload.get("activity_splits") or []))
+                    n_s = upsert_sleep_daily(db_path, list(wellness_payload.get("sleep_daily") or []))
+                    n_w = upsert_wellness_daily(db_path, list(wellness_payload.get("wellness_daily") or []))
+                    total_rows += len(list(activity_payload.get("activities") or []))
+                    details["garmin"] = {
+                        "profile": "deep",
+                        "credentials_source": "oauth",
+                        "activities": len(list(activity_payload.get("activities") or [])),
+                        "details": len(list(activity_payload.get("activity_details") or [])),
+                        "records": len(list(activity_payload.get("activity_records") or [])),
+                        "splits": len(list(activity_payload.get("activity_splits") or [])),
+                        "sleep": len(list(wellness_payload.get("sleep_daily") or [])),
+                        "wellness": len(list(wellness_payload.get("wellness_daily") or [])),
+                        "errors": [],
+                        "db_changes": {
+                            "activities": int(n_a),
+                            "details": int(n_d),
+                            "records": int(n_r),
+                            "splits": int(n_sp),
+                            "sleep": int(n_s),
+                            "wellness": int(n_w),
+                        },
+                    }
+                    sync_completed = True
+                    _clear_garmin_rate_limit(db_path)
+                elif selection["mode"] == "missing":
+                    messages.append("Garmin credentials missing. Connect Garmin OAuth or add session credentials for the active owner scope.")
+                    details["garmin"] = {"skipped": True, "reason": "credentials_missing"}
+                elif profile == "quick":
                     sync_result = _run_quick_activity_sync(
                         db_path,
-                        garmin_email,
-                        garmin_password,
+                        str(selection.get("email") or ""),
+                        str(selection.get("password") or ""),
                         days_back=days_back,
                         source_label=f"v2_sync_{source}_{profile}",
-                        credentials_source=garmin_source,
+                        credentials_source=str(selection.get("credentials_source") or "session"),
                     )
                     total_rows += int(sync_result.get("total_rows") or 0)
                     details["garmin"] = dict(sync_result.get("details") or {}).get("garmin") or {}
@@ -5952,8 +6440,8 @@ def data_extract_sync(
                 else:
                     deep_start = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
                     extract = fetch_garmin_comprehensive(
-                        email=garmin_email,
-                        password=garmin_password,
+                        email=str(selection.get("email") or ""),
+                        password=str(selection.get("password") or ""),
                         start_day=deep_start,
                         end_day=datetime.now(timezone.utc).date(),
                         include_activity_details=True,
@@ -5971,7 +6459,7 @@ def data_extract_sync(
                     total_rows += len(extract.activities)
                     details["garmin"] = {
                         "profile": "deep",
-                        "credentials_source": garmin_source,
+                        "credentials_source": str(selection.get("credentials_source") or "session"),
                         "activities": len(extract.activities),
                         "details": len(extract.activity_details),
                         "records": len(extract.activity_records),
@@ -5990,6 +6478,27 @@ def data_extract_sync(
                     }
                     sync_completed = True
                     _clear_garmin_rate_limit(db_path)
+            except HTTPException as exc:
+                messages.append(str(exc.detail))
+                details["garmin"] = {
+                    "skipped": True,
+                    "reason": "http_error",
+                    "detail": str(exc.detail),
+                }
+            except GarminOAuthConfigurationError as exc:
+                messages.append(str(exc))
+                details["garmin"] = {
+                    "skipped": True,
+                    "reason": "oauth_not_configured",
+                    "detail": str(exc),
+                }
+            except GarminOAuthError as exc:
+                messages.append(str(exc))
+                details["garmin"] = {
+                    "skipped": True,
+                    "reason": "oauth_error",
+                    "detail": str(exc),
+                }
             except GarminRateLimitError as exc:
                 state = _set_garmin_rate_limit(db_path, str(exc))
                 messages.append(str(state["message"]))
@@ -6025,12 +6534,20 @@ def data_extract_comprehensive(
     ctx = _auth_context(authorization)
     resolved_owner = _resolve_owner(ctx, owner)
     db_path = _db_path_for_owner(resolved_owner)
-    garmin_email, garmin_password, _garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
-    if not (garmin_email and garmin_password):
+    selection = _resolve_garmin_sync_source(
+        ctx,
+        resolved_owner,
+        db_path,
+        require_wellness=bool(payload.include_wellness),
+        require_comprehensive=True,
+    )
+    if selection["mode"] == "missing":
         raise HTTPException(
             status_code=400,
-            detail="Garmin credentials missing. Add credentials for the active owner scope.",
+            detail="Garmin credentials missing. Connect Garmin OAuth or add session credentials for the active owner scope.",
         )
+    if selection["mode"] == "oauth" and "unsupported_reason" in selection:
+        raise HTTPException(status_code=400, detail=str(selection["unsupported_reason"]))
     _ensure_garmin_available(db_path)
 
     requested_start_day = parse_supported_day_value(payload.start_day)
@@ -6071,18 +6588,24 @@ def data_extract_comprehensive(
             "errors": [],
         }
     worker = threading.Thread(
-        target=_run_comprehensive_extract_background,
+        target=_run_oauth_comprehensive_extract_background if selection["mode"] == "oauth" else _run_comprehensive_extract_background,
         kwargs={
             "owner": resolved_owner,
             "db_path": db_path,
-            "garmin_email": garmin_email,
-            "garmin_password": garmin_password,
             "start_day": start_day,
             "end_day": end_day,
-            "include_details": bool(payload.include_details),
             "include_wellness": bool(payload.include_wellness),
-            "target_activity_days": target_activity_days,
-            "target_wellness_days": target_wellness_days,
+            **(
+                {}
+                if selection["mode"] == "oauth"
+                else {
+                    "garmin_email": str(selection.get("email") or ""),
+                    "garmin_password": str(selection.get("password") or ""),
+                    "include_details": bool(payload.include_details),
+                    "target_activity_days": target_activity_days,
+                    "target_wellness_days": target_wellness_days,
+                }
+            ),
         },
         daemon=True,
     )
@@ -6093,7 +6616,7 @@ def data_extract_comprehensive(
         "computed_start_day": start_day.isoformat(),
         "start_day": start_day.isoformat(),
         "end_day": end_day.isoformat(),
-        "summary": "Comprehensive extract started in background.",
+        "summary": "Comprehensive extract started in background." if selection["mode"] != "oauth" else "Garmin OAuth extract started in background.",
         "errors": [],
     }
 

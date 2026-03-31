@@ -17,6 +17,8 @@ export const API_CONFIG = {
     dataExtractGarminAuthReset: '/data-extract/garmin-auth/reset',
     dataExtractSync: '/data-extract/sync',
     dataExtractComprehensive: '/data-extract/comprehensive',
+    garminOauthStart: '/garmin/oauth/start',
+    garminOauthDisconnect: '/garmin/oauth/disconnect',
     customActivities: '/custom-activities',
     customActivitiesIngest: '/custom-activities/ingest',
     customActivitiesWorkoutUpdate: '/custom-activities/workout',
