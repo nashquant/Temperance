@@ -1,11 +1,11 @@
-# Temperance v2 Frontend
+# Temperance Frontend
 
-React + Vite + TypeScript frontend for Temperance v2.
+React + Vite + TypeScript frontend for Temperance.
 
 ## Quick start
 
 ```bash
-cd /Users/matheus/Temperance/v2/frontend
+cd /Users/matheus/Temperance/frontend
 npm install
 npm run dev
 ```
@@ -24,7 +24,7 @@ npm run preview
 - API base path is configured in `src/api/config.ts` as `/api`.
 - During local dev, Vite proxy in `vite.config.ts` forwards `/api/*` and `/health` to `http://127.0.0.1:8000`.
 - The backend still accepts `/api/v1/*` as a compatibility alias during the transition.
-- Auth token is stored in localStorage key `temperance.session.v1`.
+- Auth token is stored in localStorage key `temperance.session` and falls back to the older key during migration.
 
 ### Update points for backend contracts
 
