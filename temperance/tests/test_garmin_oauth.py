@@ -20,6 +20,15 @@ def _configure_oauth_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEMPERANCE_OAUTH_TOKEN_ENCRYPTION_KEY", "oauth-encryption-secret")
 
 
+@pytest.fixture(autouse=True)
+def _clear_runtime_credentials() -> None:
+    backend_main._clear_runtime_garmin_credentials("runner")
+    backend_main._clear_runtime_garmin_credentials("admin")
+    yield
+    backend_main._clear_runtime_garmin_credentials("runner")
+    backend_main._clear_runtime_garmin_credentials("admin")
+
+
 def test_garmin_oauth_state_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_oauth_env(monkeypatch)
     state = garmin_oauth.build_state(user="runner", role="viewer", owner="runner", ttl_seconds=600)
@@ -69,6 +78,16 @@ def test_oauth_start_returns_authorization_url(monkeypatch: pytest.MonkeyPatch) 
     assert "state=" in payload["authorization_url"]
 
 
+def test_oauth_start_rejects_admin(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_oauth_env(monkeypatch)
+    monkeypatch.setattr(backend_main, "_auth_context", lambda authorization: {"user": "admin", "role": "admin"})
+
+    with pytest.raises(backend_main.HTTPException) as exc:
+        backend_main.garmin_oauth_start()
+
+    assert exc.value.status_code == 403
+
+
 def test_oauth_callback_saves_owner_connection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _configure_oauth_env(monkeypatch)
     db_path = tmp_path / "runner.db"
@@ -103,6 +122,26 @@ def test_oauth_callback_saves_owner_connection(monkeypatch: pytest.MonkeyPatch, 
     assert token_payload["access_token"] == "access-1"
 
 
+def test_oauth_disconnect_removes_connection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _configure_oauth_env(monkeypatch)
+    db_path = tmp_path / "runner.db"
+    init_db(db_path)
+    backend_main._save_garmin_oauth_connection(
+        db_path,
+        token_payload={"access_token": "access-1", "refresh_token": "refresh-1", "scope": "activities"},
+        userinfo_payload={"sub": "garmin-user-1", "email": "runner@example.com"},
+    )
+    monkeypatch.setattr(backend_main, "_auth_context", lambda authorization: {"user": "runner", "role": "viewer"})
+    monkeypatch.setattr(backend_main, "_resolve_owner", lambda ctx, owner: "runner")
+    monkeypatch.setattr(backend_main, "_db_path_for_owner", lambda owner: db_path)
+
+    payload = backend_main.garmin_oauth_disconnect()
+
+    assert payload["success"] is True
+    assert payload["disconnected"] is True
+    assert get_oauth_connection(db_path, backend_main.GARMIN_OAUTH_PROVIDER) is None
+
+
 def test_viewer_status_prefers_oauth_over_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _configure_oauth_env(monkeypatch)
     db_path = tmp_path / "runner.db"
@@ -123,7 +162,6 @@ def test_viewer_status_prefers_oauth_over_session(monkeypatch: pytest.MonkeyPatc
     assert payload["garmin_connection_mode"] == "oauth"
     assert payload["garmin_oauth"]["connected"] is True
     assert payload["garmin_credentials_source"] == "session"
-    backend_main._clear_runtime_garmin_credentials("runner")
 
 
 def test_viewer_sync_source_falls_back_to_session_when_oauth_sync_is_not_configured(
@@ -152,4 +190,26 @@ def test_viewer_sync_source_falls_back_to_session_when_oauth_sync_is_not_configu
 
     assert selection["mode"] == "session"
     assert selection["credentials_source"] == "session"
-    backend_main._clear_runtime_garmin_credentials("runner")
+
+
+def test_admin_status_keeps_legacy_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _configure_oauth_env(monkeypatch)
+    db_path = tmp_path / "admin.db"
+    init_db(db_path)
+    backend_main._save_garmin_oauth_connection(
+        db_path,
+        token_payload={"access_token": "access-1", "refresh_token": "refresh-1", "scope": "activities"},
+        userinfo_payload={"sub": "garmin-user-1", "email": "admin@example.com"},
+    )
+    monkeypatch.setenv("GARMIN_EMAIL", "admin@example.com")
+    monkeypatch.setenv("GARMIN_PASSWORD", "pw")
+    monkeypatch.setattr(backend_main, "_auth_context", lambda authorization: {"user": "admin", "role": "admin"})
+    monkeypatch.setattr(backend_main, "_resolve_owner", lambda ctx, owner: "admin")
+    monkeypatch.setattr(backend_main, "_db_path_for_owner", lambda owner: db_path)
+    monkeypatch.setattr(backend_main, "load_config", lambda: SimpleNamespace(import_dir=str(tmp_path / "import")))
+
+    payload = backend_main.data_extract_status()
+
+    assert payload["garmin_connection_mode"] == "env"
+    assert payload["garmin_credentials_source"] == "env"
+    assert payload["garmin_oauth"]["connected"] is True
