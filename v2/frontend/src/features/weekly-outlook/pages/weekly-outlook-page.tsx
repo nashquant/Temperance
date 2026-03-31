@@ -42,15 +42,17 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
       <div className={embedded ? 'space-y-3' : 'space-y-4'}>
         {!activeQuery.isLoading && !activeQuery.isError && displayedData ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{`Week: ${formatRange(displayedData.weekStart, displayedData.weekEnd)}`}</Badge>
-              <Badge variant="secondary">
-                {displayedData.compare === 'planned'
-                  ? 'Comparison: Planned week'
-                  : `Comparison: ${formatRange(displayedData.compareWeekStart, displayedData.compareWeekEnd)}`}
-              </Badge>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
+              <CompareSelector value={compare} onValueChange={setCompare} />
+              <div className="flex flex-col items-start gap-2">
+                <Badge variant="outline">{`Week: ${formatRange(displayedData.weekStart, displayedData.weekEnd)}`}</Badge>
+                <Badge variant="secondary">
+                  {displayedData.compare === 'planned'
+                    ? 'Comparison: Planned week'
+                    : `Comparison: ${formatRange(displayedData.compareWeekStart, displayedData.compareWeekEnd)}`}
+                </Badge>
+              </div>
             </div>
-            <CompareSelector value={compare} onValueChange={setCompare} />
           </div>
         ) : null}
 
