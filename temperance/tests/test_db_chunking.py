@@ -1,9 +1,6 @@
 from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from db import _executemany_in_chunks, get_conn, init_db, upsert_activity_records
+from temperance.db import _executemany_in_chunks, get_conn, init_db, upsert_activity_records
 
 
 class TrackingConnection:

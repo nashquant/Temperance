@@ -1,9 +1,6 @@
 from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from db import get_runs_df, init_db, set_activity_invalid, upsert_activities
+from temperance.db import get_runs_df, init_db, set_activity_invalid, upsert_activities
 
 
 def test_set_activity_invalid_excludes_row_from_default_runs_df(tmp_path: Path) -> None:

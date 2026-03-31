@@ -1,19 +1,9 @@
 from pathlib import Path
-import importlib.util
-import sys
 
 from fastapi import HTTPException
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "temperance"))
-
-from db import init_db, get_conn
-
-BACKEND_MAIN_PATH = ROOT / "v2" / "backend" / "app" / "main.py"
-BACKEND_MAIN_SPEC = importlib.util.spec_from_file_location("temperance_v2_backend_main_reset_endpoint", BACKEND_MAIN_PATH)
-assert BACKEND_MAIN_SPEC is not None and BACKEND_MAIN_SPEC.loader is not None
-backend_main = importlib.util.module_from_spec(BACKEND_MAIN_SPEC)
-BACKEND_MAIN_SPEC.loader.exec_module(backend_main)
+from backend.app import main as backend_main
+from temperance.db import get_conn, init_db
 
 
 def test_garmin_auth_reset_endpoint_calls_reset_and_logs(tmp_path: Path, monkeypatch) -> None:
