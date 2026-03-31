@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -225,6 +225,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _rewrite_flat_api_prefix(request: Request, call_next):
+    path = str(request.scope.get("path") or "")
+    if path == "/api" or (path.startswith("/api/") and not path.startswith("/api/v1/")):
+        rewritten_path = f"/api/v1{path[4:]}" if path != "/api" else "/api/v1"
+        request.scope["path"] = rewritten_path
+        request.scope["raw_path"] = rewritten_path.encode("ascii")
+    return await call_next(request)
 
 
 @app.on_event("startup")

@@ -44,7 +44,7 @@ Behavior:
 - Looks back only at today + previous day (`TEMPERANCE_AUTO_SYNC_DAYS_BACK=2` by default).
 - Skips if another Garmin sync is already running.
 
-Check `/api/v1/data-extract/status` to confirm the active auto-sync config and latest sync log.
+Check `/api/data-extract/status` to confirm the active auto-sync config and latest sync log.
 
 ## Run v2 frontend
 
@@ -61,16 +61,16 @@ The frontend proxies `/health` and `/api/*` to `http://127.0.0.1:8000`.
 ## Initial API surface
 
 - `GET /health`
-- `POST /api/v1/auth/login`
-- `GET /api/v1/auth/me`
-- `GET /api/v1/auth/owners`
-- `GET /api/v1/overview`
-- `GET /api/v1/dashboard?days=42&owner=<owner>&sport=run&start_day=YYYY-MM-DD&end_day=YYYY-MM-DD`
-- `GET /api/v1/weekly-summary?days=84&owner=<owner>&sport=run&start_day=YYYY-MM-DD&end_day=YYYY-MM-DD`
-- `GET /api/v1/week-outlook?days=84&owner=<owner>&metric=tss&compare=planned&week_start=YYYY-MM-DD`
-- `GET /api/v1/activities/{activity_id}?owner=<owner>`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `GET /api/auth/owners`
+- `GET /api/overview`
+- `GET /api/dashboard?days=42&owner=<owner>&sport=run&start_day=YYYY-MM-DD&end_day=YYYY-MM-DD`
+- `GET /api/weekly-summary?days=84&owner=<owner>&sport=run&start_day=YYYY-MM-DD&end_day=YYYY-MM-DD`
+- `GET /api/week-outlook?days=84&owner=<owner>&metric=tss&compare=planned&week_start=YYYY-MM-DD`
+- `GET /api/activities/{activity_id}?owner=<owner>`
 
-`/api/v1/overview` reads from the existing Streamlit SQLite DB by default:
+`/api/overview` reads from the existing Streamlit SQLite DB by default:
 
 `/Users/matheus/Temperance/temperance/data/private/temperance.db`
 
@@ -80,7 +80,7 @@ Override with:
 export TEMPERANCE_DB_PATH="/absolute/path/to/temperance.db"
 ```
 
-`/api/v1/dashboard` reuses existing business logic from:
+`/api/dashboard` reuses existing business logic from:
 
 - `temperance/db.py#get_runs_df`
 - `temperance/analytics.py#compute_metrics`
@@ -93,8 +93,10 @@ export TEMPERANCE_DB_PATH="/absolute/path/to/temperance.db"
   - If `TEMPERANCE_AUTH_ENABLED=1` (default), API requires login token.
   - Viewer role is restricted to their own owner scope.
   - Admin role can switch owner scope.
-- Tokens are returned by `POST /api/v1/auth/login` and sent as:
+- Tokens are returned by `POST /api/auth/login` and sent as:
   - `Authorization: Bearer <token>`
+- Compatibility note:
+  - `/api/v1/*` remains supported as a backward-compatible alias during the transition.
 - Owner-scoped DB resolution:
   - `<base_db_dir>/users/<owner_slug>.db`
   - fallback to base DB for `default` owner if scoped DB is missing

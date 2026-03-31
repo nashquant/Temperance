@@ -21,8 +21,9 @@ npm run preview
 
 ## Backend integration notes
 
-- API base path is configured in `src/api/config.ts` as `/api/v1`.
+- API base path is configured in `src/api/config.ts` as `/api`.
 - During local dev, Vite proxy in `vite.config.ts` forwards `/api/*` and `/health` to `http://127.0.0.1:8000`.
+- The backend still accepts `/api/v1/*` as a compatibility alias during the transition.
 - Auth token is stored in localStorage key `temperance.session.v1`.
 
 ### Update points for backend contracts

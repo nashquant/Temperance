@@ -1,5 +1,5 @@
 export const API_CONFIG = {
-  basePath: '/api/v1',
+  basePath: '/api',
   endpoints: {
     login: '/auth/login',
     me: '/auth/me',
@@ -28,5 +28,5 @@ export const API_CONFIG = {
   },
 } as const;
 
-// TODO: If your backend path changes (e.g., /v1 or another gateway prefix), update API_CONFIG.basePath.
+// TODO: If your backend path changes (e.g., another gateway prefix), update API_CONFIG.basePath.
 // TODO: If auth token type changes from Bearer token, update header logic in src/api/http-client.ts.
