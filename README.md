@@ -62,6 +62,32 @@ export GARMIN_PASSWORD="your_password"
 
 You can also keep these in `temperance/.env` for local use.
 
+### 4. Configure Garmin OAuth when you want non-admin user pairing
+
+Garmin OAuth is optional, but required if non-admin users should pair their own Garmin accounts instead of relying only on memory-only session credentials.
+
+Minimum OAuth connection config:
+
+```bash
+export GARMIN_OAUTH_CLIENT_ID="your_client_id"
+export GARMIN_OAUTH_CLIENT_SECRET="your_client_secret"
+export GARMIN_OAUTH_REDIRECT_URI="http://127.0.0.1:8000/api/v1/garmin/oauth/callback"
+export GARMIN_OAUTH_AUTHORIZE_URL="https://<garmin-authorize-endpoint>"
+export GARMIN_OAUTH_TOKEN_URL="https://<garmin-token-endpoint>"
+export TEMPERANCE_OAUTH_TOKEN_ENCRYPTION_KEY="replace_with_a_long_random_secret"
+```
+
+Optional, but needed if OAuth-connected users should actually run Garmin data extract through the app:
+
+```bash
+export GARMIN_OAUTH_USERINFO_URL="https://<garmin-userinfo-endpoint>"
+export GARMIN_OAUTH_ACTIVITIES_URL="https://<garmin-activities-endpoint>"
+export GARMIN_OAUTH_WELLNESS_URL="https://<garmin-wellness-endpoint>"
+export GARMIN_OAUTH_SCOPES="activities wellness profile"
+```
+
+If the activities/wellness URLs are missing, Garmin OAuth connect/disconnect will work, but the UI will keep OAuth-backed extract capability-gated and users will need the legacy session-credential fallback to actually sync data.
+
 ## Data model and storage
 
 - Default base DB: `temperance/data/private/temperance.db`
@@ -112,6 +138,51 @@ Generated activity suggestions intentionally emit normalized strings that are ea
 - Embedded auto-sync in the backend: lightweight incremental activity sync only
 
 The embedded auto-sync does not fetch sleep, HRV, training readiness, or other wellness endpoints. If recovery data for the current day is blank, run a comprehensive sync before assuming the UI is wrong.
+
+## Data Extract modes
+
+Temperance now supports multiple ways to use the Data Extract page. The mode that runs depends on who is logged in and which Garmin connection is available.
+
+### Admin on own scope
+
+- If `GARMIN_EMAIL` and `GARMIN_PASSWORD` are set, the admin user can open **Data Extract** and run Garmin extract immediately.
+- The backend treats environment credentials as the primary source for the admin’s own owner scope.
+- `Reset Garmin auth` clears the cached Garmin session for the backend process, but does not remove the env vars.
+
+### Admin viewing another owner
+
+- Admin can switch owner scope in the UI and enter that owner’s Garmin email/password in the **Garmin Credentials** card.
+- Those credentials are stored in backend memory only and are not persisted to SQLite.
+- This is useful when OAuth is not available for that owner, or when you need a temporary legacy sync path.
+
+### Non-admin with Garmin OAuth
+
+- The non-admin user opens **Data Extract** and clicks `Connect Garmin`.
+- The app redirects through Garmin OAuth and returns to `/app/data-extract` after the callback succeeds or fails.
+- Once connected, Data Extract prefers the persisted Garmin OAuth token over memory-only session credentials.
+- If `GARMIN_OAUTH_ACTIVITIES_URL` and `GARMIN_OAUTH_WELLNESS_URL` are configured, `Run extract` uses the OAuth-backed Garmin path.
+- If those URLs are not configured, the UI will show Garmin as connected but keep extract capability-gated unless the user also provides legacy session credentials.
+
+### Non-admin without OAuth, using legacy session credentials
+
+- The non-admin user can still use the existing **Garmin Credentials** card.
+- Entered Garmin email/password are kept in backend memory only for that active backend session.
+- This remains the fallback path if OAuth is unavailable or if Garmin OAuth connection exists but extract endpoints are not configured.
+
+### No Garmin connection
+
+- Users can skip Garmin entirely and still use the app for:
+  - custom activities
+  - planning and generated activities
+  - dashboard/wellness views backed by previously synced data
+- In this mode, Data Extract will not run Garmin sync until either OAuth or legacy session credentials are available.
+
+### What `Run extract` does
+
+- `Activities` enabled: fetch activity rows and related activity detail payloads when supported by the active sync source.
+- `Wellness` enabled: fetch sleep and wellness rows when supported by the active sync source.
+- `Incremental` enabled: only refetch missing days plus the current freshness window.
+- The current connection mode is surfaced in the Data Extract page as `oauth`, `session`, `env`, or `missing`.
 
 ## Operations
 
