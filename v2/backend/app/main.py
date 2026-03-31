@@ -29,7 +29,8 @@ TEMPERANCE_SRC = Path(__file__).resolve().parents[3] / "temperance"
 if str(TEMPERANCE_SRC) not in sys.path:
     sys.path.insert(0, str(TEMPERANCE_SRC))
 
-from activity_parsing import (  # noqa: E402
+from config import load_config  # noqa: E402
+from app.planning_parsing import (  # noqa: E402
     expand_planned_segments as _shared_expand_planned_segments,
     normalize_plan_text as _shared_normalize_plan_text,
     parse_dated_activity_entry as _shared_parse_dated_activity_entry,
@@ -37,7 +38,6 @@ from activity_parsing import (  # noqa: E402
     split_dated_activity_entries as _shared_split_dated_activity_entries,
     strip_meridiem_tokens as _shared_strip_meridiem_tokens,
 )
-from config import load_config  # noqa: E402
 
 
 def _default_db_path() -> Path:
