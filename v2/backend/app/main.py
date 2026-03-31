@@ -254,6 +254,10 @@ def _auth_users() -> dict[str, dict[str, str]]:
     )
 
 
+def _auth_is_enforced() -> bool:
+    return _auth_enabled() and bool(_auth_users())
+
+
 def _auth_secret() -> str:
     return (
         str(os.getenv("TEMPERANCE_AUTH_COOKIE_SECRET") or "").strip()
@@ -334,14 +338,10 @@ def _db_path_for_owner(owner: str) -> Path:
 
 
 def _auth_context(authorization: str | None) -> dict[str, str]:
-    auth_on = _auth_enabled()
-    if not auth_on:
+    if not _auth_is_enforced():
         return {"user": "default", "role": "admin"}
 
     users = _auth_users()
-    if not users:
-        raise HTTPException(status_code=503, detail="Auth enabled but no users configured")
-
     token = _bearer_token(authorization)
     parsed = _parse_token(token)
     if not parsed:
@@ -5466,14 +5466,11 @@ def root_redirect() -> RedirectResponse:
 
 @app.post("/api/v1/auth/login")
 def auth_login(payload: LoginRequest) -> dict[str, Any]:
-    if not _auth_enabled():
+    if not _auth_is_enforced():
         token = _build_token(user="default", role="admin")
         return {"token": token, "user": "default", "role": "admin"}
 
     users = _auth_users()
-    if not users:
-        raise HTTPException(status_code=503, detail="Auth enabled but no users configured")
-
     resolved_user, user_data = resolve_user(users, payload.username)
     if not user_data or not resolved_user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -5490,7 +5487,7 @@ def auth_login(payload: LoginRequest) -> dict[str, Any]:
 def auth_me(authorization: str | None = Header(default=None, alias="Authorization")) -> dict[str, Any]:
     ctx = _auth_context(authorization)
     owner = _resolve_owner(ctx, None)
-    return {"user": ctx["user"], "role": ctx["role"], "owner": owner, "auth_enabled": _auth_enabled()}
+    return {"user": ctx["user"], "role": ctx["role"], "owner": owner, "auth_enabled": _auth_is_enforced()}
 
 
 @app.get("/api/v1/auth/owners")
