@@ -2158,6 +2158,47 @@ def _segments_from_stored_or_source(
     threshold_pace_sec_per_km: float | None = None,
     has_vdot_basis: bool = False,
 ) -> list[dict[str, Any]]:
+    def _normalize_segment(segment: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(segment)
+
+        duration_min = normalized.get("duration_min")
+        if duration_min is None:
+            duration_min = normalized.get("minutes")
+
+        avg_hr_bpm = normalized.get("avg_hr_bpm")
+        if avg_hr_bpm is None:
+            avg_hr_bpm = normalized.get("bpm")
+
+        pace_s_per_km = normalized.get("pace_s_per_km")
+        if pace_s_per_km is None:
+            pace_s_per_km = normalized.get("pace_sec_per_km")
+
+        tss_target = normalized.get("tss_target")
+        if tss_target is None:
+            tss_target = normalized.get("tss_input")
+
+        if duration_min in (None, 0, 0.0):
+            distance_km = _safe_float(normalized.get("distance_km"))
+            pace_value = _safe_float(pace_s_per_km)
+            if pace_value <= 0:
+                if_input_value = _safe_float(normalized.get("if_input"))
+                threshold_pace_value = _safe_float(threshold_pace_sec_per_km)
+                if if_input_value > 0 and threshold_pace_value > 0:
+                    pace_value = threshold_pace_value / if_input_value
+            if distance_km > 0 and pace_value > 0:
+                duration_min = (distance_km * pace_value) / 60.0
+                pace_s_per_km = pace_value
+
+        normalized["duration_min"] = duration_min
+        normalized["avg_hr_bpm"] = avg_hr_bpm
+        normalized["pace_s_per_km"] = pace_s_per_km
+        normalized["tss_target"] = tss_target
+        normalized.pop("minutes", None)
+        normalized.pop("bpm", None)
+        normalized.pop("pace_sec_per_km", None)
+        normalized.pop("tss_input", None)
+        return normalized
+
     source_segments: list[dict[str, Any]] = []
     expanded, _warnings = _expand_planned_segments(
         str(source_text or ""),
@@ -2165,7 +2206,7 @@ def _segments_from_stored_or_source(
         threshold_pace_sec_per_km=threshold_pace_sec_per_km,
         has_vdot_basis=has_vdot_basis,
     )
-    source_segments = [s for s in expanded if isinstance(s, dict)]
+    source_segments = [_normalize_segment(s) for s in expanded if isinstance(s, dict)]
     if source_segments:
         return source_segments
 
@@ -2176,10 +2217,10 @@ def _segments_from_stored_or_source(
         try:
             parsed = json.loads(parsed_json)
             if isinstance(parsed, list):
-                stored_segments = [s for s in parsed if isinstance(s, dict)]
+                stored_segments = [_normalize_segment(s) for s in parsed if isinstance(s, dict)]
         except Exception:
             stored_segments = []
-    return stored_segments
+    return [_normalize_segment(s) for s in stored_segments]
 
 
 _normalize_plan_text = _shared_normalize_plan_text
@@ -2343,22 +2384,18 @@ def _compute_planned_rows_metrics_df(
     hr_vals: list[float] = []
     pace_proxy_vals: list[float] = []
     dur_vals: list[float] = []
+    has_vdot_basis = bool(lt_pace_curve_points)
     for _, row in out.iterrows():
-        raw_segments = row.get("parsed_json")
-        segments: list[dict[str, float | str | None]] = []
-        if isinstance(raw_segments, list):
-            segments = [s for s in raw_segments if isinstance(s, dict)]
-        elif isinstance(raw_segments, str) and raw_segments.strip():
-            try:
-                parsed = json.loads(raw_segments)
-                if isinstance(parsed, list):
-                    segments = [s for s in parsed if isinstance(s, dict)]
-            except Exception:
-                segments = []
-
         day_for_curve = pd.to_datetime(row.get("day_utc"), utc=True, errors="coerce")
         lthr_for_day = float(_curve_value_at(lthr_curve_points, float(lthr_default_bpm), day_for_curve))
         lt_pace_for_day = float(_curve_value_at(lt_pace_curve_points, float(lt_pace_default_sec), day_for_curve))
+        segments = _segments_from_stored_or_source(
+            parsed_json=row.get("parsed_json"),
+            source_text=str(row.get("workout_text") or ""),
+            lthr_bpm=lthr_for_day,
+            threshold_pace_sec_per_km=lt_pace_for_day,
+            has_vdot_basis=has_vdot_basis,
+        )
 
         total_tss = 0.0
         total_rtss = 0.0
@@ -4577,7 +4614,10 @@ def _build_activity_dashboard_payload(
                             "activity_id": f"planned-{day_key.date().isoformat()}-{int(_safe_float(row.get('line_no')))}",
                             "day_utc": day_key.date().isoformat(),
                             "line_no": int(_safe_float(row.get("line_no"))),
-                            "activity": _planned_activity_label(row.get("parsed_json")),
+                            "activity": _planned_activity_label(
+                                row.get("parsed_json"),
+                                source_text=str(row.get("workout_text") or ""),
+                            ),
                             "workout_text": str(row.get("workout_text") or ""),
                             "duration_s": _safe_float(row.get("duration_s")),
                             "distance_eqv_km": _safe_float(row.get("distance_proxy_km")),
@@ -5272,18 +5312,8 @@ def _build_week_outlook_payload(
     }
 
 
-def _planned_activity_label(parsed_json: Any) -> str:
-    segments: list[dict[str, Any]] = []
-    if isinstance(parsed_json, list):
-        segments = [s for s in parsed_json if isinstance(s, dict)]
-    elif isinstance(parsed_json, str) and parsed_json.strip():
-        try:
-            parsed = json.loads(parsed_json)
-            if isinstance(parsed, list):
-                segments = [s for s in parsed if isinstance(s, dict)]
-        except Exception:
-            segments = []
-
+def _planned_activity_label(parsed_json: Any, source_text: str = "") -> str:
+    segments = _segments_from_stored_or_source(parsed_json=parsed_json, source_text=source_text)
     kinds_seen: list[str] = []
     for seg in segments:
         kind = str(seg.get("kind") or "").strip().lower()
@@ -5402,7 +5432,10 @@ def _build_planned_activities_payload(
             {
                 "day_utc": pd.Timestamp(row.get("day")).date().isoformat(),
                 "line_no": int(_safe_float(row.get("line_no"))),
-                "activity": _planned_activity_label(row.get("parsed_json")),
+                "activity": _planned_activity_label(
+                    row.get("parsed_json"),
+                    source_text=str(row.get("workout_text") or ""),
+                ),
                 "workout_text": str(row.get("workout_text") or ""),
                 "manual_done": bool(_safe_float(row.get("manual_done")) > 0),
                 "tss": round(_safe_float(row.get("tss")), 1),
@@ -6430,7 +6463,10 @@ def custom_activities_view(
             {
                 "day_utc": str(row.get("day_utc") or ""),
                 "line_no": int(_safe_float(row.get("line_no"))),
-                "activity": _planned_activity_label(row.get("parsed_json")),
+                "activity": _planned_activity_label(
+                    row.get("parsed_json"),
+                    source_text=str(row.get("workout_text") or ""),
+                ),
                 "activity_text": str(row.get("workout_text") or ""),
                 "duration_h": round(_safe_float(row.get("duration_s")) / 3600.0, 2),
                 "tss": round(_safe_float(row.get("tss")), 1),

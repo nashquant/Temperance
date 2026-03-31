@@ -262,6 +262,58 @@ def planned_row_signature(day_utc: str, workout_text: str) -> str:
     return f"{day_key}::{workout_key}"
 
 
+def _normalize_segment_schema(
+    segment: dict[str, float | str | None],
+    threshold_pace_sec_per_km: float,
+) -> dict[str, float | str | None]:
+    normalized = dict(segment)
+
+    duration_min = normalized.get("duration_min")
+    if duration_min is None:
+        duration_min = normalized.get("minutes")
+
+    avg_hr_bpm = normalized.get("avg_hr_bpm")
+    if avg_hr_bpm is None:
+        avg_hr_bpm = normalized.get("bpm")
+
+    pace_s_per_km = normalized.get("pace_s_per_km")
+    if pace_s_per_km is None:
+        pace_s_per_km = normalized.get("pace_sec_per_km")
+
+    tss_target = normalized.get("tss_target")
+    if tss_target is None:
+        tss_target = normalized.get("tss_input")
+
+    if duration_min in (None, 0, 0.0):
+        try:
+            distance_km = float(normalized.get("distance_km") or 0.0)
+        except Exception:
+            distance_km = 0.0
+        try:
+            pace_value = float(pace_s_per_km or 0.0)
+        except Exception:
+            pace_value = 0.0
+        try:
+            if_input = float(normalized.get("if_input") or 0.0)
+        except Exception:
+            if_input = 0.0
+        if pace_value <= 0 and if_input > 0 and threshold_pace_sec_per_km > 0:
+            pace_value = float(threshold_pace_sec_per_km) / if_input
+        if distance_km > 0 and pace_value > 0:
+            duration_min = (distance_km * pace_value) / 60.0
+            pace_s_per_km = pace_value
+
+    normalized["duration_min"] = duration_min
+    normalized["avg_hr_bpm"] = avg_hr_bpm
+    normalized["pace_s_per_km"] = pace_s_per_km
+    normalized["tss_target"] = tss_target
+    normalized.pop("minutes", None)
+    normalized.pop("bpm", None)
+    normalized.pop("pace_sec_per_km", None)
+    normalized.pop("tss_input", None)
+    return normalized
+
+
 def expand_planned_segments(
     line: str,
     lthr_bpm: float | None = None,
@@ -479,4 +531,9 @@ def expand_planned_segments(
         last_kind = kind
 
     _ = lthr_value
-    return segments, warnings
+    normalized_segments = [
+        _normalize_segment_schema(segment, threshold_pace_sec_per_km=threshold_pace_value)
+        for segment in segments
+        if isinstance(segment, dict)
+    ]
+    return normalized_segments, warnings

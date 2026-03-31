@@ -119,3 +119,67 @@ def test_generated_activity_shortlist_drops_far_worse_candidates() -> None:
     )
 
     assert [item["activity_text"] for _, item in shortlist] == ["Run 2h37min @3:43/km"]
+
+
+def test_compute_planned_rows_metrics_reparses_valid_workout_text_when_parsed_json_is_missing() -> None:
+    planned_rows = backend_main.pd.DataFrame(
+        [
+            {
+                "day_utc": "2026-04-01",
+                "line_no": 1,
+                "workout_text": "xtrain 58min @57%",
+                "parsed_json": "",
+                "manual_done": False,
+            }
+        ]
+    )
+
+    metrics = backend_main._compute_planned_rows_metrics_df(
+        planned_rows=planned_rows,
+        lthr_curve_points=[],
+        lthr_default_bpm=178.0,
+        lt_pace_curve_points=[],
+        lt_pace_default_sec=300.0,
+        specificity_profile={"default": 0.8, "elliptical": 0.8, "non_running": 0.8},
+    )
+
+    assert len(metrics) == 1
+    row = metrics.iloc[0]
+    assert float(row["duration_s"]) == pytest.approx(58.0 * 60.0)
+    assert float(row["if_proxy"]) == pytest.approx(0.57)
+    assert float(row["tss"]) > 0
+    assert float(row["distance_proxy_km"]) > 0
+
+
+def test_planned_activity_label_reparses_valid_workout_text_when_parsed_json_is_missing() -> None:
+    assert backend_main._planned_activity_label("", source_text="xtrain 58min @57%") == "Elliptical"
+
+
+def test_compute_planned_rows_metrics_supports_legacy_segment_schema() -> None:
+    planned_rows = backend_main.pd.DataFrame(
+        [
+            {
+                "day_utc": "2026-04-01",
+                "line_no": 1,
+                "workout_text": "elliptical 70min @138bpm",
+                "parsed_json": '[{"kind":"elliptical","minutes":70.0,"distance_km":null,"bpm":138.0,"pace_sec_per_km":null,"if_input":null,"if_input_source":null,"tss_input":null,"time_hint":null}]',
+                "manual_done": False,
+            }
+        ]
+    )
+
+    metrics = backend_main._compute_planned_rows_metrics_df(
+        planned_rows=planned_rows,
+        lthr_curve_points=[],
+        lthr_default_bpm=178.0,
+        lt_pace_curve_points=[],
+        lt_pace_default_sec=300.0,
+        specificity_profile={"default": 0.8, "elliptical": 0.8, "non_running": 0.8},
+    )
+
+    assert len(metrics) == 1
+    row = metrics.iloc[0]
+    assert float(row["duration_s"]) == pytest.approx(70.0 * 60.0)
+    assert float(row["if_proxy"]) > 0
+    assert float(row["tss"]) > 0
+    assert float(row["distance_proxy_km"]) > 0
