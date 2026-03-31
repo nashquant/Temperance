@@ -1,18 +1,8 @@
 from pathlib import Path
-import importlib.util
-import sys
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "temperance"))
-sys.path.insert(0, str(ROOT / "v2" / "backend"))
-
-BACKEND_MAIN_PATH = ROOT / "v2" / "backend" / "app" / "main.py"
-BACKEND_MAIN_SPEC = importlib.util.spec_from_file_location("temperance_v2_backend_main_dashboard", BACKEND_MAIN_PATH)
-assert BACKEND_MAIN_SPEC is not None and BACKEND_MAIN_SPEC.loader is not None
-backend_main = importlib.util.module_from_spec(BACKEND_MAIN_SPEC)
-BACKEND_MAIN_SPEC.loader.exec_module(backend_main)
+from backend.app import main as backend_main
 
 
 def test_dashboard_metrics_frames_filter_invalid_rows_without_second_metrics_pass(monkeypatch) -> None:

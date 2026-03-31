@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from config import load_config
-from db import init_db, run_migrations
+from temperance.config import load_config
+from temperance.db import init_db, run_migrations
 
 
 if __name__ == "__main__":

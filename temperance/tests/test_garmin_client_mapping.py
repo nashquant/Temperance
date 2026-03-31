@@ -1,10 +1,6 @@
 from datetime import date
-from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from garmin_client import _extract_sleep_row, _extract_wellness_row
+from temperance.garmin_client import _extract_sleep_row, _extract_wellness_row
 
 
 def test_extract_sleep_score_nested_value() -> None:
