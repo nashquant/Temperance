@@ -957,10 +957,11 @@ def _run_oauth_comprehensive_extract_background(
             start_day=start_day.isoformat(),
             end_day=end_day.isoformat(),
         )
-        activities = list(activity_payload.get("activities") or [])
-        details_rows = list(activity_payload.get("activity_details") or [])
-        records_rows = list(activity_payload.get("activity_records") or [])
-        split_rows = list(activity_payload.get("activity_splits") or [])
+        activity_persisted = _persist_normalized_garmin_payload(db_path, activity_payload=activity_payload)
+        activities = activity_persisted["activities"]
+        details_rows = activity_persisted["activity_details"]
+        records_rows = activity_persisted["activity_records"]
+        split_rows = activity_persisted["activity_splits"]
         _extract_progress_append(
             owner,
             (
@@ -968,15 +969,14 @@ def _run_oauth_comprehensive_extract_background(
                 f"records={len(records_rows)} splits={len(split_rows)}"
             ),
         )
-        activity_changes = upsert_activities(db_path, activities)
-        details_changes = upsert_activity_details(db_path, details_rows)
-        record_changes = upsert_activity_records(db_path, records_rows)
-        split_changes = upsert_activity_splits(db_path, split_rows)
 
+        wellness_persisted: dict[str, Any] = {
+            "sleep_daily": [],
+            "wellness_daily": [],
+            "db_changes": {"sleep": 0, "wellness": 0},
+        }
         sleep_rows: list[dict[str, Any]] = []
         wellness_rows: list[dict[str, Any]] = []
-        sleep_changes = 0
-        wellness_changes = 0
         if include_wellness:
             _extract_progress_append(owner, f"[oauth] fetching wellness from {start_day.isoformat()} to {end_day.isoformat()}")
             wellness_payload = fetch_garmin_oauth_normalized_wellness(
@@ -984,19 +984,18 @@ def _run_oauth_comprehensive_extract_background(
                 start_day=start_day.isoformat(),
                 end_day=end_day.isoformat(),
             )
-            sleep_rows = list(wellness_payload.get("sleep_daily") or [])
-            wellness_rows = list(wellness_payload.get("wellness_daily") or [])
+            wellness_persisted = _persist_normalized_garmin_payload(db_path, wellness_payload=wellness_payload)
+            sleep_rows = wellness_persisted["sleep_daily"]
+            wellness_rows = wellness_persisted["wellness_daily"]
             _extract_progress_append(
                 owner,
                 f"[oauth] fetched sleep={len(sleep_rows)} wellness={len(wellness_rows)}",
             )
-            sleep_changes = upsert_sleep_daily(db_path, sleep_rows)
-            wellness_changes = upsert_wellness_daily(db_path, wellness_rows)
 
         msg = (
-            f"activities={len(activities)}({activity_changes}), details={len(details_rows)}({details_changes}), "
-            f"records={len(records_rows)}({record_changes}), splits={len(split_rows)}({split_changes}), "
-            f"sleep={len(sleep_rows)}({sleep_changes}), wellness={len(wellness_rows)}({wellness_changes}), errors=0"
+            f"activities={len(activities)}({activity_persisted['db_changes']['activities']}), details={len(details_rows)}({activity_persisted['db_changes']['details']}), "
+            f"records={len(records_rows)}({activity_persisted['db_changes']['records']}), splits={len(split_rows)}({activity_persisted['db_changes']['splits']}), "
+            f"sleep={len(sleep_rows)}({wellness_persisted['db_changes']['sleep']}), wellness={len(wellness_rows)}({wellness_persisted['db_changes']['wellness']}), errors=0"
         )
         log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=True, message=msg)
         _extract_progress_finish(owner, msg, [])
@@ -1418,6 +1417,45 @@ def _garmin_oauth_redirect_url(status: str, message: str) -> str:
     return f"/app/data-extract?{urlencode({'garmin_oauth': status, 'garmin_oauth_message': message[:240]})}"
 
 
+def _query_string_or_none(value: Any) -> str | None:
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    return None
+
+
+def _persist_normalized_garmin_payload(
+    db_path: Path,
+    *,
+    activity_payload: dict[str, Any] | None = None,
+    wellness_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    activity_rows = dict(activity_payload or {})
+    wellness_rows = dict(wellness_payload or {})
+    activities = list(activity_rows.get("activities") or [])
+    details_rows = list(activity_rows.get("activity_details") or [])
+    records_rows = list(activity_rows.get("activity_records") or [])
+    split_rows = list(activity_rows.get("activity_splits") or [])
+    sleep_rows = list(wellness_rows.get("sleep_daily") or [])
+    wellness_daily_rows = list(wellness_rows.get("wellness_daily") or [])
+    return {
+        "activities": activities,
+        "activity_details": details_rows,
+        "activity_records": records_rows,
+        "activity_splits": split_rows,
+        "sleep_daily": sleep_rows,
+        "wellness_daily": wellness_daily_rows,
+        "db_changes": {
+            "activities": int(upsert_activities(db_path, activities)),
+            "details": int(upsert_activity_details(db_path, details_rows)),
+            "records": int(upsert_activity_records(db_path, records_rows)),
+            "splits": int(upsert_activity_splits(db_path, split_rows)),
+            "sleep": int(upsert_sleep_daily(db_path, sleep_rows)),
+            "wellness": int(upsert_wellness_daily(db_path, wellness_daily_rows)),
+        },
+    }
+
+
 def _run_quick_oauth_sync(
     db_path: Path,
     *,
@@ -1438,14 +1476,11 @@ def _run_quick_oauth_sync(
     except GarminOAuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    activities = list(payload.get("activities") or [])
-    details_rows = list(payload.get("activity_details") or [])
-    records_rows = list(payload.get("activity_records") or [])
-    split_rows = list(payload.get("activity_splits") or [])
-    changed = upsert_activities(db_path, activities)
-    details_changed = upsert_activity_details(db_path, details_rows)
-    records_changed = upsert_activity_records(db_path, records_rows)
-    splits_changed = upsert_activity_splits(db_path, split_rows)
+    persisted = _persist_normalized_garmin_payload(db_path, activity_payload=payload)
+    activities = persisted["activities"]
+    details_rows = persisted["activity_details"]
+    records_rows = persisted["activity_records"]
+    split_rows = persisted["activity_splits"]
     message = f"total_rows={len(activities)}"
     log_sync(db_path, source=source_label, success=True, message=message)
     return {
@@ -1456,13 +1491,13 @@ def _run_quick_oauth_sync(
             "garmin": {
                 "profile": "quick",
                 "rows": len(activities),
-                "db_changes": int(changed),
+                "db_changes": persisted["db_changes"]["activities"],
                 "details_rows": len(details_rows),
-                "details_db_changes": int(details_changed),
+                "details_db_changes": persisted["db_changes"]["details"],
                 "record_rows": len(records_rows),
-                "record_db_changes": int(records_changed),
+                "record_db_changes": persisted["db_changes"]["records"],
                 "split_rows": len(split_rows),
-                "split_db_changes": int(splits_changed),
+                "split_db_changes": persisted["db_changes"]["splits"],
                 "credentials_source": "oauth",
                 "days_back": max(1, int(days_back)),
                 "start_day": start_day.isoformat(),
@@ -5873,21 +5908,25 @@ def garmin_oauth_callback(
     error: str | None = Query(default=None),
     error_description: str | None = Query(default=None),
 ) -> RedirectResponse:
-    if error:
-        message = str(error_description or error or "Garmin OAuth was cancelled.")
+    code_value = _query_string_or_none(code)
+    state_value = _query_string_or_none(state)
+    error_value = _query_string_or_none(error)
+    error_description_value = _query_string_or_none(error_description)
+    if error_value:
+        message = str(error_description_value or error_value or "Garmin OAuth was cancelled.")
         return RedirectResponse(url=_garmin_oauth_redirect_url("error", message), status_code=303)
-    if not code or not state:
+    if not code_value or not state_value:
         return RedirectResponse(
             url=_garmin_oauth_redirect_url("error", "Garmin OAuth callback is missing code or state."),
             status_code=303,
         )
     try:
-        parsed_state = parse_garmin_oauth_state(state)
+        parsed_state = parse_garmin_oauth_state(state_value)
         if str(parsed_state.get("r") or "").strip().lower() == "admin":
             raise GarminOAuthError("Garmin OAuth is only supported for non-admin users.")
         resolved_owner = str(parsed_state.get("o") or "").strip()
         db_path = _db_path_for_owner(resolved_owner)
-        token_payload = exchange_garmin_oauth_code_for_tokens(code)
+        token_payload = exchange_garmin_oauth_code_for_tokens(code_value)
         access_token = str(token_payload.get("access_token") or "").strip()
         userinfo_payload = fetch_garmin_oauth_userinfo(access_token) if access_token else None
         connection = _save_garmin_oauth_connection(db_path, token_payload=token_payload, userinfo_payload=userinfo_payload)
@@ -6393,31 +6432,23 @@ def data_extract_sync(
                         start_day=deep_start.isoformat(),
                         end_day=datetime.now(timezone.utc).date().isoformat(),
                     )
-                    n_a = upsert_activities(db_path, list(activity_payload.get("activities") or []))
-                    n_d = upsert_activity_details(db_path, list(activity_payload.get("activity_details") or []))
-                    n_r = upsert_activity_records(db_path, list(activity_payload.get("activity_records") or []))
-                    n_sp = upsert_activity_splits(db_path, list(activity_payload.get("activity_splits") or []))
-                    n_s = upsert_sleep_daily(db_path, list(wellness_payload.get("sleep_daily") or []))
-                    n_w = upsert_wellness_daily(db_path, list(wellness_payload.get("wellness_daily") or []))
-                    total_rows += len(list(activity_payload.get("activities") or []))
+                    persisted = _persist_normalized_garmin_payload(
+                        db_path,
+                        activity_payload=activity_payload,
+                        wellness_payload=wellness_payload,
+                    )
+                    total_rows += len(persisted["activities"])
                     details["garmin"] = {
                         "profile": "deep",
                         "credentials_source": "oauth",
-                        "activities": len(list(activity_payload.get("activities") or [])),
-                        "details": len(list(activity_payload.get("activity_details") or [])),
-                        "records": len(list(activity_payload.get("activity_records") or [])),
-                        "splits": len(list(activity_payload.get("activity_splits") or [])),
-                        "sleep": len(list(wellness_payload.get("sleep_daily") or [])),
-                        "wellness": len(list(wellness_payload.get("wellness_daily") or [])),
+                        "activities": len(persisted["activities"]),
+                        "details": len(persisted["activity_details"]),
+                        "records": len(persisted["activity_records"]),
+                        "splits": len(persisted["activity_splits"]),
+                        "sleep": len(persisted["sleep_daily"]),
+                        "wellness": len(persisted["wellness_daily"]),
                         "errors": [],
-                        "db_changes": {
-                            "activities": int(n_a),
-                            "details": int(n_d),
-                            "records": int(n_r),
-                            "splits": int(n_sp),
-                            "sleep": int(n_s),
-                            "wellness": int(n_w),
-                        },
+                        "db_changes": dict(persisted["db_changes"]),
                     }
                     sync_completed = True
                     _clear_garmin_rate_limit(db_path)
