@@ -25,6 +25,23 @@ npm run preview
 - During local dev, Vite proxy in `vite.config.ts` forwards `/api/*` and `/health` to `http://127.0.0.1:8000`.
 - The backend still accepts `/api/v1/*` as a compatibility alias during the transition.
 - Auth token is stored in localStorage key `temperance.session` and falls back to the older key during migration.
+- The public app is expected to live under `/v2`, so router/base-path changes need to be tested against `https://app.temperance-rtl.work/v2`.
+
+## Main frontend surfaces
+
+- Login and protected routing
+- Dashboard and activity detail drill-down
+- Week planner, planned activities, and weekly outlook
+- Wellness, settings, and athlete progression
+- Data extract controls for Garmin credentials, sync, and reset
+
+## String-contract awareness
+
+The frontend displays and submits normalized workout strings rather than inventing a separate client-only schema.
+
+- Planned and custom activity entry text should stay compatible with backend parsing rules
+- Generated activity text is intentionally reparseable by the backend, so UI copy changes should not silently mutate those strings
+- If a feature starts editing `workout_text` or `activity_text`, validate the change against backend parsing tests before assuming it is display-only
 
 ### Update points for backend contracts
 

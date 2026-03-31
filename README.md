@@ -17,6 +17,7 @@ Temperance/
 ├── frontend/        React + Vite app
 └── temperance/
     ├── analytics.py
+    ├── activity_parsing.py
     ├── auth.py
     ├── config.py
     ├── db.py
@@ -50,6 +51,7 @@ npm run dev
 Frontend URL: `http://127.0.0.1:5173`
 
 The frontend proxies `/api/*` and `/health` to the backend during local development.
+The public app is served at `https://app.temperance-rtl.work/v2`, while the API is mounted at `/api` with `/api/v1` kept as a backward-compatible alias.
 
 ### 3. Configure Garmin credentials when you need sync
 
@@ -69,6 +71,41 @@ You can also keep these in `temperance/.env` for local use.
 
 The backend resolves owner-scoped databases first and falls back to the base DB for the default owner when needed.
 
+## Main product features
+
+- Auth with local admin/viewer users and owner-scoped data access
+- Dashboard, wellness, athlete progression, and weekly outlook views
+- Planned activities ingestion, parsing, editing, and manual completion
+- Custom activities ingestion and generated activity suggestions
+- Garmin sync, Garmin auth reset, and incremental auto-sync
+- Shared SQLite-backed metrics, migrations, and activity detail retrieval
+
+## Planning text rules
+
+Temperance relies on compact workout strings for planned activities, custom activities, and some generated suggestions. Future changes should preserve these rules unless the parser and tests are updated together.
+
+- Dated entries use `[date]:[activity]`
+- Bulk entry separators can be newline, comma, or semicolon
+- Accepted date forms include `today`, `tomorrow`, `yesterday`, `T`, `T+1`, `T-1`, `2026-03-26`, `26/03/2026`, and `26Mar26`
+- Whitespace is normalized before storage and duplicate planned rows are detected from normalized text plus day
+- Duration tokens accept `45min`, `45'`, `1h`, `1h30m`, `20s`, and `20"`
+- Distance tokens accept `42.2km`, `400m`, and repeated-distance forms like `6x1km` or `8x400m`
+- Running pace tokens accept forms like `@4:40`, `@4:40/km`, plus named pace shorthands `@mp`, `@hmp`, and `@10k`
+- Intensity tokens accept `%IF` such as `@78%`, heart rate such as `@138bpm`, and TSS such as `@80tss`
+- Interval recovery blocks can use slash syntax or parentheses, for example `3x8' @ 3:45 / 2' @ 4:40` or `3x8' @ 3:45 (2' @ 4:40)`
+- Elliptical aliases include `elliptical`, `xtrain`, `x-train`, `cross train`, and `cross-train`
+- Distance-only running segments require pace context; non-running segments should use minutes plus `bpm` or `%IF`
+
+## Generated string rules
+
+Generated activity suggestions intentionally emit normalized strings that are easy to parse again later.
+
+- Duration is emitted as `NhMmin` or `Nmin`, for example `1h5min` or `40min`
+- Running and treadmill suggestions prefer pace output such as `Run 40min @4:40/km`
+- Non-running suggestions prefer heart-rate output such as `Elliptical 70min @138bpm`
+- The generated text is derived from structured segments, so preserving the parser and formatter contract keeps suggestion reuse stable
+- API clients should treat `activity_text` and `workout_text` as canonical display-plus-roundtrip strings, not free-form prose
+
 ## Garmin sync modes
 
 - Comprehensive Garmin sync: full backfill path for activities, details, FIT records, sleep, and wellness
@@ -81,6 +118,8 @@ The embedded auto-sync does not fetch sleep, HRV, training readiness, or other w
 - `temperance/scripts/install_keepalive.sh`: macOS `launchd` setup for the backend, frontend, and Cloudflare tunnel
 - `temperance/scripts/install_autoupdate.sh`: hourly fast-forward updater for machines that should track `origin/main`
 - `temperance/README.md`: shared Python package notes, data locations, and migration entry points
+
+After backend or frontend path changes, reinstall or restart the keepalive services so launch agents stop pointing at stale workspace paths.
 
 ## Tests
 
@@ -97,7 +136,3 @@ Frontend build check:
 cd /Users/matheus/Temperance/frontend
 npm run build
 ```
-
-## Follow-up
-
-The API remains on `/api/v1` during this consolidation. A future cleanup can flatten that prefix to `/api` once the unified layout is stable.
