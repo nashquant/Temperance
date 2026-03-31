@@ -95,7 +95,6 @@ export function AthleteProgressionPage(): JSX.Element {
             currentPeriodControl={{
               value: includeCurrentPeriod,
               onValueChange: setIncludeCurrentPeriod,
-              label: 'Current Period',
               includeLabel: 'T',
               excludeLabel: 'T-1',
               includeAriaLabel: 'Include current period',

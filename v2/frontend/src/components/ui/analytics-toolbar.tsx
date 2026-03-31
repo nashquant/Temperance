@@ -1,6 +1,11 @@
 import { startTransition, useId } from 'react';
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  secondaryPageFieldLabelClassName,
+  secondaryPageInputClassName,
+  secondaryPageInsetClassName,
+} from '@/components/ui/secondary-page';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 
@@ -44,11 +49,7 @@ const LOOKBACK_OPTIONS = [
 ] as const;
 
 function FieldLabel({ id, children }: { id: string; children: string }): JSX.Element {
-  return (
-    <p id={id} className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">
-      {children}
-    </p>
-  );
+  return <p id={id} className={cn(secondaryPageFieldLabelClassName, 'text-[10px]')}>{children}</p>;
 }
 
 function SegmentedField({
@@ -68,7 +69,7 @@ function SegmentedField({
         value={value}
         aria-label={compactLabel ? label : undefined}
         aria-labelledby={compactLabel ? undefined : labelId}
-        className="w-full sm:w-auto"
+        className={cn(secondaryPageInsetClassName, 'w-full p-1 sm:w-auto')}
       >
         {options.map((option) => (
           <ToggleGroupItem
@@ -101,7 +102,7 @@ export function AnalyticsToolbar({
   return (
     <div
       className={cn(
-        'flex w-full flex-col gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.86),rgba(2,6,23,0.94))] p-3 shadow-[0_12px_30px_rgba(2,6,23,0.24)] sm:w-auto sm:flex-row sm:flex-wrap sm:items-end sm:justify-end sm:p-3.5',
+        'flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end sm:justify-end',
         className,
       )}
     >
@@ -116,7 +117,7 @@ export function AnalyticsToolbar({
           <SelectTrigger
             aria-label="Lookback window"
             aria-labelledby={compactLabels ? undefined : lookbackLabelId}
-            className="w-full border-white/10 bg-black/20 sm:w-[9rem]"
+            className={cn(secondaryPageInputClassName, 'w-full sm:w-[9rem]')}
           >
             <SelectValue placeholder="Lookback" />
           </SelectTrigger>
@@ -131,7 +132,7 @@ export function AnalyticsToolbar({
       </div>
 
       <SegmentedField
-        label="Aggregation"
+        label="Aggr"
         compactLabel={compactLabels}
         value={aggregation}
         onValueChange={(value) => onAggregationChange(value as AnalyticsAggregation)}
@@ -143,7 +144,7 @@ export function AnalyticsToolbar({
 
       {currentPeriodControl ? (
         <SegmentedField
-          label={currentPeriodControl.label ?? 'Current Period'}
+          label={currentPeriodControl.label ?? 'Period'}
           compactLabel={compactLabels}
           value={currentPeriodControl.value ? 'include' : 'exclude'}
           onValueChange={(value) => currentPeriodControl.onValueChange(value === 'include')}
