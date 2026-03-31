@@ -160,6 +160,18 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS oauth_connections (
+    provider TEXT PRIMARY KEY,
+    account_subject TEXT,
+    account_email TEXT,
+    scopes_json TEXT NOT NULL,
+    token_ciphertext TEXT NOT NULL,
+    token_expires_at TEXT,
+    refresh_expires_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS planned_activities (
     day_utc TEXT NOT NULL,
     line_no INTEGER NOT NULL,
@@ -203,6 +215,7 @@ CREATE INDEX IF NOT EXISTS idx_daily_summary_day ON daily_summary(day_utc);
 CREATE INDEX IF NOT EXISTS idx_sync_log_time ON sync_log(sync_time_utc DESC);
 CREATE INDEX IF NOT EXISTS idx_planned_activities_day ON planned_activities(day_utc);
 CREATE INDEX IF NOT EXISTS idx_custom_activities_day ON custom_activities(day_utc);
+CREATE INDEX IF NOT EXISTS idx_oauth_connections_provider ON oauth_connections(provider);
 """
 
 
@@ -1204,6 +1217,71 @@ def get_setting(db_path: Path, key: str) -> str | None:
     with closing(get_conn(db_path)) as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
     return row["value"] if row else None
+
+
+def upsert_oauth_connection(
+    db_path: Path,
+    *,
+    provider: str,
+    account_subject: str | None,
+    account_email: str | None,
+    scopes_json: str,
+    token_ciphertext: str,
+    token_expires_at: str | None,
+    refresh_expires_at: str | None,
+) -> None:
+    now = UTC_NOW()
+    with closing(get_conn(db_path)) as conn:
+        conn.execute(
+            """
+            INSERT INTO oauth_connections(
+                provider, account_subject, account_email, scopes_json, token_ciphertext,
+                token_expires_at, refresh_expires_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(provider) DO UPDATE SET
+                account_subject = excluded.account_subject,
+                account_email = excluded.account_email,
+                scopes_json = excluded.scopes_json,
+                token_ciphertext = excluded.token_ciphertext,
+                token_expires_at = excluded.token_expires_at,
+                refresh_expires_at = excluded.refresh_expires_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                provider,
+                account_subject,
+                account_email,
+                scopes_json,
+                token_ciphertext,
+                token_expires_at,
+                refresh_expires_at,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+
+
+def get_oauth_connection(db_path: Path, provider: str) -> dict[str, Any] | None:
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            """
+            SELECT provider, account_subject, account_email, scopes_json, token_ciphertext,
+                   token_expires_at, refresh_expires_at, created_at, updated_at
+            FROM oauth_connections
+            WHERE provider = ?
+            """,
+            (provider,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_oauth_connection(db_path: Path, provider: str) -> bool:
+    with closing(get_conn(db_path)) as conn:
+        cursor = conn.execute("DELETE FROM oauth_connections WHERE provider = ?", (provider,))
+        conn.commit()
+    return cursor.rowcount > 0
 
 
 def log_sync(db_path: Path, source: str, success: bool, message: str = "") -> None:

@@ -12,6 +12,21 @@ export interface DataExtractStatusResponse {
   garmin_credentials_source?: 'env' | 'session' | 'missing';
   garmin_runtime_credentials_set?: boolean;
   garmin_credentials_hint?: string;
+  garmin_oauth?: {
+    connected: boolean;
+    account_email: string | null;
+    scopes: string[];
+    expires_at: string | null;
+  };
+  garmin_connection_mode?: 'oauth' | 'session' | 'env' | 'missing';
+  garmin_capabilities?: {
+    activities: boolean;
+    wellness: boolean;
+    details: boolean;
+    comprehensive: boolean;
+    reason: string | null;
+    configured: boolean;
+  };
   import_dir: string;
   extract_progress?: {
     running: boolean;
@@ -88,4 +103,17 @@ export interface GarminAuthResetResponse {
     remaining_seconds?: number;
     last_error?: string | null;
   };
+}
+
+export interface GarminOAuthStartResponse {
+  owner: string;
+  authorization_url: string;
+  expires_in_seconds: number;
+}
+
+export interface GarminOAuthDisconnectResponse {
+  success: boolean;
+  owner: string;
+  disconnected: boolean;
+  message: string;
 }
