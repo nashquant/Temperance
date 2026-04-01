@@ -46,11 +46,18 @@ def test_generated_activity_endpoint_returns_deterministic_planning_for_fixed_se
         ),
     )
 
-    payload = backend_main.GeneratedActivityRequest(day_utc="2026-03-30", mode="planned", activity_type="running", seed=19)
+    payload = backend_main.GeneratedActivityRequest(
+        day_utc="2026-03-30",
+        mode="planned",
+        activity_type="running",
+        seed=19,
+        methodology_id="rolling_3_day_v1",
+    )
     response_a = backend_main.generated_activity(payload, owner=None, authorization=None)
     response_b = backend_main.generated_activity(payload, owner=None, authorization=None)
 
     assert response_a["activity_text"] == response_b["activity_text"]
+    assert response_a["planning"]["methodology_id"] == "rolling_3_day_v1"
     assert response_a["planning"]["selected_intent"]["day_type"] == "easy"
     assert response_a["planning"]["selected_intent"]["target_tss"] == pytest.approx(
         response_b["planning"]["selected_intent"]["target_tss"]
@@ -86,13 +93,19 @@ def test_generated_activity_endpoint_uses_policy_for_friday_rest_exception(monke
             target_day_utc="2026-04-03",
             weekly_baseline_tss=554.0,
             recent_activity_rows=[
-                {"day_utc": "2026-04-02", "tss": 78.0, "duration_s": 4200.0, "modality": "elliptical"},
+                {"day_utc": "2026-04-02", "tss": 78.0, "duration_s": 4200.0, "modality": "elliptical", "avg_if": 0.72, "max_if": 0.75},
             ],
             planned_activity_rows=[],
         ),
     )
 
-    payload = backend_main.GeneratedActivityRequest(day_utc="2026-04-03", mode="planned", activity_type="running", seed=11)
+    payload = backend_main.GeneratedActivityRequest(
+        day_utc="2026-04-03",
+        mode="planned",
+        activity_type="running",
+        seed=11,
+        methodology_id="rolling_3_day_v1",
+    )
     response = backend_main.generated_activity(payload, owner=None, authorization=None)
 
     assert response["activity_text"] == "Rest"

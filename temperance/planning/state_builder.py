@@ -4,93 +4,145 @@ from collections.abc import Iterable, Mapping
 from datetime import date
 
 from temperance.planning.models import (
-    DayType,
     FatigueSnapshot,
     HardSubtype,
+    LongRunHistoryEntry,
     MechanicalRiskSnapshot,
     PlannedActivity,
     RecentActivity,
     ScheduleConstraint,
+    StressProfile,
     UserPlanningState,
 )
-
-
-def classify_day_from_share(share: float) -> DayType:
-    if share >= 0.16:
-        return DayType.HARD
-    if share >= 0.12:
-        return DayType.MODERATE
-    return DayType.EASY
+from temperance.planning.stress import classify_session_stress, is_long_run_candidate
 
 
 def infer_hard_subtype(
     *,
-    day_utc: str,
-    stress_class: DayType | None,
+    stress_class,
     modality: str,
-    duration_s: float,
-    share: float,
+    total_minutes: float,
+    avg_if: float,
+    max_if: float,
     workout_text: str = "",
+    stress_profile: StressProfile | None = None,
 ) -> HardSubtype | None:
-    if stress_class != DayType.HARD:
+    if stress_class is None or str(getattr(stress_class, "value", stress_class)) != "hard":
         return None
-    weekday = date.fromisoformat(day_utc).weekday()
-    if (
-        "long" in workout_text.lower()
-        or (modality == "running" and duration_s >= 95.0 * 60.0)
-        or (modality == "running" and share >= 0.175 and weekday >= 5)
-    ):
+    if is_long_run_candidate(
+        modality=modality,
+        total_minutes=total_minutes,
+        avg_if=avg_if,
+        max_if=max_if,
+        stress_profile=stress_profile,
+    ) or "long" in str(workout_text or "").strip().lower():
         return HardSubtype.H2
     return HardSubtype.H1
 
 
-def _build_recent_activity(row: Mapping[str, object], weekly_baseline_tss: float) -> RecentActivity:
-    tss = float(row.get("tss") or 0.0)
-    share = (tss / weekly_baseline_tss) if weekly_baseline_tss > 0 else 0.0
-    stress_class = classify_day_from_share(share)
+def _build_recent_activity(
+    row: Mapping[str, object],
+    weekly_baseline_tss: float,
+    stress_profile: StressProfile,
+) -> RecentActivity:
     modality = str(row.get("modality") or "unknown").strip().lower()
+    avg_if = float(row.get("avg_if") or 0.0)
+    max_if = float(row.get("max_if") or 0.0)
+    total_minutes = float(row.get("duration_s") or 0.0) / 60.0
+    stress_class, toughness_score, override_reason = classify_session_stress(
+        estimated_tss=float(row.get("tss") or 0.0),
+        avg_if=avg_if,
+        max_if=max_if,
+        total_minutes=total_minutes,
+        modality=modality,
+        bucket=str(row.get("bucket") or ""),
+        weekly_baseline_tss=weekly_baseline_tss,
+        stress_profile=stress_profile,
+    )
+    is_long_run = is_long_run_candidate(
+        modality=modality,
+        total_minutes=total_minutes,
+        avg_if=avg_if,
+        max_if=max_if,
+        stress_profile=stress_profile,
+    )
     return RecentActivity(
         day_utc=str(row.get("day_utc") or ""),
-        tss=tss,
+        tss=float(row.get("tss") or 0.0),
         duration_s=float(row.get("duration_s") or 0.0),
         modality=modality,
+        avg_if=avg_if,
+        max_if=max_if,
+        toughness_score=toughness_score,
+        is_long_run=is_long_run,
+        long_run_duration_min=total_minutes if is_long_run else 0.0,
         running_share=float(row.get("running_share") or 0.0),
         elliptical_share=float(row.get("elliptical_share") or 0.0),
         stress_class=stress_class,
         hard_subtype=infer_hard_subtype(
-            day_utc=str(row.get("day_utc") or ""),
             stress_class=stress_class,
             modality=modality,
-            duration_s=float(row.get("duration_s") or 0.0),
-            share=share,
+            total_minutes=total_minutes,
+            avg_if=avg_if,
+            max_if=max_if,
             workout_text=str(row.get("workout_text") or ""),
+            stress_profile=stress_profile,
         ),
+        methodology_step_id=str(row.get("methodology_step_id") or "").strip() or None,
         source=str(row.get("source") or "actual"),
     )
 
 
-def _build_planned_activity(row: Mapping[str, object], weekly_baseline_tss: float) -> PlannedActivity:
-    tss = float(row.get("tss") or 0.0)
-    share = (tss / weekly_baseline_tss) if weekly_baseline_tss > 0 else 0.0
-    stress_class = classify_day_from_share(share)
+def _build_planned_activity(
+    row: Mapping[str, object],
+    weekly_baseline_tss: float,
+    stress_profile: StressProfile,
+) -> PlannedActivity:
     modality = str(row.get("modality") or "unknown").strip().lower()
+    avg_if = float(row.get("avg_if") or 0.0)
+    max_if = float(row.get("max_if") or 0.0)
+    total_minutes = float(row.get("duration_s") or 0.0) / 60.0
+    stress_class, toughness_score, _ = classify_session_stress(
+        estimated_tss=float(row.get("tss") or 0.0),
+        avg_if=avg_if,
+        max_if=max_if,
+        total_minutes=total_minutes,
+        modality=modality,
+        bucket=str(row.get("bucket") or ""),
+        weekly_baseline_tss=weekly_baseline_tss,
+        stress_profile=stress_profile,
+    )
+    is_long_run = is_long_run_candidate(
+        modality=modality,
+        total_minutes=total_minutes,
+        avg_if=avg_if,
+        max_if=max_if,
+        stress_profile=stress_profile,
+    )
     return PlannedActivity(
         day_utc=str(row.get("day_utc") or ""),
-        tss=tss,
+        tss=float(row.get("tss") or 0.0),
         duration_s=float(row.get("duration_s") or 0.0),
         modality=modality,
         workout_text=str(row.get("workout_text") or ""),
+        avg_if=avg_if,
+        max_if=max_if,
+        toughness_score=toughness_score,
+        is_long_run=is_long_run,
+        long_run_duration_min=total_minutes if is_long_run else 0.0,
         running_share=float(row.get("running_share") or 0.0),
         elliptical_share=float(row.get("elliptical_share") or 0.0),
         stress_class=stress_class,
         hard_subtype=infer_hard_subtype(
-            day_utc=str(row.get("day_utc") or ""),
             stress_class=stress_class,
             modality=modality,
-            duration_s=float(row.get("duration_s") or 0.0),
-            share=share,
+            total_minutes=total_minutes,
+            avg_if=avg_if,
+            max_if=max_if,
             workout_text=str(row.get("workout_text") or ""),
+            stress_profile=stress_profile,
         ),
+        methodology_step_id=str(row.get("methodology_step_id") or "").strip() or None,
         source=str(row.get("source") or "planned"),
     )
 
@@ -101,16 +153,44 @@ def _build_schedule_constraints(rows: Iterable[Mapping[str, object]] | None) -> 
         out.append(
             ScheduleConstraint(
                 day_utc=str(row.get("day_utc") or ""),
-                allow_long_run=(
-                    None if row.get("allow_long_run") is None else bool(row.get("allow_long_run"))
-                ),
-                preferred_modality=(
-                    str(row.get("preferred_modality") or "").strip().lower() or None
-                ),
+                allow_long_run=None if row.get("allow_long_run") is None else bool(row.get("allow_long_run")),
+                preferred_modality=str(row.get("preferred_modality") or "").strip().lower() or None,
                 blocked=bool(row.get("blocked")),
             )
         )
     return tuple(item for item in out if item.day_utc)
+
+
+def _extract_long_run_history(
+    recent_activities: tuple[RecentActivity, ...],
+    planned_activities: tuple[PlannedActivity, ...],
+) -> tuple[tuple[LongRunHistoryEntry, ...], float | None, str | None]:
+    actuals = [
+        LongRunHistoryEntry(
+            day_utc=item.day_utc,
+            source=item.source,
+            duration_min=item.long_run_duration_min,
+            avg_if=item.avg_if,
+            tss=item.tss,
+        )
+        for item in recent_activities
+        if item.is_long_run
+    ]
+    plans = [
+        LongRunHistoryEntry(
+            day_utc=item.day_utc,
+            source=item.source,
+            duration_min=item.long_run_duration_min,
+            avg_if=item.avg_if,
+            tss=item.tss,
+        )
+        for item in planned_activities
+        if item.is_long_run
+    ]
+    history = tuple(sorted(actuals or plans, key=lambda item: item.day_utc))
+    if not history:
+        return (), None, None
+    return history, float(history[-1].duration_min), str(history[-1].day_utc)
 
 
 def build_user_planning_state(
@@ -125,14 +205,16 @@ def build_user_planning_state(
     recent_load_ratio: float = 1.0,
     recent_load_7d: float = 0.0,
     recent_load_28d: float = 0.0,
+    stress_profile: StressProfile | None = None,
 ) -> UserPlanningState:
+    profile = stress_profile or StressProfile()
     recent_activities = tuple(
-        _build_recent_activity(row, weekly_baseline_tss=weekly_baseline_tss)
+        _build_recent_activity(row, weekly_baseline_tss=weekly_baseline_tss, stress_profile=profile)
         for row in recent_activity_rows
         if str(row.get("day_utc") or "").strip()
     )
     planned_activities = tuple(
-        _build_planned_activity(row, weekly_baseline_tss=weekly_baseline_tss)
+        _build_planned_activity(row, weekly_baseline_tss=weekly_baseline_tss, stress_profile=profile)
         for row in planned_activity_rows
         if str(row.get("day_utc") or "").strip()
     )
@@ -195,12 +277,19 @@ def build_user_planning_state(
         fragility_score=fragility_score,
         prefer_low_impact=bool(injury_window_active or fragility_score >= 0.55 or fatigue.recovery_alert),
     )
+    recent_long_runs, last_long_run_minutes, last_long_run_day_utc = _extract_long_run_history(
+        recent_activities=recent_activities,
+        planned_activities=planned_activities,
+    )
 
     return UserPlanningState(
         target_day_utc=target_day_utc,
         weekly_baseline_tss=float(weekly_baseline_tss),
         recent_activities=recent_activities,
         planned_activities=planned_activities,
+        recent_long_runs=recent_long_runs,
+        last_long_run_minutes=last_long_run_minutes,
+        last_long_run_day_utc=last_long_run_day_utc,
         fatigue=fatigue,
         mechanical_risk=mechanical_risk,
         schedule_constraints=_build_schedule_constraints(schedule_constraints),

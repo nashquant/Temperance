@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 
 class DayType(str, Enum):
@@ -17,15 +18,51 @@ class HardSubtype(str, Enum):
 
 
 @dataclass(frozen=True)
+class StressProfile:
+    easy_max_score: float = 0.62
+    moderate_max_score: float = 0.88
+    moderate_max_avg_if: float = 0.82
+    moderate_max_max_if: float = 0.86
+    long_run_min_minutes: float = 90.0
+    long_run_max_minutes: float = 150.0
+    long_run_min_avg_if: float = 0.68
+    long_run_max_avg_if: float = 0.82
+    long_run_max_max_if: float = 0.86
+
+
+@dataclass(frozen=True)
+class CycleStep:
+    step_id: str
+    day_type: DayType
+    hard_subtype: HardSubtype | None = None
+
+
+@dataclass(frozen=True)
+class MethodologyConfig:
+    methodology_id: str
+    label: str
+    cycle_steps: tuple[CycleStep, ...]
+    horizon_days_default: int
+    sampler_config: Any
+    stress_profile: StressProfile = field(default_factory=StressProfile)
+
+
+@dataclass(frozen=True)
 class RecentActivity:
     day_utc: str
     tss: float
     duration_s: float
     modality: str
+    avg_if: float = 0.0
+    max_if: float = 0.0
+    toughness_score: float = 0.0
+    is_long_run: bool = False
+    long_run_duration_min: float = 0.0
     running_share: float = 0.0
     elliptical_share: float = 0.0
     stress_class: DayType | None = None
     hard_subtype: HardSubtype | None = None
+    methodology_step_id: str | None = None
     source: str = "actual"
 
 
@@ -36,11 +73,26 @@ class PlannedActivity:
     duration_s: float
     modality: str
     workout_text: str = ""
+    avg_if: float = 0.0
+    max_if: float = 0.0
+    toughness_score: float = 0.0
+    is_long_run: bool = False
+    long_run_duration_min: float = 0.0
     running_share: float = 0.0
     elliptical_share: float = 0.0
     stress_class: DayType | None = None
     hard_subtype: HardSubtype | None = None
+    methodology_step_id: str | None = None
     source: str = "planned"
+
+
+@dataclass(frozen=True)
+class LongRunHistoryEntry:
+    day_utc: str
+    source: str
+    duration_min: float
+    avg_if: float
+    tss: float
 
 
 @dataclass(frozen=True)
@@ -80,6 +132,9 @@ class UserPlanningState:
     weekly_baseline_tss: float
     recent_activities: tuple[RecentActivity, ...] = ()
     planned_activities: tuple[PlannedActivity, ...] = ()
+    recent_long_runs: tuple[LongRunHistoryEntry, ...] = ()
+    last_long_run_minutes: float | None = None
+    last_long_run_day_utc: str | None = None
     fatigue: FatigueSnapshot = field(default_factory=FatigueSnapshot)
     mechanical_risk: MechanicalRiskSnapshot = field(default_factory=MechanicalRiskSnapshot)
     schedule_constraints: tuple[ScheduleConstraint, ...] = ()
@@ -94,12 +149,20 @@ class UserPlanningState:
 class DayIntent:
     day_utc: str
     sequence_index: int
+    methodology_id: str
+    cycle_step_id: str
+    cycle_step_index: int
     day_type: DayType
     hard_subtype: HardSubtype | None = None
     is_weekend: bool = False
     modality_bias: str | None = None
     sampled_tss_share: float = 0.0
     target_tss: float = 0.0
+    target_duration_min: float = 0.0
+    min_duration_min: float = 0.0
+    max_duration_min: float = 0.0
+    min_avg_if: float = 0.0
+    max_avg_if: float = 0.0
     share_was_clamped: bool = False
     planned_rest: bool = False
     explanation_tags: tuple[str, ...] = ()
@@ -119,6 +182,10 @@ class SessionCandidate:
     hard_subtype: HardSubtype | None = None
     threshold_like: bool = False
     mechanical_load: bool = False
+    toughness_score: float = 0.0
+    is_long_run: bool = False
+    long_run_duration_min: float = 0.0
+    stress_override_reason: str | None = None
     source: str = ""
 
 
@@ -133,14 +200,17 @@ class GeneratedWorkout:
 
 @dataclass(frozen=True)
 class PlanningExplanation:
+    methodology_id: str
     inferred_from: str
     previous_day_type: str | None
     next_day_type: str
+    cycle_step_id: str
     sampled_share: float
     sampled_tss: float
     weekend_adjustment: str | None = None
     hard_subtype_reason: str | None = None
     modality_bias_reason: str | None = None
+    long_run_progression_reason: str | None = None
     reasons: tuple[str, ...] = ()
     candidate_rejections: tuple[str, ...] = ()
 
@@ -148,6 +218,7 @@ class PlanningExplanation:
 @dataclass(frozen=True)
 class PlanningDecision:
     target_day_utc: str
+    methodology_id: str
     selected_intent: DayIntent
     horizon: tuple[DayIntent, ...]
     selected_candidate: SessionCandidate | None

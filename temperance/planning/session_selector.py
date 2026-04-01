@@ -7,8 +7,10 @@ from temperance.planning.models import (
     DayType,
     HardSubtype,
     SessionCandidate,
+    StressProfile,
     UserPlanningState,
 )
+from temperance.planning.stress import classify_session_stress, is_long_run_candidate, is_threshold_like
 
 
 def _normalized_modality(value: str) -> str:
@@ -22,43 +24,35 @@ def _normalized_modality(value: str) -> str:
     return raw or "unknown"
 
 
-def _candidate_stress_class(bucket: str, avg_if: float, max_if: float, total_minutes: float) -> DayType:
-    normalized = str(bucket or "").strip().lower()
-    if normalized in {"recovery", "easy", "aerobic"}:
-        return DayType.EASY
-    if normalized == "steady":
-        return DayType.MODERATE
-    if normalized in {"tempo", "intervals", "fartlek", "long"}:
-        return DayType.HARD
-    if max_if >= 0.88 or avg_if >= 0.84:
-        return DayType.HARD
-    if avg_if >= 0.76 or total_minutes >= 60.0:
-        return DayType.MODERATE
-    return DayType.EASY
-
-
 def _candidate_hard_subtype(
-    bucket: str,
+    *,
     stress_class: DayType,
     modality: str,
     total_minutes: float,
+    avg_if: float,
+    max_if: float,
+    stress_profile: StressProfile,
 ) -> HardSubtype | None:
     if stress_class != DayType.HARD:
         return None
-    normalized_bucket = str(bucket or "").strip().lower()
-    if normalized_bucket == "long" and modality == "running":
-        return HardSubtype.H2
-    if modality == "running" and total_minutes >= 95.0:
+    if is_long_run_candidate(
+        modality=modality,
+        total_minutes=total_minutes,
+        avg_if=avg_if,
+        max_if=max_if,
+        stress_profile=stress_profile,
+    ):
         return HardSubtype.H2
     return HardSubtype.H1
 
 
-def _candidate_threshold_like(bucket: str, avg_if: float, max_if: float) -> bool:
-    normalized = str(bucket or "").strip().lower()
-    return normalized in {"tempo", "intervals", "fartlek"} or avg_if >= 0.83 or max_if >= 0.87
-
-
-def build_session_candidates(raw_candidates: Iterable[Mapping[str, object]]) -> list[SessionCandidate]:
+def build_session_candidates(
+    raw_candidates: Iterable[Mapping[str, object]],
+    *,
+    weekly_baseline_tss: float | None = None,
+    stress_profile: StressProfile | None = None,
+) -> list[SessionCandidate]:
+    profile = stress_profile or StressProfile()
     out: list[SessionCandidate] = []
     for raw in raw_candidates:
         bucket = str(raw.get("bucket") or "").strip().lower()
@@ -66,15 +60,38 @@ def build_session_candidates(raw_candidates: Iterable[Mapping[str, object]]) -> 
         avg_if = float(raw.get("avg_if") or 0.0)
         max_if = float(raw.get("max_if") or 0.0)
         modality = _normalized_modality(str(raw.get("modality") or ""))
-        stress_class = _candidate_stress_class(bucket=bucket, avg_if=avg_if, max_if=max_if, total_minutes=total_minutes)
-        hard_subtype = _candidate_hard_subtype(
+        stress_class, toughness_score, override_reason = classify_session_stress(
+            estimated_tss=float(raw.get("estimated_tss") or 0.0),
+            avg_if=avg_if,
+            max_if=max_if,
+            total_minutes=total_minutes,
+            modality=modality,
             bucket=bucket,
+            weekly_baseline_tss=weekly_baseline_tss,
+            stress_profile=profile,
+        )
+        hard_subtype = _candidate_hard_subtype(
             stress_class=stress_class,
             modality=modality,
             total_minutes=total_minutes,
+            avg_if=avg_if,
+            max_if=max_if,
+            stress_profile=profile,
         )
-        threshold_like = _candidate_threshold_like(bucket=bucket, avg_if=avg_if, max_if=max_if)
-        mechanical_load = bool(modality == "running" and (hard_subtype == HardSubtype.H2 or total_minutes >= 75.0))
+        threshold_like = is_threshold_like(
+            bucket=bucket,
+            avg_if=avg_if,
+            max_if=max_if,
+            stress_profile=profile,
+        )
+        is_long_run = is_long_run_candidate(
+            modality=modality,
+            total_minutes=total_minutes,
+            avg_if=avg_if,
+            max_if=max_if,
+            stress_profile=profile,
+        )
+        mechanical_load = bool(modality == "running" and (is_long_run or total_minutes >= 75.0))
         out.append(
             SessionCandidate(
                 activity_text=str(raw.get("activity_text") or "").strip(),
@@ -89,6 +106,10 @@ def build_session_candidates(raw_candidates: Iterable[Mapping[str, object]]) -> 
                 hard_subtype=hard_subtype,
                 threshold_like=threshold_like,
                 mechanical_load=mechanical_load,
+                toughness_score=toughness_score,
+                is_long_run=is_long_run,
+                long_run_duration_min=total_minutes if is_long_run else 0.0,
+                stress_override_reason=override_reason,
                 source=str(raw.get("source") or ""),
             )
         )
@@ -101,7 +122,9 @@ def select_session_candidate(
     intent: DayIntent,
     state: UserPlanningState,
     previous_activity_text: str | None = None,
+    stress_profile: StressProfile | None = None,
 ) -> tuple[SessionCandidate | None, tuple[str, ...]]:
+    profile = stress_profile or StressProfile()
     if intent.day_type == DayType.REST or intent.planned_rest:
         return None, ("planned_rest_day",)
 
@@ -114,18 +137,30 @@ def select_session_candidate(
         reasons: list[str] = []
         score = abs(float(candidate.estimated_tss) - float(intent.target_tss))
 
+        if candidate.stress_override_reason == "stress_class_too_low_for_if" and intent.day_type == DayType.EASY:
+            reasons.append("stress_class_too_low_for_if")
         if candidate.hard_subtype == HardSubtype.H2 and not intent.is_weekend:
             reasons.append("weekday_long_run_not_allowed")
         if intent.day_type == DayType.EASY and candidate.stress_class == DayType.HARD:
             reasons.append("easy_day_excludes_hard_candidate")
         if intent.day_type == DayType.MODERATE:
-            if candidate.threshold_like:
-                reasons.append("moderate_day_excludes_threshold_like")
+            if candidate.threshold_like or candidate.avg_if > profile.moderate_max_avg_if or candidate.max_if > profile.moderate_max_max_if:
+                reasons.append("moderate_day_excludes_intensity_drift")
             elif candidate.stress_class == DayType.HARD:
                 reasons.append("moderate_day_excludes_hard_candidate")
-        if intent.day_type == DayType.HARD and intent.hard_subtype == HardSubtype.H2 and candidate.hard_subtype != HardSubtype.H2:
-            score += 16.0
-        if intent.day_type == DayType.HARD and intent.hard_subtype == HardSubtype.H1 and candidate.hard_subtype == HardSubtype.H2:
+
+        if intent.day_type == DayType.HARD and intent.hard_subtype == HardSubtype.H2:
+            if candidate.hard_subtype != HardSubtype.H2:
+                reasons.append("metabolic_hard_day_excludes_non_long_run")
+            if candidate.total_minutes < intent.min_duration_min:
+                reasons.append("long_run_too_short")
+            if intent.max_duration_min > 0 and candidate.total_minutes > intent.max_duration_min:
+                reasons.append("long_run_too_long")
+            if candidate.avg_if > intent.max_avg_if or candidate.max_if > profile.long_run_max_max_if:
+                reasons.append("long_run_too_intense")
+            if intent.target_duration_min > 0:
+                score += abs(candidate.total_minutes - intent.target_duration_min) * 0.6
+        elif intent.day_type == DayType.HARD and intent.hard_subtype == HardSubtype.H1 and candidate.hard_subtype == HardSubtype.H2:
             reasons.append("metabolic_hard_day_excludes_long_run")
 
         if intent.modality_bias == "elliptical" and candidate.modality != "elliptical":
