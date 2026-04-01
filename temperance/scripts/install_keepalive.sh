@@ -8,14 +8,17 @@ LOG_DIR="${ROOT_DIR}/data/private/logs"
 BACKEND_LABEL="com.temperance.backend"
 FRONTEND_LABEL="com.temperance.frontend"
 CLOUD_LABEL="com.temperance.cloudflared"
+MCP_LABEL="com.temperance.mcp"
 
 BACKEND_PLIST="${LAUNCH_AGENTS_DIR}/${BACKEND_LABEL}.plist"
 FRONTEND_PLIST="${LAUNCH_AGENTS_DIR}/${FRONTEND_LABEL}.plist"
 CLOUD_PLIST="${LAUNCH_AGENTS_DIR}/${CLOUD_LABEL}.plist"
+MCP_PLIST="${LAUNCH_AGENTS_DIR}/${MCP_LABEL}.plist"
 
 BACKEND_SCRIPT="${ROOT_DIR}/scripts/service_backend.sh"
 FRONTEND_SCRIPT="${ROOT_DIR}/scripts/service_frontend.sh"
 CLOUD_SCRIPT="${ROOT_DIR}/scripts/service_cloudflared.sh"
+MCP_SCRIPT="${ROOT_DIR}/scripts/service_mcp.sh"
 CF_CONFIG_PATH="${ROOT_DIR}/data/private/cloudflared.keepalive.yml"
 
 BACKEND_PORT="${BACKEND_PORT:-${V2_BACKEND_PORT:-8000}}"
@@ -144,6 +147,44 @@ write_frontend_plist() {
 EOF
 }
 
+write_mcp_plist() {
+  cat > "${MCP_PLIST}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${MCP_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${MCP_SCRIPT}</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${ROOT_DIR}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BACKEND_PYTHON_BIN</key>
+    <string>${BACKEND_PYTHON_BIN}</string>
+    <key>TEMPERANCE_USE_CAFFEINATE</key>
+    <string>${TEMPERANCE_USE_CAFFEINATE}</string>
+    <key>CAFFEINATE_BIN</key>
+    <string>${CAFFEINATE_BIN}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${LOG_DIR}/mcp_launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_DIR}/mcp_launchd.err.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
+EOF
+}
+
 write_cloudflared_config() {
   cat > "${CF_CONFIG_PATH}" <<EOF
 tunnel: ${TUNNEL_NAME}
@@ -224,6 +265,8 @@ load_jobs() {
   launchctl bootstrap "gui/$(id -u)" "${BACKEND_PLIST}"
   launchctl bootout "gui/$(id -u)" "${FRONTEND_PLIST}" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "${FRONTEND_PLIST}"
+  launchctl bootout "gui/$(id -u)" "${MCP_PLIST}" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "${MCP_PLIST}"
   launchctl bootout "gui/$(id -u)" "${CLOUD_PLIST}" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "${CLOUD_PLIST}"
 }
@@ -243,6 +286,12 @@ restart_jobs() {
     launchctl bootstrap "${gui_domain}" "${FRONTEND_PLIST}"
   fi
 
+  if launchctl print "${gui_domain}/${MCP_LABEL}" >/dev/null 2>&1; then
+    launchctl kickstart -k "${gui_domain}/${MCP_LABEL}"
+  else
+    launchctl bootstrap "${gui_domain}" "${MCP_PLIST}"
+  fi
+
   if launchctl print "${gui_domain}/${CLOUD_LABEL}" >/dev/null 2>&1; then
     launchctl kickstart -k "${gui_domain}/${CLOUD_LABEL}"
   else
@@ -252,12 +301,14 @@ restart_jobs() {
 
 unload_jobs() {
   launchctl bootout "gui/$(id -u)" "${CLOUD_PLIST}" >/dev/null 2>&1 || true
+  launchctl bootout "gui/$(id -u)" "${MCP_PLIST}" >/dev/null 2>&1 || true
   launchctl bootout "gui/$(id -u)" "${FRONTEND_PLIST}" >/dev/null 2>&1 || true
   launchctl bootout "gui/$(id -u)" "${BACKEND_PLIST}" >/dev/null 2>&1 || true
   launchctl bootout "gui/$(id -u)/com.temperance.v2frontend" >/dev/null 2>&1 || true
   launchctl bootout "gui/$(id -u)/com.temperance.v2backend" >/dev/null 2>&1 || true
   launchctl bootout "gui/$(id -u)/com.temperance.streamlit" >/dev/null 2>&1 || true
   rm -f \
+    "${MCP_PLIST}" \
     "${LAUNCH_AGENTS_DIR}/com.temperance.v2frontend.plist" \
     "${LAUNCH_AGENTS_DIR}/com.temperance.v2backend.plist" \
     "${LAUNCH_AGENTS_DIR}/com.temperance.streamlit.plist"
@@ -267,24 +318,29 @@ status_jobs() {
   echo "Expected public URL: https://${TUNNEL_HOSTNAME}"
   echo "Local backend:       http://127.0.0.1:${BACKEND_PORT}"
   echo "Local frontend:      http://127.0.0.1:${FRONTEND_PORT}"
+  echo "Local MCP:           stdio via ${MCP_SCRIPT}"
   echo "Public app URL:      https://${TUNNEL_HOSTNAME}"
   echo "Tunnel config:       ${CF_CONFIG_PATH}"
   echo "Caffeinate:          ${TEMPERANCE_USE_CAFFEINATE} (${CAFFEINATE_BIN})"
   echo
   launchctl print "gui/$(id -u)/${BACKEND_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${BACKEND_LABEL}: not loaded"
   launchctl print "gui/$(id -u)/${FRONTEND_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${FRONTEND_LABEL}: not loaded"
+  launchctl print "gui/$(id -u)/${MCP_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${MCP_LABEL}: not loaded"
   launchctl print "gui/$(id -u)/${CLOUD_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${CLOUD_LABEL}: not loaded"
 }
 
 logs_jobs() {
   touch "${LOG_DIR}/backend_launchd.out.log" "${LOG_DIR}/backend_launchd.err.log"
   touch "${LOG_DIR}/frontend_launchd.out.log" "${LOG_DIR}/frontend_launchd.err.log"
+  touch "${LOG_DIR}/mcp_launchd.out.log" "${LOG_DIR}/mcp_launchd.err.log"
   touch "${LOG_DIR}/cloudflared_launchd.out.log" "${LOG_DIR}/cloudflared_launchd.err.log"
   tail -f \
     "${LOG_DIR}/backend_launchd.out.log" \
     "${LOG_DIR}/backend_launchd.err.log" \
     "${LOG_DIR}/frontend_launchd.out.log" \
     "${LOG_DIR}/frontend_launchd.err.log" \
+    "${LOG_DIR}/mcp_launchd.out.log" \
+    "${LOG_DIR}/mcp_launchd.err.log" \
     "${LOG_DIR}/cloudflared_launchd.out.log" \
     "${LOG_DIR}/cloudflared_launchd.err.log"
 }
@@ -292,10 +348,11 @@ logs_jobs() {
 cmd="${1:-}"
 case "${cmd}" in
   install)
-    chmod +x "${BACKEND_SCRIPT}" "${FRONTEND_SCRIPT}" "${CLOUD_SCRIPT}"
+    chmod +x "${BACKEND_SCRIPT}" "${FRONTEND_SCRIPT}" "${MCP_SCRIPT}" "${CLOUD_SCRIPT}"
     write_cloudflared_config
     write_backend_plist
     write_frontend_plist
+    write_mcp_plist
     write_cloud_plist
     unload_jobs
     load_jobs
@@ -304,13 +361,14 @@ case "${cmd}" in
     ;;
   uninstall)
     unload_jobs
-    rm -f "${BACKEND_PLIST}" "${FRONTEND_PLIST}" "${CLOUD_PLIST}"
+    rm -f "${BACKEND_PLIST}" "${FRONTEND_PLIST}" "${MCP_PLIST}" "${CLOUD_PLIST}"
     echo "Uninstalled KeepAlive services."
     ;;
   start)
     write_cloudflared_config
     write_backend_plist
     write_frontend_plist
+    write_mcp_plist
     write_cloud_plist
     load_jobs
     status_jobs
@@ -323,6 +381,7 @@ case "${cmd}" in
     write_cloudflared_config
     write_backend_plist
     write_frontend_plist
+    write_mcp_plist
     write_cloud_plist
     restart_jobs
     status_jobs
