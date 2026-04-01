@@ -192,6 +192,26 @@ Temperance now supports multiple ways to use the Data Extract page. The mode tha
 
 After backend or frontend path changes, reinstall or restart the keepalive services so launch agents stop pointing at stale workspace paths.
 
+## MCP server
+
+Temperance now includes a local stdio MCP server at `backend/app/mcp_server.py`.
+
+Current MCP surface:
+
+- Read tools for current state, weekly outlook, recent activities, recovery/load trend, planned activities, generated activity candidates, and data freshness
+- Planning tools for day/week drafting, week-gap analysis, workout-text validation, and explicit plan preview/apply flows
+- Static MCP resources for `temperance_lingo` and `planning_rules`
+- MCP prompts for daily check-in, weekly planning, recovery-based adjustment, session explanation, and weekly review
+
+Run it from the repo root:
+
+```bash
+cd /Users/matheus/Temperance
+python3 -m backend.app.mcp_server --stdio
+```
+
+The server is intentionally thin. It reuses the existing Temperance backend and planner helpers instead of maintaining a second analytics or planning layer.
+
 ## Tests
 
 Python tests:
