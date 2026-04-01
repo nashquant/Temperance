@@ -162,6 +162,10 @@ Hard days can be understood as two categories:
 
 This distinction matters because a session can be metabolically hard without carrying the same mechanical cost as a long run.
 
+Use these as the **high-level stress classes**.
+Within them, the planning system should still label the session subtype as **threshold hard**, **long-run hard**, **specific hard**, or **VO2 hard**.
+Those subtypes sit inside the H1 / H2 stress classification; they do not replace it.
+
 ### 3) Hard x-train in the cycle
 
 Do **not** automatically panic if one of the in-between days contains a hard x-train session.
@@ -666,9 +670,11 @@ A good week should generally look like this:
 - it meets or approaches the intended **weekly total_TSS** and **weekly rTSS** anchors
 - the running share is appropriate for the phase and durability state
 - the hard sessions are intentionally chosen by type, not randomly accumulated
+- the hard sessions are spaced coherently rather than mechanically stacked
 - the long run is placed and scaled coherently
 - the easy and moderate support work helps the structure rather than distorting it
 - there is enough stimulus diversity to move fitness forward
+- the week preserves a structure that still makes the next week buildable
 - the week ends in a state that still allows the next week to function
 
 This is important:
@@ -706,6 +712,20 @@ Trigger examples:
 - hard alerts = constrain, redirect, or reduce
 
 This keeps the system useful without making it hysterical.
+
+### Default Response Logic
+
+These are default responses, not rigid prescriptions.
+
+After a **soft alert**, the system should usually hold progression rather than force more load:
+- hold **run_ratio** progression
+- freeze long-run progression for the next exposure if that was part of the drift
+- reduce the next 7-day **rTSS** target modestly or replace the next hard run with x-train when that better protects structure
+
+After a **hard alert**, the system should usually enforce a clearer correction:
+- replace the next hard run with x-train or recovery-oriented support
+- freeze both **run_ratio** and long-run progression until the pattern clears
+- require one clean 3-day cycle before re-progressing
 
 ## Macro Phase Map to July 12
 
