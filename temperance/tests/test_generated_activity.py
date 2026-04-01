@@ -3,110 +3,114 @@ import pytest
 from backend.app import main as backend_main
 
 
-def test_generated_activity_preferred_buckets_respect_context() -> None:
-    assert backend_main._generated_activity_preferred_buckets("2026-03-30") == ["easy", "recovery", "aerobic"]
-    assert backend_main._generated_activity_preferred_buckets(
-        "2026-03-30",
-        {"recovery_alert": True},
-    ) == ["recovery", "easy", "aerobic"]
-    assert backend_main._generated_activity_preferred_buckets(
-        "2026-03-31",
-        {"progression_green": True, "week_behind": True},
-    ) == ["intervals", "fartlek", "tempo", "steady"]
-    assert backend_main._generated_activity_preferred_buckets(
-        "2026-04-05",
-        {"easy_bias": True, "progression_green": True, "week_behind": True},
-    ) == ["long", "tempo", "steady", "easy"]
-
-
-def test_generated_activity_day_goal_tss_keeps_easy_days_near_base_goal() -> None:
-    threshold_pace = 300.0
-    base_daily_goal = (backend_main._weekly_tss_target_from_lt_pace(threshold_pace) * 1.10) / 7.0
-
-    monday_target = backend_main._generated_activity_day_goal_tss("2026-03-30", threshold_pace)
-
-    assert monday_target == pytest.approx(base_daily_goal * 0.92)
-    assert monday_target >= base_daily_goal * 0.90
-
-
-def test_generated_activity_day_goal_tss_downshifts_for_recovery_and_raises_when_behind() -> None:
-    threshold_pace = 300.0
-    base_daily_goal = (backend_main._weekly_tss_target_from_lt_pace(threshold_pace) * 1.10) / 7.0
-
-    recovery_target = backend_main._generated_activity_day_goal_tss(
-        "2026-04-02",
-        threshold_pace,
-        {
-            "base_daily_goal_tss": base_daily_goal,
-            "week_balanced_daily_tss": 0.0,
-            "recovery_alert": True,
-        },
+def test_generated_activity_endpoint_returns_deterministic_planning_for_fixed_seed(monkeypatch) -> None:
+    monkeypatch.setattr(backend_main, "_auth_context", lambda _authorization: {"user": "default", "role": "admin"})
+    monkeypatch.setattr(backend_main, "_resolve_owner", lambda ctx, owner: "default")
+    monkeypatch.setattr(backend_main, "_db_path_for_owner", lambda owner: backend_main.Path("ignored.db"))
+    monkeypatch.setattr(backend_main, "_load_curve_points", lambda **kwargs: [])
+    monkeypatch.setattr(backend_main, "_curve_value_at", lambda curve, default, when: 300.0)
+    monkeypatch.setattr(
+        backend_main,
+        "_generated_activity_candidates",
+        lambda **kwargs: [
+            {
+                "activity_text": "60' run @ 4:40/km",
+                "bucket": "easy",
+                "estimated_tss": 56.0,
+                "avg_if": 0.68,
+                "max_if": 0.70,
+                "total_minutes": 60.0,
+                "modality": "running",
+                "source": "planned",
+            },
+            {
+                "activity_text": "75' elliptical @ 72%",
+                "bucket": "steady",
+                "estimated_tss": 77.0,
+                "avg_if": 0.72,
+                "max_if": 0.75,
+                "total_minutes": 75.0,
+                "modality": "elliptical",
+                "source": "planned",
+            },
+        ],
     )
-    assert recovery_target == pytest.approx(base_daily_goal * 0.80)
-
-    progression_target = backend_main._generated_activity_day_goal_tss(
-        "2026-03-30",
-        threshold_pace,
-        {
-            "base_daily_goal_tss": base_daily_goal,
-            "week_balanced_daily_tss": base_daily_goal * 1.08,
-            "progression_green": True,
-            "week_behind": True,
-        },
-    )
-    assert progression_target > base_daily_goal
-
-
-def test_generated_activity_selection_penalty_downweights_hard_options_on_recovery_alert() -> None:
-    context = {
-        "recovery_alert": True,
-        "easy_bias": True,
-        "adjacent_hard_days": True,
-        "activity_type": "running",
-        "week_gap_rtss": -5.0,
-        "base_daily_goal_tss": 50.0,
-    }
-    hard_item = {"bucket": "intervals", "priority": 2, "estimated_tss": 60.0}
-    easy_item = {"bucket": "easy", "priority": 0, "estimated_tss": 45.0}
-
-    assert backend_main._generated_activity_selection_penalty(hard_item, context) > backend_main._generated_activity_selection_penalty(easy_item, context)
-
-
-def test_generated_activity_preference_penalty_allows_more_substantial_easy_day_match() -> None:
-    context = {"easy_bias": True}
-    preferred_buckets = ["easy", "aerobic", "steady", "recovery"]
-    easy_item = {"bucket": "easy", "priority": 0, "estimated_tss": 32.0}
-    aerobic_item = {"bucket": "aerobic", "priority": 1, "estimated_tss": 47.0}
-    target_tss = 48.0
-
-    easy_score = abs(float(easy_item["estimated_tss"]) - target_tss) + backend_main._generated_activity_preference_penalty(
-        easy_item,
-        preferred_buckets,
-        context,
-    )
-    aerobic_score = abs(float(aerobic_item["estimated_tss"]) - target_tss) + backend_main._generated_activity_preference_penalty(
-        aerobic_item,
-        preferred_buckets,
-        context,
+    monkeypatch.setattr(
+        backend_main,
+        "_generated_activity_planning_state",
+        lambda **kwargs: backend_main.build_user_planning_state(
+            target_day_utc="2026-03-30",
+            weekly_baseline_tss=554.0,
+            recent_activity_rows=[],
+            planned_activity_rows=[],
+        ),
     )
 
-    assert aerobic_score < easy_score
+    payload = backend_main.GeneratedActivityRequest(
+        day_utc="2026-03-30",
+        mode="planned",
+        activity_type="running",
+        seed=19,
+        methodology_id="rolling_3_day_v1",
+    )
+    response_a = backend_main.generated_activity(payload, owner=None, authorization=None)
+    response_b = backend_main.generated_activity(payload, owner=None, authorization=None)
 
-
-def test_generated_activity_shortlist_drops_far_worse_candidates() -> None:
-    suggestions = [
-        {"activity_text": "Run 2h37min @3:43/km", "bucket": "long", "priority": 3, "estimated_tss": 232.0},
-        {"activity_text": "Run 1h5min @5:00/km", "bucket": "aerobic", "priority": 0, "estimated_tss": 53.1},
-        {"activity_text": "Run 40min @4:40/km", "bucket": "easy", "priority": 0, "estimated_tss": 37.5},
-    ]
-    shortlist = backend_main._generated_activity_shortlist(
-        suggestions=suggestions,
-        target_tss=400.0,
-        preferred_buckets=["long", "tempo", "steady", "easy"],
-        context={"progression_green": True, "week_behind": True},
+    assert response_a["activity_text"] == response_b["activity_text"]
+    assert response_a["planning"]["methodology_id"] == "rolling_3_day_v1"
+    assert response_a["planning"]["selected_intent"]["day_type"] == "easy"
+    assert response_a["planning"]["selected_intent"]["target_tss"] == pytest.approx(
+        response_b["planning"]["selected_intent"]["target_tss"]
     )
 
-    assert [item["activity_text"] for _, item in shortlist] == ["Run 2h37min @3:43/km"]
+
+def test_generated_activity_endpoint_uses_policy_for_friday_rest_exception(monkeypatch) -> None:
+    monkeypatch.setattr(backend_main, "_auth_context", lambda _authorization: {"user": "default", "role": "admin"})
+    monkeypatch.setattr(backend_main, "_resolve_owner", lambda ctx, owner: "default")
+    monkeypatch.setattr(backend_main, "_db_path_for_owner", lambda owner: backend_main.Path("ignored.db"))
+    monkeypatch.setattr(backend_main, "_load_curve_points", lambda **kwargs: [])
+    monkeypatch.setattr(backend_main, "_curve_value_at", lambda curve, default, when: 300.0)
+    monkeypatch.setattr(
+        backend_main,
+        "_generated_activity_candidates",
+        lambda **kwargs: [
+            {
+                "activity_text": "120' run @ 4:55/km",
+                "bucket": "long",
+                "estimated_tss": 101.0,
+                "avg_if": 0.80,
+                "max_if": 0.82,
+                "total_minutes": 120.0,
+                "modality": "running",
+                "source": "planned",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "_generated_activity_planning_state",
+        lambda **kwargs: backend_main.build_user_planning_state(
+            target_day_utc="2026-04-03",
+            weekly_baseline_tss=554.0,
+            recent_activity_rows=[
+                {"day_utc": "2026-04-02", "tss": 78.0, "duration_s": 4200.0, "modality": "elliptical", "avg_if": 0.72, "max_if": 0.75},
+            ],
+            planned_activity_rows=[],
+        ),
+    )
+
+    payload = backend_main.GeneratedActivityRequest(
+        day_utc="2026-04-03",
+        mode="planned",
+        activity_type="running",
+        seed=11,
+        methodology_id="rolling_3_day_v1",
+    )
+    response = backend_main.generated_activity(payload, owner=None, authorization=None)
+
+    assert response["activity_text"] == "Rest"
+    assert response["planning"]["explanation"]["weekend_adjustment"] == "friday_rest_to_preserve_weekend_long_run"
+    assert response["planning"]["selected_intent"]["day_type"] == "rest"
 
 
 def test_compute_planned_rows_metrics_reparses_valid_workout_text_when_parsed_json_is_missing() -> None:

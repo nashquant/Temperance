@@ -49,6 +49,13 @@ from backend.app.planning_parsing import (
     strip_meridiem_tokens as _shared_strip_meridiem_tokens,
 )
 from temperance.analytics import build_daily_summary, compute_metrics, display_table, ema_multi, weekly_summary
+from temperance.planning import (
+    build_session_candidates,
+    build_user_planning_state,
+    get_methodology,
+    plan_day,
+    preview_horizon,
+)
 from temperance.auth import build_users, password_matches, resolve_user
 from temperance.config import load_config
 from temperance.db import (
@@ -195,11 +202,21 @@ class CustomActivityUpdateRequest(BaseModel):
     activity_text: str
 
 
+class GeneratedActivityScheduleConstraintRequest(BaseModel):
+    day_utc: str
+    allow_long_run: bool | None = None
+    preferred_modality: str | None = None
+    blocked: bool = False
+
+
 class GeneratedActivityRequest(BaseModel):
     day_utc: str
     mode: str = "planned"
     activity_type: str | None = None
     previous_activity_text: str | None = None
+    seed: int | None = None
+    methodology_id: str | None = None
+    schedule_constraints: list[GeneratedActivityScheduleConstraintRequest] | None = None
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -3061,6 +3078,43 @@ def _activity_type_matches_filter(segments: list[dict[str, Any]], activity_type:
     return any(kind in accepted for kind in seen_kinds)
 
 
+def _normalized_generated_activity_modality(value: str | None) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"run", "running", "treadmill"}:
+        return "running"
+    if raw in {"elliptical", "xtrain", "x-train", "cross-train"}:
+        return "elliptical"
+    if raw in {"bike", "cycling"}:
+        return "bike"
+    return raw or "unknown"
+
+
+def _generated_activity_primary_modality(
+    segments: list[dict[str, Any]],
+    source_text: str = "",
+) -> str:
+    duration_by_kind: dict[str, float] = {}
+    for seg in segments:
+        duration_min = _safe_float(seg.get("duration_min"))
+        if duration_min <= 0:
+            continue
+        kind = str(seg.get("kind") or "").strip().lower()
+        if not kind:
+            continue
+        duration_by_kind[kind] = duration_by_kind.get(kind, 0.0) + duration_min
+    if duration_by_kind:
+        dominant_kind = max(duration_by_kind.items(), key=lambda item: item[1])[0]
+        return _normalized_generated_activity_modality(dominant_kind)
+    text = str(source_text or "").strip().lower()
+    if "ellipt" in text or "xtrain" in text or "x-train" in text or "cross-train" in text:
+        return "elliptical"
+    if "cycl" in text or "bike" in text:
+        return "bike"
+    if "run" in text or "treadmill" in text:
+        return "running"
+    return "unknown"
+
+
 def _generated_activity_text_from_segments(
     segments: list[dict[str, Any]],
     lthr_bpm: float,
@@ -3762,6 +3816,11 @@ def _generated_activity_candidates(
                         threshold_pace_sec_per_km=pace_for_day,
                     ),
                     "estimated_tss": float(stats.get("estimated_tss") or 0.0),
+                    "total_minutes": float(stats.get("total_minutes") or 0.0),
+                    "avg_if": float(stats.get("avg_if") or 0.0),
+                    "max_if": float(stats.get("max_if") or 0.0),
+                    "modality": _generated_activity_primary_modality(segments=segments, source_text=source_text),
+                    "source": mode_normalized,
                 }
             )
     return out
@@ -3774,6 +3833,8 @@ def _generated_activity_fallbacks(activity_type: str | None, mode: str) -> list[
             "run 40min @4:50/km",
             "run 50min @5:00/km",
             "run 70min @4:55/km",
+            "run 100min @4:55/km",
+            "run 120min @5:00/km",
             "run 20min @4:50/km + 6x3min @3:55/km",
             "run 15min @4:55/km + 4x8min @4:10/km",
         ],
@@ -3796,6 +3857,440 @@ def _generated_activity_fallbacks(activity_type: str | None, mode: str) -> list[
     if str(mode or "").strip().lower() == "custom":
         return suggestions
     return suggestions
+
+
+def _fallback_activity_total_minutes(text: str) -> float:
+    normalized = str(text or "").strip().lower()
+    hours_match = re.search(r"(\d+)h(?:(\d+)min)?", normalized)
+    if hours_match:
+        hours = int(hours_match.group(1))
+        minutes = int(hours_match.group(2) or 0)
+        return float(hours * 60 + minutes)
+    minutes_match = re.search(r"(\d+)min", normalized)
+    if minutes_match:
+        return float(int(minutes_match.group(1)))
+    return 0.0
+
+
+def _planning_modality_from_row(workout_text: str, parsed_json: Any = None, sport_type: str | None = None) -> str:
+    sport = _normalized_generated_activity_modality(sport_type)
+    if sport != "unknown":
+        return sport
+    segments: list[dict[str, Any]] = []
+    if isinstance(parsed_json, list):
+        segments = [item for item in parsed_json if isinstance(item, dict)]
+    elif isinstance(parsed_json, str) and parsed_json.strip():
+        try:
+            parsed = json.loads(parsed_json)
+            if isinstance(parsed, list):
+                segments = [item for item in parsed if isinstance(item, dict)]
+        except Exception:
+            segments = []
+    modality = _generated_activity_primary_modality(segments=segments, source_text=workout_text)
+    return modality
+
+
+def _aggregate_actual_days_for_planning(
+    metrics_df: pd.DataFrame,
+    *,
+    selected_day: pd.Timestamp,
+) -> list[dict[str, Any]]:
+    if metrics_df.empty:
+        return []
+    working = metrics_df.copy()
+    working["day"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+    working = working.dropna(subset=["day"]).copy()
+    working = working[working["day"] < selected_day].copy()
+    if working.empty:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for day, group in working.groupby("day", sort=True):
+        duration_total = float(pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0).sum())
+        if duration_total <= 0:
+            duration_total = 1.0
+        sport_lower = group.get("sport_type", pd.Series(index=group.index, dtype=object)).fillna("").astype(str).str.lower()
+        running_mask = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
+        elliptical_mask = sport_lower.str.contains("ellipt")
+        bike_mask = sport_lower.str.contains("bike") | sport_lower.str.contains("cycl")
+        running_duration = float(pd.to_numeric(group.loc[running_mask, "duration_s"], errors="coerce").fillna(0.0).sum())
+        elliptical_duration = float(pd.to_numeric(group.loc[elliptical_mask, "duration_s"], errors="coerce").fillna(0.0).sum())
+        bike_duration = float(pd.to_numeric(group.loc[bike_mask, "duration_s"], errors="coerce").fillna(0.0).sum())
+        modality_duration = {
+            "running": running_duration,
+            "elliptical": elliptical_duration,
+            "bike": bike_duration,
+        }
+        modality = max(modality_duration.items(), key=lambda item: item[1])[0]
+        if_values = pd.to_numeric(group.get("if_proxy"), errors="coerce").fillna(0.0)
+        durations = pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0)
+        if_weighted_seconds = float((if_values * durations).sum())
+        avg_if = (if_weighted_seconds / float(durations.sum())) if float(durations.sum()) > 0 else 0.0
+        max_if = float(if_values.max()) if not if_values.empty else 0.0
+        out.append(
+            {
+                "day_utc": pd.Timestamp(day).date().isoformat(),
+                "tss": float(pd.to_numeric(group.get("tss"), errors="coerce").fillna(0.0).sum()),
+                "duration_s": float(pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0).sum()),
+                "modality": modality,
+                "avg_if": float(avg_if),
+                "max_if": float(max_if),
+                "running_share": running_duration / duration_total,
+                "elliptical_share": elliptical_duration / duration_total,
+                "source": "actual",
+            }
+        )
+    return out
+
+
+def _aggregate_planned_days_for_planning(
+    *,
+    db_path: Path,
+    start_day: pd.Timestamp,
+    end_day: pd.Timestamp,
+) -> list[dict[str, Any]]:
+    planned_rows = get_planned_activities_df(
+        db_path=db_path,
+        start_day_utc=start_day.date().isoformat(),
+        end_day_utc=end_day.date().isoformat(),
+    )
+    if planned_rows.empty:
+        return []
+
+    lthr_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=DEFAULT_LTHR,
+    )
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    planned_metrics = _compute_planned_rows_metrics_df(
+        planned_rows=planned_rows,
+        lthr_curve_points=lthr_curve,
+        lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+        lt_pace_curve_points=pace_curve,
+        lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        specificity_profile=specificity_profile,
+    )
+    if planned_metrics.empty:
+        return []
+    planned_metrics["day"] = pd.to_datetime(planned_metrics.get("day_utc"), errors="coerce").dt.normalize()
+    planned_metrics = planned_metrics.dropna(subset=["day"]).copy()
+    planned_metrics = _filter_effective_planned_rows(planned_df=planned_metrics, today_local_day=_now_app_local().normalize())
+    if planned_metrics.empty:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for day, group in planned_metrics.groupby("day", sort=True):
+        duration_total = float(pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0).sum())
+        if duration_total <= 0:
+            duration_total = 1.0
+        modality_durations = {"running": 0.0, "elliptical": 0.0, "bike": 0.0}
+        workout_text_parts: list[str] = []
+        if_values = pd.to_numeric(group.get("if_proxy"), errors="coerce").fillna(0.0)
+        durations = pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0)
+        for _, row in group.iterrows():
+            modality = _planning_modality_from_row(
+                workout_text=str(row.get("workout_text") or ""),
+                parsed_json=row.get("parsed_json"),
+            )
+            row_duration = float(_safe_float(row.get("duration_s")))
+            modality_durations[modality if modality in modality_durations else "running"] += row_duration
+            workout_text = str(row.get("workout_text") or "").strip()
+            if workout_text:
+                workout_text_parts.append(workout_text)
+        modality = max(modality_durations.items(), key=lambda item: item[1])[0]
+        out.append(
+            {
+                "day_utc": pd.Timestamp(day).date().isoformat(),
+                "tss": float(pd.to_numeric(group.get("tss"), errors="coerce").fillna(0.0).sum()),
+                "duration_s": float(pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0).sum()),
+                "modality": modality,
+                "avg_if": (
+                    float((if_values * durations).sum() / float(durations.sum()))
+                    if float(durations.sum()) > 0
+                    else 0.0
+                ),
+                "max_if": float(if_values.max()) if not if_values.empty else 0.0,
+                "running_share": modality_durations["running"] / duration_total,
+                "elliptical_share": modality_durations["elliptical"] / duration_total,
+                "workout_text": "; ".join(workout_text_parts),
+                "source": "planned",
+            }
+        )
+    return out
+
+
+def _load_injury_windows_for_planning(db_path: Path) -> list[dict[str, str]]:
+    raw = get_setting(db_path, SETTINGS_KEY_INJURY_WINDOWS)
+    if not raw:
+        return []
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(payload, list):
+        return []
+    return _normalize_injury_windows(payload)
+
+
+def _generated_activity_planning_state(
+    *,
+    db_path: Path,
+    day_utc: str,
+    threshold_pace_sec_per_km: float,
+    methodology_id: str | None = None,
+    schedule_constraints: list[dict[str, Any]] | None = None,
+):
+    selected_day = pd.to_datetime(day_utc, errors="coerce")
+    if pd.isna(selected_day):
+        return None
+    selected_day = pd.Timestamp(selected_day).normalize()
+    recent_start = selected_day - pd.Timedelta(days=84)
+    horizon_end = selected_day + pd.Timedelta(days=14)
+    weekly_baseline_tss = _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10 if threshold_pace_sec_per_km > 0 else 350.0
+    anchor_daily_tss = max(float(weekly_baseline_tss) * 0.14, 15.0)
+
+    metrics_df = _metrics_for_filters(
+        db_path=db_path,
+        days=120,
+        start_day=recent_start.date().isoformat(),
+        end_day=selected_day.date().isoformat(),
+        sport=None,
+        include_invalid=False,
+    )
+    recent_activity_rows = _aggregate_actual_days_for_planning(metrics_df=metrics_df, selected_day=selected_day)
+    model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
+    if not metrics_df.empty:
+        _, _, model_lookup = _day_lookup_with_daily_model(
+            metrics_df=metrics_df,
+            daily_tss_target=anchor_daily_tss,
+            db_path=db_path,
+        )
+    latest_model_day = max((day for day in model_lookup.keys() if day <= selected_day), default=None)
+    latest_model = model_lookup.get(latest_model_day, {}) if latest_model_day is not None else {}
+
+    latest_wellness: dict[str, float] = {}
+    wellness_df = get_wellness_df(db_path=db_path)
+    if not wellness_df.empty:
+        wellness_df = wellness_df.copy()
+        wellness_df["day"] = pd.to_datetime(wellness_df.get("day_utc"), errors="coerce").dt.normalize()
+        wellness_df = wellness_df.dropna(subset=["day"])
+        wellness_df = wellness_df[wellness_df["day"] <= selected_day].sort_values("day")
+        if not wellness_df.empty:
+            row = wellness_df.iloc[-1]
+            latest_wellness = {
+                "sleep_score": _safe_float(row.get("sleep_score")),
+                "training_readiness": _safe_float(row.get("training_readiness")),
+                "stress_avg": _safe_float(row.get("stress_avg")),
+            }
+
+    def _sum_actual(days_back: int, key: str) -> float:
+        start = selected_day - pd.Timedelta(days=days_back)
+        working = metrics_df.copy()
+        if working.empty:
+            return 0.0
+        working["day"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+        working = working.dropna(subset=["day"])
+        working = working[(working["day"] >= start) & (working["day"] < selected_day)]
+        return float(pd.to_numeric(working.get(key), errors="coerce").fillna(0.0).sum())
+
+    fatigue_payload = {
+        "fitness": _safe_float(latest_model.get("fitness")),
+        "fatigue": _safe_float(latest_model.get("fatigue")),
+        "overreach": _safe_float(latest_model.get("overreach")),
+        "injury_risk": _safe_float(latest_model.get("injury_risk")),
+        "training_readiness": _safe_float(latest_wellness.get("training_readiness")),
+        "sleep_score": _safe_float(latest_wellness.get("sleep_score")),
+        "stress_avg": _safe_float(latest_wellness.get("stress_avg")),
+        "recovery_alert": bool(
+            (_safe_float(latest_wellness.get("training_readiness")) > 0 and _safe_float(latest_wellness.get("training_readiness")) <= 35.0)
+            or (_safe_float(latest_wellness.get("sleep_score")) > 0 and _safe_float(latest_wellness.get("sleep_score")) <= 62.0)
+            or (_safe_float(latest_wellness.get("stress_avg")) >= 65.0)
+            or (_safe_float(latest_model.get("overreach")) >= anchor_daily_tss * 0.70)
+            or (_safe_float(latest_model.get("injury_risk")) >= anchor_daily_tss * 0.70)
+        ),
+    }
+    recent_load_7d = _sum_actual(7, "tss")
+    recent_load_28d = _sum_actual(28, "tss")
+    recent_load_ratio = ((recent_load_7d / 7.0) / (recent_load_28d / 28.0)) if recent_load_28d > 0 else 1.0
+    methodology = get_methodology(methodology_id)
+
+    planning_state = build_user_planning_state(
+        target_day_utc=selected_day.date().isoformat(),
+        weekly_baseline_tss=float(weekly_baseline_tss),
+        recent_activity_rows=recent_activity_rows,
+        planned_activity_rows=_aggregate_planned_days_for_planning(
+            db_path=db_path,
+            start_day=selected_day,
+            end_day=horizon_end,
+        ),
+        fatigue_payload=fatigue_payload,
+        injury_windows=_load_injury_windows_for_planning(db_path),
+        schedule_constraints=schedule_constraints or [],
+        recent_load_ratio=recent_load_ratio,
+        recent_load_7d=recent_load_7d,
+        recent_load_28d=recent_load_28d,
+        stress_profile=methodology.stress_profile,
+    )
+    return planning_state
+
+
+def _planning_decision_payload(decision: Any) -> dict[str, Any]:
+    return {
+        "target_day_utc": str(decision.target_day_utc),
+        "methodology_id": str(decision.methodology_id),
+        "selected_intent": {
+            "day_utc": str(decision.selected_intent.day_utc),
+            "cycle_step_id": str(decision.selected_intent.cycle_step_id),
+            "cycle_step_index": int(decision.selected_intent.cycle_step_index),
+            "day_type": str(decision.selected_intent.day_type.value),
+            "hard_subtype": (
+                str(decision.selected_intent.hard_subtype.value)
+                if decision.selected_intent.hard_subtype is not None
+                else None
+            ),
+            "target_tss": float(decision.selected_intent.target_tss),
+            "sampled_tss_share": float(decision.selected_intent.sampled_tss_share),
+            "target_duration_min": float(decision.selected_intent.target_duration_min),
+            "is_weekend": bool(decision.selected_intent.is_weekend),
+            "planned_rest": bool(decision.selected_intent.planned_rest),
+            "modality_bias": decision.selected_intent.modality_bias,
+        },
+        "horizon": [
+            {
+                "day_utc": str(intent.day_utc),
+                "cycle_step_id": str(intent.cycle_step_id),
+                "cycle_step_index": int(intent.cycle_step_index),
+                "day_type": str(intent.day_type.value),
+                "hard_subtype": str(intent.hard_subtype.value) if intent.hard_subtype is not None else None,
+                "target_tss": float(intent.target_tss),
+                "sampled_tss_share": float(intent.sampled_tss_share),
+                "target_duration_min": float(intent.target_duration_min),
+                "is_weekend": bool(intent.is_weekend),
+                "planned_rest": bool(intent.planned_rest),
+                "modality_bias": intent.modality_bias,
+            }
+            for intent in decision.horizon
+        ],
+        "selected_candidate": (
+            {
+                "activity_text": str(decision.selected_candidate.activity_text),
+                "modality": str(decision.selected_candidate.modality),
+                "estimated_tss": float(decision.selected_candidate.estimated_tss),
+                "avg_if": float(decision.selected_candidate.avg_if),
+                "max_if": float(decision.selected_candidate.max_if),
+                "toughness_score": float(decision.selected_candidate.toughness_score),
+                "is_long_run": bool(decision.selected_candidate.is_long_run),
+                "long_run_duration_min": float(decision.selected_candidate.long_run_duration_min),
+                "source": str(decision.selected_candidate.source),
+            }
+            if decision.selected_candidate is not None
+            else None
+        ),
+        "explanation": {
+            "methodology_id": decision.explanation.methodology_id,
+            "inferred_from": decision.explanation.inferred_from,
+            "previous_day_type": decision.explanation.previous_day_type,
+            "next_day_type": decision.explanation.next_day_type,
+            "cycle_step_id": decision.explanation.cycle_step_id,
+            "sampled_share": float(decision.explanation.sampled_share),
+            "sampled_tss": float(decision.explanation.sampled_tss),
+            "weekend_adjustment": decision.explanation.weekend_adjustment,
+            "hard_subtype_reason": decision.explanation.hard_subtype_reason,
+            "modality_bias_reason": decision.explanation.modality_bias_reason,
+            "long_run_progression_reason": decision.explanation.long_run_progression_reason,
+            "reasons": list(decision.explanation.reasons),
+            "candidate_rejections": list(decision.explanation.candidate_rejections),
+        },
+    }
+
+
+def _planning_decision_for_owner(
+    *,
+    owner: str,
+    day_utc: str,
+    mode: str,
+    activity_type: str | None,
+    previous_activity_text: str | None,
+    seed: int | None,
+    methodology_id: str | None,
+    schedule_constraints: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], Any]:
+    db_path = _db_path_for_owner(owner)
+    day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
+    suggestions = _generated_activity_candidates(
+        db_path=db_path,
+        mode=mode,
+        day_utc=day_utc,
+        activity_type=activity_type,
+    )
+    if not suggestions:
+        fallback_suggestions = _generated_activity_fallbacks(activity_type=activity_type, mode=mode)
+        suggestions = _generated_activity_candidates(
+            db_path=db_path,
+            mode="custom",
+            day_utc=day_utc,
+            activity_type=activity_type,
+        )
+        if not suggestions:
+            suggestions = [
+                {
+                    "activity_text": text,
+                    "priority": 0,
+                    "bucket": "easy",
+                    "estimated_tss": 0.0,
+                    "total_minutes": _fallback_activity_total_minutes(text),
+                    "avg_if": 0.0,
+                    "max_if": 0.0,
+                    "modality": activity_type or "running",
+                    "source": "fallback",
+                }
+                for text in fallback_suggestions
+            ]
+    planning_state = _generated_activity_planning_state(
+        db_path=db_path,
+        day_utc=day_utc,
+        threshold_pace_sec_per_km=pace_for_day,
+        methodology_id=methodology_id,
+        schedule_constraints=schedule_constraints,
+    )
+    if planning_state is None:
+        raise HTTPException(status_code=400, detail="Invalid day_utc")
+    methodology = get_methodology(methodology_id)
+    decision = plan_day(
+        state=planning_state,
+        candidates=build_session_candidates(
+            suggestions,
+            weekly_baseline_tss=planning_state.weekly_baseline_tss,
+            stress_profile=methodology.stress_profile,
+        ),
+        methodology_id=methodology.methodology_id,
+        seed=seed,
+        previous_activity_text=previous_activity_text or None,
+    )
+    response = {
+        "owner": owner,
+        "mode": mode,
+        "activity_text": str(decision.generated_workout.activity_text or ""),
+        "total_candidates": len(suggestions),
+        "planning": _planning_decision_payload(decision),
+    }
+    return response, decision
 
 
 def _load_if_zone_thresholds(db_path: Path) -> dict[str, float]:
@@ -7082,123 +7577,36 @@ def generated_activity(
     mode = str(payload.mode or "planned").strip().lower()
     activity_type = str(payload.activity_type or "").strip().lower() or None
     previous_activity_text = str(payload.previous_activity_text or "").strip()
+    methodology_id = str(payload.methodology_id or "").strip() or None
+    schedule_constraints = [
+        {
+            "day_utc": str(item.day_utc or "").strip(),
+            "allow_long_run": item.allow_long_run,
+            "preferred_modality": (
+                str(item.preferred_modality or "").strip().lower() or None
+            ),
+            "blocked": bool(item.blocked),
+        }
+        for item in (payload.schedule_constraints or [])
+        if str(item.day_utc or "").strip()
+    ]
     if not day_utc:
         raise HTTPException(status_code=400, detail="Missing day_utc")
     if mode not in {"planned", "custom"}:
         raise HTTPException(status_code=400, detail="Invalid mode")
     if activity_type is not None and activity_type not in {"running", "elliptical", "bike"}:
         raise HTTPException(status_code=400, detail="Invalid activity_type")
-    day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
-    pace_curve = _load_curve_points(
-        db_path=db_path,
-        key=SETTINGS_KEY_LT_PACE_CURVE,
-        value_key="lt_pace_sec",
-        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
-    )
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-    pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
-
-    generator_context = _generated_activity_context(
-        db_path=db_path,
+    response, _ = _planning_decision_for_owner(
+        owner=resolved_owner,
         day_utc=day_utc,
-        threshold_pace_sec_per_km=pace_for_day,
-        activity_type=activity_type,
-    )
-
-    suggestions = _generated_activity_candidates(
-        db_path=db_path,
         mode=mode,
-        day_utc=day_utc,
         activity_type=activity_type,
+        previous_activity_text=previous_activity_text or None,
+        seed=payload.seed,
+        methodology_id=methodology_id,
+        schedule_constraints=schedule_constraints,
     )
-    if not suggestions:
-        fallback_suggestions = _generated_activity_fallbacks(activity_type=activity_type, mode=mode)
-        fallback_bucket = (_generated_activity_preferred_buckets(day_utc, generator_context) or ["easy"])[0]
-        fallback_goal = _generated_activity_day_goal_tss(
-            day_utc=day_utc,
-            threshold_pace_sec_per_km=pace_for_day,
-            context=generator_context,
-        )
-        suggestions = [{"activity_text": text, "priority": 0, "bucket": fallback_bucket, "estimated_tss": fallback_goal} for text in fallback_suggestions]
-    if not suggestions:
-        raise HTTPException(status_code=404, detail="No activities available to generate from")
-
-    preferred_buckets = _generated_activity_preferred_buckets(day_utc, generator_context)
-
-    target_tss = random.gauss(
-        _generated_activity_day_goal_tss(
-            day_utc=day_utc,
-            threshold_pace_sec_per_km=pace_for_day,
-            context=generator_context,
-        ),
-        8.0,
-    )
-    shortlisted = _generated_activity_shortlist(
-        suggestions=suggestions,
-        target_tss=target_tss,
-        preferred_buckets=preferred_buckets,
-        context=generator_context,
-    )
-    eligible = [item for _, item in shortlisted] if shortlisted else suggestions
-    if previous_activity_text:
-        rotated = [
-            item
-            for item in eligible
-            if str(item.get("activity_text") or "").strip().lower() != previous_activity_text.lower()
-        ]
-        if not rotated and shortlisted:
-            rotated = [
-                item
-                for _, item in _generated_activity_shortlist(
-                    suggestions=[
-                        candidate
-                        for candidate in suggestions
-                        if str(candidate.get("activity_text") or "").strip().lower() != previous_activity_text.lower()
-                    ],
-                    target_tss=target_tss,
-                    preferred_buckets=preferred_buckets,
-                    context=generator_context,
-                )
-            ]
-        if rotated:
-            eligible = rotated
-
-    if shortlisted:
-        eligible_scores = {
-            str(item.get("activity_text") or "").strip().lower(): float(score)
-            for score, item in shortlisted
-        }
-        scored_eligible = [
-            (
-                eligible_scores.get(
-                    str(item.get("activity_text") or "").strip().lower(),
-                    _generated_activity_candidate_score(
-                        item=item,
-                        target_tss=target_tss,
-                        preferred_buckets=preferred_buckets,
-                        context=generator_context,
-                    ),
-                ),
-                item,
-            )
-            for item in eligible
-        ]
-        scored_eligible = sorted(scored_eligible, key=lambda pair: pair[0])
-        best_score = float(scored_eligible[0][0]) if scored_eligible else 0.0
-        weights = [math.exp(-max(float(score) - best_score, 0.0) / 6.0) for score, _ in scored_eligible]
-        suggestion = random.choices(
-            [item for _, item in scored_eligible],
-            weights=weights,
-            k=1,
-        )[0]
-    else:
-        suggestion = random.choice(eligible)
-    return {
-        "owner": resolved_owner,
-        "mode": mode,
-        "activity_text": str(suggestion.get("activity_text") or ""),
-        "total_candidates": len(suggestions),
-    }
+    return response
 
 
 @app.post("/api/v1/custom-activities/ingest")
