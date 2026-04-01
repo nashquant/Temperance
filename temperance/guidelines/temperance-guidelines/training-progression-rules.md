@@ -23,7 +23,8 @@ Use this file as a compact operational summary only. If any detail here conflict
 - Use x-train strategically for load support, spacing support, moderate aerobic support, and as a durability bridge.
 - Use doubles intelligently when they improve structure, spacing, absorption, or anchor-hitting efficiency.
 - Support work can be easy or moderate, especially on x-train.
+- Low intensity remains useful and often necessary.
 - Threshold, long-run, and marathon-specific work are usually more central than frequent sharp intensity.
 - Aim for a productive stimulus mix; do not let everything collapse into hidden moderate work.
-- De-emphasize Z1 and Z5 as dominant defaults, but use them when they clearly serve the structure.
+- Use sharp intensity when it clearly supports the structure, but do not let it become the dominant pattern.
 - Let alerts distinguish noise from real drift.

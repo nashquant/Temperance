@@ -80,7 +80,8 @@ Then make day-level recommendations relative to those anchors.
 - Aim for a good mix of stimuli across the block.
 - Do not let everything collapse into hidden moderate work.
 - Low intensity remains useful and often necessary.
-- De-emphasize Z1 and Z5 as dominant defaults, but still use them when they serve a clear structural purpose.
+- Support work can sit in easy-to-moderate aerobic territory, especially on x-train.
+- Threshold, long-run, and marathon-specific work should usually be more central than frequent sharp intensity.
 - A hard day can include VO2-max work if appropriate, and a double can include a Z1 support session to reach the intended total load more intelligently.
 
 ## Current watchouts
