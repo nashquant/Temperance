@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { QueryShell } from '@/components/ui/query-shell';
 import {
   SecondaryStatCard,
   secondaryPageActionButtonClassName,
@@ -13,7 +14,6 @@ import {
   secondaryPageSurfaceClassName,
   secondaryPageTextAreaClassName,
 } from '@/components/ui/secondary-page';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { getActivityDetail } from '@/features/dashboard/services/activity-detail-api';
 import { getDashboard } from '@/features/dashboard/services/dashboard-api';
@@ -781,19 +781,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         </CardContent>
       </Card>
 
-      {query.isLoading ? (
-        <div className="space-y-3">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-56 w-full" />
-        </div>
-      ) : null}
-
-      {query.isError ? (
-        <Alert className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300">
-          <AlertTitle>Unable to load planned activities</AlertTitle>
-          <AlertDescription>{query.error instanceof Error ? query.error.message : 'Unexpected error.'}</AlertDescription>
-        </Alert>
-      ) : null}
+      <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load planned activities" skeleton="compact">
 
       {deleteResult ? (
         <Alert className="border-white/15 bg-white/[0.03] text-slate-100">
@@ -809,7 +797,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         </Alert>
       ) : null}
 
-      {!query.isLoading && !query.isError && query.data ? (
+      {query.data ? (
         <>
           {weeks.length === 0 ? (
               <Card className={secondaryPageSurfaceClassName}>
@@ -931,7 +919,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                           </td>
                           <td className="px-2 py-2 sm:px-3">
                             <input
-                              className="min-w-[260px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-slate-400/55 focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                              className="min-w-[260px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-slate-400/55 focus-visible:ring-2 focus-visible:ring-ring"
                               value={quickAddWorkout}
                               onChange={(event) => setQuickAddWorkout(event.target.value)}
                               placeholder="e.g. 10min @ 4:30/km + 3x10min @ 3:45/km"
@@ -993,7 +981,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                               <td className="px-2 py-2 sm:px-3">{row.activity}</td>
                               <td className="px-2 py-2 sm:px-3">
                                 <input
-                                  className={`min-w-[260px] w-full rounded-xl border px-3 py-2 text-sm outline-none transition ${isPendingDelete ? 'border-rose-400/20 bg-rose-500/8 text-slate-400' : 'border-white/10 bg-black/20 text-foreground focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20'}`}
+                                  className={`min-w-[260px] w-full rounded-xl border px-3 py-2 text-sm outline-none transition ${isPendingDelete ? 'border-rose-400/20 bg-rose-500/8 text-slate-400' : 'border-white/10 bg-black/20 text-foreground focus-visible:ring-2 focus-visible:ring-ring'}`}
                                   value={workoutText}
                                   disabled={isPendingDelete}
                                   onChange={(event) => {
@@ -1079,6 +1067,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
           )}
         </>
       ) : null}
+      </QueryShell>
     </section>
   );
 }

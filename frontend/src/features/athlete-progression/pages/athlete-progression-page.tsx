@@ -3,8 +3,8 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { AnalyticsToolbar } from '@/components/ui/analytics-toolbar';
+import { QueryShell } from '@/components/ui/query-shell';
 import { SecondaryPageHeader } from '@/components/ui/secondary-page';
-import { Skeleton } from '@/components/ui/skeleton';
 import { ProgressionLineChartCard } from '@/features/athlete-progression/components/progression-line-chart-card';
 import { useAthleteProgressionQuery } from '@/features/athlete-progression/hooks/use-athlete-progression-query';
 import type { ProgressionAggregation } from '@/features/athlete-progression/types/athlete-progression';
@@ -104,22 +104,8 @@ export function AthleteProgressionPage(): JSX.Element {
         )}
       />
 
-      {query.isLoading ? (
-        <div className="space-y-3">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-64 w-full" />
-          <Skeleton className="h-64 w-full" />
-        </div>
-      ) : null}
-
-      {query.isError ? (
-        <Alert className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300">
-          <AlertTitle>Unable to load athlete progression</AlertTitle>
-          <AlertDescription>{query.error instanceof Error ? query.error.message : 'Unexpected error.'}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {!query.isLoading && !query.isError && query.data ? (
+      <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load athlete progression">
+      {query.data ? (
         <>
           {normalizedChartData.length === 0 ? (
             <Card><CardContent className="p-8 text-sm text-muted-foreground">No progression data available for this selection.</CardContent></Card>
@@ -229,6 +215,7 @@ export function AthleteProgressionPage(): JSX.Element {
           )}
         </>
       ) : null}
+      </QueryShell>
     </section>
   );
 }

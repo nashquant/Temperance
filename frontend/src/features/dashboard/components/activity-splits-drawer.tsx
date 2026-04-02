@@ -9,7 +9,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { ActivitySplitsBarChart } from '@/features/dashboard/components/activity-splits-bar-chart';
 import { useActivityDetailQuery } from '@/features/dashboard/hooks/use-activity-detail-query';
 import type { ActivityDetailResponse, ActivityDetailZoneRow } from '@/features/dashboard/types/activity-detail';
-import { zoneHexFromLabel } from '@/features/dashboard/utils/intensity-palette';
+import { zoneHexFromLabel, zoneTrackClassNames, zoneTrackFallbackClassName } from '@/features/dashboard/utils/intensity-palette';
 import { updateCustomActivityWorkout } from '@/features/custom-activities/services/custom-activities-api';
 import { updatePlannedWorkout } from '@/features/plan-activities/services/plan-activities-api';
 import { queryClient } from '@/lib/query-client';
@@ -35,13 +35,6 @@ type DrawerLapRow = {
   display_mode: 'running' | 'eqv';
 };
 
-const zoneTrackClassNames: Record<string, string> = {
-  Z1: 'border-slate-500/30 bg-slate-500/8',
-  Z2: 'border-sky-500/28 bg-sky-500/8',
-  Z3: 'border-amber-500/28 bg-amber-500/8',
-  Z4: 'border-rose-500/28 bg-rose-500/8',
-  Z5: 'border-violet-500/28 bg-violet-500/8',
-};
 
 function formatActivityTitle(raw: string): string {
   const cleaned = String(raw || '').trim();
@@ -418,7 +411,7 @@ export function ActivitySplitsDrawer({
                         />
                         {zone.zone}
                       </span>
-                      <div className={`h-1.5 w-full overflow-hidden rounded-full border ${zoneTrackClassNames[zone.zone] ?? 'border-white/10 bg-white/5'}`}>
+                      <div className={`h-1.5 w-full overflow-hidden rounded-full border ${zoneTrackClassNames[zone.zone] ?? zoneTrackFallbackClassName}`}>
                         <div
                           className="h-full rounded-full"
                           style={{
@@ -456,7 +449,7 @@ export function ActivitySplitsDrawer({
                   ) : null}
                 </div>
                 <textarea
-                  className="min-h-24 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-24 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                   value={sourceText}
                   onChange={(event) => setSourceText(event.target.value)}
                   readOnly={!canEditGeneratedText}
