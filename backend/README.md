@@ -41,9 +41,6 @@ Available tools:
   - `get_load_trend`
   - `get_recovery_trend`
   - `get_activity_detail`
-- deprecated heuristic tools:
-  - `recommend_training`
-  - `explain_recommendation`
 - history:
   - `judge_training_history`
   - `explain_history_judgment`
