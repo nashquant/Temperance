@@ -29,7 +29,7 @@ def test_garmin_auth_reset_endpoint_calls_reset_and_logs(tmp_path: Path, monkeyp
         ).fetchone()
 
     assert row is not None
-    assert row["source"] == "v2_garmin_auth_reset"
+    assert row["source"] == "garmin_auth_reset"
     assert int(row["success"]) == 1
     assert "Garmin auth fully reset via API." in row["message"]
 

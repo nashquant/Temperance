@@ -51,7 +51,7 @@ npm run dev
 Frontend URL: `http://127.0.0.1:5173`
 
 The frontend proxies `/api/*` and `/health` to the backend during local development.
-The public app is served at `https://app.temperance-rtl.work/v2`, while the API is mounted at `/api` with `/api/v1` kept as a backward-compatible alias.
+The public app is served at `https://app.temperance-rtl.work`, and the API is mounted at `/api`.
 
 ### 3. Configure Garmin credentials when you need sync
 

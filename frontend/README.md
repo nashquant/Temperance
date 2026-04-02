@@ -23,9 +23,8 @@ npm run preview
 
 - API base path is configured in `src/api/config.ts` as `/api`.
 - During local dev, Vite proxy in `vite.config.ts` forwards `/api/*` and `/health` to `http://127.0.0.1:8000`.
-- The backend still accepts `/api/v1/*` as a compatibility alias during the transition.
-- Auth token is stored in localStorage key `temperance.session` and falls back to the older key during migration.
-- The public app is expected to live under `/v2`, so router/base-path changes need to be tested against `https://app.temperance-rtl.work/v2`.
+- Auth token is stored in localStorage key `temperance.session`.
+- The public app is served from the root path at `https://app.temperance-rtl.work`.
 
 ## Main frontend surfaces
 
