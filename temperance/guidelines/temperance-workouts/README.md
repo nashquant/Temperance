@@ -5,41 +5,64 @@
 This directory is the reusable workout library written in Temperance `activity_text` lingo.
 
 The design goal is:
-- category first
-- modality second
+- doctrine-facing category first
+- richer taxonomy for browsing and machine selection
+- modality-light defaults unless the session identity requires explicit modality
 - saved reference TSS for each stable session idea
 - narrow, explicit scaling around the baseline rather than ad hoc rewriting
 
-Common rules live in [template-contract.md](./template-contract.md). Template files should stay thin and only carry workout-specific notes.
+Common rules live in [template-contract.md](./template-contract.md). The family map lives in [taxonomy.md](./taxonomy.md). The full list lives in [catalog.md](./catalog.md). The shortest summary lives in [quick-reference.md](./quick-reference.md). Template files should stay thin and only carry workout-specific notes.
 
 ## Repository structure
 
-- `template-contract.md`: shared template fields, recovery rules, scaling rules, and machine expectations
-- category directories: concrete workout templates grouped by planning role
+- `template-contract.md`: shared template fields, normalization rules, scaling rules, and machine expectations
+- `taxonomy.md`: mapping between doctrine-facing categories and richer session families
+- `catalog.md`: one-file list of the whole template library
+- `quick-reference.md`: distilled short access note
+- family directories: concrete workout templates grouped by `session_family`
 - template files: one stable session idea plus saved TSS variants
 
-## Category model
+## Library model
 
-Use planning role, not modality, as the main category.
+The library uses two layers:
 
-- `easy-support`: low-cost aerobic load or recovery support
-- `moderate-support`: medium-long or steady aerobic support that is not meant to be the week's main hard stress
-- `threshold-hard`: controlled H1 threshold work, often low-threshold or upper-aerobic biased
-- `long-duration-hard`: hard days where duration is the main cost driver
-- `specific-hard`: event-specific or phase-specific endurance structure whose value depends on the active event overlay
-- `sharp-hard`: H2 or VO2-oriented work where the sharper intensity is the main point
+1. doctrine-facing `category`
+2. richer taxonomy fields such as `session_family`, `structural_subtype`, `load_role`, and `planning_intent`
 
-These should align to planning fields when possible:
-- `bucket`
-- `stress_class`
-- `hard_subtype`
+`category` remains the top-level selector:
+- `easy-support`
+- `moderate-support`
+- `threshold-hard`
+- `long-duration-hard`
+- `specific-hard`
+- `sharp-hard`
+
+The richer taxonomy describes what kind of session sits inside that category.
 
 ## Selection order
 
-1. choose the category by planning role
-2. choose the nearest baseline session whose stored window contains the target TSS
-3. choose the nearest stored variant before inventing a new rewrite
-4. if multiple templates are close, prefer the one whose physiology label and recovery pattern best fit the day
+1. choose `load_role` and doctrine-facing `category`
+2. choose `session_family`
+3. choose `structural_subtype`
+4. apply `modality_pattern`
+5. choose the nearest baseline session whose stored window contains the target TSS
+6. choose the nearest stored variant before inventing a new rewrite
+
+Special cases:
+- split-day templates are only eligible when the planner explicitly wants split quality or split support
+- mixed-modality templates must keep explicit modality in the stored concrete strings
+- generic templates stay modality-light unless modality is part of the session identity
+
+## Normalization rule
+
+Imported source material should be normalized into the current library language before it is stored here.
+
+That means:
+- no legacy doctrine metric aliases
+- no implicit rule that omitted modality means run
+- long durations stored in `min`
+- recoveries stored in the current library style when they are explicit
+- `session_parts` used for split-day templates instead of relying on one raw summary string
 
 ## TSS rule
 
@@ -51,30 +74,26 @@ For simple `%`-based templates, use this approximation unless a better model is 
 
 That keeps the repository modality-agnostic while still preserving a usable load anchor.
 
-## Current templates
+## Covered families
 
-### Threshold-hard
+The library now covers:
+- `recovery`
+- `easy`
+- `support`
+- `steady-aerobic`
+- `lt1-threshold`
+- `lt2-threshold`
+- `cruise-intervals`
+- `specific-endurance`
+- `vo2-max`
+- `hills-strength-endurance`
+- `progressive`
+- `medium-long`
+- `long-run`
+- `fartlek-alternations`
+- `strides-neuromuscular`
+- `x-train-specific`
+- `mixed-combo`
+- `split-quality`
 
-- [threshold-15min-plus-3x10-at-90.md](./threshold/threshold-15min-plus-3x10-at-90.md)
-- [threshold-15min-plus-4x8-at-90.md](./threshold/threshold-15min-plus-4x8-at-90.md)
-- [threshold-20min-plus-3x8-at-90.md](./threshold/threshold-20min-plus-3x8-at-90.md)
-- [threshold-15min-plus-3x12-at-88.md](./threshold/threshold-15min-plus-3x12-at-88.md)
-
-### Moderate-support
-
-- [medium-long-75min-at-72.md](./moderate-support/medium-long-75min-at-72.md)
-- [medium-long-60min-at-72-plus-20min-at-80.md](./moderate-support/medium-long-60min-at-72-plus-20min-at-80.md)
-
-### Long-duration-hard
-
-- [long-duration-90min-at-74-plus-20min-at-82.md](./long-duration-hard/long-duration-90min-at-74-plus-20min-at-82.md)
-- [long-duration-120min-at-76.md](./long-duration-hard/long-duration-120min-at-76.md)
-
-### Specific-hard
-
-- [specific-105min-at-72-plus-30min-at-80.md](./specific-hard/specific-105min-at-72-plus-30min-at-80.md)
-
-### Sharp-hard
-
-- [sharp-15min-plus-8x2-at-100.md](./sharp-hard/sharp-15min-plus-8x2-at-100.md)
-- [sharp-15min-plus-5x3-at-98.md](./sharp-hard/sharp-15min-plus-5x3-at-98.md)
+Use [taxonomy.md](./taxonomy.md) to map these families back to doctrine-facing categories and typical planning roles.

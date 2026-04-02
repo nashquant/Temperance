@@ -1,11 +1,22 @@
 ---
 template_id: sharp_15min_72_5x3_98_2rec
 category: sharp-hard
+session_family: vo2-max
+structural_subtype: intervals
+load_role: sharpening
+planning_intent: preserve-top-end-touch
 bucket: intervals
 stress_class: hard
 hard_subtype: h2
-physiology_label: vo2-long-repeats
+physiology_label: longer-repeat-vo2
+modality_pattern: generic
 modality_scope: any
+phase_fit:
+  - base
+  - capacity-build
+  - peak
+specificity_target: vo2-touch
+durability_cost: medium
 activity_text_template: "15min @ 72% + {vo2_reps}x3' @ 98% (2' @ 72%)"
 baseline_activity_text: "15min @ 72% + 5x3' @ 98% (2' @ 72%)"
 baseline_estimated_tss: 43.9
@@ -43,21 +54,19 @@ variants:
     max_if: 0.98
     pct_from_baseline_tss: 14.8
 machine_notes:
-  - "Longer-repeat VO2 template."
-  - "A tighter scaling band keeps the session from drifting into threshold territory."
+  - "Longer-repeat VO2 template with a deliberately tight scaling band."
 ---
 
-# Sharp Hard - 15min @ 72% + 5x3' @ 98% (2' @ 72%)
+# VO2 Max - 15min @ 72% + 5x3' @ 98% (2' @ 72%)
 
 ## Session note
 
-This is the longer-repeat VO2 option. It is still sharp, but the longer reps make it feel more rhythm-based than the 2-minute template.
+This is the longer-repeat VO2 option. It is still sharp, but the longer reps make it feel more rhythm-based than the `2'` template.
 
 ## Best use
 
 - H2 days that should stay aerobic-power focused without becoming all-out
 - athletes who respond better to fewer, longer hard reps than to many short starts
-- blocks that want some ceiling touch but not an extreme neuromuscular session
 
 ## Recovery
 
@@ -65,4 +74,4 @@ Use `2' @ 72%` between reps. The recovery should be active and just long enough 
 
 ## Scaling note
 
-Keep this on a tight band. If scaling needs become much larger, move to another sharp template instead of stretching this one into a different session type.
+Keep this on a tight band. If scaling needs become much larger, move to another VO2 template instead of stretching this one into a different session type.
