@@ -6044,10 +6044,13 @@ def _build_week_outlook_payload(
             today_local_day=today,
         )
 
+    has_activity_today = bool((daily_agg["day"] == today).any())
     day_rows: list[dict[str, Any]] = []
     week_total_current = 0.0
     week_total_compare = 0.0
     cutoff_day = min(today, week_end)
+    if compare_key == "planned" and ws <= today <= week_end and not has_activity_today:
+        cutoff_day = max(ws, today - pd.Timedelta(days=1))
     day_offset = int(max(min((cutoff_day - ws).days, 6), 0))
     compare_cutoff = compare_ws + pd.Timedelta(days=day_offset) if compare_key != "planned" else cutoff_day
     wtd_current = 0.0
