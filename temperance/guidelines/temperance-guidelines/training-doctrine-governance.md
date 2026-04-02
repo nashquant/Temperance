@@ -46,6 +46,7 @@ Use one of these status labels near the top of each file:
 - Any `*.local.md` file in this directory is a private local override and should remain ignored by git.
 - When both `foo.local.md` and `foo.md` exist, the local file wins for current planning use.
 - The tracked `foo.md` file should remain repo-safe: template, default, or generic doctrine only.
+- Named overlays (athlete-state, philosophy) may have a `.local.md` that is currently identical to the `.md`. This is intentional: the `.local.md` exists to receive future athlete-specific divergence without altering the tracked generic default. Do not merge them.
 
 ## Governance rules
 

@@ -61,6 +61,13 @@ Has basic consistency returned enough that it now makes sense to push capacity m
 - The structure can now support a clearer capacity objective
 - Support modalities are helping the week rather than carrying it out of necessity alone
 
+### Metric anchor
+
+Review through the active build's declared metrics. Useful checks:
+- primary_specific_load is posting consistent values across multiple sessions, not just isolated appearances
+- next-day and 48-hour mechanical response is not triggering hard alerts
+- the local_spacing_window is being maintained without repeated forced substitution
+
 ### Interpretation
 
 Transition when the limiting question is no longer:
@@ -97,6 +104,13 @@ Has general capacity improved enough that more event-specific work is now worth 
 - Event timing says specificity is becoming more useful
 - The event overlay's specific work would now add adaptation rather than just cost
 
+### Metric anchor
+
+Review through the active build's declared metrics. Useful checks:
+- primary_specific_load has risen coherently over several weeks without repeated alert triggers
+- the key_duration_anchor, if declared, has been absorbed across multiple exposures
+- specificity_ratio is no longer being deliberately suppressed by injury or fragility constraints
+
 ### Interpretation
 
 Transition when specificity looks **productive**, not merely stressful.
@@ -128,6 +142,13 @@ Is it now better to stabilize and sharpen than to continue building?
 - The target event is approaching the final useful peak window
 - Intermediate events or life constraints do not justify another build push
 
+### Metric anchor
+
+Review through the active build's declared metrics. Useful checks:
+- primary_specific_load has reached or approached the build's intended ceiling without continuous alert triggers
+- the key_duration_anchor has reached or approached the intended peak exposure
+- the rolling_density_window shows the block has absorbed the main specific work without sustained structural drift
+
 ### Interpretation
 
 Transition when the main work is already in the bank and the next best move is to protect and sharpen it.
@@ -156,6 +177,13 @@ Is it now time to reduce fatigue while preserving readiness for the target event
 
 - Reducing fatigue now likely has more value than further accumulation
 - Mechanical and metabolic freshness are becoming higher priorities than more build load
+
+### Metric anchor
+
+Review through the active build's declared metrics. Useful checks:
+- primary_specific_load and key_duration_anchor targets no longer need advancing
+- total_load can begin declining while intensity on key sessions is mostly preserved
+- the event falls within the declared taper window relative to the desired peak date
 
 ### Interpretation
 

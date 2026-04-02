@@ -26,6 +26,7 @@ Profile id: durability-first-threshold-forward-support-positive.
 - Use 3-day spacing as the preferred local structure when it fits the block.
 - Use a rolling 9-day lens to review density, subtype clustering, and accumulated stress.
 - Hard support-modality work is acceptable when the block still contains real compensation and the main mechanical stress remains protected.
+- As a planning heuristic, each 3-day cycle should average roughly 40-45% of the target weekly total_load. Cycles that drift repeatedly above that range are a soft alert for hidden stacking even if individual sessions look reasonable in isolation.
 
 ## Progression priorities
 
