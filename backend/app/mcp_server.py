@@ -122,13 +122,11 @@ class WeekOutlookArgs(BaseModel):
     compare: str = "planned"
     week_start: Optional[str] = None
 
-
 class ActivityDetailArgs(BaseModel):
     owner: str = DEFAULT_OWNER
     activity_id: str
     include_records: bool = True
     records_limit: int = 300
-
 
 class PlanningToolArgs(BaseModel):
     owner: str = "default"
@@ -163,6 +161,105 @@ class HistoryJudgmentArgs(BaseModel):
 
 class ExplainHistoryJudgmentArgs(HistoryJudgmentArgs):
     question: Optional[str] = None
+
+
+# --- Phase 1: Planning write models ---
+
+class PlannedEntry(BaseModel):
+    day_utc: str
+    workout_text: str
+
+
+class SavePlannedActivitiesArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    entries: list[PlannedEntry]
+
+
+class UpdatePlannedActivityArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    day_utc: str
+    line_no: int
+    workout_text: str
+
+
+class DeletePlannedActivitiesKey(BaseModel):
+    day_utc: str
+    line_no: int
+
+
+class DeletePlannedActivitiesArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    keys: list[DeletePlannedActivitiesKey]
+
+
+class MarkPlannedDoneArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    day_utc: str
+    line_no: int
+    manual_done: bool = True
+
+
+# --- Phase 2: Custom activities, sync, activity management models ---
+
+class SaveCustomActivitiesArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    entries: list[PlannedEntry]
+
+
+class DeleteCustomActivitiesArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    keys: list[DeletePlannedActivitiesKey]
+
+
+class TriggerSyncArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    days_back: int = 30
+    profile: str = "quick"
+
+
+class SyncStatusArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+
+
+class MarkActivityInvalidArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    activity_id: str
+    is_invalid: bool = True
+
+
+# --- Phase 3: Settings, workout search, fitness form models ---
+
+class GetSettingsArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+
+
+class UpdateSettingsArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    lthr_curve: Optional[list[dict[str, Any]]] = None
+    lt_pace_curve: Optional[list[dict[str, Any]]] = None
+    timezone: Optional[str] = None
+    specificity_profile: Optional[dict[str, Any]] = None
+    injury_windows: Optional[list[dict[str, str]]] = None
+    if_zone_thresholds: Optional[dict[str, Any]] = None
+    vdot_lookback_days: Optional[int] = None
+
+
+class SearchWorkoutsArgs(BaseModel):
+    category: Optional[str] = None
+    load_role: Optional[str] = None
+    session_family: Optional[str] = None
+    stress_class: Optional[str] = None
+    phase_fit: Optional[str] = None
+    modality_pattern: Optional[str] = None
+    tss_min: Optional[float] = None
+    tss_max: Optional[float] = None
+    planning_intent: Optional[str] = None
+
+
+class FitnessFormArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    days: int = 90
+    sport: Optional[str] = None
 
 
 def _backend_main_module() -> Any:
@@ -211,11 +308,22 @@ def _analytics_helpers() -> dict[str, Any]:
 
 
 def _db_helpers() -> dict[str, Any]:
-    from temperance.db import get_last_sync, get_setting
+    from temperance.db import (
+        delete_custom_activities,
+        delete_planned_activities,
+        get_last_sync,
+        get_setting,
+        set_activity_invalid,
+        set_planned_activity_manual_done,
+    )
 
     return {
         "get_last_sync": get_last_sync,
         "get_setting": get_setting,
+        "delete_planned_activities": delete_planned_activities,
+        "set_planned_activity_manual_done": set_planned_activity_manual_done,
+        "delete_custom_activities": delete_custom_activities,
+        "set_activity_invalid": set_activity_invalid,
     }
 
 
@@ -1686,6 +1794,349 @@ def tool_explain_planning_decision(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Phase 1: Planning write tools
+# ---------------------------------------------------------------------------
+
+
+def tool_save_planned_activities(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = SavePlannedActivitiesArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+    entry_lines = [f"[{e.day_utc}]: {e.workout_text}" for e in args.entries]
+    entry_text = "\n".join(entry_lines)
+    result = backend_main._ingest_planned_entries_core(db_path, entry_text)
+    result["owner"] = args.owner
+    result["db_path"] = str(db_path)
+    return result
+
+
+def tool_update_planned_activity(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = UpdatePlannedActivityArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+    result = backend_main._update_planned_workout_core(
+        db_path,
+        day_utc=args.day_utc,
+        line_no=args.line_no,
+        workout_text=args.workout_text,
+    )
+    result["owner"] = args.owner
+    result["db_path"] = str(db_path)
+    return result
+
+
+def tool_delete_planned_activities(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = DeletePlannedActivitiesArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    db = _db_helpers()
+    keys = [(k.day_utc, k.line_no) for k in args.keys]
+    deleted = db["delete_planned_activities"](db_path, keys)
+    return {"owner": args.owner, "db_path": str(db_path), "deleted_count": int(deleted)}
+
+
+def tool_mark_planned_done(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = MarkPlannedDoneArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    db = _db_helpers()
+    success = db["set_planned_activity_manual_done"](db_path, args.day_utc, args.line_no, args.manual_done)
+    return {"owner": args.owner, "db_path": str(db_path), "success": success}
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Custom activities, sync, and activity management tools
+# ---------------------------------------------------------------------------
+
+
+def tool_save_custom_activities(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = SaveCustomActivitiesArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+    entry_lines = [f"[{e.day_utc}]: {e.workout_text}" for e in args.entries]
+    entry_text = "\n".join(entry_lines)
+    result = backend_main._ingest_custom_entries_core(db_path, entry_text)
+    result["owner"] = args.owner
+    result["db_path"] = str(db_path)
+    return result
+
+
+def tool_delete_custom_activities(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = DeleteCustomActivitiesArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    db = _db_helpers()
+    keys = [(k.day_utc, k.line_no) for k in args.keys]
+    deleted = db["delete_custom_activities"](db_path, keys)
+    return {"owner": args.owner, "db_path": str(db_path), "deleted_count": int(deleted)}
+
+
+def tool_trigger_sync(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = TriggerSyncArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+
+    profile = args.profile if args.profile in ("quick", "deep") else "quick"
+    days_back = max(7, min(int(args.days_back), 3650))
+
+    rate_limit = backend_main._garmin_rate_limit_state(db_path)
+    if rate_limit["active"]:
+        return {
+            "owner": args.owner,
+            "status": "rate_limited",
+            "message": f"Garmin sync paused after 429. Retry after {rate_limit['until_utc']}.",
+            "rate_limited_until": rate_limit["until_utc"],
+        }
+
+    if not backend_main._AUTO_SYNC_LOCK.acquire(blocking=False):
+        return {
+            "owner": args.owner,
+            "status": "already_running",
+            "message": "Garmin sync already running. Try again shortly.",
+        }
+
+    try:
+        ctx = backend_main._AuthContext(role="admin", username="admin")
+        selection = backend_main._resolve_garmin_sync_source(ctx, args.owner, db_path)
+        if selection["mode"] == "missing":
+            return {
+                "owner": args.owner,
+                "status": "credentials_missing",
+                "message": "Garmin credentials missing.",
+            }
+
+        if selection["mode"] == "oauth" and profile == "quick":
+            sync_result = backend_main._run_quick_oauth_sync(
+                db_path,
+                days_back=days_back,
+                source_label=f"mcp_sync_{profile}_oauth",
+            )
+        elif selection["mode"] == "oauth":
+            from backend.app.garmin_oauth import (
+                fetch_normalized_activities as fetch_garmin_oauth_normalized_activities,
+                fetch_normalized_wellness as fetch_garmin_oauth_normalized_wellness,
+            )
+
+            token_payload, _connection = backend_main._garmin_oauth_token_payload(db_path)
+            deep_start = (_utc_now() - timedelta(days=days_back)).date()
+            access_token = str(token_payload.get("access_token") or "")
+            activity_payload = fetch_garmin_oauth_normalized_activities(
+                access_token,
+                start_day=deep_start.isoformat(),
+                end_day=_utc_now().date().isoformat(),
+            )
+            wellness_payload = fetch_garmin_oauth_normalized_wellness(
+                access_token,
+                start_day=deep_start.isoformat(),
+                end_day=_utc_now().date().isoformat(),
+            )
+            persisted = backend_main._persist_normalized_garmin_payload(
+                db_path,
+                activity_payload=activity_payload,
+                wellness_payload=wellness_payload,
+            )
+            sync_result = {
+                "total_rows": len(persisted["activities"]),
+                "details": {"garmin": {
+                    "profile": "deep",
+                    "activities": len(persisted["activities"]),
+                    "wellness": len(persisted["wellness_daily"]),
+                }},
+            }
+        else:
+            sync_result = backend_main._run_quick_activity_sync(
+                db_path,
+                str(selection.get("email") or ""),
+                str(selection.get("password") or ""),
+                days_back=days_back,
+                source_label=f"mcp_sync_{profile}",
+                credentials_source=str(selection.get("credentials_source") or "session"),
+            )
+        return {
+            "owner": args.owner,
+            "status": "completed",
+            "total_rows": int(sync_result.get("total_rows") or 0),
+            "details": sync_result.get("details") or {},
+        }
+    except Exception as exc:
+        return {
+            "owner": args.owner,
+            "status": "error",
+            "message": str(exc),
+        }
+    finally:
+        backend_main._AUTO_SYNC_LOCK.release()
+
+
+def tool_get_sync_status(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = SyncStatusArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    db = _db_helpers()
+    last_sync = db["get_last_sync"](db_path)
+    return {
+        "owner": args.owner,
+        "db_path": str(db_path),
+        "last_sync": last_sync,
+    }
+
+
+def tool_mark_activity_invalid(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = MarkActivityInvalidArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    db = _db_helpers()
+    success = db["set_activity_invalid"](db_path, args.activity_id, args.is_invalid)
+    return {
+        "owner": args.owner,
+        "db_path": str(db_path),
+        "activity_id": args.activity_id,
+        "is_invalid": args.is_invalid,
+        "success": success,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Settings, workout search, and fitness form tools
+# ---------------------------------------------------------------------------
+
+
+def tool_get_settings(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = GetSettingsArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+    result = backend_main._settings_view_core(db_path)
+    result["owner"] = args.owner
+    return result
+
+
+def tool_update_settings(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = UpdateSettingsArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+    settings_dict: dict[str, Any] = {}
+    if args.lthr_curve is not None:
+        settings_dict["lthr_curve"] = args.lthr_curve
+    if args.lt_pace_curve is not None:
+        settings_dict["lt_pace_curve"] = args.lt_pace_curve
+    if args.timezone is not None:
+        settings_dict["timezone"] = args.timezone
+    if args.specificity_profile is not None:
+        settings_dict["specificity_profile"] = args.specificity_profile
+    if args.injury_windows is not None:
+        settings_dict["injury_windows"] = args.injury_windows
+    if args.if_zone_thresholds is not None:
+        settings_dict["if_zone_thresholds"] = args.if_zone_thresholds
+    if args.vdot_lookback_days is not None:
+        settings_dict["vdot_lookback_days"] = args.vdot_lookback_days
+    result = backend_main._settings_update_core(db_path, settings_dict)
+    result["owner"] = args.owner
+    result["db_path"] = str(db_path)
+    return result
+
+
+def tool_search_workouts(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = SearchWorkoutsArgs.model_validate(arguments or {})
+    all_templates = _scan_workout_templates()
+    matches: list[dict[str, Any]] = []
+    for _tid, tmpl in all_templates.items():
+        fm = tmpl.front_matter
+        if args.category and fm.get("category") != args.category:
+            continue
+        if args.load_role and fm.get("load_role") != args.load_role:
+            continue
+        if args.session_family and tmpl.session_family != args.session_family:
+            continue
+        if args.stress_class and fm.get("stress_class") != args.stress_class:
+            continue
+        if args.modality_pattern and fm.get("modality_pattern") != args.modality_pattern:
+            continue
+        if args.planning_intent and args.planning_intent.lower() not in str(fm.get("planning_intent") or "").lower():
+            continue
+        if args.phase_fit:
+            phase_fit_list = fm.get("phase_fit") or []
+            if isinstance(phase_fit_list, list) and args.phase_fit not in phase_fit_list:
+                continue
+            elif isinstance(phase_fit_list, str) and args.phase_fit != phase_fit_list:
+                continue
+        baseline_tss = _safe_float(fm.get("baseline_estimated_tss"))
+        if args.tss_min is not None and baseline_tss < args.tss_min:
+            continue
+        if args.tss_max is not None and baseline_tss > args.tss_max:
+            continue
+        matches.append(_template_summary(tmpl))
+    return {
+        "count": len(matches),
+        "filters": {k: v for k, v in arguments.items() if v is not None},
+        "templates": matches,
+    }
+
+
+def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
+    _require_pandas()
+    args = FitnessFormArgs.model_validate(arguments or {})
+    db_path, metrics_df = _recent_metrics_df(args.owner, sport=args.sport, days=max(args.days, 14))
+    if metrics_df.empty:
+        return {
+            "owner": args.owner,
+            "db_path": str(db_path),
+            "days": int(max(args.days, 14)),
+            "summary": {},
+            "daily": [],
+        }
+
+    daily = metrics_df.sort_values("start_date", ascending=True).copy()
+    daily["day"] = pd.to_datetime(daily["start_date"]).dt.date.astype(str)
+    day_agg = daily.groupby("day").agg(
+        tss=("tss", "sum"),
+        rtss=("rtss", "sum"),
+        duration_s=("duration_s", "sum"),
+        distance_km=("distance_km", "sum"),
+        mechanical_load=("mechanical_load", "sum"),
+    ).reset_index().sort_values("day")
+
+    tss_vals = day_agg["tss"].values
+    n = len(tss_vals)
+    ctl_vals = [0.0] * n
+    atl_vals = [0.0] * n
+    ctl_k = 2.0 / (42 + 1)
+    atl_k = 2.0 / (7 + 1)
+    for i in range(n):
+        prev_ctl = ctl_vals[i - 1] if i > 0 else float(tss_vals[0])
+        prev_atl = atl_vals[i - 1] if i > 0 else float(tss_vals[0])
+        ctl_vals[i] = prev_ctl + ctl_k * (float(tss_vals[i]) - prev_ctl)
+        atl_vals[i] = prev_atl + atl_k * (float(tss_vals[i]) - prev_atl)
+
+    day_agg["ctl"] = [round(v, 1) for v in ctl_vals]
+    day_agg["atl"] = [round(v, 1) for v in atl_vals]
+    day_agg["tsb"] = [round(c - a, 1) for c, a in zip(ctl_vals, atl_vals)]
+
+    daily_out = []
+    for _, row in day_agg.iterrows():
+        daily_out.append({
+            "day": str(row["day"]),
+            "tss": round(float(row["tss"]), 1),
+            "rtss": round(float(row["rtss"]), 1),
+            "duration_s": round(float(row["duration_s"]), 0),
+            "distance_km": round(float(row["distance_km"]), 2),
+            "mechanical_load": round(float(row["mechanical_load"]), 1),
+            "ctl": row["ctl"],
+            "atl": row["atl"],
+            "tsb": row["tsb"],
+        })
+
+    current = daily_out[-1] if daily_out else {}
+    return {
+        "owner": args.owner,
+        "db_path": str(db_path),
+        "days": int(max(args.days, 14)),
+        "summary": {
+            "current_ctl": current.get("ctl"),
+            "current_atl": current.get("atl"),
+            "current_tsb": current.get("tsb"),
+            "peak_ctl": max(ctl_vals) if ctl_vals else None,
+            "total_days": len(daily_out),
+        },
+        "daily": daily_out,
+    }
+
+
 def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     tool_name = str(name or "").strip()
     spec = TOOLS.get(tool_name)
@@ -1695,6 +2146,7 @@ def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
 
 
 TOOLS: dict[str, ToolSpec] = {
+    # --- Read / planning suggestion tools ---
     "plan_next_day": ToolSpec(
         name="plan_next_day",
         description="Generate the next workout suggestion plus the full planning decision metadata.",
@@ -1767,12 +2219,93 @@ TOOLS: dict[str, ToolSpec] = {
         input_schema=ExplainHistoryJudgmentArgs.model_json_schema(),
         handler=tool_explain_history_judgment,
     ),
+    # --- Planning write tools ---
+    "save_planned_activities": ToolSpec(
+        name="save_planned_activities",
+        description="Write one or more planned workouts to the database. Entries are parsed and validated using the standard activity text format.",
+        input_schema=SavePlannedActivitiesArgs.model_json_schema(),
+        handler=tool_save_planned_activities,
+    ),
+    "update_planned_activity": ToolSpec(
+        name="update_planned_activity",
+        description="Modify the workout text for an existing planned activity entry.",
+        input_schema=UpdatePlannedActivityArgs.model_json_schema(),
+        handler=tool_update_planned_activity,
+    ),
+    "delete_planned_activities": ToolSpec(
+        name="delete_planned_activities",
+        description="Remove one or more planned workouts by day_utc and line_no.",
+        input_schema=DeletePlannedActivitiesArgs.model_json_schema(),
+        handler=tool_delete_planned_activities,
+    ),
+    "mark_planned_done": ToolSpec(
+        name="mark_planned_done",
+        description="Toggle the manual_done flag on a planned activity (mark as completed or not).",
+        input_schema=MarkPlannedDoneArgs.model_json_schema(),
+        handler=tool_mark_planned_done,
+    ),
+    # --- Custom activities & sync tools ---
+    "save_custom_activities": ToolSpec(
+        name="save_custom_activities",
+        description="Record one or more manual activities not captured by Garmin (e.g., gym sessions, manual entries).",
+        input_schema=SaveCustomActivitiesArgs.model_json_schema(),
+        handler=tool_save_custom_activities,
+    ),
+    "delete_custom_activities": ToolSpec(
+        name="delete_custom_activities",
+        description="Remove one or more custom activity entries by day_utc and line_no.",
+        input_schema=DeleteCustomActivitiesArgs.model_json_schema(),
+        handler=tool_delete_custom_activities,
+    ),
+    "trigger_sync": ToolSpec(
+        name="trigger_sync",
+        description="Trigger a Garmin data sync to refresh activities and wellness data.",
+        input_schema=TriggerSyncArgs.model_json_schema(),
+        handler=tool_trigger_sync,
+    ),
+    "get_sync_status": ToolSpec(
+        name="get_sync_status",
+        description="Check the last Garmin sync time and result.",
+        input_schema=SyncStatusArgs.model_json_schema(),
+        handler=tool_get_sync_status,
+    ),
+    "mark_activity_invalid": ToolSpec(
+        name="mark_activity_invalid",
+        description="Flag an activity as invalid (e.g., GPS glitch, bad data) or restore it.",
+        input_schema=MarkActivityInvalidArgs.model_json_schema(),
+        handler=tool_mark_activity_invalid,
+    ),
+    # --- Settings & analytics tools ---
+    "get_settings": ToolSpec(
+        name="get_settings",
+        description="View athlete configuration: LTHR curve, threshold pace curve, timezone, specificity profile, injury windows, and IF zone thresholds.",
+        input_schema=GetSettingsArgs.model_json_schema(),
+        handler=tool_get_settings,
+    ),
+    "update_settings": ToolSpec(
+        name="update_settings",
+        description="Modify athlete configuration. Partial update: only provided fields change. Supports lthr_curve, lt_pace_curve, timezone, specificity_profile, injury_windows, if_zone_thresholds, vdot_lookback_days.",
+        input_schema=UpdateSettingsArgs.model_json_schema(),
+        handler=tool_update_settings,
+    ),
+    "search_workouts": ToolSpec(
+        name="search_workouts",
+        description="Search and filter the workout template catalog by category, load_role, session_family, stress_class, phase_fit, modality_pattern, planning_intent, and/or TSS range.",
+        input_schema=SearchWorkoutsArgs.model_json_schema(),
+        handler=tool_search_workouts,
+    ),
+    "get_fitness_form": ToolSpec(
+        name="get_fitness_form",
+        description="Query the full CTL/ATL/TSB fitness model with daily time series. Returns chronic training load, acute training load, and training stress balance.",
+        input_schema=FitnessFormArgs.model_json_schema(),
+        handler=tool_get_fitness_form,
+    ),
 }
 
 
 SERVER_INFO = {
     "name": "temperance-mcp",
-    "version": "0.2.0",
+    "version": "0.3.0",
 }
 
 

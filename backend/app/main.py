@@ -6501,15 +6501,8 @@ def overview(
     }
 
 
-@app.get("/api/v1/settings")
-def settings_view(
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-
+def _settings_view_core(db_path: Path) -> dict[str, Any]:
+    """Core settings view logic shared by the HTTP endpoint and MCP tool."""
     if_raw = get_setting(db_path, SETTINGS_KEY_IF_ZONE_THRESHOLDS)
     try:
         if_payload = json.loads(if_raw) if if_raw else None
@@ -6552,7 +6545,6 @@ def settings_view(
             injury_rows = []
 
     return {
-        "owner": resolved_owner,
         "db_path": str(db_path),
         "if_zone_thresholds": if_thresholds,
         "vdot_lookback_days": vdot_lookback_days,
@@ -6564,6 +6556,66 @@ def settings_view(
     }
 
 
+@app.get("/api/v1/settings")
+def settings_view(
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    result = _settings_view_core(db_path)
+    result["owner"] = resolved_owner
+    return result
+
+
+def _settings_update_core(db_path: Path, settings: dict[str, Any]) -> dict[str, Any]:
+    """Core settings update logic shared by the HTTP endpoint and MCP tool."""
+    updated: list[str] = []
+
+    if settings.get("if_zone_thresholds") is not None:
+        normalized = _normalize_if_zone_thresholds(settings["if_zone_thresholds"])
+        save_setting(db_path, SETTINGS_KEY_IF_ZONE_THRESHOLDS, _settings_json(normalized))
+        updated.append("if_zone_thresholds")
+
+    if settings.get("vdot_lookback_days") is not None:
+        normalized = _normalize_vdot_lookback_days(settings["vdot_lookback_days"])
+        save_setting(db_path, SETTINGS_KEY_VDOT_LOOKBACK_DAYS, str(int(normalized)))
+        updated.append("vdot_lookback_days")
+
+    if settings.get("specificity_profile") is not None:
+        sp = settings["specificity_profile"]
+        fallback = _safe_float(sp.get("non_running")) if isinstance(sp, dict) else 0.8
+        normalized = _normalize_specificity_profile(sp, fallback_default=max(fallback, 0.1))
+        save_setting(db_path, SETTINGS_KEY_ACTIVITY_SPECIFICITY, _settings_json(normalized))
+        save_setting(db_path, SETTINGS_KEY_NON_RUNNING_FACTOR, f"{float(normalized['non_running']):.4f}")
+        updated.append("specificity_profile")
+
+    if settings.get("lthr_curve") is not None:
+        normalized = _normalize_lthr_curve(settings["lthr_curve"])
+        save_setting(db_path, SETTINGS_KEY_LTHR_CURVE, _settings_json(normalized))
+        updated.append("lthr_curve")
+
+    if settings.get("lt_pace_curve") is not None:
+        normalized = _normalize_lt_pace_curve(settings["lt_pace_curve"])
+        save_setting(db_path, SETTINGS_KEY_LT_PACE_CURVE, _settings_json(normalized))
+        updated.append("lt_pace_curve")
+
+    if settings.get("injury_windows") is not None:
+        normalized = _normalize_injury_windows(settings["injury_windows"])
+        save_setting(db_path, SETTINGS_KEY_INJURY_WINDOWS, _settings_json(normalized))
+        updated.append("injury_windows")
+
+    if settings.get("timezone") is not None:
+        normalized_timezone = str(settings["timezone"] or "").strip()
+        if normalized_timezone:
+            normalized_timezone = _normalize_timezone_name(normalized_timezone)
+        save_setting(db_path, SETTINGS_KEY_USER_TIMEZONE, normalized_timezone)
+        updated.append("timezone")
+
+    return {"updated": updated}
+
+
 @app.put("/api/v1/settings")
 def settings_update(
     payload: UpdateSettingsRequest,
@@ -6573,49 +6625,15 @@ def settings_update(
     ctx = _auth_context(authorization)
     resolved_owner = _resolve_owner(ctx, owner)
     db_path = _db_path_for_owner(resolved_owner)
-
-    updated: list[str] = []
-
-    if payload.if_zone_thresholds is not None:
-        normalized = _normalize_if_zone_thresholds(payload.if_zone_thresholds)
-        save_setting(db_path, SETTINGS_KEY_IF_ZONE_THRESHOLDS, _settings_json(normalized))
-        updated.append("if_zone_thresholds")
-
-    if payload.vdot_lookback_days is not None:
-        normalized = _normalize_vdot_lookback_days(payload.vdot_lookback_days)
-        save_setting(db_path, SETTINGS_KEY_VDOT_LOOKBACK_DAYS, str(int(normalized)))
-        updated.append("vdot_lookback_days")
-
-    if payload.specificity_profile is not None:
-        fallback = _safe_float(payload.specificity_profile.get("non_running")) if isinstance(payload.specificity_profile, dict) else 0.8
-        normalized = _normalize_specificity_profile(payload.specificity_profile, fallback_default=max(fallback, 0.1))
-        save_setting(db_path, SETTINGS_KEY_ACTIVITY_SPECIFICITY, _settings_json(normalized))
-        save_setting(db_path, SETTINGS_KEY_NON_RUNNING_FACTOR, f"{float(normalized['non_running']):.4f}")
-        updated.append("specificity_profile")
-
-    if payload.lthr_curve is not None:
-        normalized = _normalize_lthr_curve(payload.lthr_curve)
-        save_setting(db_path, SETTINGS_KEY_LTHR_CURVE, _settings_json(normalized))
-        updated.append("lthr_curve")
-
-    if payload.lt_pace_curve is not None:
-        normalized = _normalize_lt_pace_curve(payload.lt_pace_curve)
-        save_setting(db_path, SETTINGS_KEY_LT_PACE_CURVE, _settings_json(normalized))
-        updated.append("lt_pace_curve")
-
-    if payload.injury_windows is not None:
-        normalized = _normalize_injury_windows(payload.injury_windows)
-        save_setting(db_path, SETTINGS_KEY_INJURY_WINDOWS, _settings_json(normalized))
-        updated.append("injury_windows")
-
-    if payload.timezone is not None:
-        normalized_timezone = str(payload.timezone or "").strip()
-        if normalized_timezone:
-            normalized_timezone = _normalize_timezone_name(normalized_timezone)
-        save_setting(db_path, SETTINGS_KEY_USER_TIMEZONE, normalized_timezone)
-        updated.append("timezone")
-
-    return {"updated": updated}
+    return _settings_update_core(db_path, {
+        "if_zone_thresholds": payload.if_zone_thresholds,
+        "vdot_lookback_days": payload.vdot_lookback_days,
+        "specificity_profile": payload.specificity_profile,
+        "lthr_curve": payload.lthr_curve,
+        "lt_pace_curve": payload.lt_pace_curve,
+        "injury_windows": payload.injury_windows,
+        "timezone": payload.timezone,
+    })
 
 
 @app.get("/api/v1/vdot")
@@ -7298,25 +7316,16 @@ def planned_activity_delete(
     return {"deleted": int(deleted)}
 
 
-@app.post("/api/v1/planned-activities/ingest")
-def planned_activities_ingest(
-    payload: PlannedIngestRequest,
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    entry_text = str(payload.entry_text or "")
-
+def _ingest_planned_entries_core(db_path: Path, entry_text: str) -> dict[str, Any]:
+    """Core planned-activity ingest logic shared by the HTTP endpoint and MCP tool."""
     if len(entry_text) > int(MAX_PLANNED_ENTRY_CHARS):
-        raise HTTPException(status_code=400, detail=f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save.")
+        return {"saved_count": 0, "errors": [f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save."]}
 
     entries = _split_dated_activity_entries(entry_text)
     if not entries:
-        raise HTTPException(status_code=400, detail="Input is empty. Use `[date]:[activity]`.")
+        return {"saved_count": 0, "errors": ["Input is empty. Use `[date]:[activity]`."]}
     if len(entries) > int(MAX_PLANNED_ENTRIES_PER_SAVE):
-        raise HTTPException(status_code=400, detail=f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}.")
+        return {"saved_count": 0, "errors": [f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}."]}
 
     today_local = pd.Timestamp(datetime.now().astimezone().date())
     previous_sunday = today_local - pd.Timedelta(days=int(today_local.weekday()) + 1)
@@ -7394,35 +7403,49 @@ def planned_activities_ingest(
     }
 
 
-@app.patch("/api/v1/planned-activities/workout")
-def planned_activity_workout_update(
-    payload: PlannedWorkoutUpdateRequest,
+@app.post("/api/v1/planned-activities/ingest")
+def planned_activities_ingest(
+    payload: PlannedIngestRequest,
     owner: str | None = Query(default=None),
     authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> dict[str, Any]:
     ctx = _auth_context(authorization)
     resolved_owner = _resolve_owner(ctx, owner)
     db_path = _db_path_for_owner(resolved_owner)
+    entry_text = str(payload.entry_text or "")
+    result = _ingest_planned_entries_core(db_path, entry_text)
+    if result["saved_count"] == 0 and result["errors"]:
+        first_error = result["errors"][0]
+        if "Input is empty" in first_error or "Input too large" in first_error or "Too many entries" in first_error:
+            raise HTTPException(status_code=400, detail=first_error)
+    return result
 
-    day_utc = str(payload.day_utc or "").strip()
-    line_no = int(payload.line_no)
-    workout_text = _normalize_plan_text(str(payload.workout_text or ""))
+
+def _update_planned_workout_core(
+    db_path: Path,
+    day_utc: str,
+    line_no: int,
+    workout_text: str,
+    manual_done: bool | None = None,
+) -> dict[str, Any]:
+    """Core planned-activity update logic shared by the HTTP endpoint and MCP tool."""
+    workout_text = _normalize_plan_text(workout_text)
     if not day_utc or line_no <= 0:
-        raise HTTPException(status_code=400, detail="Invalid day_utc or line_no")
+        return {"updated": False, "error": "Invalid day_utc or line_no"}
     if not workout_text:
-        raise HTTPException(status_code=400, detail="Workout text cannot be empty")
+        return {"updated": False, "error": "Workout text cannot be empty"}
 
     existing = get_planned_activities_df(db_path=db_path, start_day_utc=day_utc, end_day_utc=day_utc)
     if existing.empty:
-        raise HTTPException(status_code=404, detail="Planned activity not found")
+        return {"updated": False, "error": "Planned activity not found"}
     existing = existing[pd.to_numeric(existing.get("line_no"), errors="coerce").fillna(0).astype(int) == line_no]
     if existing.empty:
-        raise HTTPException(status_code=404, detail="Planned activity not found")
+        return {"updated": False, "error": "Planned activity not found"}
     current_row = existing.iloc[0]
 
     day_ts = pd.to_datetime(day_utc, errors="coerce")
     if pd.isna(day_ts):
-        raise HTTPException(status_code=400, detail="Invalid day_utc")
+        return {"updated": False, "error": "Invalid day_utc"}
 
     lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
     pace_curve = _load_curve_points(
@@ -7444,11 +7467,11 @@ def planned_activity_workout_update(
     )
     if warns or not segs:
         details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
-        raise HTTPException(status_code=400, detail=details)
+        return {"updated": False, "error": details}
 
-    manual_done = (
-        bool(payload.manual_done)
-        if payload.manual_done is not None
+    resolved_manual_done = (
+        bool(manual_done)
+        if manual_done is not None
         else bool(_safe_float(current_row.get("manual_done")) > 0)
     )
     upsert_planned_activities_rows(
@@ -7459,10 +7482,33 @@ def planned_activity_workout_update(
                 "line_no": line_no,
                 "workout_text": workout_text,
                 "parsed_json": segs,
-                "manual_done": manual_done,
+                "manual_done": resolved_manual_done,
             }
         ],
     )
+    return {"updated": True}
+
+
+@app.patch("/api/v1/planned-activities/workout")
+def planned_activity_workout_update(
+    payload: PlannedWorkoutUpdateRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    result = _update_planned_workout_core(
+        db_path,
+        day_utc=str(payload.day_utc or "").strip(),
+        line_no=int(payload.line_no),
+        workout_text=str(payload.workout_text or ""),
+        manual_done=payload.manual_done,
+    )
+    if not result.get("updated"):
+        error_msg = result.get("error", "Update failed")
+        status = 404 if "not found" in error_msg.lower() else 400
+        raise HTTPException(status_code=status, detail=error_msg)
     return {"updated": True}
 
 
@@ -7612,25 +7658,16 @@ def generated_activity(
     return response
 
 
-@app.post("/api/v1/custom-activities/ingest")
-def custom_activities_ingest(
-    payload: CustomIngestRequest,
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    entry_text = str(payload.entry_text or "")
-
+def _ingest_custom_entries_core(db_path: Path, entry_text: str) -> dict[str, Any]:
+    """Core custom-activity ingest logic shared by the HTTP endpoint and MCP tool."""
     if len(entry_text) > int(MAX_PLANNED_ENTRY_CHARS):
-        raise HTTPException(status_code=400, detail=f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save.")
+        return {"saved_count": 0, "errors": [f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save."]}
 
     entries = _split_dated_activity_entries(entry_text)
     if not entries:
-        raise HTTPException(status_code=400, detail="Input is empty. Use `[date]:[activity]`.")
+        return {"saved_count": 0, "errors": ["Input is empty. Use `[date]:[activity]`."]}
     if len(entries) > int(MAX_PLANNED_ENTRIES_PER_SAVE):
-        raise HTTPException(status_code=400, detail=f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}.")
+        return {"saved_count": 0, "errors": [f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}."]}
 
     existing = get_custom_activities_df(db_path=db_path)
     max_line_by_day = existing.groupby("day_utc")["line_no"].max().to_dict() if not existing.empty else {}
@@ -7691,9 +7728,27 @@ def custom_activities_ingest(
                 max_rows=CUSTOM_ACTIVITIES_LIMIT,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            return {"saved_count": 0, "errors": [str(exc)]}
 
     return {"saved_count": int(len(rows_to_upsert)), "errors": errors[:20]}
+
+
+@app.post("/api/v1/custom-activities/ingest")
+def custom_activities_ingest(
+    payload: CustomIngestRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    entry_text = str(payload.entry_text or "")
+    result = _ingest_custom_entries_core(db_path, entry_text)
+    if result["saved_count"] == 0 and result["errors"]:
+        first_error = result["errors"][0]
+        if "Input is empty" in first_error or "Input too large" in first_error or "Too many entries" in first_error:
+            raise HTTPException(status_code=400, detail=first_error)
+    return result
 
 
 @app.patch("/api/v1/custom-activities/workout")

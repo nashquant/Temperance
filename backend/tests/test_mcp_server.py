@@ -9,11 +9,39 @@ from backend.app import mcp_server
 class MCPServerHelpersTest(unittest.TestCase):
     def test_module_imports_without_fastapi_dependency_path(self):
         self.assertEqual(mcp_server.SERVER_INFO["name"], "temperance-mcp")
+        self.assertEqual(mcp_server.SERVER_INFO["version"], "0.3.0")
         self.assertEqual(mcp_server.SERVER_PROTOCOL_VERSION, "2025-03-26")
         self.assertIn("plan_next_day", mcp_server.TOOLS)
         self.assertIn("get_activity_detail", mcp_server.TOOLS)
         self.assertIn("judge_training_history", mcp_server.TOOLS)
+        self.assertNotIn("recommend_training", mcp_server.TOOLS)
+        self.assertNotIn("explain_recommendation", mcp_server.TOOLS)
         self.assertIsNone(mcp_server._BACKEND_MAIN_MODULE)
+
+    def test_new_write_tools_are_registered(self):
+        for tool_name in [
+            "save_planned_activities",
+            "update_planned_activity",
+            "delete_planned_activities",
+            "mark_planned_done",
+            "save_custom_activities",
+            "delete_custom_activities",
+            "trigger_sync",
+            "get_sync_status",
+            "mark_activity_invalid",
+            "get_settings",
+            "update_settings",
+            "search_workouts",
+            "get_fitness_form",
+        ]:
+            self.assertIn(tool_name, mcp_server.TOOLS, f"Missing tool: {tool_name}")
+
+    def test_tools_list_returns_all_registered_tools(self):
+        response = mcp_server.handle_message({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        tool_names = {t["name"] for t in response["result"]["tools"]}
+        self.assertEqual(len(tool_names), len(mcp_server.TOOLS))
+        for name in mcp_server.TOOLS:
+            self.assertIn(name, tool_names)
 
     def test_initialize_advertises_tools_and_resources(self):
         response = mcp_server.handle_message({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
@@ -104,7 +132,11 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertIn("contents", response["result"])
         payload = json.loads(response["result"]["contents"][0]["text"])
         self.assertEqual(payload["doc"]["doc_id"], "training-llm-instructions")
-        self.assertTrue(payload["read_order"])
+        self.assertIn("read_order", payload)
+        self.assertIn("precedence", payload)
+        self.assertTrue(payload["precedence"])
+        self.assertIn("interpretation_rules", payload)
+        self.assertTrue(payload["interpretation_rules"])
 
     def test_resources_read_prefers_local_override_for_guideline_docs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -209,7 +241,6 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(payload["owner"], "admin")
         self.assertEqual(payload["window_days"], 42)
 
-
     def test_tool_get_activity_detail_delegates_to_backend_handler(self):
         captured = {}
 
@@ -250,6 +281,45 @@ class MCPServerHelpersTest(unittest.TestCase):
                 "authorization": None,
             },
         )
+
+    def test_search_workouts_returns_all_when_no_filters(self):
+        result = mcp_server.tool_search_workouts({})
+        self.assertGreater(result["count"], 0)
+        self.assertIn("templates", result)
+        for tmpl in result["templates"]:
+            self.assertIn("template_id", tmpl)
+            self.assertIn("session_family", tmpl)
+            self.assertIn("category", tmpl)
+
+    def test_search_workouts_filters_by_category(self):
+        result = mcp_server.tool_search_workouts({"category": "threshold-hard"})
+        self.assertGreater(result["count"], 0)
+        for tmpl in result["templates"]:
+            self.assertEqual(tmpl["category"], "threshold-hard")
+
+    def test_search_workouts_filters_by_session_family(self):
+        result = mcp_server.tool_search_workouts({"session_family": "lt1-threshold"})
+        self.assertGreater(result["count"], 0)
+        for tmpl in result["templates"]:
+            self.assertEqual(tmpl["session_family"], "lt1-threshold")
+
+    def test_search_workouts_filters_by_tss_range(self):
+        result = mcp_server.tool_search_workouts({"tss_min": 50, "tss_max": 80})
+        for tmpl in result["templates"]:
+            tss = float(tmpl.get("baseline_estimated_tss") or 0)
+            self.assertGreaterEqual(tss, 50)
+            self.assertLessEqual(tss, 80)
+
+    def test_search_workouts_empty_result_for_impossible_filter(self):
+        result = mcp_server.tool_search_workouts({"category": "nonexistent-category-xyz"})
+        self.assertEqual(result["count"], 0)
+        self.assertEqual(result["templates"], [])
+
+    def test_all_tool_schemas_are_valid_json_schema(self):
+        for name, spec in mcp_server.TOOLS.items():
+            schema = spec.input_schema
+            self.assertIn("type", schema, f"Tool {name} schema missing 'type'")
+            self.assertIn("properties", schema, f"Tool {name} schema missing 'properties'")
 
 
 if __name__ == "__main__":
