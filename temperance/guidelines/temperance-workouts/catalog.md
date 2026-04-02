@@ -72,7 +72,7 @@ For the metadata model, read [taxonomy.md](./taxonomy.md). For the shortest prac
 
 ### Fartlek Alternations
 
-- [fartlek-20min-plus-6x5-at-92.md](./fartlek-alternations/fartlek-20min-plus-6x5-at-92.md)
+- [fartlek-20min-plus-6x5-at-85.md](./fartlek-alternations/fartlek-20min-plus-6x5-at-85.md)
 
 ### Strides Neuromuscular
 

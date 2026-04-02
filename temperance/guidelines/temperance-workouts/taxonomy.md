@@ -31,7 +31,7 @@ Use it when the library needs to stay broad without turning `category` into a ca
 | `progressive` | `moderate-support`, `specific-hard` | `moderate-support`, `secondary-hard` | `progression`, `fast-finish` | support or bridge work depending the finish block |
 | `medium-long` | `moderate-support`, `specific-hard` | `moderate-support`, `long-durability` | `continuous`, `progression`, `fast-finish` | durable volume between support and long-session work |
 | `long-run` | `long-duration-hard` | `long-durability` | `continuous`, `fast-finish`, `alternation` | duration-led long-session stress |
-| `fartlek-alternations` | `threshold-hard`, `sharp-hard` | `primary-hard`, `sharpening` | `alternation` | controlled variability without random intensity |
+| `fartlek-alternations` | `moderate-support`, `specific-hard`, `threshold-hard` | `moderate-support`, `secondary-hard`, `primary-hard` | `alternation` | controlled variability without random intensity, often using a smaller steady-to-moderate amplitude unless a sharper variant is explicitly authored |
 | `strides-neuromuscular` | `easy-support` | `support`, `sharpening` | `strides-finish` | low-cost range and neuromuscular touch |
 | `x-train-specific` | `moderate-support`, `threshold-hard` | `support`, `moderate-support` | `continuous`, `progression`, `intervals` | productive non-run work when x-train is the right tool |
 | `mixed-combo` | `threshold-hard`, `specific-hard` | `secondary-hard`, `specific-endurance` | `mixed-modality`, `fast-finish`, `broken-continuous` | sessions that blend two useful shapes without splitting the day |

@@ -25,7 +25,7 @@ Use [catalog.md](./catalog.md) when you want the full list. Use [taxonomy.md](./
 | hill strength | `hills-strength-endurance` | [hill-strength-20min-plus-4x6-at-90.md](./hills-strength-endurance/hill-strength-20min-plus-4x6-at-90.md) |
 | medium-long durable support | `medium-long` | [medium-long-75min-at-72.md](./medium-long/medium-long-75min-at-72.md) |
 | progression support | `progressive` | [progressive-40min-at-72-plus-20min-at-79-plus-10min-at-83.md](./progressive/progressive-40min-at-72-plus-20min-at-79-plus-10min-at-83.md) |
-| threshold-flavored alternation | `fartlek-alternations` | [fartlek-20min-plus-6x5-at-92.md](./fartlek-alternations/fartlek-20min-plus-6x5-at-92.md) |
+| small-amplitude aerobic alternation | `fartlek-alternations` | [fartlek-20min-plus-6x5-at-85.md](./fartlek-alternations/fartlek-20min-plus-6x5-at-85.md) |
 | easy plus neuromuscular touch | `strides-neuromuscular` | [strides-50min-at-72-plus-8x20s-at-105.md](./strides-neuromuscular/strides-50min-at-72-plus-8x20s-at-105.md) |
 | productive x-train support | `x-train-specific` | [xtrain-60min-at-78-plus-10min-at-82.md](./x-train-specific/xtrain-60min-at-78-plus-10min-at-82.md) |
 | blended threshold plus finish | `mixed-combo` | [mixed-20min-plus-3x10-at-90-plus-10min-at-84.md](./mixed-combo/mixed-20min-plus-3x10-at-90-plus-10min-at-84.md) |
@@ -55,6 +55,12 @@ Use [catalog.md](./catalog.md) when you want the full list. Use [taxonomy.md](./
 - Prefer short `2-3min` reps over long VO2 blocks.
 - Give enough recovery to preserve pace quality, often equal to or slightly longer than the work.
 - In running terms, this family should feel closer to controlled 5k-10k rhythm than to sprinting.
+
+## Fartlek Rule
+
+- Treat the default `fartlek-alternations` family as small-amplitude rhythm work, not as disguised threshold.
+- The faster side should usually sit near marathon-like rhythm, while the float should stay only slightly lower in high Z2 to low Z3 territory.
+- Use fartlek when you want controlled variation and rhythm change; if you want a cleaner hard stimulus, move to `lt1-threshold`, `lt2-threshold`, or `cruise-intervals`.
 
 ## Fast Read
 
