@@ -25,8 +25,6 @@ class TemperanceMCPServerTest(unittest.TestCase):
                 "get_load_trend",
                 "get_recovery_trend",
                 "get_activity_detail",
-                "recommend_training",
-                "explain_recommendation",
                 "judge_training_history",
                 "explain_history_judgment",
             ],

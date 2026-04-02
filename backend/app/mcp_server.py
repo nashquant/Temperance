@@ -94,16 +94,6 @@ class WorkoutTemplateDoc:
     body_markdown: str
 
 
-@dataclass
-class RecommendationContext:
-    readiness: float
-    sleep_score: float
-    stress_avg: float
-    week_remaining: float
-    target_today: float
-    remaining_days: int
-
-
 class OwnerArgs(BaseModel):
     owner: str = DEFAULT_OWNER
 
@@ -133,23 +123,11 @@ class WeekOutlookArgs(BaseModel):
     week_start: Optional[str] = None
 
 
-class RecommendTrainingArgs(BaseModel):
-    owner: str = DEFAULT_OWNER
-    activity_type: str = "running"
-    day: Optional[str] = None
-
-
 class ActivityDetailArgs(BaseModel):
     owner: str = DEFAULT_OWNER
     activity_id: str
     include_records: bool = True
     records_limit: int = 300
-
-
-class ExplainRecommendationArgs(BaseModel):
-    owner: str = DEFAULT_OWNER
-    activity_type: str = "running"
-    day: Optional[str] = None
 
 
 class PlanningToolArgs(BaseModel):
@@ -379,188 +357,6 @@ def _latest_wellness_point(wellness_payload: dict[str, Any]) -> dict[str, Any]:
     return _clean_mapping(dict(points[-1])) if points else {}
 
 
-def _recommendation_status(context: RecommendationContext) -> tuple[str, str]:
-    if context.readiness > 0 and context.readiness <= 35:
-        return "recover", "Training readiness is very low, so the safest call is recovery-first work."
-    if context.sleep_score > 0 and context.sleep_score <= 65:
-        return "easy", "Sleep score is suppressed, so keep the day aerobic and controlled."
-    if context.stress_avg >= 60:
-        return "easy", "Average stress is elevated, so avoid stacking another hard session."
-    if context.week_remaining > context.target_today * 1.5 and context.target_today > 0:
-        return "build", "You are behind the weekly load target and recovery signals still look usable."
-    return "steady", "Load and recovery look balanced enough for a normal quality day."
-
-
-def _normalize_activity_type(value: Optional[str]) -> str:
-    sport = str(value or "running").strip().lower() or "running"
-    aliases = {
-        "run": "running",
-        "treadmill": "running",
-        "cycle": "bike",
-        "cycling": "bike",
-        "ride": "bike",
-        "trainer": "bike",
-        "xtrain": "elliptical",
-        "x-train": "elliptical",
-        "cross train": "elliptical",
-        "cross-train": "elliptical",
-    }
-    return aliases.get(sport, sport)
-
-
-def _recommendation_text(activity_type: str, status: str) -> str:
-    suggestion_map = {
-        "running": {
-            "recover": "Run 35-45min easy in Z1/Z2. Add 4-6 relaxed strides only if the legs open up during the cooldown.",
-            "easy": "Run 45-60min easy aerobic. Keep it conversational and leave threshold work for another day.",
-            "steady": "Run 15min easy, then 3x8min steady/threshold with easy recoveries, then cool down well.",
-            "build": "Run 20min easy, then 4x10min threshold with short recoveries, or swap to a medium-long aerobic run if volume matters more today.",
-        },
-        "elliptical": {
-            "recover": "Elliptical 35-45min very easy at low HR. Treat it as circulation work, not training stress.",
-            "easy": "Elliptical 45-60min aerobic at controlled HR with no hard surges.",
-            "steady": "Elliptical 15min easy, then 3x10min strong aerobic/tempo with easy recoveries, then cool down.",
-            "build": "Elliptical 20min easy, then 4x10min tempo/threshold with controlled recoveries.",
-        },
-        "bike": {
-            "recover": "Bike 45min recovery spin with light legs only.",
-            "easy": "Bike 60-90min aerobic endurance and cap the effort before it drifts upward.",
-            "steady": "Bike 20min easy, then 3x12min tempo/threshold, then cool down.",
-            "build": "Bike 20min easy, then 4x12min sweet spot/threshold, or extend into a longer endurance ride if time is available.",
-        },
-    }
-    family = suggestion_map.get(activity_type, suggestion_map["running"])
-    return family[status]
-
-
-def _recommendation_headline(activity_type: str, status: str) -> str:
-    labels = {
-        "recover": "Recovery day",
-        "easy": "Easy day",
-        "steady": "Steady quality day",
-        "build": "Build day",
-    }
-    return f"{labels.get(status, 'Training day')} for {activity_type}"
-
-
-def _recommendation_explanation(context: RecommendationContext, status: str) -> str:
-    parts = [
-        f"readiness={context.readiness:.0f}" if context.readiness > 0 else "readiness=unknown",
-        f"sleep={context.sleep_score:.0f}" if context.sleep_score > 0 else "sleep=unknown",
-        f"stress={context.stress_avg:.0f}" if context.stress_avg > 0 else "stress=unknown",
-        f"remaining_week_tss={context.week_remaining:.1f}",
-        f"remaining_days={context.remaining_days}",
-    ]
-    if status == "build" and context.remaining_days > 0:
-        parts.append(f"pace_needed≈{context.week_remaining / context.remaining_days:.1f} TSS/day")
-    return "; ".join(parts)
-
-
-def _recommendation_signal_rows(context: RecommendationContext, status: str) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = [
-        {
-            "signal": "training_readiness",
-            "value": round(context.readiness, 1) if context.readiness > 0 else None,
-            "status_impact": "recover" if context.readiness > 0 and context.readiness <= 35 else "supports_training",
-            "why": "Very low readiness forces recovery-first guidance." if context.readiness > 0 and context.readiness <= 35 else "Readiness is not the main limiter right now.",
-        },
-        {
-            "signal": "sleep_score",
-            "value": round(context.sleep_score, 1) if context.sleep_score > 0 else None,
-            "status_impact": "easy" if context.sleep_score > 0 and context.sleep_score <= 65 else "supports_training",
-            "why": "Suppressed sleep score keeps the day aerobic." if context.sleep_score > 0 and context.sleep_score <= 65 else "Sleep score is acceptable for normal training.",
-        },
-        {
-            "signal": "stress_avg",
-            "value": round(context.stress_avg, 1) if context.stress_avg > 0 else None,
-            "status_impact": "easy" if context.stress_avg >= 60 else "supports_training",
-            "why": "Elevated stress argues against stacking intensity." if context.stress_avg >= 60 else "Stress is not high enough to dominate the call.",
-        },
-        {
-            "signal": "remaining_week_tss",
-            "value": round(context.week_remaining, 1),
-            "status_impact": "build" if context.week_remaining > context.target_today * 1.5 and context.target_today > 0 else "balanced",
-            "why": "Weekly load is still behind target, so more work can be justified." if context.week_remaining > context.target_today * 1.5 and context.target_today > 0 else "Remaining weekly load does not strongly push for a build day.",
-        },
-        {
-            "signal": "remaining_days",
-            "value": int(context.remaining_days),
-            "status_impact": status,
-            "why": (
-                f"That leaves about {context.week_remaining / context.remaining_days:.1f} TSS/day to distribute."
-                if context.remaining_days > 0 and context.week_remaining > 0
-                else "No meaningful per-day pacing signal is available."
-            ),
-        },
-    ]
-    return rows
-
-
-def _recommendation_decision_trace(context: RecommendationContext, status: str, rationale: str) -> dict[str, Any]:
-    return {
-        "status": status,
-        "rationale": rationale,
-        "signals": _recommendation_signal_rows(context, status),
-        "compact_explanation": _recommendation_explanation(context, status),
-    }
-
-
-def _build_recommendation_payload(args: RecommendTrainingArgs | ExplainRecommendationArgs) -> dict[str, Any]:
-    _require_pandas()
-    helpers = _analytics_helpers()
-    db_path, metrics_df = _recent_metrics_df(args.owner, sport=None, days=60)
-    wellness_payload = helpers["_build_wellness_payload"](db_path=db_path, days=14, aggregation="daily", owner=args.owner)
-    week_outlook = helpers["_build_week_outlook_payload"](
-        db_path=db_path,
-        days=120,
-        start_day=None,
-        end_day=None,
-        sport=None,
-        metric="tss",
-        compare="planned",
-        week_start=None,
-    )
-    planned_payload = tool_get_planned_activities({"owner": args.owner, "days_ahead": 7})
-
-    latest_wellness = _latest_wellness_point(wellness_payload)
-    latest_activity = metrics_df.iloc[0] if not metrics_df.empty else None
-    week_remaining = _safe_float(week_outlook.get("remaining_to_go"))
-    target_today = _daily_tss_target_from_week_outlook(week_outlook)
-    remaining_days = max(_remaining_days_in_week(week_outlook), 1)
-    context = RecommendationContext(
-        readiness=_safe_float(latest_wellness.get("training_readiness")),
-        sleep_score=_safe_float(latest_wellness.get("sleep_score")),
-        stress_avg=_safe_float(latest_wellness.get("stress_avg")),
-        week_remaining=week_remaining,
-        target_today=target_today,
-        remaining_days=remaining_days,
-    )
-    status, rationale = _recommendation_status(context)
-    sport = _normalize_activity_type(args.activity_type)
-    suggestion = _recommendation_text(sport, status)
-    per_remaining_day = round(week_remaining / remaining_days, 1) if week_remaining > 0 else 0.0
-    last_session_summary = _activity_row_summary(latest_activity, include_extended_metrics=False) if latest_activity is not None else None
-    return {
-        "owner": args.owner,
-        "db_path": str(db_path),
-        "activity_type": sport,
-        "status": status,
-        "headline": _recommendation_headline(sport, status),
-        "rationale": rationale,
-        "explanation": _recommendation_explanation(context, status),
-        "suggestion": suggestion,
-        "target_today_tss": round(target_today, 1),
-        "remaining_tss_this_week": round(week_remaining, 1),
-        "remaining_days_in_week": int(remaining_days),
-        "balanced_tss_per_remaining_day": float(per_remaining_day),
-        "latest_wellness": latest_wellness,
-        "last_session": last_session_summary,
-        "upcoming_planned": (planned_payload.get("planned") or [])[:3],
-        "decision_trace": _recommendation_decision_trace(context, status, rationale),
-        "note": "Heuristic MVP only: useful for triage and chat workflows, not a medical or coaching guarantee.",
-    }
-
-
 def tool_get_today_status(arguments: dict[str, Any]) -> dict[str, Any]:
     args = TodayStatusArgs.model_validate(arguments or {})
     db = _db_helpers()
@@ -786,28 +582,6 @@ def tool_get_recovery_trend(arguments: dict[str, Any]) -> dict[str, Any]:
         "daily": cleaned_points,
     }
 
-
-def tool_recommend_training(arguments: dict[str, Any]) -> dict[str, Any]:
-    args = RecommendTrainingArgs.model_validate(arguments or {})
-    return _build_recommendation_payload(args)
-
-
-def tool_explain_recommendation(arguments: dict[str, Any]) -> dict[str, Any]:
-    args = ExplainRecommendationArgs.model_validate(arguments or {})
-    payload = _build_recommendation_payload(args)
-    return {
-        "owner": payload.get("owner"),
-        "db_path": payload.get("db_path"),
-        "activity_type": payload.get("activity_type"),
-        "status": payload.get("status"),
-        "headline": payload.get("headline"),
-        "rationale": payload.get("rationale"),
-        "explanation": payload.get("explanation"),
-        "decision_trace": payload.get("decision_trace") or {},
-        "latest_wellness": payload.get("latest_wellness"),
-        "last_session": payload.get("last_session"),
-        "upcoming_planned": payload.get("upcoming_planned"),
-    }
 
 
 def tool_get_activity_detail(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1980,18 +1754,6 @@ TOOLS: dict[str, ToolSpec] = {
         description="Return the existing Temperance activity detail payload for a specific activity id.",
         input_schema=ActivityDetailArgs.model_json_schema(),
         handler=tool_get_activity_detail,
-    ),
-    "recommend_training": ToolSpec(
-        name="recommend_training",
-        description="[Deprecated] Provide a heuristic training recommendation from readiness, recent load, and planned work.",
-        input_schema=RecommendTrainingArgs.model_json_schema(),
-        handler=tool_recommend_training,
-    ),
-    "explain_recommendation": ToolSpec(
-        name="explain_recommendation",
-        description="[Deprecated] Explain why the current heuristic recommendation was made, including the decision trace and contributing signals.",
-        input_schema=ExplainRecommendationArgs.model_json_schema(),
-        handler=tool_explain_recommendation,
     ),
     "judge_training_history": ToolSpec(
         name="judge_training_history",

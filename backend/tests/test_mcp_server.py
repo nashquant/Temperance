@@ -11,8 +11,6 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(mcp_server.SERVER_INFO["name"], "temperance-mcp")
         self.assertEqual(mcp_server.SERVER_PROTOCOL_VERSION, "2025-03-26")
         self.assertIn("plan_next_day", mcp_server.TOOLS)
-        self.assertIn("recommend_training", mcp_server.TOOLS)
-        self.assertIn("explain_recommendation", mcp_server.TOOLS)
         self.assertIn("get_activity_detail", mcp_server.TOOLS)
         self.assertIn("judge_training_history", mcp_server.TOOLS)
         self.assertIsNone(mcp_server._BACKEND_MAIN_MODULE)
@@ -22,57 +20,6 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(response["result"]["protocolVersion"], "2025-03-26")
         self.assertEqual(response["result"]["serverInfo"]["name"], "temperance-mcp")
         self.assertEqual(response["result"]["capabilities"], {"tools": {}, "resources": {}})
-
-    def test_recommendation_status_prefers_recovery_when_readiness_is_low(self):
-        status, rationale = mcp_server._recommendation_status(
-            mcp_server.RecommendationContext(
-                readiness=28,
-                sleep_score=82,
-                stress_avg=32,
-                week_remaining=140,
-                target_today=55,
-                remaining_days=3,
-            )
-        )
-        self.assertEqual(status, "recover")
-        self.assertIn("recovery", rationale.lower())
-
-    def test_recommendation_status_prefers_build_when_recovered_and_behind_load(self):
-        status, rationale = mcp_server._recommendation_status(
-            mcp_server.RecommendationContext(
-                readiness=81,
-                sleep_score=84,
-                stress_avg=22,
-                week_remaining=160,
-                target_today=50,
-                remaining_days=2,
-            )
-        )
-        self.assertEqual(status, "build")
-        self.assertIn("behind the weekly load target", rationale.lower())
-
-    def test_recommendation_text_normalizes_aliases_and_is_more_specific(self):
-        sport = mcp_server._normalize_activity_type("cycling")
-        self.assertEqual(sport, "bike")
-        suggestion = mcp_server._recommendation_text(sport, "easy")
-        self.assertIn("aerobic endurance", suggestion.lower())
-        self.assertIn("cap the effort", suggestion.lower())
-
-    def test_recommendation_explanation_includes_compact_signal_summary(self):
-        explanation = mcp_server._recommendation_explanation(
-            mcp_server.RecommendationContext(
-                readiness=74,
-                sleep_score=77,
-                stress_avg=19,
-                week_remaining=90,
-                target_today=30,
-                remaining_days=3,
-            ),
-            "build",
-        )
-        self.assertIn("readiness=74", explanation)
-        self.assertIn("sleep=77", explanation)
-        self.assertIn("pace_needed≈30.0 TSS/day", explanation)
 
     def test_activity_row_summary_is_stable_for_pure_formatting(self):
         summary = mcp_server._activity_row_summary(
@@ -262,42 +209,6 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(payload["owner"], "admin")
         self.assertEqual(payload["window_days"], 42)
 
-
-    def test_recommendation_signal_rows_surface_primary_build_driver(self):
-        rows = mcp_server._recommendation_signal_rows(
-            mcp_server.RecommendationContext(
-                readiness=82,
-                sleep_score=80,
-                stress_avg=24,
-                week_remaining=150,
-                target_today=45,
-                remaining_days=2,
-            ),
-            "build",
-        )
-        self.assertEqual(rows[0]["signal"], "training_readiness")
-        weekly_load = next(row for row in rows if row["signal"] == "remaining_week_tss")
-        self.assertEqual(weekly_load["status_impact"], "build")
-        self.assertIn("behind target", weekly_load["why"].lower())
-
-    def test_recommendation_decision_trace_keeps_signal_breakdown(self):
-        trace = mcp_server._recommendation_decision_trace(
-            mcp_server.RecommendationContext(
-                readiness=30,
-                sleep_score=78,
-                stress_avg=18,
-                week_remaining=70,
-                target_today=35,
-                remaining_days=2,
-            ),
-            "recover",
-            "Training readiness is very low, so the safest call is recovery-first work.",
-        )
-        self.assertEqual(trace["status"], "recover")
-        self.assertIn("compact_explanation", trace)
-        readiness_row = next(row for row in trace["signals"] if row["signal"] == "training_readiness")
-        self.assertEqual(readiness_row["status_impact"], "recover")
-        self.assertIn("recovery-first", readiness_row["why"].lower())
 
     def test_tool_get_activity_detail_delegates_to_backend_handler(self):
         captured = {}
