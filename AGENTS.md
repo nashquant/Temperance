@@ -19,3 +19,6 @@
 - Whenever you change behavior, add or update tests when practical. If you do not add tests, explain what should be validated.
 - At the end of a task, summarize what changed, why it changed, and how to verify it with commands or manual steps.
 - Call out important assumptions, follow-ups, or residual risks in the final handoff.
+
+## Temperance v2 Specific
+- Whenever you make a backend change that needs a restart, run `./temperance/scripts/install_keepalive.sh restart`.
