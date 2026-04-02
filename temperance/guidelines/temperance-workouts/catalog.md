@@ -45,6 +45,7 @@ For the metadata model, read [taxonomy.md](./taxonomy.md). For the shortest prac
 
 ### Specific Endurance
 
+- [specific-30min-plus-3x12-at-82.md](./specific-endurance/specific-30min-plus-3x12-at-82.md)
 - [specific-105min-at-72-plus-30min-at-80.md](./specific-endurance/specific-105min-at-72-plus-30min-at-80.md)
 
 ### VO2 Max
@@ -73,6 +74,7 @@ For the metadata model, read [taxonomy.md](./taxonomy.md). For the shortest prac
 ### Fartlek Alternations
 
 - [fartlek-20min-plus-6x5-at-85.md](./fartlek-alternations/fartlek-20min-plus-6x5-at-85.md)
+- [fartlek-20min-plus-6x4-at-90.md](./fartlek-alternations/fartlek-20min-plus-6x4-at-90.md)
 
 ### Strides Neuromuscular
 
