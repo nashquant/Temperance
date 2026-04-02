@@ -64,6 +64,7 @@ Defines:
 - Overlays may tighten the core. They should not contradict the core.
 - The active build declaration selects one athlete-state overlay, one event overlay, and one philosophy overlay.
 - The active build declaration also maps core concepts to the actual metrics used in the current build.
+- A local/private overlay variant may be used when the active build declaration points to a `*.local.md` profile.
 
 ## Minimal skeleton
 

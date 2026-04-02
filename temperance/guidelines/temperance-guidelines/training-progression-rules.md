@@ -4,7 +4,8 @@ Status: practical cheat sheet.
 
 The authoritative planning stack now lives in:
 - `training-control-system-doctrine.md`
-- `training-recent-cache.md`
+- `training-phase-doctrine.md`
+- `training-recent-cache.local.md` when present, otherwise `training-recent-cache.md`
 - the active overlay set named in the active build declaration
 
 Use this file as a compact operational summary only. If any detail here conflicts with the invariant core or active build declaration, the core and active build win.
@@ -13,6 +14,7 @@ Use this file as a compact operational summary only. If any detail here conflict
 
 - Start with the active build declaration, not with isolated session intuition.
 - Map the core terms to the actual metrics used in the current build.
+- For dense phase intent, read `training-phase-doctrine.md`.
 - Apply precedence in this order: core, current-state constraints / athlete-state overlay, event overlay, philosophy overlay.
 - Anchor recommendations to projected **weekly total_load** and **weekly primary_specific_load**.
 - If the build has a **key_duration_anchor**, track it explicitly rather than burying it inside total load.
@@ -26,15 +28,3 @@ Use this file as a compact operational summary only. If any detail here conflict
 - Let the event overlay define specificity and what a good week means.
 - Let the philosophy overlay choose stimulus mix and quality hierarchy inside those constraints.
 - Let alerts hold, redirect, or reduce before forcing more progression.
-
-## Current active mapping
-
-For the current default marathon build:
-
-- `total_load` -> `total_TSS`
-- `primary_specific_load` -> `rTSS`
-- `specificity_ratio` -> `run_ratio`
-- `key_duration_anchor` -> `long run`
-- `support_modality` -> `x-train`
-- `local_spacing_window` -> `3 days`
-- `rolling_density_window` -> `9 days`

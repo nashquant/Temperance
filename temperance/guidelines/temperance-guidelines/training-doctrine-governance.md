@@ -14,14 +14,18 @@ The main goal is to keep:
 ## Doctrine layers
 
 - `training-control-system-doctrine.md` = invariant core semantics and control logic
+- `training-phase-doctrine.md` = dense generic phase descriptions and periodization intent
 - `training-overlay-contract.md` = required shape for reusable overlays
 - `training-athlete-state-*.md` = reusable athlete-state overlays
 - `training-event-*.md` = reusable event overlays
 - `training-philosophy-*.md` = reusable philosophy overlays
-- `training-recent-cache.md` = active build declaration and near-term cache
-- `training-history-memo.md` = evidence memo supporting athlete-state interpretation
+- `training-recent-cache.md` = repo-safe active-build template
+- `training-recent-cache.local.md` = ignored local active build declaration when present
+- `training-history-memo.md` = repo-safe history template
+- `training-history-memo.local.md` = ignored local evidence memo when present
 - `training-phase-transition-checklists.md` = generic phase-transition companion
 - `training-progression-rules.md` = compact operational cheat sheet
+- `training-llm-instructions.md` = machine-facing reading and interaction rules
 
 ## Status tags
 
@@ -34,7 +38,14 @@ Use one of these status labels near the top of each file:
 - `reusable overlay / deprecated`
 - `ephemeral active build`
 - `evidence memo`
+- `repo-safe template`
 - `secondary / transitional`
+
+## Local/private convention
+
+- Any `*.local.md` file in this directory is a private local override and should remain ignored by git.
+- When both `foo.local.md` and `foo.md` exist, the local file wins for current planning use.
+- The tracked `foo.md` file should remain repo-safe: template, default, or generic doctrine only.
 
 ## Governance rules
 
@@ -63,7 +74,7 @@ Use overlays for anything that can change without changing the planning system i
 
 ### 3) What belongs in the active build declaration
 
-Use `training-recent-cache.md` for:
+Use the active build declaration for:
 - which overlays are active right now
 - metric / anchor mapping for the current build
 - current weekly anchors
@@ -71,15 +82,18 @@ Use `training-recent-cache.md` for:
 - near-term watchouts
 - short-lived interpretations that should influence the next few weeks
 
+Keep the tracked file repo-safe. Put real current-build specifics in `training-recent-cache.local.md` when they should stay local.
+
 ### 4) What belongs in the evidence memo
 
-Use `training-history-memo.md` for:
+Use the evidence memo for:
 - prior builds
 - injury history
 - data-backed lessons
 - retrospective context
 
 That memo may justify an athlete-state overlay, but it should not silently define universal doctrine.
+Keep the tracked file repo-safe. Put real athlete history in `training-history-memo.local.md` when it should stay local.
 
 ## Change rules
 
@@ -89,6 +103,7 @@ That memo may justify an athlete-state overlay, but it should not silently defin
 - Change a philosophy overlay when your preferred coaching lens changes.
 - Change the active build declaration when the current block, anchors, or temporary constraints change.
 - If a philosophy changes, create or revise an overlay instead of rewriting the core.
+- If a change is personal, current, or private, prefer a `.local.md` file instead of pushing it into a tracked doctrine file.
 
 ## Precedence reminder
 
