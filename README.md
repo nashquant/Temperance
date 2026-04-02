@@ -192,104 +192,73 @@ Temperance now supports multiple ways to use the Data Extract page. The mode tha
 
 After backend or frontend path changes, reinstall or restart the keepalive services so launch agents stop pointing at stale workspace paths.
 
-## MCP experiment
+## MCP server
 
-There is now an initial MCP server prototype at `backend/app/mcp_server.py`.
+Temperance now exposes one canonical stdio MCP server at `backend/app/mcp_server.py`.
 
-Current MVP tools:
-- `get_today_status`
-- `get_recent_activities`
-- `get_planned_activities`
-- `get_week_outlook`
-- `get_load_trend`
-- `get_recovery_trend`
-- `recommend_training`
-- `explain_recommendation`
-- `get_activity_detail`
-
-Run it over stdio from the repo root:
+Run it from the repo root:
 
 ```bash
 cd /Users/matheus/Temperance
 python3 -m backend.app.mcp_server --stdio
 ```
 
-This first pass intentionally reuses existing Temperance analytics and payload builders instead of adding a second data layer. It is a thin wrapper meant to prove the chat-to-metrics workflow before we harden the interface.
+The MCP surface is now doctrine-aware and resources-first:
+- static resources expose doctrine read order, the core bundle, the active build, workout overview, and workout catalog
+- resource templates expose individual guideline docs, workout families, workout templates, planning context, and history snapshots
+- tools remain available for computed planning, analytics, and history judgment
 
-### Why the server now imports more cleanly
+### Canonical tools
 
-`backend/app/mcp_server.py` now keeps its pure JSON-RPC and recommendation helpers importable without importing `backend.app.main` at module import time. That means you can run lightweight helper tests even on machines that do not currently have the FastAPI stack installed, as long as the tests avoid the data-backed tool handlers.
+- planning:
+  - `plan_next_day`
+  - `preview_cycle`
+  - `explain_planning_decision`
+- analytics / data:
+  - `get_today_status`
+  - `get_recent_activities`
+  - `get_planned_activities`
+  - `get_week_outlook`
+  - `get_load_trend`
+  - `get_recovery_trend`
+  - `get_activity_detail`
+- legacy heuristic tools, still callable but deprecated:
+  - `recommend_training`
+  - `explain_recommendation`
+- history:
+  - `judge_training_history`
+  - `explain_history_judgment`
 
-### Lightweight helper tests
+### Static resources
 
-These tests only cover pure formatting / recommendation / JSON-RPC helpers and are meant to be runnable without live API dependencies:
+- `temperance://guidelines/read-order`
+- `temperance://guidelines/core-bundle`
+- `temperance://guidelines/active-build`
+- `temperance://workouts/overview`
+- `temperance://workouts/catalog`
 
-```bash
-cd /Users/matheus/Temperance
-python3 -m unittest backend.tests.test_mcp_server -v
-```
+### Resource templates
 
-### Minimal MCP client smoke example
+- `temperance://guidelines/doc/{doc_id}`
+- `temperance://workouts/family/{session_family}`
+- `temperance://workouts/template/{template_id}`
+- `temperance://planning/context/{owner}/{target_day_utc}`
+- `temperance://history/snapshot/{owner}/{window_days}`
 
-You can manually speak JSON-RPC over stdio to confirm the handshake shape:
+### Minimal MCP smoke example
 
 ```bash
 cd /Users/matheus/Temperance
 python3 -m backend.app.mcp_server --stdio <<'EOF'
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"manual-smoke","version":"0.0.1"}}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":2,"method":"resources/list"}
+{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"temperance://guidelines/read-order"}}
+{"jsonrpc":"2.0","id":4,"method":"tools/list"}
 EOF
 ```
 
-### Example `recommend_training` request
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "method": "tools/call",
-  "params": {
-    "name": "recommend_training",
-    "arguments": {
-      "owner": "admin",
-      "activity_type": "running"
-    }
-  }
-}
-```
-
-Response shape now includes:
-- `headline`: short human-facing summary
-- `rationale`: primary decision reason
-- `explanation`: compact metric trace explaining the call
-- `suggestion`: workout wording tuned to the chosen activity family
-- `decision_trace`: explanation-oriented signal breakdown for clients that want to show *why* the choice was made
-
-That split is deliberate: chat clients can show the short summary first, then expose the detailed explanation when needed.
-
-### Example `explain_recommendation` request
-
-Use this when the client wants the same recommendation context, but with the explanation surfaced first:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 4,
-  "method": "tools/call",
-  "params": {
-    "name": "explain_recommendation",
-    "arguments": {
-      "owner": "admin",
-      "activity_type": "running"
-    }
-  }
-}
-```
-
-### Example `get_activity_detail` request
-
-This tool delegates to the existing Temperance activity-detail backend path and returns the same high-value payload shape for real, planned, or custom activities:
+### Example `judge_training_history` request
 
 ```json
 {
@@ -297,20 +266,24 @@ This tool delegates to the existing Temperance activity-detail backend path and 
   "id": 5,
   "method": "tools/call",
   "params": {
-    "name": "get_activity_detail",
+    "name": "judge_training_history",
     "arguments": {
       "owner": "admin",
-      "activity_id": "run-123",
-      "include_records": true,
-      "records_limit": 300
+      "window_days": 42,
+      "include_planned_comparison": true
     }
   }
 }
 ```
 
-### Dependency note for MCP-only setups
+### Lightweight MCP tests
 
-`backend/requirements-mcp.txt` currently just includes `requirements.txt`. If we want a truly standalone MCP environment later, the next step is to break out a smaller optional dependency set around pandas/pydantic plus Temperance core imports while keeping FastAPI optional.
+The MCP module now lazy-loads `backend.app.main`, so static resource and JSON-RPC tests can run without importing the whole FastAPI analytics stack at module import time.
+
+```bash
+cd /Users/matheus/Temperance
+backend/.venv/bin/python -m unittest backend.tests.test_mcp_server temperance.tests.test_mcp_server -v
+```
 
 ## Tests
 

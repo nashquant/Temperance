@@ -18,7 +18,6 @@ Use [catalog.md](./catalog.md) when you want the full list. Use [taxonomy.md](./
 | stronger aerobic support below threshold | `steady-aerobic` | [steady-20min-plus-2x20-at-83.md](./steady-aerobic/steady-20min-plus-2x20-at-83.md) |
 | default LT1 threshold | `lt1-threshold` | [lt1-threshold-15min-plus-3x10-at-90.md](./lt1-threshold/lt1-threshold-15min-plus-3x10-at-90.md) |
 | short-rep LT2 threshold | `lt2-threshold` | [lt2-threshold-15min-plus-8x3-at-100.md](./lt2-threshold/lt2-threshold-15min-plus-8x3-at-100.md) |
-| threshold-supportive cruise work | `cruise-intervals` | [cruise-20min-plus-5x6-at-91.md](./cruise-intervals/cruise-20min-plus-5x6-at-91.md) |
 | long duration durability | `long-run` | [long-run-120min-at-76.md](./long-run/long-run-120min-at-76.md) |
 | generic specific endurance | `specific-endurance` | [specific-30min-plus-3x12-at-82.md](./specific-endurance/specific-30min-plus-3x12-at-82.md) |
 | VO2 touch | `vo2-max` | [vo2-20min-plus-8x2-at-102.md](./vo2-max/vo2-20min-plus-8x2-at-102.md) |
@@ -40,6 +39,7 @@ Use [catalog.md](./catalog.md) when you want the full list. Use [taxonomy.md](./
 ## Threshold Target Guide
 
 - LT1 work usually sits around `88-92%`, with longer reps tending toward the lower end and medium-length `5-6min` reps sometimes living near the upper end.
+- Classic cruise intervals are just a denser LT1-threshold presentation when they live in that `88-92%` band with short aerobic recoveries.
 - LT2 work usually sits around `98-102%` and should stay in short `2-4min` reps.
 - If the work is meaningfully longer and closer to `90-92%`, do not label it LT2.
 
@@ -60,7 +60,7 @@ Use [catalog.md](./catalog.md) when you want the full list. Use [taxonomy.md](./
 
 - Treat the default `fartlek-alternations` family as small-amplitude rhythm work, not as disguised threshold.
 - The faster side should usually sit near marathon-like rhythm, while the float should stay only slightly lower in high Z2 to low Z3 territory.
-- Use fartlek when you want controlled variation and rhythm change; if you want a cleaner hard stimulus, move to `lt1-threshold`, `lt2-threshold`, or `cruise-intervals`.
+- Use fartlek when you want controlled variation and rhythm change; if you want a cleaner hard stimulus, move to `lt1-threshold` or `lt2-threshold`.
 
 ## Moderate-Support Chooser
 
