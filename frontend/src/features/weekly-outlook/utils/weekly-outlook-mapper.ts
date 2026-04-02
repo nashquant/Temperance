@@ -22,8 +22,8 @@ export function mapWeeklyOutlookResponse(raw: WeeklyOutlookResponseRaw): WeeklyO
   const metric = toMetric(raw.metric);
   const comparisonTotal = raw.compare === 'planned' ? raw.wtd_compare : raw.week_total_compare;
   const progressPct =
-    raw.compare === 'planned' && raw.week_total_compare > 0
-      ? Math.round(((raw.projected_finish ?? raw.week_total_current) / raw.week_total_compare) * 100)
+    raw.compare === 'planned' && (raw.projected_finish ?? 0) > 0
+      ? Math.round((raw.week_total_current / raw.projected_finish!) * 100)
       : raw.goal_progress_pct;
 
   return {
