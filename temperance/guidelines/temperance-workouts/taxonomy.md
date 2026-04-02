@@ -26,7 +26,7 @@ Use it when the library needs to stay broad without turning `category` into a ca
 | `lt2-threshold` | `threshold-hard` | `primary-hard` | `intervals`, `float-intervals` | short-rep upper-threshold work, usually around `98-102%` in `2-4min` reps while still staying H1 |
 | `cruise-intervals` | `threshold-hard` | `primary-hard` | `intervals`, `alternation` | dense threshold support, often marathon-supportive without being event-defined |
 | `specific-endurance` | `specific-hard` | `specific-endurance` | `continuous`, `fast-finish`, `alternation` | event-overlay-defined specificity |
-| `vo2-max` | `sharp-hard` | `sharpening` | `intervals`, `alternation` | occasional H2 or ceiling-touch work |
+| `vo2-max` | `sharp-hard` | `sharpening` | `intervals`, `alternation` | occasional H2 or ceiling-touch work, usually with short `2-3min` reps, a longer setup, and recovery generous enough to preserve pace quality |
 | `hills-strength-endurance` | `threshold-hard`, `sharp-hard` | `primary-hard`, `sharpening` | `intervals` | run-specific strength or hill power depending the template |
 | `progressive` | `moderate-support`, `specific-hard` | `moderate-support`, `secondary-hard` | `progression`, `fast-finish` | support or bridge work depending the finish block |
 | `medium-long` | `moderate-support`, `specific-hard` | `moderate-support`, `long-durability` | `continuous`, `progression`, `fast-finish` | durable volume between support and long-session work |
