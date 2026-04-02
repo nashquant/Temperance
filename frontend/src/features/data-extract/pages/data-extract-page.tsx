@@ -8,9 +8,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { CompactDateInput } from '@/components/ui/compact-date-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { QueryShell } from '@/components/ui/query-shell';
 import {
+  FieldLabel,
+  InsetBox,
   SecondaryPageHeader,
   SecondaryPageSectionCard,
+  SurfaceCard,
   secondaryPageActionButtonClassName,
   secondaryPageFieldLabelClassName,
   secondaryPageInputClassName,
@@ -18,7 +22,6 @@ import {
   secondaryPageMutedInsetClassName,
   secondaryPageTextAreaClassName,
 } from '@/components/ui/secondary-page';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomActivitiesQuery } from '@/features/custom-activities/hooks/use-custom-activities-query';
 import {
@@ -341,24 +344,6 @@ export function DataExtractPage(): JSX.Element {
     setCustomEditValues(next);
   }, [customRowsForWeek]);
 
-  if (statusQuery.isLoading) {
-    return (
-      <section className="space-y-3">
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-40 w-full" />
-      </section>
-    );
-  }
-
-  if (statusQuery.isError) {
-    return (
-      <Alert className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300">
-        <AlertTitle>Unable to load data extract status</AlertTitle>
-        <AlertDescription>{statusQuery.error instanceof Error ? statusQuery.error.message : 'Unexpected error.'}</AlertDescription>
-      </Alert>
-    );
-  }
-
   const status = statusQuery.data;
   const isAdmin = session?.role === 'admin';
   const isAdminOwnScope = isAdmin && profile?.owner === session?.user;
@@ -372,6 +357,7 @@ export function DataExtractPage(): JSX.Element {
     && (!garminCapabilities?.activities || (includeWellness && !garminCapabilities?.wellness) || !garminCapabilities?.comprehensive);
 
   return (
+    <QueryShell isLoading={statusQuery.isLoading} isError={statusQuery.isError} error={statusQuery.error} errorTitle="Unable to load data extract status" skeleton="compact">
     <section className="space-y-4 sm:space-y-6">
       <SecondaryPageHeader
         title="Data Extract"
@@ -713,7 +699,7 @@ export function DataExtractPage(): JSX.Element {
                       <td className="px-2 py-2 sm:px-3">{row.activity}</td>
                       <td className="px-2 py-2 sm:px-3">
                         <input
-                          className="min-w-[240px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                          className="min-w-[240px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
                           value={customEditValues[rowKey] ?? ''}
                           onChange={(event) =>
                             setCustomEditValues((previous) => ({ ...previous, [rowKey]: event.target.value }))
@@ -834,5 +820,6 @@ export function DataExtractPage(): JSX.Element {
         </SecondaryPageSectionCard>
       ) : null}
     </section>
+    </QueryShell>
   );
 }

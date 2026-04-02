@@ -2,8 +2,7 @@ import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Too
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
-import { Card, CardContent } from '@/components/ui/card';
-import { secondaryPageSurfaceClassName } from '@/components/ui/secondary-page';
+import { ChartCard } from '@/components/ui/chart-card';
 import { intensityHexFromThreshold } from '@/features/dashboard/utils/intensity-palette';
 import { PlannedMetricSelector } from '@/features/plan-activities/components/planned-metric-selector';
 import type { PlannedMetricView } from '@/features/plan-activities/types/plan-activities';
@@ -94,14 +93,10 @@ export function PlannedWeekChart({ data, metric, onMetricChange }: PlannedWeekCh
   };
 
   return (
-    <Card className={secondaryPageSurfaceClassName}>
-      <CardContent className="px-4 pb-4 pt-5">
-        {onMetricChange ? (
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <PlannedMetricSelector value={metric} onValueChange={onMetricChange} showLabel={false} compact />
-          </div>
-        ) : null}
-        <div className="h-[220px] w-full">
+    <ChartCard
+      toolbar={onMetricChange ? <PlannedMetricSelector value={metric} onValueChange={onMetricChange} showLabel={false} compact /> : undefined}
+      heightClassName="h-[220px]"
+    >
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} barCategoryGap="25%" margin={{ top: 38, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(125,211,252,0.14)" />
@@ -120,8 +115,6 @@ export function PlannedWeekChart({ data, metric, onMetricChange }: PlannedWeekCh
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-        </div>
-      </CardContent>
-    </Card>
+    </ChartCard>
   );
 }
