@@ -1,6 +1,5 @@
 import { GroupedBarChart } from '@/components/charts/grouped-bar-chart';
-import { Card, CardContent } from '@/components/ui/card';
-import { secondaryPageSurfaceClassName } from '@/components/ui/secondary-page';
+import { ChartCard } from '@/components/ui/chart-card';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { MetricSelector } from '@/features/weekly-outlook/components/metric-selector';
 import type { WeeklyMetric, WeeklyOutlookViewModel } from '@/features/weekly-outlook/types/weekly-outlook';
@@ -21,9 +20,9 @@ export function WeeklyOutlookChartCard({
   onWeekViewChange,
 }: WeeklyOutlookChartCardProps): JSX.Element {
   return (
-    <Card className={secondaryPageSurfaceClassName}>
-      <CardContent className="px-4 pb-4 pt-5">
-        <div className="mb-3 flex items-start justify-between gap-3">
+    <ChartCard
+      toolbar={
+        <>
           <MetricSelector value={metric} onValueChange={onMetricChange} showLabel={false} compact />
           <ToggleGroup
             type="single"
@@ -33,22 +32,12 @@ export function WeeklyOutlookChartCard({
             }}
             className="w-auto"
           >
-            <ToggleGroupItem
-              value="current"
-              size="sm"
-              className="h-7"
-            >
-              Curr
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="previous"
-              size="sm"
-              className="h-7"
-            >
-              Prev
-            </ToggleGroupItem>
+            <ToggleGroupItem value="current" size="sm" className="h-7">Curr</ToggleGroupItem>
+            <ToggleGroupItem value="previous" size="sm" className="h-7">Prev</ToggleGroupItem>
           </ToggleGroup>
-        </div>
+        </>
+      }
+    >
         <GroupedBarChart
           data={data.chartRows}
           metric={metric}
@@ -56,7 +45,6 @@ export function WeeklyOutlookChartCard({
           compareLabel={data.compareLabel}
           heightClassName="h-[220px]"
         />
-      </CardContent>
-    </Card>
+    </ChartCard>
   );
 }

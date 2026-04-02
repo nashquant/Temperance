@@ -24,6 +24,9 @@
   --card-chrome-top: 214 12% 68%;
   --card-chrome-mid: 217 12% 52%;
   --card-chrome-bottom: 221 16% 34%;
+  --border-subtle: 0 0% 100% / 0.08;
+  --border-default: 0 0% 100% / 0.10;
+  --border-strong: 0 0% 100% / 0.15;
 }
 
 .dark {
@@ -48,6 +51,9 @@
   --card-chrome-top: 214 10% 16%;
   --card-chrome-mid: 218 10% 11%;
   --card-chrome-bottom: 222 16% 6%;
+  --border-subtle: 0 0% 100% / 0.08;
+  --border-default: 0 0% 100% / 0.10;
+  --border-strong: 0 0% 100% / 0.15;
 }
 
 @layer base {

@@ -2,20 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { ChevronDown, Plus, X } from 'lucide-react';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { CompactDateInput } from '@/components/ui/compact-date-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { QueryShell } from '@/components/ui/query-shell';
 import {
   SecondaryPageHeader,
+  SurfaceCard,
   secondaryPageActionButtonClassName,
   secondaryPageFieldLabelClassName,
   secondaryPageInputClassName,
-  secondaryPageSurfaceClassName,
 } from '@/components/ui/secondary-page';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useSettingsQuery } from '@/features/settings/hooks/use-settings-query';
 import { useVdotQuery } from '@/features/settings/hooks/use-vdot-query';
@@ -234,26 +232,8 @@ export function SettingsPage(): JSX.Element {
     };
   }, [ifZones.z1_max, ifZones.z2_max, ifZones.z3_max, ifZones.z4_max, lthrRows, paceRows]);
 
-  if (query.isLoading) {
-    return (
-      <section className="space-y-4">
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-56 w-full" />
-        <Skeleton className="h-56 w-full" />
-      </section>
-    );
-  }
-
-  if (query.isError) {
-    return (
-      <Alert className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300">
-        <AlertTitle>Unable to load settings</AlertTitle>
-        <AlertDescription>{query.error instanceof Error ? query.error.message : 'Unexpected error.'}</AlertDescription>
-      </Alert>
-    );
-  }
-
   return (
+    <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load settings">
     <section className="space-y-4 sm:space-y-6">
       <SecondaryPageHeader
         title="Settings"
@@ -262,8 +242,7 @@ export function SettingsPage(): JSX.Element {
 
       {saveMsg ? <p className="text-sm text-muted-foreground">{saveMsg}</p> : null}
 
-      <Card className={secondaryPageSurfaceClassName}>
-        <CardContent className="space-y-2.5 p-3 sm:space-y-3 sm:p-4">
+      <SurfaceCard contentClassName="space-y-2.5 p-3 sm:space-y-3 sm:p-4">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-medium">Temperance Guide</p>
             <Button
@@ -381,12 +360,10 @@ export function SettingsPage(): JSX.Element {
               ) : null}
             </>
           ) : null}
-        </CardContent>
-      </Card>
+      </SurfaceCard>
 
       <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
-        <Card className={secondaryPageSurfaceClassName}>
-          <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-4">
+        <SurfaceCard contentClassName="space-y-3 p-3 sm:space-y-4 sm:p-4">
             <p className="text-sm font-medium">Stress Zones and VDOT</p>
             <div className="grid gap-2 sm:gap-3 lg:grid-cols-5">
               {(['z1_max', 'z2_max', 'z3_max', 'z4_max'] as const).map((key) => (
@@ -437,11 +414,9 @@ export function SettingsPage(): JSX.Element {
                 Save
               </Button>
             </div>
-          </CardContent>
-        </Card>
+        </SurfaceCard>
 
-        <Card className={secondaryPageSurfaceClassName}>
-          <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-4">
+        <SurfaceCard contentClassName="space-y-3 p-3 sm:space-y-4 sm:p-4">
             <p className="text-sm font-medium">Specificity Factors</p>
             <div className="grid gap-2 sm:gap-3 md:grid-cols-4">
               {(['non_running', 'treadmill', 'elliptical', 'cycling'] as const).map((key) => (
@@ -469,13 +444,11 @@ export function SettingsPage(): JSX.Element {
               ))}
             </div>
             <Button className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save</Button>
-          </CardContent>
-        </Card>
+        </SurfaceCard>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
-        <Card className={secondaryPageSurfaceClassName}>
-          <CardContent className="space-y-3 p-3 sm:p-4">
+        <SurfaceCard contentClassName="space-y-3 p-3 sm:p-4">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium">LTHR Curve</p>
               <Button
@@ -532,11 +505,9 @@ export function SettingsPage(): JSX.Element {
               ))}
             </div>
             <Button className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save</Button>
-          </CardContent>
-        </Card>
+        </SurfaceCard>
 
-        <Card className={secondaryPageSurfaceClassName}>
-          <CardContent className="space-y-3 p-3 sm:p-4">
+        <SurfaceCard contentClassName="space-y-3 p-3 sm:p-4">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium">LT Pace Curve</p>
               <Button
@@ -606,10 +577,10 @@ export function SettingsPage(): JSX.Element {
             >
               Save
             </Button>
-          </CardContent>
-        </Card>
+        </SurfaceCard>
       </div>
 
     </section>
+    </QueryShell>
   );
 }

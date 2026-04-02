@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { formatCompactDurationHours } from '@/features/dashboard/utils/format-duration';
-import { zoneHexFromLabel } from '@/features/dashboard/utils/intensity-palette';
+import { zoneHexFromLabel, zoneTrackClassNames, zoneTrackFallbackClassName } from '@/features/dashboard/utils/intensity-palette';
 import type { DashboardWeekSummary } from '@/features/dashboard/types/dashboard';
 
 interface DashboardWeekSummaryCardProps {
@@ -36,13 +36,6 @@ const zoneColors: Record<string, string> = {
   Z5: zoneHexFromLabel('Z5'),
 };
 
-const zoneTrackClassNames: Record<string, string> = {
-  Z1: 'border-slate-300/18 bg-slate-200/10',
-  Z2: 'border-border/70 bg-muted/70',
-  Z3: 'border-border/70 bg-muted/70',
-  Z4: 'border-border/70 bg-muted/70',
-  Z5: 'border-border/70 bg-muted/70',
-};
 
 const summaryToneClassNames = {
   vdot: {
@@ -136,7 +129,7 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
                 {zone.zone}
               </span>
               <div
-                className={`h-1.5 w-full overflow-hidden rounded-full border ${zoneTrackClassNames[zone.zone] ?? 'border-border/70 bg-muted/70'}`}
+                className={`h-1.5 w-full overflow-hidden rounded-full border ${zoneTrackClassNames[zone.zone] ?? zoneTrackFallbackClassName}`}
               >
                 <div
                   className="h-full rounded-full"

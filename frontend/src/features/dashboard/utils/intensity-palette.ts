@@ -37,3 +37,15 @@ export function zoneHexFromLabel(label: string): string {
   if (normalized === 'Z5') return intensityHexPalette.vo2max;
   return intensityHexPalette.recovery;
 }
+
+/** Zone progress-bar track styling keyed by zone label (Z1–Z5). */
+export const zoneTrackClassNames: Record<string, string> = {
+  Z1: 'border-slate-500/30 bg-slate-500/8',
+  Z2: 'border-sky-500/28 bg-sky-500/8',
+  Z3: 'border-amber-500/28 bg-amber-500/8',
+  Z4: 'border-rose-500/28 bg-rose-500/8',
+  Z5: 'border-violet-500/28 bg-violet-500/8',
+};
+
+/** Default fallback for unknown zone labels. */
+export const zoneTrackFallbackClassName = 'border-white/10 bg-white/5';

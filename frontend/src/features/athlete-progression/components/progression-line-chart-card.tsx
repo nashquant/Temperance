@@ -13,8 +13,7 @@ import {
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { secondaryPageSurfaceClassName } from '@/components/ui/secondary-page';
+import { ChartCard } from '@/components/ui/chart-card';
 
 interface SeriesConfig {
   key: string;
@@ -200,12 +199,7 @@ export function ProgressionLineChartCard({
   }) as Array<Record<string, number | string | null | undefined>>;
   const labelMap = new Map(chartData.map((row) => [String(row._x ?? ''), String(row['label'] ?? row._x ?? '')]));
   return (
-    <Card className={secondaryPageSurfaceClassName}>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-slate-200/88">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="p-4 pt-0">
-        <div className="h-[280px] w-full">
+    <ChartCard title={title} heightClassName="h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 14, right: 14, bottom: 6, left: 2 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(125,211,252,0.14)" />
@@ -289,8 +283,6 @@ export function ProgressionLineChartCard({
               ) : null}
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      </CardContent>
-    </Card>
+    </ChartCard>
   );
 }

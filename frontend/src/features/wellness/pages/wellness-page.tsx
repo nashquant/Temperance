@@ -1,14 +1,12 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Card, CardContent } from '@/components/ui/card';
 import { AnalyticsToolbar } from '@/components/ui/analytics-toolbar';
+import { QueryShell } from '@/components/ui/query-shell';
 import {
   SecondaryPageHeader,
   SecondaryStatCard,
-  secondaryPageSurfaceClassName,
+  SurfaceCard,
 } from '@/components/ui/secondary-page';
-import { Skeleton } from '@/components/ui/skeleton';
 import { ProgressionLineChartCard } from '@/features/athlete-progression/components/progression-line-chart-card';
 import { useWellnessQuery } from '@/features/wellness/hooks/use-wellness-query';
 import type { WellnessAggregation } from '@/features/wellness/types';
@@ -85,27 +83,10 @@ export function WellnessPage(): JSX.Element {
         )}
       />
 
-      {query.isLoading ? (
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-64 w-full" />
-          <Skeleton className="h-64 w-full" />
-        </div>
-      ) : null}
-
-      {query.isError ? (
-        <Alert className="border-destructive/50 text-destructive">
-          <AlertTitle>Unable to load wellness</AlertTitle>
-          <AlertDescription className="text-destructive/90">
-            {query.error instanceof Error ? query.error.message : 'Unexpected error.'}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      {!query.isLoading && !query.isError && query.data ? (
+      <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load wellness">
+      {query.data ? (
         <>
-          <Card className={secondaryPageSurfaceClassName}>
-            <CardContent className="p-4">
+          <SurfaceCard contentClassName="p-4">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 {summaryItems.map((item) => (
                   <SecondaryStatCard
@@ -117,13 +98,10 @@ export function WellnessPage(): JSX.Element {
                   />
                 ))}
               </div>
-            </CardContent>
-          </Card>
+          </SurfaceCard>
 
           {chartData.length === 0 ? (
-            <Card className={secondaryPageSurfaceClassName}>
-              <CardContent className="p-8 text-sm text-slate-300/72">No wellness data available for this selection.</CardContent>
-            </Card>
+            <SurfaceCard contentClassName="p-8 text-sm text-slate-300/72">No wellness data available for this selection.</SurfaceCard>
           ) : (
             <div className="grid gap-4">
               <ProgressionLineChartCard
@@ -183,6 +161,7 @@ export function WellnessPage(): JSX.Element {
           )}
         </>
       ) : null}
+      </QueryShell>
     </section>
   );
 }

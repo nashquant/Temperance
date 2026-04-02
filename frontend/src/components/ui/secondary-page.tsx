@@ -19,10 +19,50 @@ export const secondaryPageFieldLabelClassName =
   'text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74';
 
 export const secondaryPageInputClassName =
-  'border-white/10 bg-black/15 text-foreground focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20';
+  'border-white/10 bg-black/15 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 export const secondaryPageTextAreaClassName =
-  'w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20 sm:py-3';
+  'w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring sm:py-3';
+
+/* ------------------------------------------------------------------ */
+/*  Wrapper components for the exported className tokens               */
+/* ------------------------------------------------------------------ */
+
+interface SurfaceCardProps {
+  children: React.ReactNode;
+  className?: string;
+  contentClassName?: string;
+}
+
+/** Card with the standard secondary-page surface gradient. */
+export function SurfaceCard({ children, className, contentClassName }: SurfaceCardProps): JSX.Element {
+  return (
+    <Card className={cn(secondaryPageSurfaceClassName, className)}>
+      <CardContent className={cn('p-4 sm:p-5', contentClassName)}>{children}</CardContent>
+    </Card>
+  );
+}
+
+interface InsetBoxProps extends React.HTMLAttributes<HTMLDivElement> {
+  muted?: boolean;
+}
+
+/** Inset container with rounded border. Use `muted` for the lighter variant. */
+export function InsetBox({ muted = false, className, ...props }: InsetBoxProps): JSX.Element {
+  return (
+    <div
+      className={cn(muted ? secondaryPageMutedInsetClassName : secondaryPageInsetClassName, className)}
+      {...props}
+    />
+  );
+}
+
+/** Field label with uppercase micro-text styling. */
+export function FieldLabel({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>): JSX.Element {
+  return <p className={cn(secondaryPageFieldLabelClassName, className)} {...props} />;
+}
+
+/* ------------------------------------------------------------------ */
 
 interface SecondaryStatCardProps {
   label: string;
