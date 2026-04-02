@@ -20,6 +20,11 @@ function toCompareLabel(rawCompare: WeeklyOutlookResponseRaw['compare']): string
 
 export function mapWeeklyOutlookResponse(raw: WeeklyOutlookResponseRaw): WeeklyOutlookViewModel {
   const metric = toMetric(raw.metric);
+  const comparisonTotal = raw.compare === 'planned' ? raw.wtd_compare : raw.week_total_compare;
+  const progressPct =
+    raw.compare === 'planned' && raw.week_total_compare > 0
+      ? Math.round(((raw.projected_finish ?? raw.week_total_current) / raw.week_total_compare) * 100)
+      : raw.goal_progress_pct;
 
   return {
     metric,
@@ -31,9 +36,9 @@ export function mapWeeklyOutlookResponse(raw: WeeklyOutlookResponseRaw): WeeklyO
     weekEnd: raw.week_end,
     totals: {
       current: raw.week_total_current,
-      compare: raw.week_total_compare,
+      compare: comparisonTotal,
       remainingToGo: raw.remaining_to_go,
-      progressPct: raw.goal_progress_pct,
+      progressPct,
       projectedFinish: raw.projected_finish,
       estimatedFatigueEow: raw.estimated_fatigue_eow,
     },
