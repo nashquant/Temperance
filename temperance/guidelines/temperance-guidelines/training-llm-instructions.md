@@ -20,6 +20,12 @@ Read the stack in this order:
 8. `training-phase-transition-checklists.md` when the question is about phase changes
 9. `training-progression-rules.md` when a compact operational summary is useful
 
+If the task is to choose or suggest a concrete workout template, also read:
+
+10. `temperance/guidelines/temperance-workouts/README.md`
+11. `temperance/guidelines/temperance-workouts/template-contract.md`
+12. the relevant workout-template file for the chosen category
+
 ## Local/private resolution
 
 - Prefer `*.local.md` over the tracked file with the same base name whenever both exist.
@@ -55,6 +61,19 @@ When using this doctrine to plan or interpret training:
 - Explain recommendations through hard-session type, spacing, density, and progression control rather than only intensity labels.
 - Preserve some background contact with non-dominant qualities unless the active build explicitly says not to.
 - During Base / Capacity Build, do not collapse the block into one monotone middle intensity lane.
+
+## Workout-template behavior
+
+When selecting from the workout-template repository:
+
+- choose category first, not modality first
+- read repository-level contract rules before treating template prose as authoritative
+- prefer the nearest stored variant inside the template's scaling band before inventing a new rewrite
+- preserve the session's identity when scaling; prefer rep-count or small support-volume changes over changing the category
+- treat the stored template TSS as the library reference estimate, not as athlete-specific truth
+- keep the stored recovery structure unless there is a clear reason to override it
+- if interval delineation is not specified, treat the in-between handling as user discretion rather than inventing a recovery prescription
+- treat `physiology_label` as a descriptive hint inside the chosen category, not as a replacement for category
 
 ## Update behavior
 
