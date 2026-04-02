@@ -12,7 +12,7 @@ Profile id: high-capacity-durability-limited-return.
 ## Primary specificity axis
 
 - Bias the plan around the modality that currently governs durable race readiness.
-- In the current running build, that means running load and its associated long-duration mechanical cost.
+- In running-led builds, that often means running load and its associated long-duration mechanical cost.
 
 ## Hard-session priority order
 
@@ -42,7 +42,3 @@ Profile id: high-capacity-durability-limited-return.
 - Do not treat high total load as proof that specific durability is already restored.
 - Do not chase hero days to prove robustness.
 - Do not let quality density outrun current tissue tolerance.
-
-## Evidence basis
-
-- This overlay is supported by `training-history-memo.md`.

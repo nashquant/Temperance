@@ -30,9 +30,10 @@ Use the doctrine set this way:
 
 - `training-control-system-doctrine.md` = invariant semantics and control logic
 - `training-doctrine-governance.md` = document roles and change rules
+- `training-phase-doctrine.md` = dense generic phase descriptions and periodization intent
 - `training-overlay-contract.md` = required shape for reusable overlays
-- `training-recent-cache.md` = active build declaration and near-term cache
-- `training-history-memo.md` = evidence memo
+- `training-recent-cache.local.md` when present, otherwise `training-recent-cache.md` = active build declaration
+- `training-history-memo.local.md` when present, otherwise `training-history-memo.md` = evidence memo
 
 ## Precedence model
 
@@ -279,7 +280,7 @@ Event and philosophy overlays may add higher-salience watchouts within those con
 Use these generic phases:
 
 1. **Return / Re-entry**
-2. **Capacity Build**
+2. **Base / Capacity Build**
 3. **Specificity**
 4. **Peak**
 5. **Taper**
@@ -296,6 +297,13 @@ The event overlay defines:
 - what specificity means
 - what work must be "in the bank"
 - what a good week looks like in later phases
+
+Core periodization rule:
+- phases should shift emphasis, not erase every non-dominant quality
+- even when one lane is central, some broader mix should still appear from time to time if it improves build continuity and later readiness
+
+For dense descriptions of what each phase is trying to do, see:
+- `training-phase-doctrine.md`
 
 For more explicit transition questions, see:
 - `training-phase-transition-checklists.md`

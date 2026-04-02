@@ -28,13 +28,14 @@ Always interpret a phase change through:
 
 Important rule:
 - the core phase names are generic
+- dense phase intent lives in `training-phase-doctrine.md`
 - the event overlay defines what specificity actually means
 - the athlete-state overlay may tighten the transition
 - the philosophy overlay may change what kinds of work are emphasized inside the phase
 
 ---
 
-## 1) Return / Re-entry -> Capacity Build
+## 1) Return / Re-entry -> Base / Capacity Build
 
 ### Main question
 
@@ -66,11 +67,11 @@ Transition when the limiting question is no longer:
 - "Can I tolerate basic training structure at all?"
 
 and becomes more like:
-- "How do I now expand capacity intelligently?"
+- "How do I now expand base capacity intelligently?"
 
 ---
 
-## 2) Capacity Build -> Specificity
+## 2) Base / Capacity Build -> Specificity
 
 ### Main question
 
@@ -188,7 +189,7 @@ A **partial transition** may be better when:
 - but durability, recovery, or life constraints do not support a full transition yet
 
 Examples:
-- begin adding one event-specific feature while still mostly living in Capacity Build
+- begin adding one event-specific feature while still mostly living in Base / Capacity Build
 - start protecting peak quality before fully tapering
 - hold the current build structure but increase specificity inside selected sessions
 
@@ -202,8 +203,8 @@ This should be treated as a legitimate planning move, not as indecision.
 
 ## Short version
 
-- **Return / Re-entry -> Capacity Build** when consistency and basic tolerance are back
-- **Capacity Build -> Specificity** when more event-specific work would now be productive rather than premature
+- **Return / Re-entry -> Base / Capacity Build** when consistency and basic tolerance are back
+- **Base / Capacity Build -> Specificity** when more event-specific work would now be productive rather than premature
 - **Specificity -> Peak** when the main work is in the bank and more build would add less value than consolidation
 - **Peak -> Taper** when fatigue reduction is now more important than further accumulation
 

@@ -30,6 +30,7 @@ Profile id: durability-first-threshold-forward-support-positive.
 ## Progression priorities
 
 - Keep total load productive through support modalities when specific load must stay capped.
+- During Base / Capacity Build, widen the range rather than living in one middle lane: lots of easy / aerobic support, plus occasional ceiling-touch work that still fits the weekly budget.
 - Progress specific load and long-duration structure before adding extra sharpness.
 - Use doubles when they improve absorption, spacing, or anchor-hitting efficiency.
 
