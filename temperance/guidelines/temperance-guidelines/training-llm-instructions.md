@@ -4,30 +4,47 @@ Status: invariant core companion.
 
 ## Purpose
 
-This file tells an LLM how to read and use the training doctrine stack when the documents are supplied through Temperance MCP or another machine context layer.
+This file tells an LLM how to load the doctrine stack through Temperance MCP or another machine context layer with a minimal default context.
 
-## Read order
+## Default load
 
-Read the stack in this order:
+Load only these files by default:
 
-1. `training-doctrine-governance.md`
-2. `training-control-system-doctrine.md`
-3. `training-phase-doctrine.md`
-4. `training-overlay-contract.md`
-5. `training-recent-cache.local.md` if present, otherwise `training-recent-cache.md`
-6. the athlete-state, event, and philosophy profiles named in the active build declaration
-7. `training-history-memo.local.md` if present, otherwise `training-history-memo.md`, only when deeper evidence is needed
-8. `training-phase-transition-checklists.md` when the question is about phase changes
-9. `training-progression-rules.md` when a compact operational summary is useful
+1. `training-runtime-core.md`
+2. `training-runtime-active.md`
+3. the athlete-state, event, and philosophy profiles named in `training-runtime-active.md`
 
-If the task is to choose or suggest a concrete workout template, also read:
+This default load should be enough for normal planning, recommendation, interpretation, and workout selection logic.
 
-10. `temperance/guidelines/temperance-workouts/README.md`
-11. `temperance/guidelines/temperance-workouts/template-contract.md`
-12. `temperance/guidelines/temperance-workouts/quick-reference.md` when a distilled view is enough
-13. `temperance/guidelines/temperance-workouts/catalog.md` when you need the full list
-14. `temperance/guidelines/temperance-workouts/taxonomy.md`
-15. the relevant workout-template file for the chosen family
+## On-demand retrieval
+
+Load additional files only when the task requires their extra detail:
+
+1. `training-history-short.local.md` if present, otherwise `training-history-memo.local.md` if present, otherwise `training-history-memo.md`
+   - Use when historical capacity, injury patterns, failure modes, or evidence-backed context may change the recommendation.
+2. `training-phase-transition-checklists.md`
+   - Use when the task is specifically about phase changes, partial transitions, or whether the current phase should advance.
+3. `training-control-system-doctrine.md`
+   - Use when runtime-core is not detailed enough for control-logic interpretation, readiness-signal nuance, or invariant semantics.
+4. `training-phase-doctrine.md`
+   - Use when fuller phase intent or cross-phase emphasis detail is needed.
+5. `training-doctrine-governance.md`
+   - Use when document roles, status tags, or change-boundary questions matter.
+6. `training-overlay-contract.md`
+   - Use when creating or revising overlays.
+7. `training-recent-cache.local.md` if present, otherwise `training-recent-cache.md`
+   - Use when the full active-build roadmap, update notes, or more detailed near-term declarations are needed.
+8. `training-progression-rules.md`
+   - Use when a separate compact operational summary is requested.
+
+If the task is to choose or suggest a concrete workout template, also load:
+
+9. `temperance/guidelines/temperance-workouts/README.md`
+10. `temperance/guidelines/temperance-workouts/template-contract.md`
+11. `temperance/guidelines/temperance-workouts/quick-reference.md` when a distilled view is enough
+12. `temperance/guidelines/temperance-workouts/catalog.md` when you need the full list
+13. `temperance/guidelines/temperance-workouts/taxonomy.md`
+14. the relevant workout-template file for the chosen family
 
 ## Local/private resolution
 
@@ -48,7 +65,7 @@ Never let a lower-precedence layer silently override a higher-precedence constra
 
 ## Interpretation rules
 
-- Do not infer the current build from the history memo if the active build declaration already exists.
+- Do not infer the current build from history if `training-runtime-active.md` already declares it.
 - Use the history memo as evidence, not as the active state.
 - Use the active anchor mapping before reasoning about metrics.
 - Distinguish clearly between invariant doctrine, active build facts, evidence from history, and your own inference.
@@ -94,4 +111,5 @@ When selecting from the workout-template repository:
 - Do not write private athlete information back into tracked repo-safe template files unless explicitly asked.
 - Update `*.local.md` files for current personal state when privacy matters.
 - Revise overlays when philosophy, athlete-state interpretation, or event model changes.
-- Revise the core only when semantics or non-negotiable control logic changes.
+- Revise `training-runtime-core.md` and the full invariant doctrine together when semantics or non-negotiable control logic changes.
+- Revise `training-runtime-active.md` whenever the active build declaration materially changes.

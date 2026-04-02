@@ -2,13 +2,10 @@
 
 Status: secondary / transitional document.
 
-The authoritative planning stack now lives in:
-- `training-control-system-doctrine.md`
-- `training-doctrine-governance.md`
-- `training-phase-doctrine.md`
-- `training-overlay-contract.md`
-- `training-recent-cache.local.md` when present, otherwise `training-recent-cache.md`
+The default planning stack now lives in:
+- `training-runtime-core.md`
+- `training-runtime-active.md`
 - `training-llm-instructions.md`
-- the active overlay set named in the active build declaration
+- the active overlay set named in `training-runtime-active.md`
 
-Use this file only as a lightweight conceptual companion if needed. Prefer updating and consulting the doctrine stack directly to avoid duplication and drift.
+Load the full doctrine files only on demand through `training-llm-instructions.md`.

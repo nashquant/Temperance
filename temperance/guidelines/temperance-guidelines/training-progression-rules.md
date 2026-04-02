@@ -2,13 +2,12 @@
 
 Status: practical cheat sheet.
 
-The authoritative planning stack now lives in:
-- `training-control-system-doctrine.md`
-- `training-phase-doctrine.md`
-- `training-recent-cache.local.md` when present, otherwise `training-recent-cache.md`
-- the active overlay set named in the active build declaration
+The default planning stack now lives in:
+- `training-runtime-core.md`
+- `training-runtime-active.md`
+- the active overlay set named in `training-runtime-active.md`
 
-Use this file as a compact operational summary only. If any detail here conflicts with the invariant core or active build declaration, the core and active build win.
+Use this file only when a separate compact operational summary is requested. If any detail here conflicts with the runtime files or active overlays, the runtime files and overlays win.
 
 ## Core workflow
 
