@@ -7,7 +7,7 @@ cd "${ROOT_DIR}"
 
 PORT="${PORT:-8000}"
 HOST="${HOST:-0.0.0.0}"
-PYTHON_BIN="${BACKEND_PYTHON_BIN:-${V2_PYTHON_BIN:-}}"
+PYTHON_BIN="${BACKEND_PYTHON_BIN:-}"
 
 if [[ -z "${PYTHON_BIN}" ]]; then
   if [[ -x "${BACKEND_DIR}/.venv/bin/python" ]]; then
