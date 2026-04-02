@@ -20,7 +20,7 @@ Use [catalog.md](./catalog.md) when you want the full list. Use [taxonomy.md](./
 | short-rep LT2 threshold | `lt2-threshold` | [lt2-threshold-15min-plus-8x3-at-100.md](./lt2-threshold/lt2-threshold-15min-plus-8x3-at-100.md) |
 | threshold-supportive cruise work | `cruise-intervals` | [cruise-20min-plus-5x6-at-91.md](./cruise-intervals/cruise-20min-plus-5x6-at-91.md) |
 | long duration durability | `long-run` | [long-run-120min-at-76.md](./long-run/long-run-120min-at-76.md) |
-| generic specific endurance | `specific-endurance` | [specific-105min-at-72-plus-30min-at-80.md](./specific-endurance/specific-105min-at-72-plus-30min-at-80.md) |
+| generic specific endurance | `specific-endurance` | [specific-30min-plus-3x12-at-82.md](./specific-endurance/specific-30min-plus-3x12-at-82.md) |
 | VO2 touch | `vo2-max` | [vo2-20min-plus-8x2-at-102.md](./vo2-max/vo2-20min-plus-8x2-at-102.md) |
 | hill strength | `hills-strength-endurance` | [hill-strength-20min-plus-4x6-at-90.md](./hills-strength-endurance/hill-strength-20min-plus-4x6-at-90.md) |
 | medium-long durable support | `medium-long` | [medium-long-75min-at-72.md](./medium-long/medium-long-75min-at-72.md) |
@@ -61,6 +61,20 @@ Use [catalog.md](./catalog.md) when you want the full list. Use [taxonomy.md](./
 - Treat the default `fartlek-alternations` family as small-amplitude rhythm work, not as disguised threshold.
 - The faster side should usually sit near marathon-like rhythm, while the float should stay only slightly lower in high Z2 to low Z3 territory.
 - Use fartlek when you want controlled variation and rhythm change; if you want a cleaner hard stimulus, move to `lt1-threshold`, `lt2-threshold`, or `cruise-intervals`.
+
+## Moderate-Support Chooser
+
+- Use `support` when the point is productive load with almost no structural complexity.
+- Use `steady-aerobic` when you want a stronger aerobic block below threshold without turning the day into a hard anchor.
+- Use `progressive` when the value is a controlled rise across the session rather than one repeated structure.
+- Use `medium-long` when duration itself is part of the point, even if the intensity stays mostly moderate.
+- Use default `fartlek-alternations` when you want rhythm change and mild amplitude, not just a steady block.
+- Use `x-train-specific` when non-run support is the right tool rather than a substitute for a run template.
+
+## Specific-Endurance Chooser
+
+- Use the broken specific-endurance anchor when the overlay wants repeated specific exposure.
+- Use the long-preload specific-endurance anchor when the overlay wants one long late-load finish and fueled durability under fatigue.
 
 ## Fast Read
 

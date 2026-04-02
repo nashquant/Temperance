@@ -74,7 +74,7 @@ Prefer parse-friendly Temperance strings such as:
 - `3x10' @ 90% (2' @ 72%)`
 - `60min @ 72% + 20min @ 80%`
 - `20min @ 72% + 8x2' @ 102% (150s @ 72%)`
-- `AM: 20min @ 72% + 4x8' @ 91% (90s @ 75%) | PM: 15min @ 72% + 5x5' @ 91% (90s @ 75%)`
+- `AM: 20min @ 72% + 4x8' @ 90% (90s @ 75%) | PM: 15min @ 72% + 6x3' @ 100% (60s @ 75%)`
 
 Keep templates modality-light when the same structure works across running, bike, and elliptical.
 
