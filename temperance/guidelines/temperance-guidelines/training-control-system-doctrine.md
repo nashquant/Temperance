@@ -173,6 +173,12 @@ Interpretation:
 - the planning subtype tells you what job the session is trying to do
 - these are nested labels, not competing taxonomies
 
+Clarification on H1 vs H2:
+- H1 sessions (threshold, long-duration) carry their dominant cost through sustained metabolic demand — cardiovascular stress, lactate accumulation, or prolonged aerobic duration
+- H2 sessions (sharp, VO2-range) carry their dominant cost through neuromuscular demand at high velocities — movement mechanics, force production per stride, and speed economy
+- H2 does not mean "higher injury risk than H1"; long-duration H1 work typically carries the highest cumulative bone-loading cost in a running build precisely because of its duration and running-specific mechanical repetition
+- use the H1/H2 label to understand what the session is primarily stressing, not to rank absolute injury or fatigue risk across subtypes
+
 The event overlay defines what `specific hard` means.
 The philosophy overlay defines which subtypes are usually more central.
 
@@ -274,6 +280,36 @@ After a **hard alert**, the system should usually:
 
 Alert sensitivity may be tightened by the athlete-state overlay.
 Event and philosophy overlays may add higher-salience watchouts within those constraints.
+
+## Readiness signal doctrine
+
+External readiness signals are supporting context, not primary planning inputs. Weekly build structure anchored to total_load and primary_specific_load targets is the primary planning signal.
+
+### Tracked signals and their role
+
+**HRV** is the most sensitive daily readiness marker. Use it as a trend, not an absolute:
+- single-day suppression in an otherwise stable block: note it, proceed with the planned session, monitor next-day response
+- 3+ consecutive days meaningfully below individual baseline: treat as a soft alert — consider substituting the next hard session or reducing its scope before proceeding
+- acute sharp drop combined with poor mechanical feel or illness signs: treat as a hard alert — replace the next hard session with support or recovery work
+
+**RHR** is a slower-moving but more robust fatigue signal:
+- single-day elevation above individual baseline: attentive but not actionable on its own
+- RHR elevated for 2+ days alongside suppressed HRV: soft alert, especially if accompanied by heavier-than-expected legs or mood change
+- RHR elevated for 3+ days without clear cause: investigate — this pattern can precede illness or over-accumulation
+
+**Sleep** signals should be interpreted by pattern, not single night:
+- one short or poor-quality night: proceed normally, flag for next-day awareness
+- consistently short duration (below individual norm) for 2+ nights: take it seriously — sleep debt compounds metabolic and mechanical recovery more than HRV alone
+- poor sleep score despite adequate duration: look for the profile pattern; fragmented architecture is more meaningful than a raw score number
+- chronic poor sleep across a build block: this degrades absorption and should factor into whether the weekly load target is realistic
+
+### Response rules
+
+Readiness signals interact with the alert system, not replace it:
+- a soft alert from readiness alone (one suppressed signal) should rarely override a planned session — adjust scope or swap to a lower-cost equivalent if warranted
+- a compound signal (HRV + RHR + poor sleep + heavy legs on the same day) should be treated as a soft alert even if each individual metric is borderline
+- only a clear compound pattern over multiple days, or a signal accompanied by obvious physical cause (illness, known overreach), should rise to hard alert behavior
+- when in doubt, a reduced version of the planned session beats a full replacement — preserves structure without ignoring the signal
 
 ## Generic phase framework
 

@@ -123,6 +123,16 @@ This is the classic Norwegian-style double threshold template: LT1-oriented work
 - explicit double-threshold days when the build clearly supports high quality density
 - blocks that want the classic LT1 AM and LT2 PM split rather than two similar threshold sessions
 
+## When the build has earned this
+
+Before selecting this template, verify all of the following:
+- primary_specific_load has been absorbed coherently for at least 3-4 weeks without repeated hard alerts
+- the local_spacing_window is being maintained consistently — the plan is not already near its density ceiling
+- the last threshold session was well absorbed with no meaningful worsening of next-day mechanical response
+- no active injury signals or mechanical flags are present
+- the active philosophy overlay has been reviewed: this template is explicitly listed as a non-default; it should solve a specific structural need (threshold accumulation, density efficiency ahead of a specificity block), not serve as a routine choice
+- if any of the above are uncertain, use the single-session `split-threshold-lt1-am-lt2-pm` template instead
+
 ## Recovery
 
 Use `75s @ 75%` in the morning and `60s @ 75%` in the evening. The evening recoveries stay shorter to preserve the LT2 character.

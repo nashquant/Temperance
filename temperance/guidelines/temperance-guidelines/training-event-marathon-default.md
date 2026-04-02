@@ -15,6 +15,8 @@ Profile id: marathon-default.
 - The key duration anchor is the long run.
 - `Specific hard` means marathon-oriented work that improves fatigue resistance, race-pace durability, and long-duration economy.
 
+Phase note: in Return / Re-entry and Base / Capacity Build phases, specific hard should mean durable long-run work and progression runs rather than targeted race-pace sessions. True marathon-pace specificity is most productive closer to the event. Do not force it early when the primary need is base durability and running-load absorption.
+
 ## Hard-session priority order
 
 - long-duration hard
