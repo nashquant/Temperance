@@ -73,7 +73,7 @@ Prefer parse-friendly Temperance strings such as:
 - `45min @ 72%`
 - `3x10' @ 90% (2' @ 72%)`
 - `60min @ 72% + 20min @ 80%`
-- `15min @ 72% + 8x2' @ 100% (2' @ 72%)`
+- `20min @ 72% + 8x2' @ 102% (150s @ 72%)`
 - `AM: 20min @ 72% + 4x8' @ 91% (90s @ 75%) | PM: 15min @ 72% + 5x5' @ 91% (90s @ 75%)`
 
 Keep templates modality-light when the same structure works across running, bike, and elliptical.
@@ -134,3 +134,10 @@ The baseline and stored variants should always use complete concrete strings.
 - Treat `physiology_label` as a descriptive hint, not as a replacement for category.
 - Treat stored TSS as a library anchor, not as athlete-specific truth.
 - When a session sits near a boundary, let category express planning role and let `physiology_label` express the flavor.
+
+## Family guardrails
+
+- LT1 threshold usually lives around `88-92%`, with longer reps tending lower and medium-length reps able to sit higher.
+- LT2 threshold usually lives around `98-102%` and should stay in short `2-4min` reps.
+- VO2 max should usually stay on the shorter side than LT2, most often in `2-3min` reps with a longer setup and enough recovery to preserve pace quality.
+- If a session is materially longer and lives closer to `90-92%`, do not label it LT2 or VO2.

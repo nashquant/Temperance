@@ -35,6 +35,8 @@ For the metadata model, read [taxonomy.md](./taxonomy.md). For the shortest prac
 
 ### LT2 Threshold
 
+- [lt2-threshold-15min-plus-10x2-at-102.md](./lt2-threshold/lt2-threshold-15min-plus-10x2-at-102.md)
+- [lt2-threshold-15min-plus-8x3-at-100.md](./lt2-threshold/lt2-threshold-15min-plus-8x3-at-100.md)
 - [lt2-threshold-20min-plus-6x4-at-98.md](./lt2-threshold/lt2-threshold-20min-plus-6x4-at-98.md)
 
 ### Cruise Intervals
@@ -47,8 +49,8 @@ For the metadata model, read [taxonomy.md](./taxonomy.md). For the shortest prac
 
 ### VO2 Max
 
-- [vo2-15min-plus-8x2-at-100.md](./vo2-max/vo2-15min-plus-8x2-at-100.md)
-- [vo2-15min-plus-5x3-at-98.md](./vo2-max/vo2-15min-plus-5x3-at-98.md)
+- [vo2-20min-plus-8x2-at-102.md](./vo2-max/vo2-20min-plus-8x2-at-102.md)
+- [vo2-20min-plus-6x3-at-100.md](./vo2-max/vo2-20min-plus-6x3-at-100.md)
 
 ### Hills Strength Endurance
 

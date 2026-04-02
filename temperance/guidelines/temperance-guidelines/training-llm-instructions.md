@@ -80,6 +80,8 @@ When selecting from the workout-template repository:
 - if interval delineation is not specified, treat the in-between handling as user discretion rather than inventing a recovery prescription
 - treat LT1 and LT2 as distinct threshold bands rather than interchangeable labels: LT1 usually sits around `88-92%` depending on rep length, while LT2 usually sits around `98-102%` and should stay in short `2-4min` reps
 - if a threshold session is materially longer and sits closer to `90-92%`, do not silently label it LT2
+- for `vo2-max` templates, prefer a longer setup, usually around `20min`, plus short `2-3min` reps and enough recovery to preserve pace quality rather than forcing threshold-like continuity
+- when reasoning about running pace, treat `vo2-max` templates as controlled 5k-10k-feel work rather than sprint work; this is an inference layer, not a universal metric mapping
 - treat `physiology_label` as a descriptive hint inside the chosen category, not as a replacement for category
 - treat `session_family`, `load_role`, and `structural_subtype` as first-class taxonomy fields, not as prose-only hints
 - only use split-day templates when the planning task explicitly wants split quality or split support
