@@ -21,11 +21,11 @@ CLOUD_SCRIPT="${ROOT_DIR}/scripts/service_cloudflared.sh"
 MCP_SCRIPT="${ROOT_DIR}/scripts/service_mcp.sh"
 CF_CONFIG_PATH="${ROOT_DIR}/data/private/cloudflared.keepalive.yml"
 
-BACKEND_PORT="${BACKEND_PORT:-${V2_BACKEND_PORT:-8000}}"
-FRONTEND_PORT="${FRONTEND_PORT:-${V2_FRONTEND_PORT:-5173}}"
-BACKEND_HOST="${BACKEND_HOST:-${V2_BACKEND_HOST:-127.0.0.1}}"
-FRONTEND_HOST="${FRONTEND_HOST:-${V2_FRONTEND_HOST:-127.0.0.1}}"
-BACKEND_PYTHON_BIN="${BACKEND_PYTHON_BIN:-${V2_PYTHON_BIN:-$(cd "${ROOT_DIR}/.." && pwd)/backend/.venv/bin/python}}"
+BACKEND_PORT="${BACKEND_PORT:-8000}"
+FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
+FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
+BACKEND_PYTHON_BIN="${BACKEND_PYTHON_BIN:-$(cd "${ROOT_DIR}/.." && pwd)/.venv/bin/python}"
 TUNNEL_NAME="${CLOUDFLARE_TUNNEL:-temperance}"
 TUNNEL_HOSTNAME="${TUNNEL_HOSTNAME:-app.temperance-rtl.work}"
 if [[ -z "${CLOUDFLARED_BIN:-}" ]]; then
@@ -53,7 +53,7 @@ Env overrides:
   FRONTEND_PORT      frontend port (default: 5173)
   BACKEND_HOST       backend host bind (default: 127.0.0.1)
   FRONTEND_HOST      frontend host bind (default: 127.0.0.1)
-  BACKEND_PYTHON_BIN backend python (default: ../backend/.venv/bin/python)
+  BACKEND_PYTHON_BIN backend python (default: ../.venv/bin/python)
   CLOUDFLARE_TUNNEL  named tunnel (default: temperance)
   TUNNEL_HOSTNAME    hostname label (default: app.temperance-rtl.work)
   CLOUDFLARED_BIN    cloudflared binary (default: cloudflared)
