@@ -65,7 +65,7 @@ These rules matter because workout strings are both user-facing and machine-repa
 - `scripts/install_keepalive.sh` manages the backend, frontend, and Cloudflare tunnel through macOS `launchd`
 - `scripts/install_autoupdate.sh` installs the optional fast-forward auto-update job
 
-The current unified keepalive setup expects the repo-level `backend/` and `frontend/` apps. If services start pointing at stale `v2/` or old worktree paths, reinstall the keepalive jobs from the current workspace.
+The current unified keepalive setup expects the repo-level `backend/` and `frontend/` apps. If services start pointing at stale paths, reinstall the keepalive jobs from the current workspace.
 
 ## Migrations
 

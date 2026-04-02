@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
-BACKEND_ROOT = Path(__file__).resolve().parents[2] / "v2" / "backend"
+BACKEND_ROOT = Path(__file__).resolve().parents[2] / "backend"
 MODULE_PATH = BACKEND_ROOT / "app" / "planning_parsing.py"
 
 
@@ -28,7 +28,7 @@ def _load_module():
     sys.modules["pandas"] = fake_pandas
     sys.path.insert(0, str(BACKEND_ROOT))
     try:
-        spec = importlib.util.spec_from_file_location("temperance_v2_planning_parsing", MODULE_PATH)
+        spec = importlib.util.spec_from_file_location("temperance_planning_parsing", MODULE_PATH)
         assert spec is not None
         assert spec.loader is not None
         module = importlib.util.module_from_spec(spec)

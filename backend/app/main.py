@@ -945,16 +945,16 @@ def _run_comprehensive_extract_background(
             f"records={len(extract.activity_records)}({n_r}), splits={len(extract.activity_splits)}({n_sp}), "
             f"sleep={len(extract.sleep_daily)}({n_s}), wellness={len(extract.wellness_daily)}({n_w}), errors={len(extract.errors)}"
         )
-        log_sync(db_path, source="v2_garmin_comprehensive", success=True, message=msg)
+        log_sync(db_path, source="garmin_comprehensive", success=True, message=msg)
         _extract_progress_finish(owner, msg, extract.errors[:40])
     except GarminRateLimitError as exc:
         state = _set_garmin_rate_limit(db_path, str(exc))
         message = str(state["message"])
         _extract_progress_fail(owner, message)
-        log_sync(db_path, source="v2_garmin_comprehensive", success=False, message=message)
+        log_sync(db_path, source="garmin_comprehensive", success=False, message=message)
     except Exception as exc:
         _extract_progress_fail(owner, str(exc))
-        log_sync(db_path, source="v2_garmin_comprehensive", success=False, message=str(exc))
+        log_sync(db_path, source="garmin_comprehensive", success=False, message=str(exc))
 
 
 def _run_oauth_comprehensive_extract_background(
@@ -1014,20 +1014,20 @@ def _run_oauth_comprehensive_extract_background(
             f"records={len(records_rows)}({activity_persisted['db_changes']['records']}), splits={len(split_rows)}({activity_persisted['db_changes']['splits']}), "
             f"sleep={len(sleep_rows)}({wellness_persisted['db_changes']['sleep']}), wellness={len(wellness_rows)}({wellness_persisted['db_changes']['wellness']}), errors=0"
         )
-        log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=True, message=msg)
+        log_sync(db_path, source="garmin_oauth_comprehensive", success=True, message=msg)
         _extract_progress_finish(owner, msg, [])
     except GarminOAuthConfigurationError as exc:
         _extract_progress_fail(owner, str(exc))
-        log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=False, message=str(exc))
+        log_sync(db_path, source="garmin_oauth_comprehensive", success=False, message=str(exc))
     except GarminOAuthError as exc:
         _extract_progress_fail(owner, str(exc))
-        log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=False, message=str(exc))
+        log_sync(db_path, source="garmin_oauth_comprehensive", success=False, message=str(exc))
     except HTTPException as exc:
         _extract_progress_fail(owner, str(exc.detail))
-        log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=False, message=str(exc.detail))
+        log_sync(db_path, source="garmin_oauth_comprehensive", success=False, message=str(exc.detail))
     except Exception as exc:
         _extract_progress_fail(owner, str(exc))
-        log_sync(db_path, source="v2_garmin_oauth_comprehensive", success=False, message=str(exc))
+        log_sync(db_path, source="garmin_oauth_comprehensive", success=False, message=str(exc))
 
 
 def _iter_date_range(start_day: date, end_day: date) -> list[date]:
@@ -1580,7 +1580,7 @@ def _run_auto_sync_once() -> None:
         if not (garmin_email and garmin_password):
             log_sync(
                 db_path,
-                source="v2_sync_garmin_auto_quick",
+                source="sync_garmin_auto_quick",
                 success=False,
                 message="Garmin credentials missing for autosync.",
             )
@@ -1590,7 +1590,7 @@ def _run_auto_sync_once() -> None:
             garmin_email,
             garmin_password,
             days_back=AUTO_SYNC_DAYS_BACK,
-            source_label="v2_sync_garmin_auto_quick",
+            source_label="sync_garmin_auto_quick",
             credentials_source=credentials_source,
         )
     except GarminRateLimitError as exc:
@@ -1598,7 +1598,7 @@ def _run_auto_sync_once() -> None:
             state = _set_garmin_rate_limit(_db_path_for_owner(owner), str(exc))
             log_sync(
                 _db_path_for_owner(owner),
-                source="v2_sync_garmin_auto_quick",
+                source="sync_garmin_auto_quick",
                 success=False,
                 message=str(state["message"]),
             )
@@ -1608,7 +1608,7 @@ def _run_auto_sync_once() -> None:
         try:
             log_sync(
                 _db_path_for_owner(owner),
-                source="v2_sync_garmin_auto_quick",
+                source="sync_garmin_auto_quick",
                 success=False,
                 message=str(exc),
             )
@@ -6427,7 +6427,7 @@ def garmin_oauth_callback(
         connection = _save_garmin_oauth_connection(db_path, token_payload=token_payload, userinfo_payload=userinfo_payload)
         account_email = str(connection.get("account_email") or "").strip()
         message = f"Garmin OAuth connected for {account_email or resolved_owner}."
-        log_sync(db_path, source="v2_garmin_oauth_connect", success=True, message=message)
+        log_sync(db_path, source="garmin_oauth_connect", success=True, message=message)
         return RedirectResponse(url=_garmin_oauth_redirect_url("success", message), status_code=303)
     except GarminOAuthConfigurationError as exc:
         return RedirectResponse(url=_garmin_oauth_redirect_url("error", str(exc)), status_code=303)
@@ -6452,7 +6452,7 @@ def garmin_oauth_disconnect(
     db_path = _db_path_for_owner(resolved_owner)
     deleted = delete_oauth_connection(db_path, GARMIN_OAUTH_PROVIDER)
     message = "Garmin OAuth disconnected." if deleted else "Garmin OAuth was not connected."
-    log_sync(db_path, source="v2_garmin_oauth_disconnect", success=True, message=message)
+    log_sync(db_path, source="garmin_oauth_disconnect", success=True, message=message)
     return {"success": True, "owner": resolved_owner, "disconnected": deleted, "message": message}
 
 
@@ -6833,7 +6833,7 @@ def data_extract_garmin_auth_reset(
     reset_garmin_auth()
     log_sync(
         db_path,
-        source="v2_garmin_auth_reset",
+        source="garmin_auth_reset",
         success=True,
         message="Garmin auth fully reset via API.",
     )
@@ -6907,7 +6907,7 @@ def data_extract_sync(
                     sync_result = _run_quick_oauth_sync(
                         db_path,
                         days_back=days_back,
-                        source_label=f"v2_sync_{source}_{profile}_oauth",
+                        source_label=f"sync_{source}_{profile}_oauth",
                     )
                     total_rows += int(sync_result.get("total_rows") or 0)
                     details["garmin"] = dict(sync_result.get("details") or {}).get("garmin") or {}
@@ -6956,7 +6956,7 @@ def data_extract_sync(
                         str(selection.get("email") or ""),
                         str(selection.get("password") or ""),
                         days_back=days_back,
-                        source_label=f"v2_sync_{source}_{profile}",
+                        source_label=f"sync_{source}_{profile}",
                         credentials_source=str(selection.get("credentials_source") or "session"),
                     )
                     total_rows += int(sync_result.get("total_rows") or 0)
@@ -7047,7 +7047,7 @@ def data_extract_sync(
     success = sync_completed or total_rows > 0 or any("missing" in m.lower() for m in messages)
     msg = " | ".join(messages) if messages else f"total_rows={total_rows}"
     if not sync_logged:
-        log_sync(db_path, source=f"v2_sync_{source}_{profile}", success=success, message=msg)
+        log_sync(db_path, source=f"sync_{source}_{profile}", success=success, message=msg)
     return {"success": success, "messages": messages, "total_rows": total_rows, "details": details}
 
 
