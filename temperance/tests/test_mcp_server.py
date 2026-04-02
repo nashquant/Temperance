@@ -12,23 +12,32 @@ class TemperanceMCPServerTest(unittest.TestCase):
 
         self.assertIsNotNone(response)
         tool_names = [tool["name"] for tool in response["result"]["tools"]]
-        self.assertEqual(
-            tool_names,
-            [
-                "plan_next_day",
-                "preview_cycle",
-                "explain_planning_decision",
-                "get_today_status",
-                "get_recent_activities",
-                "get_planned_activities",
-                "get_week_outlook",
-                "get_load_trend",
-                "get_recovery_trend",
-                "get_activity_detail",
-                "judge_training_history",
-                "explain_history_judgment",
-            ],
-        )
+        self.assertIn("plan_next_day", tool_names)
+        self.assertIn("preview_cycle", tool_names)
+        self.assertIn("explain_planning_decision", tool_names)
+        self.assertIn("get_today_status", tool_names)
+        self.assertIn("get_recent_activities", tool_names)
+        self.assertIn("get_planned_activities", tool_names)
+        self.assertIn("get_week_outlook", tool_names)
+        self.assertIn("get_load_trend", tool_names)
+        self.assertIn("get_recovery_trend", tool_names)
+        self.assertIn("get_activity_detail", tool_names)
+        self.assertIn("judge_training_history", tool_names)
+        self.assertIn("explain_history_judgment", tool_names)
+        self.assertIn("save_planned_activities", tool_names)
+        self.assertIn("update_planned_activity", tool_names)
+        self.assertIn("delete_planned_activities", tool_names)
+        self.assertIn("mark_planned_done", tool_names)
+        self.assertIn("search_workouts", tool_names)
+        self.assertIn("get_fitness_form", tool_names)
+        self.assertIn("get_settings", tool_names)
+        self.assertIn("update_settings", tool_names)
+        self.assertIn("trigger_sync", tool_names)
+        self.assertIn("get_sync_status", tool_names)
+        self.assertIn("mark_activity_invalid", tool_names)
+        self.assertNotIn("recommend_training", tool_names)
+        self.assertNotIn("explain_recommendation", tool_names)
+        self.assertEqual(len(tool_names), len(mcp_server.TOOLS))
 
     def test_mcp_server_initialize_is_unified(self) -> None:
         server = mcp_server.TemperanceMCPServer()
