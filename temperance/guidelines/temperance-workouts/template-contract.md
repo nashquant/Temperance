@@ -13,11 +13,19 @@ If a rule would be true for many templates, keep it here instead of repeating it
 Each template should expose machine-readable front matter with at least:
 - `template_id`
 - `category`
+- `session_family`
+- `structural_subtype`
+- `load_role`
+- `planning_intent`
 - `bucket`
 - `stress_class`
 - `hard_subtype`
 - `physiology_label`
+- `modality_pattern`
 - `modality_scope`
+- `phase_fit`
+- `specificity_target`
+- `durability_cost`
 - `activity_text_template`
 - `baseline_activity_text`
 - `baseline_estimated_tss`
@@ -34,6 +42,31 @@ Each template should expose machine-readable front matter with at least:
 
 Use `hard_subtype: null` for support sessions that are not hard days.
 
+## Composite-session support
+
+Split-day templates may also include:
+- `composite_kind`
+- `session_parts`
+- `baseline_estimated_tss_total`
+
+For split-day templates:
+- keep `baseline_estimated_tss` equal to the total session estimate for backward compatibility
+- store each part as a full concrete `activity_text` inside `session_parts`
+- if variants are split-day variants, each variant may also include its own `session_parts`
+
+## Taxonomy rule
+
+Use the metadata fields as follows:
+- `category`: doctrine-facing top-level selector
+- `session_family`: library browsing family
+- `structural_subtype`: shape of the session
+- `load_role`: what job the session plays in the week
+- `planning_intent`: main reason to choose the session
+- `modality_pattern`: whether the session is generic, run-only, xtrain-only, mixed-modality, or split-day
+- `phase_fit`: phases where the template is usually appropriate
+- `specificity_target`: what kind of specificity the session primarily serves
+- `durability_cost`: rough structural or absorption cost
+
 ## Lingo rule
 
 Prefer parse-friendly Temperance strings such as:
@@ -41,8 +74,19 @@ Prefer parse-friendly Temperance strings such as:
 - `3x10' @ 90% (2' @ 72%)`
 - `60min @ 72% + 20min @ 80%`
 - `15min @ 72% + 8x2' @ 100% (2' @ 72%)`
+- `AM: 20min @ 72% + 4x8' @ 91% (90s @ 75%) | PM: 15min @ 72% + 5x5' @ 91% (90s @ 75%)`
 
 Keep templates modality-light when the same structure works across running, bike, and elliptical.
+
+## Normalization rule
+
+When source material is imported into this library:
+- remove legacy doctrine metric aliases
+- do not assume omitted modality means run
+- store long durations in `min`
+- keep `'` for repeated minute reps and `s` for second-based reps
+- store explicit recoveries in the current library style, usually parenthesized
+- use `session_parts` for split-day templates rather than relying only on one summary string
 
 ## Recovery rule
 
@@ -80,11 +124,13 @@ Do not repeat repository-wide statements about category-first selection, modalit
 `activity_text_template` may use placeholder or optional-block notation when scaling changes one small part of the session, for example:
 - `15min @ 72% + {threshold_reps}x10' @ 90% (2' @ 72%)`
 - `15min @ 72% + 3x12' @ 88% (2' @ 72%) [+ {support_minutes}min @ 72%]`
+- `AM: {am_activity} | PM: {pm_activity}`
 
 The baseline and stored variants should always use complete concrete strings.
 
 ## Interpretation rule
 
+- Treat `category` as the doctrine-facing selector and `session_family` as the richer library taxonomy.
 - Treat `physiology_label` as a descriptive hint, not as a replacement for category.
 - Treat stored TSS as a library anchor, not as athlete-specific truth.
 - When a session sits near a boundary, let category express planning role and let `physiology_label` express the flavor.

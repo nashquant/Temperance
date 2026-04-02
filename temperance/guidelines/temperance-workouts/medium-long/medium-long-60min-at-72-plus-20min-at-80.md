@@ -1,11 +1,22 @@
 ---
 template_id: moderate_60min_72_20min_80
 category: moderate-support
+session_family: medium-long
+structural_subtype: progression
+load_role: long-durability
+planning_intent: build-long-durability
 bucket: steady
 stress_class: support
 hard_subtype: null
-physiology_label: progression-medium-long
+physiology_label: medium-long-progression
+modality_pattern: generic
 modality_scope: any
+phase_fit:
+  - base
+  - capacity-build
+  - specificity
+specificity_target: long-durability
+durability_cost: medium
 activity_text_template: "{support_minutes}min @ 72% + {moderate_minutes}min @ 80%"
 baseline_activity_text: "60min @ 72% + 20min @ 80%"
 baseline_estimated_tss: 73.2
@@ -43,11 +54,10 @@ variants:
     max_if: 0.80
     pct_from_baseline_tss: 19.0
 machine_notes:
-  - "Progression-style moderate-support template."
-  - "Useful when the day should carry some moderate work without becoming the week's main hard session."
+  - "Medium-long progression template with a moderate finish but not a hard-session role."
 ---
 
-# Moderate Support - 60min @ 72% + 20min @ 80%
+# Medium Long - 60min @ 72% + 20min @ 80%
 
 ## Session note
 
@@ -56,9 +66,8 @@ This is a medium-long progression support day. The moderate finish matters, but 
 ## Best use
 
 - medium-long sessions that should prepare later long or specific work
-- base periods where some moderate contact is useful without committing to a hard day
-- x-train support when a pure easy session would undershoot the weekly budget
+- phases where some moderate contact is useful without committing to a hard day
 
 ## Scaling note
 
-Preserve the progression shape. If the last block starts to become event-specific or hard enough to change the planning role, move to a `specific-hard` template instead.
+Preserve the progression shape. If the last block starts to become event-specific or hard enough to change the planning role, move to `specific-endurance`.

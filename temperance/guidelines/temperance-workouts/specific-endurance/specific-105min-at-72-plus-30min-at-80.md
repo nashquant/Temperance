@@ -1,11 +1,21 @@
 ---
 template_id: specific_105min_72_30min_80
 category: specific-hard
+session_family: specific-endurance
+structural_subtype: fast-finish
+load_role: specific-endurance
+planning_intent: build-specific-endurance
 bucket: long
 stress_class: hard
 hard_subtype: h1
 physiology_label: late-load-specific-endurance
+modality_pattern: generic
 modality_scope: any
+phase_fit:
+  - specificity
+  - peak
+specificity_target: event-defined-specificity
+durability_cost: high
 activity_text_template: "{support_minutes}min @ 72% + {specific_block_minutes}min @ 80%"
 baseline_activity_text: "105min @ 72% + 30min @ 80%"
 baseline_estimated_tss: 122.7
@@ -43,11 +53,11 @@ variants:
     max_if: 0.80
     pct_from_baseline_tss: 19.2
 machine_notes:
-  - "The event overlay decides when this counts as truly specific."
-  - "Without that context, it behaves like a late-load endurance session."
+  - "The event overlay decides how specific this really is."
+  - "Without that overlay it behaves like a late-load endurance session."
 ---
 
-# Specific Hard - 105min @ 72% + 30min @ 80%
+# Specific Endurance - 105min @ 72% + 30min @ 80%
 
 ## Session note
 
@@ -57,8 +67,7 @@ This is the generic specific-endurance template in the library. Its planning val
 
 - event overlays that value long pre-load followed by a sustained moderate finish
 - build phases where late-load composure and fueled durability matter
-- sessions that should bridge long-duration work and event-specific work without going sharp
 
 ## Scaling note
 
-Keep the late-load structure intact. If the current event overlay does not treat this shape as specific, classify it as a long-duration hard variant instead of forcing the label.
+Keep the late-load structure intact. If the current event overlay does not treat this shape as specific, classify it as a long-run or support variant instead of forcing the label.

@@ -1,11 +1,22 @@
 ---
 template_id: threshold_15min_72_4x8_90_2rec
 category: threshold-hard
+session_family: lt1-threshold
+structural_subtype: intervals
+load_role: primary-hard
+planning_intent: build-lt1-threshold
 bucket: tempo
 stress_class: hard
 hard_subtype: h1
 physiology_label: threshold-density
+modality_pattern: generic
 modality_scope: any
+phase_fit:
+  - base
+  - capacity-build
+  - specificity
+specificity_target: lt1-threshold
+durability_cost: medium
 activity_text_template: "15min @ 72% + {threshold_reps}x8' @ 90% (2' @ 72%)"
 baseline_activity_text: "15min @ 72% + 4x8' @ 90% (2' @ 72%)"
 baseline_estimated_tss: 61.3
@@ -43,20 +54,18 @@ variants:
     max_if: 0.90
     pct_from_baseline_tss: 20.6
 machine_notes:
-  - "Higher-density threshold template than the 3x10 anchor."
-  - "Use when the day can tolerate more rep starts and slightly sharper rhythm."
+  - "Denser LT1 threshold option with more restart points."
 ---
 
-# Threshold - 15min @ 72% + 4x8' @ 90% (2' @ 72%)
+# LT1 Threshold - 15min @ 72% + 4x8' @ 90% (2' @ 72%)
 
 ## Session note
 
-This is a denser threshold session with shorter reps and more restart points than the 3x10 anchor.
+This is a denser LT1 threshold session with shorter reps and more restart points than the `3x10'` anchor.
 
 ## Best use
 
 - threshold days that should feel active and segmented rather than long and smooth
-- phases where threshold frequency is welcome but total rep duration should stay moderate
 - athletes who handle shorter repeat rhythm better than longer steady reps
 
 ## Recovery
@@ -65,4 +74,4 @@ Use `2' @ 72%` between reps. The recovery should reset the rhythm without droppi
 
 ## Scaling note
 
-Scale by rep count. If the day starts to want much longer reps instead of more starts, switch to another threshold template instead of forcing this one.
+Scale by rep count. If the day starts to want much longer reps instead of more starts, move to another LT1 template.

@@ -1,11 +1,22 @@
 ---
 template_id: threshold_15min_72_3x12_88_2rec
 category: threshold-hard
+session_family: lt1-threshold
+structural_subtype: intervals
+load_role: primary-hard
+planning_intent: build-lt1-threshold
 bucket: tempo
 stress_class: hard
 hard_subtype: h1
 physiology_label: upper-aerobic-threshold
+modality_pattern: generic
 modality_scope: any
+phase_fit:
+  - base
+  - capacity-build
+  - specificity
+specificity_target: lt1-threshold
+durability_cost: medium
 activity_text_template: "15min @ 72% + 3x12' @ 88% (2' @ 72%) [+ {support_minutes}min @ 72%]"
 baseline_activity_text: "15min @ 72% + 3x12' @ 88% (2' @ 72%)"
 baseline_estimated_tss: 62.9
@@ -43,21 +54,20 @@ variants:
     max_if: 0.88
     pct_from_baseline_tss: 20.5
 machine_notes:
-  - "This sits on the upper-aerobic or low-threshold edge of threshold-hard."
+  - "Smoothest LT1 threshold option in the library."
   - "Scaling changes support volume instead of making the reps sharper."
 ---
 
-# Threshold - 15min @ 72% + 3x12' @ 88% (2' @ 72%)
+# LT1 Threshold - 15min @ 72% + 3x12' @ 88% (2' @ 72%)
 
 ## Session note
 
-This is the smoothest threshold-hard template in the library. It leans upper aerobic and low threshold rather than chasing the top end of threshold.
+This is the smoothest LT1 threshold template in the library. It leans upper aerobic and low threshold rather than pushing the top end of threshold.
 
 ## Best use
 
-- base and capacity phases when you want long controlled work
+- base and capacity phases that want long controlled work
 - durability-first periods where threshold should be present but not aggressive
-- modalities where longer steady pressure is better tolerated than sharper changes
 
 ## Recovery
 

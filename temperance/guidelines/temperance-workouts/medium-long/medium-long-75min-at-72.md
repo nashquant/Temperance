@@ -1,11 +1,22 @@
 ---
 template_id: moderate_75min_72
 category: moderate-support
+session_family: medium-long
+structural_subtype: continuous
+load_role: long-durability
+planning_intent: build-long-durability
 bucket: steady
 stress_class: support
 hard_subtype: null
-physiology_label: steady-aerobic-medium-long
+physiology_label: medium-long-aerobic
+modality_pattern: generic
 modality_scope: any
+phase_fit:
+  - base
+  - capacity-build
+  - specificity
+specificity_target: long-durability
+durability_cost: medium
 activity_text_template: "{steady_minutes}min @ 72%"
 baseline_activity_text: "75min @ 72%"
 baseline_estimated_tss: 64.8
@@ -43,11 +54,10 @@ variants:
     max_if: 0.72
     pct_from_baseline_tss: 20.1
 machine_notes:
-  - "Medium-long support template."
-  - "Straight aerobic load with no built-in sharpness."
+  - "Medium-long templates sit between support and true long-run cost."
 ---
 
-# Moderate Support - 75min @ 72%
+# Medium Long - 75min @ 72%
 
 ## Session note
 
@@ -56,9 +66,8 @@ This is the clean medium-long aerobic anchor: simple, durable, and easy to place
 ## Best use
 
 - medium-long support in weeks where the hard load already exists elsewhere
-- base work that should deepen aerobic support without becoming moderate creep
-- any modality when you want clean aerobic volume with low planning complexity
+- blocks that want durable volume without the full cost of the longest session
 
 ## Scaling note
 
-Scale only with duration. If the day starts to need a meaningful moderate finish, move to a progression-style moderate-support template instead.
+Scale only with duration. If the day starts to want a meaningful moderate finish, move to another medium-long or progressive template instead.

@@ -1,11 +1,22 @@
 ---
 template_id: sharp_15min_72_8x2_100_2rec
 category: sharp-hard
+session_family: vo2-max
+structural_subtype: intervals
+load_role: sharpening
+planning_intent: preserve-top-end-touch
 bucket: intervals
 stress_class: hard
 hard_subtype: h2
-physiology_label: vo2-short-repeats
+physiology_label: short-repeat-vo2
+modality_pattern: generic
 modality_scope: any
+phase_fit:
+  - base
+  - capacity-build
+  - peak
+specificity_target: vo2-touch
+durability_cost: medium
 activity_text_template: "15min @ 72% + {vo2_reps}x2' @ 100% (2' @ 72%)"
 baseline_activity_text: "15min @ 72% + 8x2' @ 100% (2' @ 72%)"
 baseline_estimated_tss: 51.7
@@ -43,11 +54,11 @@ variants:
     max_if: 1.00
     pct_from_baseline_tss: 19.5
 machine_notes:
-  - "Short-repeat VO2 template."
+  - "Short-repeat VO2 anchor."
   - "Recovery is aerobic but brief enough to preserve sharpness."
 ---
 
-# Sharp Hard - 15min @ 72% + 8x2' @ 100% (2' @ 72%)
+# VO2 Max - 15min @ 72% + 8x2' @ 100% (2' @ 72%)
 
 ## Session note
 
@@ -57,7 +68,6 @@ This is the short-repeat VO2 anchor: frequent starts, controlled exposure at max
 
 - H2 days where sharper intensity is the point
 - periods that need ceiling touch without building a huge threshold session
-- modalities where short hard repeats are mechanically safer than long hard repeats
 
 ## Recovery
 
@@ -65,4 +75,4 @@ Use `2' @ 72%` between reps. The recovery is short and active; it should preserv
 
 ## Scaling note
 
-Scale with rep count. If the day should drift toward sustained threshold or specific endurance, change category instead of flattening this session.
+Scale with rep count. If the day should drift toward sustained threshold or specific endurance, change family instead of flattening this session.
