@@ -1,10 +1,9 @@
 import { useMutation } from '@tanstack/react-query';
 import { Suspense, lazy, startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { QueryShell } from '@/components/ui/query-shell';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { deleteCustomActivity, ingestCustomActivities } from '@/features/custom-activities/services/custom-activities-api';
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
@@ -721,22 +720,8 @@ export function DashboardPage(): JSX.Element {
 
   return (
     <section className="space-y-6">
-      {query.isLoading ? (
-        <div className="space-y-3">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-[360px] w-full" />
-          <Skeleton className="h-[360px] w-full" />
-        </div>
-      ) : null}
-
-      {query.isError ? (
-        <Alert className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300">
-          <AlertTitle>Unable to load dashboard</AlertTitle>
-          <AlertDescription>{query.error instanceof Error ? query.error.message : 'Unexpected error.'}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {!query.isLoading && !query.isError && query.data ? (
+      <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load dashboard">
+      {query.data ? (
         <>
           {query.data.weeks.length === 0 ? (
             <div className="rounded-xl border border-border/70 bg-card/40 p-8 text-sm text-muted-foreground">
@@ -922,6 +907,7 @@ export function DashboardPage(): JSX.Element {
           )}
         </>
       ) : null}
+      </QueryShell>
       {selectedActivityId ? (
         <Suspense fallback={null}>
           <ActivitySplitsDrawer
@@ -1030,7 +1016,7 @@ export function DashboardPage(): JSX.Element {
                 </Button>
               </div>
               <textarea
-                className="min-h-[88px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+                className="min-h-[88px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
                 value={addActivityText}
                 onChange={(event) => {
                   if (addActivityResult) setAddActivityResult(null);

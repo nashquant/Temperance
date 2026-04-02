@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { QueryShell } from '@/components/ui/query-shell';
 import { CompareSelector } from '@/features/weekly-outlook/components/compare-selector';
 import { WeeklyOutlookChartCard } from '@/features/weekly-outlook/components/weekly-outlook-chart-card';
 import { WeeklySummaryCards } from '@/features/weekly-outlook/components/weekly-summary-cards';
@@ -76,23 +75,8 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
         ) : null}
       </div>
 
-      {activeQuery.isLoading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-96 w-full" />
-        </div>
-      ) : null}
-
-      {activeQuery.isError ? (
-        <Alert className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300">
-          <AlertTitle>Unable to load weekly outlook</AlertTitle>
-          <AlertDescription>
-            {activeQuery.error instanceof Error ? activeQuery.error.message : 'Unexpected error while requesting data.'}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      {!activeQuery.isLoading && !activeQuery.isError && displayedData ? (
+      <QueryShell isLoading={activeQuery.isLoading} isError={activeQuery.isError} error={activeQuery.error} errorTitle="Unable to load weekly outlook">
+      {displayedData ? (
         <>
           {isEmpty ? (
             <Card>
@@ -114,6 +98,7 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
           )}
         </>
       ) : null}
+      </QueryShell>
     </section>
   );
 }

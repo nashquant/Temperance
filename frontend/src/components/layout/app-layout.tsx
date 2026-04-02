@@ -111,7 +111,7 @@ function SessionPanel({
             value={profile.owner}
             onChange={(event) => onOwnerChange(event.target.value)}
             disabled={switchingOwner}
-            className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none transition focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
+            className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
           >
             {owners.map((owner) => (
               <option key={owner} value={owner}>
