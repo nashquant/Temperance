@@ -2,29 +2,39 @@
 
 Status: practical cheat sheet.
 
-The authoritative planning logic now lives in:
+The authoritative planning stack now lives in:
 - `training-control-system-doctrine.md`
+- `training-recent-cache.md`
+- the active overlay set named in the active build declaration
 
-Use this file as a compact operational summary only. If any detail here conflicts with the control-system doctrine, the control-system doctrine wins.
+Use this file as a compact operational summary only. If any detail here conflicts with the invariant core or active build declaration, the core and active build win.
 
-## Core cheat sheet
+## Core workflow
 
-- Anchor all recommendations to projected **weekly total_TSS** and **weekly rTSS**.
-- Derive those anchors from athlete level, current phase, last 2-4 weeks of load, injury status, recovery status, event context, and Temperance context.
-- Treat **rTSS** as the main progression constraint variable.
-- Treat **total_TSS** as the engine / fitness support variable.
-- Use **run_ratio = rTSS / total_TSS** as a transition-state indicator.
-- Think in **3-day spacing** and **rolling 9-day density**, not rigid weekly formulas.
-- Use stochastic load as a proposal, then constrain it with durability logic.
-- Judge progression mostly as week-over-week change through the lens of phase and baseline.
-- Keep long-run progression staged and earned.
-- Define hard-session type, not just hard-session count.
-- Control threshold density explicitly.
-- Use x-train strategically for load support, spacing support, moderate aerobic support, and as a durability bridge.
-- Use doubles intelligently when they improve structure, spacing, absorption, or anchor-hitting efficiency.
-- Support work can be easy or moderate, especially on x-train.
-- Low intensity remains useful and often necessary.
-- Threshold, long-run, and marathon-specific work are usually more central than frequent sharp intensity.
-- Aim for a productive stimulus mix; do not let everything collapse into hidden moderate work.
-- Use sharp intensity when it clearly supports the structure, but do not let it become the dominant pattern.
-- Let alerts distinguish noise from real drift.
+- Start with the active build declaration, not with isolated session intuition.
+- Map the core terms to the actual metrics used in the current build.
+- Apply precedence in this order: core, current-state constraints / athlete-state overlay, event overlay, philosophy overlay.
+- Anchor recommendations to projected **weekly total_load** and **weekly primary_specific_load**.
+- If the build has a **key_duration_anchor**, track it explicitly rather than burying it inside total load.
+- Treat load class and hard-session subtype as separate decisions.
+- Preserve the declared local spacing and rolling density windows.
+- Choose hard-session type intentionally rather than merely counting hard days.
+- Progress primary_specific_load relative to baseline, with an absolute sanity check.
+- Progress specificity only when the current structure is being absorbed coherently.
+- Progress the key duration anchor only after the prior exposure was absorbed acceptably.
+- Let the athlete-state overlay tighten the plan when the body demands it.
+- Let the event overlay define specificity and what a good week means.
+- Let the philosophy overlay choose stimulus mix and quality hierarchy inside those constraints.
+- Let alerts hold, redirect, or reduce before forcing more progression.
+
+## Current active mapping
+
+For the current default marathon build:
+
+- `total_load` -> `total_TSS`
+- `primary_specific_load` -> `rTSS`
+- `specificity_ratio` -> `run_ratio`
+- `key_duration_anchor` -> `long run`
+- `support_modality` -> `x-train`
+- `local_spacing_window` -> `3 days`
+- `rolling_density_window` -> `9 days`

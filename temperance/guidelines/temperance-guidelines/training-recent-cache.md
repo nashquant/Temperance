@@ -1,103 +1,92 @@
-# Training Recent Cache
+# Training Active Build Declaration
 
-Purpose: lightweight short-term cache for recent findings, current planning anchors, and near-term interpretations. This is intentionally more ephemeral than MEMORY.md and more compact than the larger training memos.
+Status: ephemeral active build.
+
+## Purpose
+
+This file is the active planning layer for the current build.
+
+Use it to declare:
+- which overlays are active
+- how the core concepts map to current metrics
+- what the current anchors are
+- which temporary constraints or near-term interpretations should shape the next few weeks
+
+This file is intentionally more ephemeral than the reusable overlays and more concrete than the invariant core.
+
+## Active overlay set
+
+- Athlete-state profile: `training-athlete-state-high-capacity-durability-limited.md`
+- Event profile: `training-event-marathon-default.md`
+- Philosophy profile: `training-philosophy-durability-threshold-support.md`
+
+## Active anchor mapping
+
+- core `total_load` -> `weekly total_TSS`
+- core `primary_specific_load` -> `weekly rTSS`
+- core `specificity_ratio` -> `run_ratio = rTSS / total_TSS`
+- core `key_duration_anchor` -> `long-run duration / long-run load`
+- core `support_modality` -> `elliptical, cycling, and other low-impact x-train`
+- core `local_spacing_window` -> `3 days`
+- core `rolling_density_window` -> `9 days`
 
 ## Current planning anchors
 
-- Default working weekly total TSS anchor: **550**
+- Default working weekly total_TSS anchor: **550**
 - Default working weekly rTSS anchor: **150**
 - Interpreted current run_ratio anchor: about **27%**
-- This currently fits a late return / durability-build phase transitioning toward more specific work.
-- rTSS progression should be judged primarily in **percentage terms relative to baseline**, with an **absolute-number sanity check** when baseline is low in return phases.
+- Current long-run anchor: rebuild progressively rather than chase a fully mature marathon long run immediately
 
-## Current event context
+## Current phase and immediate objective
 
+- Generic phase: **Capacity Build**, with some late return / durability-rebuild features still present
 - Next confirmed target event: **July 12, 2026 marathon**
-- Intermediate events should be tracked here too when known, because they can shape micro-cycles and local plan adjustments.
+- Immediate objective: keep total load high, raise useful running gradually, and improve durability without letting the engine outpace the legs again
 
-## Current phase objective
+## Temporary exceptions / current constraints
 
-- Current broad objective: move from late return / consolidation toward stronger durability build without losing high aerobic support.
-- Immediate optimization goal: keep total TSS high, raise useful running gradually, and improve durability without letting the engine outpace the legs again.
+- Engine is not the limiter; durability is
+- High total_TSS is acceptable and often desirable
+- Running load should rise more cautiously than total load
+- Do not force marathon-specific density early just because the engine can support it
+- Protect long-run progression and threshold density more than sharpness
 
-## Current planning method
+## Near-term interpretation
 
-Before making recommendations, establish or verify:
-- athlete level / current capacity
-- current phase in the cycle
-- recent 2-4 week load
-- injury status / durability status
-- recovery status
-- projected weekly total TSS and weekly rTSS
-- next target event and relevant intermediate events
+- Boston remains the best clean structural reference for the current marathon build
+- Barcelona remains the clearest warning that elite aerobic fitness can coexist with insufficient leg durability
+- The present build should preserve high aerobic support while leg durability catches up
 
-Then make day-level recommendations relative to those anchors.
-
-## Current coaching interpretation
-
-- Engine is not the limiter; durability is.
-- High total TSS is acceptable and often desirable.
-- rTSS is the main progression constraint variable.
-- Cross-training should be used strategically to preserve high aerobic load while mechanical durability catches up.
-- Boston remains the best clean marathon-build structural reference.
-- Barcelona remains the clearest warning that elite engine fitness can coexist with insufficient leg durability.
-
-## Current preferred hard-session mix
+## Near-term hard-session emphasis
 
 - The most central hard stimuli should usually be:
   - threshold / strong aerobic work
   - long-duration durability work
   - marathon-oriented specific work as the cycle advances
-- VO2 / sharp work is useful, but should remain supporting rather than dominant.
+- VO2 / sharp work is useful, but should remain supporting rather than dominant
 
-## Current x-train role emphasis
+## Current recommendation style preferences
 
-- Primary x-train roles right now:
-  - load support
-  - spacing support
-  - durability bridge
-  - moderate aerobic support when impact is the limiter
-
-## Current recommendation style preference
-
-- Recommendations should be data-oriented.
-- Use Temperance workout strings when possible.
-- Express suggestions in terms of expected TSS / rTSS where useful.
-- Always relate day suggestions back to weekly anchors and rolling structure.
-- Allow doubles as an intelligent structuring tool, especially when total work exceeds ~1 hour.
-- Matt may prefer something like 1h easier + 30min moderate over one very long easy support session, unless there is a specific reason to preserve one continuous long aerobic stimulus.
-
-## Current structural preferences
-
-- Use weekly anchors as the primary load budget.
-- Use 3-day spacing logic as local structure.
-- Use the rolling 9-day window mainly as a density / alert / control lens.
-- Hard x-train inside a 3-day block is acceptable if there is still a compensating easy / rest / very low load day.
-- 3-day cycle load heuristic is a soft planning / review guide, not a rigid rule.
-
-## Current stimulus-mix preferences
-
-- Aim for a good mix of stimuli across the block.
-- Do not let everything collapse into hidden moderate work.
-- Low intensity remains useful and often necessary.
-- Support work can sit in easy-to-moderate aerobic territory, especially on x-train.
-- Threshold, long-run, and marathon-specific work should usually be more central than frequent sharp intensity.
-- A hard day can include VO2-max work if appropriate, and a double can include a Z1 support session to reach the intended total load more intelligently.
+- Recommendations should be data-oriented
+- Use Temperance workout strings when possible
+- Express suggestions in terms of expected TSS / rTSS where useful
+- Always relate day suggestions back to weekly anchors and rolling structure
+- Allow doubles as an intelligent structuring tool, especially when total work exceeds about 1 hour
 
 ## Current watchouts
 
-- Do not let moderate days drift into hidden threshold.
-- Do not let total TSS hide insufficient run durability.
-- Be cautious with threshold density and additive weekend load.
-- Watch the balance between threshold, marathon-specific, and long-run hard work so one type does not dominate the whole block.
-- Anchor recommendations to projected weekly TSS / rTSS before interpreting a single day.
+- Do not let moderate days drift into hidden threshold
+- Do not let total_TSS hide insufficient run durability
+- Be cautious with threshold density and additive weekend load
+- Watch the balance between threshold, marathon-specific, and long-duration hard work so one type does not dominate the block
+- Anchor recommendations to projected weekly total_TSS / rTSS before interpreting a single day
 
 ## Update notes
 
-- Update this file when there is a meaningful shift in:
-  - weekly planning anchors
-  - injury/durability interpretation
-  - recommendation style preference
-  - current macro phase understanding
-  - event context
-  - recent planning conclusions that should influence the next few recommendations
+Update this file when there is a meaningful shift in:
+- the active overlay set
+- the anchor mapping
+- weekly planning anchors
+- the current macro phase interpretation
+- temporary constraints
+- recent conclusions that should influence the next few recommendations
