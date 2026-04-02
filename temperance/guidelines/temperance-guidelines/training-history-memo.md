@@ -1,8 +1,17 @@
 # Training History Memo
 
+Status: evidence memo.
+
 ## Purpose
 
 This memo captures the key context behind Matt's running history, injury history, training patterns, and current planning priorities so future analysis and progression rules are grounded in the full picture rather than only the recent rehab period.
+
+Use this memo as:
+- evidence for athlete-state interpretation
+- historical context for future overlay revisions
+- support for active-build decisions when recent context alone is misleading
+
+Do **not** use this memo as the invariant doctrine source of truth.
 
 ## Big Picture
 
@@ -301,9 +310,9 @@ Compared with classic double-threshold structures, the 3-day cycle can:
 - Do not automatically panic if an in-between day includes a hard x-train session, as long as the cycle still includes at least one easy or rest / very low load day to compensate
 - A useful planning heuristic is for each 3-day cycle to average roughly **40-45% of target weekly load**; if cycles repeatedly drift too far from that, it should be treated as an alert signal rather than as a hard rule violation
 
-## Core Interpretation Rules
+## Current Overlay Implications
 
-When analyzing training or making progression rules for Matt:
+These are evidence-backed implications for the current athlete-state and active-build overlays:
 
 1. **Do not anchor only on the recent rehab block.**
    Matt's true baseline is that of a historically high-volume runner.
@@ -321,7 +330,7 @@ When analyzing training or making progression rules for Matt:
    - oversized long-run / mega-day experiments
    - rapid increases in run-specific load during return-to-run
 
-5. **Use rTSS and long-run progression as the main organizing principles.**
+5. **In the current marathon build, use rTSS and long-run progression as the main organizing principles.**
    Weekly build quality matters more than Garmin readiness scores.
 
 6. **Prefer sustainable progression over heroic spikes.**
@@ -330,9 +339,9 @@ When analyzing training or making progression rules for Matt:
 7. **Use cross-training strategically, not just as filler.**
    It should help maintain or build aerobic load while protecting current mechanical capacity.
 
-## Practical Coaching Lens Going Forward
+## Current Practical Coaching Lens
 
-The best frame is:
+The best current frame is:
 - treat Matt as a **high-capacity marathoner returning from injury**, not as a novice or low-load athlete
 - preserve his strong aerobic load where helpful
 - reintroduce mechanical stress progressively

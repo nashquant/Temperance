@@ -1,210 +1,210 @@
 # Training Phase Transition Checklists
 
+Status: invariant core companion.
+
 ## Purpose
 
-These checklists define how to decide when it is time to move from one phase to the next.
+These checklists define how to decide when it is time to move from one generic phase to the next.
 
-They are not rigid pass/fail gates. They are decision aids for:
+They are not rigid pass / fail gates. They are decision aids for:
 - ex-ante planning
 - post-hoc interpretation
-- course correction when life or events disrupt the ideal plan
-
-A phase change should happen when the **overall context** says the next phase is now more useful than the current one.
-
-Always evaluate transitions through the lens of:
-- next target event
-- intermediate events
-- life constraints
-- recent 2-4 week load
-- injury / durability status
-- recovery status
-- whether the current phase has already done its job
+- course correction when life or events disrupt the ideal block
 
 ## How to use these checklists
 
 For each transition:
 - **Mostly yes** = transition is probably appropriate
-- **Mixed** = hold current phase or use a partial transition
+- **Mixed** = hold the current phase or use a partial transition
 - **Mostly no** = do not force the shift yet
 
-These are not strict gates. They are structured judgment.
+Always interpret a phase change through:
+- event timing
+- recent 2-4 week load
+- current durability / limiter status
+- recovery status
+- life constraints
+- the active overlay set
+
+Important rule:
+- the core phase names are generic
+- the event overlay defines what specificity actually means
+- the athlete-state overlay may tighten the transition
+- the philosophy overlay may change what kinds of work are emphasized inside the phase
 
 ---
 
-## 1) Return / Consolidation → Durability Build
+## 1) Return / Re-entry -> Capacity Build
 
 ### Main question
-Have we rebuilt enough consistency and tolerance that it now makes sense to push durability more deliberately?
+
+Has basic consistency returned enough that it now makes sense to push capacity more deliberately?
 
 ### Checklist
 
-#### Running consistency
-- Running is back in the week with reasonable regularity
-- Easy and moderate running no longer feel like a fragile experiment
-- Recent running has not required repeated emergency substitution by x-train
+#### Consistency
 
-#### Durability response
-- Recent running load is being absorbed without obvious worsening mechanical signals
-- Next-day mechanics are generally acceptable
-- Recovery from run sessions looks manageable rather than brittle
+- The primary specific modality is back in the week with reasonable regularity
+- Easier work no longer feels like a fragile experiment
+- Recent training has not required repeated emergency substitution
 
-#### Load structure
-- x-train is still carrying a meaningful share, but running can now take a bigger role
-- Weekly anchors suggest room for gradual rTSS progression
-- Long-run development can now start to matter more deliberately
+#### Absorption
 
-#### Context / timing
-- Event timing supports moving beyond pure return-to-run logic
-- Life constraints do not make the next phase poorly timed
+- Recent specific load is being absorbed without obvious worsening mechanical signals
+- Next-day response is generally acceptable
+- Recovery looks manageable rather than brittle
+
+#### Structure
+
+- Weekly anchors suggest room for progression
+- The structure can now support a clearer capacity objective
+- Support modalities are helping the week rather than carrying it out of necessity alone
 
 ### Interpretation
+
 Transition when the limiting question is no longer:
-- “Can I run consistently at all?”
+- "Can I tolerate basic training structure at all?"
 
 and becomes more like:
-- “How do I expand durability intelligently?”
+- "How do I now expand capacity intelligently?"
 
 ---
 
-## 2) Durability Build → Marathon Specific
+## 2) Capacity Build -> Specificity
 
 ### Main question
-Has durability improved enough that more marathon-specific work is now worth the cost?
+
+Has general capacity improved enough that more event-specific work is now worth the cost?
 
 ### Checklist
 
-#### Long-run readiness
-- Long-run progression is functioning
-- Long runs are no longer disproportionately costly
-- The system can absorb long-run work without destabilizing the next several days
+#### Anchor readiness
 
-#### Running load readiness
-- Running share of total load has risen meaningfully
-- Recent 2-4 week running load has been absorbed coherently
-- Weekly run anchors no longer look artificially suppressed by durability fragility
+- Primary specific load has risen coherently
+- The key duration anchor, if one exists, is functioning
+- Weekly anchors no longer look artificially suppressed by fragility
 
 #### Quality readiness
-- Quality sessions do not destabilize the whole week
-- Threshold / moderate work is not constantly drifting into too much density
-- There is enough structural stability to make marathon-specific work useful rather than premature
+
+- Quality work does not destabilize the whole week
+- Density is not constantly drifting higher than intended
+- There is enough structural stability that more specific work would be productive rather than premature
 
 #### Specificity need
-- The next phase would now solve a real problem
-- More marathon-specific work would produce meaningful adaptation
-- The calendar / event structure now makes specificity worth emphasizing
 
-#### Context / timing
-- Intermediate events do not make the shift badly timed
-- Life constraints allow the next phase to be executed with some coherence
+- The next phase would now solve a real problem
+- Event timing says specificity is becoming more useful
+- The event overlay's specific work would now add adaptation rather than just cost
 
 ### Interpretation
-Transition when marathon-specific work is likely to be **productive**, not merely stressful.
+
+Transition when specificity looks **productive**, not merely stressful.
 
 ---
 
-## 3) Marathon Specific → Peak
+## 3) Specificity -> Peak
 
 ### Main question
+
 Is it now better to stabilize and sharpen than to continue building?
 
 ### Checklist
 
-#### Work already completed
-- Enough key long runs have already been accumulated
-- Enough marathon-specific work has already been accumulated
+#### Work already in the bank
+
+- Enough key specific work has already been accumulated
+- Enough key anchor progression has already been accumulated
 - The recent specific block is real enough that it deserves consolidation
 
 #### Cost-benefit balance
+
 - Further building would likely add more fatigue than useful adaptation
 - The body looks more in need of protecting usable fitness than chasing more load
-- Specificity is already sufficient enough that sharpening now makes sense
+- The missing ingredient is now refinement, not more raw accumulation
 
-#### Event timing
+#### Timing
+
 - The target event is approaching the final useful peak window
-- Intermediate events or life constraints do not argue for another major build push
-
-#### Durability and recovery
-- The system is holding together, but pushing further risks turning the peak into accumulated fatigue
-- Long runs / specific sessions are no longer the main thing missing
+- Intermediate events or life constraints do not justify another build push
 
 ### Interpretation
-Transition when the main work is already in the bank and the best next move is to protect, stabilize, and sharpen it.
+
+Transition when the main work is already in the bank and the next best move is to protect and sharpen it.
 
 ---
 
-## 4) Peak → Taper
+## 4) Peak -> Taper
 
 ### Main question
+
 Is it now time to reduce fatigue while preserving readiness for the target event?
 
 ### Checklist
 
 #### Event timing
+
 - The goal event is close enough that additional load is no longer the main priority
-- Taper timing is now more important than further build timing
+- Taper timing is now more important than another loading step
 
 #### Work sufficiency
-- Enough specific work has already been completed
+
+- Enough event-specific work has already been completed
 - The current concern is not missing fitness, but arriving with usable freshness
 
 #### Fatigue management
-- Reducing fatigue now likely has more value than another loading step
-- Mechanical and metabolic freshness are becoming higher priorities than more training accumulation
 
-#### Context / execution
-- Life constraints in the final pre-race window make simplification helpful
-- A taper can now be executed coherently rather than reluctantly
+- Reducing fatigue now likely has more value than further accumulation
+- Mechanical and metabolic freshness are becoming higher priorities than more build load
 
 ### Interpretation
-This is the most event-tied transition. It is less about “am I ready to advance?” and more about “is the event now close enough that reducing fatigue is the better move?”
+
+This is the most event-tied transition. It is less about "am I ready to advance?" and more about "is fatigue reduction now the better move?"
 
 ---
 
-## Intermediate Events Checklist
+## Intermediate events checklist
 
 Use this whenever a smaller event, tune-up race, or intermediate objective appears.
 
 ### Ask
+
 - Does this event justify a mini-peak?
 - Does it require temporary increased specificity?
-- Does it interrupt the intended long-run or durability progression?
+- Does it interrupt the intended anchor progression?
 - Does it improve the main goal build, or mostly disrupt it?
 
 ### Interpretation
+
 Intermediate events should influence micro-cycles and local adjustments, but should not automatically hijack the whole build.
 
 ---
 
-## Partial Transition Option
+## Partial transition option
 
-Sometimes the answer is not a clean phase jump.
+Sometimes the right answer is not a clean phase jump.
 
 A **partial transition** may be better when:
 - event timing suggests some shift is needed
-- but durability or life constraints do not support a full transition yet
+- but durability, recovery, or life constraints do not support a full transition yet
 
 Examples:
-- begin adding one marathon-specific feature while still mostly living in Durability Build
+- begin adding one event-specific feature while still mostly living in Capacity Build
 - start protecting peak quality before fully tapering
-- hold durability-build structure but increase specificity inside selected sessions
+- hold the current build structure but increase specificity inside selected sessions
 
 This should be treated as a legitimate planning move, not as indecision.
 
----
+## Overlay notes
 
-## Short Version
+- The athlete-state overlay may make a transition later than the calendar would prefer.
+- The event overlay defines what counts as specific work and what work must be "in the bank" before Peak.
+- The philosophy overlay defines which types of specific work are preferred once the transition is appropriate.
 
-- **Return → Durability Build** when consistency and basic run tolerance are back
-- **Durability Build → Marathon Specific** when specificity would now be productive rather than premature
-- **Marathon Specific → Peak** when enough key work is already in the bank and further build adds less value than consolidation
-- **Peak → Taper** when event timing says fatigue reduction is now more important than accumulation
+## Short version
 
-Across all transitions:
-- use event timing
-- life constraints
-- recent 2-4 week load
-- durability
-- recovery
-- and specificity readiness
+- **Return / Re-entry -> Capacity Build** when consistency and basic tolerance are back
+- **Capacity Build -> Specificity** when more event-specific work would now be productive rather than premature
+- **Specificity -> Peak** when the main work is in the bank and more build would add less value than consolidation
+- **Peak -> Taper** when fatigue reduction is now more important than further accumulation
 
-No single variable decides alone.
+No single variable decides alone. The active overlay set should always shape the interpretation.
