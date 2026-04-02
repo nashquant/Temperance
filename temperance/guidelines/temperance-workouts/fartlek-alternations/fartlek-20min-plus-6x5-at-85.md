@@ -74,4 +74,4 @@ Use `2' @ 80%` between work reps. The float should stay only slightly below the 
 
 ## Scaling note
 
-Scale with rep count. If the day wants larger amplitude or true threshold pressure, move to `lt1-threshold`, `lt2-threshold`, or `cruise-intervals` instead.
+Scale with rep count. If the day wants larger amplitude or true threshold pressure, move to `lt1-threshold` or `lt2-threshold` instead.

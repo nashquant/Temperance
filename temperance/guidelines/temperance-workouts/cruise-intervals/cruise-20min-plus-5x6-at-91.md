@@ -1,20 +1,21 @@
 ---
 template_id: cruise_20min_72_5x6_91_90srec
 category: threshold-hard
-session_family: cruise-intervals
-structural_subtype: intervals
+session_family: lt1-threshold
+structural_subtype: float-intervals
 load_role: primary-hard
 planning_intent: build-lt1-threshold
 bucket: tempo
 stress_class: hard
 hard_subtype: h1
-physiology_label: dense-threshold-support
+physiology_label: dense-lt1-threshold
 modality_pattern: generic
 modality_scope: any
 phase_fit:
+  - base
   - capacity-build
   - specificity
-specificity_target: cruise-threshold
+specificity_target: lt1-threshold
 durability_cost: medium
 activity_text_template: "20min @ 72% + {cruise_reps}x6' @ 91% (90s @ 75%)"
 baseline_activity_text: "20min @ 72% + 5x6' @ 91% (90s @ 75%)"
@@ -53,24 +54,25 @@ variants:
     max_if: 0.91
     pct_from_baseline_tss: 15.1
 machine_notes:
-  - "Cruise intervals are threshold-supportive and dense without being treated as event-specific by default."
+  - "Cruise intervals are a structural presentation of LT1-threshold work, not a separate physiology family."
+  - "This template stays in the legacy cruise-intervals path for compatibility, but its canonical session_family is lt1-threshold."
 ---
 
-# Cruise Intervals - 20min @ 72% + 5x6' @ 91% (90s @ 75%)
+# LT1 Threshold (Cruise Style) - 20min @ 72% + 5x6' @ 91% (90s @ 75%)
 
 ## Session note
 
-This is the canonical cruise interval template: moderate-density threshold work that is useful as core support quality.
+This is the canonical cruise-style LT1 threshold template: broken threshold work with short aerobic floats so the session keeps threshold pressure without becoming a separate category.
 
 ## Best use
 
-- threshold-forward blocks that want more rhythm and density than classic LT1 work
-- marathon-supportive or HM-supportive periods where the session should stay generic rather than event-locked
+- threshold days that want denser restart points and slightly more rhythm than the smoother LT1 templates
+- blocks that want classic cruise-interval structure while still staying inside the existing LT1 band
 
 ## Recovery
 
-Use `90s @ 75%` between reps. Recoveries should be quick and controlled.
+Use `90s @ 75%` between reps. The recoveries should stay short and meaningfully aerobic so the workout reads as floated LT1 work instead of hard/easy contrast.
 
 ## Scaling note
 
-Scale with rep count. If the day wants much longer reps or stronger event relevance, move to `specific-endurance`.
+Scale with rep count. If the day wants less density, move to another `lt1-threshold` template. If it wants stronger event relevance, move to `specific-endurance`.

@@ -22,9 +22,8 @@ Use it when the library needs to stay broad without turning `category` into a ca
 | `easy` | `easy-support` | `support` | `continuous` | low-cost aerobic support |
 | `support` | `moderate-support` | `moderate-support` | `continuous`, `progression`, `mixed-modality` | productive support without creating the week's main hard stress |
 | `steady-aerobic` | `moderate-support` | `moderate-support` | `continuous`, `broken-continuous` | strong aerobic support below true hard-session cost |
-| `lt1-threshold` | `threshold-hard` | `primary-hard` | `intervals`, `float-intervals`, `broken-continuous` | controlled H1 threshold in base through specificity, usually around `88-92%` depending on rep length |
+| `lt1-threshold` | `threshold-hard` | `primary-hard` | `intervals`, `float-intervals`, `broken-continuous` | controlled H1 threshold in base through specificity, usually around `88-92%` depending on rep length; classic cruise intervals live here when they use short aerobic recoveries |
 | `lt2-threshold` | `threshold-hard` | `primary-hard` | `intervals`, `float-intervals` | short-rep upper-threshold work, usually around `98-102%` in `2-4min` reps while still staying H1 |
-| `cruise-intervals` | `threshold-hard` | `primary-hard` | `intervals`, `alternation` | dense threshold support, often marathon-supportive without being event-defined |
 | `specific-endurance` | `specific-hard` | `specific-endurance` | `continuous`, `fast-finish`, `alternation`, `broken-continuous` | event-overlay-defined specificity |
 | `vo2-max` | `sharp-hard` | `sharpening` | `intervals`, `alternation` | occasional H2 or ceiling-touch work, usually with short `2-3min` reps, a longer setup, and recovery generous enough to preserve pace quality |
 | `hills-strength-endurance` | `threshold-hard`, `sharp-hard` | `primary-hard`, `sharpening` | `intervals` | run-specific strength or hill power depending the template |
@@ -68,3 +67,8 @@ Use it when the library needs to stay broad without turning `category` into a ca
 - `xtrain-only`: the session identity depends on non-run execution
 - `mixed-modality`: the stored concrete string intentionally mixes modalities
 - `split-day`: stored as separate AM and PM parts
+
+## Alias Note
+
+- `cruise intervals` are treated as an LT1-threshold presentation, not as a standalone `session_family`.
+- Use `structural_subtype: float-intervals` when the short recoveries stay meaningfully aerobic and the work still lives in the LT1 band.

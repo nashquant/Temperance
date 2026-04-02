@@ -75,4 +75,4 @@ Use `75s @ 76%` between reps. The recoveries should stay short and purposeful en
 
 ## Scaling note
 
-Scale by rep count. If the day starts wanting longer reps at sub-98% intensity, move to `lt1-threshold` or `cruise-intervals` instead.
+Scale by rep count. If the day starts wanting longer reps at sub-98% intensity, move to `lt1-threshold` instead.

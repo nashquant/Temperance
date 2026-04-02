@@ -19,7 +19,7 @@ Common rules live in [template-contract.md](./template-contract.md). The family 
 - `taxonomy.md`: mapping between doctrine-facing categories and richer session families
 - `catalog.md`: one-file list of the whole template library
 - `quick-reference.md`: distilled short access note
-- family directories: concrete workout templates grouped by `session_family`
+- family directories: concrete workout templates usually grouped by canonical `session_family`, with legacy alias paths allowed when taxonomy changes would otherwise create unnecessary churn
 - template files: one stable session idea plus saved TSS variants
 
 ## Library model
@@ -83,7 +83,6 @@ The library now covers:
 - `steady-aerobic`
 - `lt1-threshold`
 - `lt2-threshold`
-- `cruise-intervals`
 - `specific-endurance`
 - `vo2-max`
 - `hills-strength-endurance`
@@ -97,3 +96,5 @@ The library now covers:
 - `split-quality`
 
 Use [taxonomy.md](./taxonomy.md) to map these families back to doctrine-facing categories and typical planning roles.
+
+`cruise intervals` are treated as an LT1-threshold variant rather than a standalone family.

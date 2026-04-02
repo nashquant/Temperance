@@ -2,7 +2,7 @@
 
 ## MCP Server
 
-Temperance now exposes a small stdio MCP server that calls the same planning engine used by `/api/v1/generated-activity`.
+Temperance now exposes one canonical stdio MCP server that combines doctrine resources, workout-library context, planning tools, analytics tools, and history judgment on one JSON-RPC surface.
 
 Run it from the repo root:
 
@@ -24,44 +24,72 @@ Example MCP client config:
 }
 ```
 
+The server advertises:
+- `tools: {}`
+- `resources: {}`
+
 Available tools:
+- planning:
+  - `plan_next_day`
+  - `preview_cycle`
+  - `explain_planning_decision`
+- analytics / data:
+  - `get_today_status`
+  - `get_recent_activities`
+  - `get_planned_activities`
+  - `get_week_outlook`
+  - `get_load_trend`
+  - `get_recovery_trend`
+  - `get_activity_detail`
+- deprecated heuristic tools:
+  - `recommend_training`
+  - `explain_recommendation`
+- history:
+  - `judge_training_history`
+  - `explain_history_judgment`
 
-- `plan_next_day`
-  - Inputs: `owner`, `target_day_utc`, `mode`, `activity_type_preference`, `previous_activity_text`, `methodology_id`, `seed`, `schedule_constraints`
-  - Returns: workout string plus full planning metadata
-- `preview_cycle`
-  - Inputs: `owner`, `target_day_utc`, `methodology_id`, `seed`, `horizon_days`, `schedule_constraints`
-  - Returns: the upcoming rolling horizon, recent long-run history, and preview metadata
-- `explain_planning_decision`
-  - Inputs: same planning inputs plus optional `question`
-  - Returns: the structured planning payload plus a concise text explanation
+Static resources:
+- `temperance://guidelines/read-order`
+- `temperance://guidelines/core-bundle`
+- `temperance://guidelines/active-build`
+- `temperance://workouts/overview`
+- `temperance://workouts/catalog`
 
-Example `plan_next_day` arguments:
+Resource templates:
+- `temperance://guidelines/doc/{doc_id}`
+- `temperance://workouts/family/{session_family}`
+- `temperance://workouts/template/{template_id}`
+- `temperance://planning/context/{owner}/{target_day_utc}`
+- `temperance://history/snapshot/{owner}/{window_days}`
+
+Example `resources/read` request:
 
 ```json
 {
-  "owner": "default",
-  "target_day_utc": "2026-04-05",
-  "activity_type_preference": "running",
-  "methodology_id": "rolling_3_day_v1",
-  "seed": 17
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "resources/read",
+  "params": {
+    "uri": "temperance://planning/context/admin/2026-04-05"
+  }
 }
 ```
 
-Example `preview_cycle` arguments:
+Example `judge_training_history` arguments:
 
 ```json
 {
-  "owner": "default",
-  "target_day_utc": "2026-04-05",
-  "methodology_id": "rolling_3_day_v1",
-  "horizon_days": 9
+  "owner": "admin",
+  "window_days": 42,
+  "include_planned_comparison": true
 }
 ```
 
 Useful chat questions once the MCP tool is connected:
 
+- `Read the active build and tell me which doctrine files matter most before planning tomorrow.`
 - `Why is tomorrow hard?`
 - `Why not put the long run on Friday?`
 - `If I swap this run for elliptical, how does the next 3-day cycle change?`
 - `Show me how the long run is progressing from the last 4 long runs.`
+- `Judge the last 6 weeks of actual training against the active build and point out the main gaps.`
