@@ -847,7 +847,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               <Card className={secondaryPageSurfaceClassName}>
                 <CardContent className="p-0">
                   <div className="overflow-x-auto rounded-2xl pb-1">
-                    <table className="min-w-[980px] w-full table-fixed text-sm">
+                    <table className="min-w-[720px] w-full table-fixed text-sm lg:min-w-[980px]">
                       <colgroup>
                         <col className="w-[64px]" />
                         <col className="w-[74px]" />
@@ -865,10 +865,10 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                           <th className="px-2 py-2 text-left sm:px-3">Day</th>
                           <th className="px-2 py-2 text-left sm:px-3">Activity</th>
                           <th className="px-2 py-2 text-left sm:px-3">Workout</th>
-                          <th className="px-2 py-2 text-right sm:px-3">TSS</th>
-                          <th className="px-2 py-2 text-right sm:px-3">rTSS</th>
-                          <th className="px-2 py-2 text-right sm:px-3">Dist Eqv</th>
-                          <th className="px-2 py-2 text-right sm:px-3">IF</th>
+                          <th className="hidden px-2 py-2 text-right sm:px-3 lg:table-cell">TSS</th>
+                          <th className="hidden px-2 py-2 text-right sm:px-3 lg:table-cell">rTSS</th>
+                          <th className="hidden px-2 py-2 text-right sm:px-3 lg:table-cell">Dist Eqv</th>
+                          <th className="hidden px-2 py-2 text-right sm:px-3 lg:table-cell">IF</th>
                           <th className="px-2 py-2 text-center sm:px-3">Actions</th>
                         </tr>
                       </thead>
@@ -925,10 +925,10 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                               placeholder="e.g. 10min @ 4:30/km + 3x10min @ 3:45/km"
                             />
                           </td>
-                          <td className="px-2 py-2 text-right text-slate-300/45 sm:px-3">-</td>
-                          <td className="px-2 py-2 text-right text-slate-300/45 sm:px-3">-</td>
-                          <td className="px-2 py-2 text-right text-slate-300/45 sm:px-3">-</td>
-                          <td className="px-2 py-2 text-right text-slate-300/45 sm:px-3">-</td>
+                          <td className="hidden px-2 py-2 text-right text-slate-300/45 sm:px-3 lg:table-cell">-</td>
+                          <td className="hidden px-2 py-2 text-right text-slate-300/45 sm:px-3 lg:table-cell">-</td>
+                          <td className="hidden px-2 py-2 text-right text-slate-300/45 sm:px-3 lg:table-cell">-</td>
+                          <td className="hidden px-2 py-2 text-right text-slate-300/45 sm:px-3 lg:table-cell">-</td>
                           <td className="px-2 py-2 text-right sm:px-3">
                             <div className="flex justify-end gap-1.5">
                               <Button
@@ -994,6 +994,9 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                                     });
                                   }}
                                 />
+                                <p className="mt-1 text-[11px] text-slate-300/70 lg:hidden">
+                                  {Math.round(row.tss)} TSS · {Math.round(row.rtss)} rTSS · {row.distance_eqv_km.toFixed(1)} km · {row.if_proxy_pct.toFixed(0)}% IF
+                                </p>
                                 {rowSaveResults[rowKey] ? (
                                   <p
                                     className={`mt-1 text-xs ${
@@ -1005,10 +1008,10 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                                 ) : null}
                                 {isPendingDelete ? <p className="mt-1 text-xs text-rose-200/85">Delete pending. Undo is available in Actions.</p> : null}
                               </td>
-                              <td className="px-2 py-2 text-right sm:px-3">{Math.round(row.tss)}</td>
-                              <td className="px-2 py-2 text-right sm:px-3">{Math.round(row.rtss)}</td>
-                              <td className="px-2 py-2 text-right sm:px-3">{row.distance_eqv_km.toFixed(1)} km</td>
-                              <td className="px-2 py-2 text-right sm:px-3">{row.if_proxy_pct.toFixed(0)}%</td>
+                              <td className="hidden px-2 py-2 text-right sm:px-3 lg:table-cell">{Math.round(row.tss)}</td>
+                              <td className="hidden px-2 py-2 text-right sm:px-3 lg:table-cell">{Math.round(row.rtss)}</td>
+                              <td className="hidden px-2 py-2 text-right sm:px-3 lg:table-cell">{row.distance_eqv_km.toFixed(1)} km</td>
+                              <td className="hidden px-2 py-2 text-right sm:px-3 lg:table-cell">{row.if_proxy_pct.toFixed(0)}%</td>
                               <td className="px-2 py-2 text-right sm:px-3">
                                 <div className="flex justify-end gap-1.5">
                                   <Button
