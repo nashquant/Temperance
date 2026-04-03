@@ -174,7 +174,7 @@ export function AppLayout(): JSX.Element {
         Skip to main content
       </a>
       <div className="h-[100dvh]">
-        <aside className="fixed inset-y-0 left-0 z-20 hidden w-[250px] overflow-y-auto border-r bg-card/50 p-4 md:block md:p-6">
+        <aside className="fixed inset-y-0 left-0 z-20 hidden w-[250px] overflow-y-auto border-r bg-card/50 p-4 lg:block lg:p-6">
           <div className="mb-6 flex items-center justify-between">
             <h1 className="text-lg font-semibold">Temperance</h1>
           </div>
@@ -192,7 +192,7 @@ export function AppLayout(): JSX.Element {
 
         {mobileNavOpen ? (
           <div
-            className="fixed inset-0 z-50 md:hidden"
+            className="fixed inset-0 z-50 lg:hidden"
             role="dialog"
             aria-modal="true"
             aria-label="Navigation menu"
@@ -229,7 +229,7 @@ export function AppLayout(): JSX.Element {
           </div>
         ) : null}
 
-        <div className="flex h-[100dvh] min-w-0 flex-col overflow-y-auto md:pl-[250px]">
+        <div className="flex h-[100dvh] min-w-0 flex-col overflow-y-auto lg:pl-[250px]">
           <header className="sticky top-0 z-30 border-b bg-background/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4">
             <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3">
               <div className="min-w-0">
@@ -239,7 +239,7 @@ export function AppLayout(): JSX.Element {
               <Button
                 variant="outline"
                 size="icon"
-                className="md:hidden"
+                className="lg:hidden"
                 onClick={() => setMobileNavOpen(true)}
                 aria-label="Open navigation"
               >

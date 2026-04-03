@@ -127,9 +127,5 @@ export function SecondaryPageSectionCard({
   className,
   contentClassName,
 }: SecondaryPageSectionCardProps): JSX.Element {
-  return (
-    <Card className={cn(secondaryPageSurfaceClassName, className)}>
-      <CardContent className={cn('p-4 sm:p-5', contentClassName)}>{children}</CardContent>
-    </Card>
-  );
+  return <SurfaceCard className={className} contentClassName={contentClassName}>{children}</SurfaceCard>;
 }
