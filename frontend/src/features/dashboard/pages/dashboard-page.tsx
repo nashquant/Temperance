@@ -13,6 +13,7 @@ import { generateActivitySuggestion } from '@/features/dashboard/services/genera
 import type { DashboardActivityCard, DashboardResponse } from '@/features/dashboard/types/dashboard';
 import { useDataExtractStatusQuery } from '@/features/data-extract/hooks/use-data-extract-status';
 import { runComprehensiveExtract } from '@/features/data-extract/services/data-extract-api';
+import { useAppLayoutContext } from '@/components/layout/app-layout';
 import {
   deletePlannedActivity,
   ingestPlannedActivities,
@@ -157,6 +158,7 @@ export function DashboardPage(): JSX.Element {
     finalize: (() => Promise<void>) | null;
   } | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
+  const { setHeaderActions, setPageWidthClassName } = useAppLayoutContext();
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -717,6 +719,54 @@ export function DashboardPage(): JSX.Element {
   }, [dashboardMaxWeeks, dashboardPageSize, query.data?.has_more_weeks, query.isFetching, visibleWeeks]);
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
   const reloadButtonBusy = dashboardReloadMutation.isPending || extractRunning || dashboardReloadQueued;
+  const dashboardHeaderActions = useMemo(
+    () => (
+      <>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-10 w-10 border-white/10 bg-black/20 px-0 text-slate-100"
+          onClick={() => dashboardReloadMutation.mutate()}
+          disabled={!session?.token || reloadButtonBusy}
+          aria-label={reloadButtonBusy ? 'Reloading dashboard data' : 'Reload dashboard data'}
+          title={reloadButtonBusy ? 'Reloading dashboard data' : 'Reload dashboard data'}
+        >
+          {reloadButtonBusy ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+        </Button>
+        {totalYearWindows > 1 ? (
+          <div className="w-[180px] max-w-[180px] sm:w-[220px] sm:max-w-[220px]">
+            <Select value={selectedYearWindow} onValueChange={setSelectedYearWindow}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select year window" />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: totalYearWindows }).map((_, index) => (
+                  <SelectItem key={index} value={String(index)}>
+                    {index === 0 ? 'Latest year' : `${index}-${index + 1} years ago`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+      </>
+    ),
+    [dashboardReloadMutation, reloadButtonBusy, selectedYearWindow, session?.token, totalYearWindows],
+  );
+
+  useEffect(() => {
+    setPageWidthClassName('max-w-[1560px]');
+    return () => setPageWidthClassName(null);
+  }, [setPageWidthClassName]);
+
+  useEffect(() => {
+    setHeaderActions(dashboardHeaderActions);
+    return () => setHeaderActions(null);
+  }, [dashboardHeaderActions, setHeaderActions]);
 
   return (
     <section className="space-y-6">
@@ -729,41 +779,6 @@ export function DashboardPage(): JSX.Element {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex justify-end">
-                <div className="flex w-full flex-wrap items-center justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-10 w-10 border-white/10 bg-black/20 px-0 text-slate-100"
-                    onClick={() => dashboardReloadMutation.mutate()}
-                    disabled={!session?.token || reloadButtonBusy}
-                    aria-label={reloadButtonBusy ? 'Reloading dashboard data' : 'Reload dashboard data'}
-                    title={reloadButtonBusy ? 'Reloading dashboard data' : 'Reload dashboard data'}
-                  >
-                    {reloadButtonBusy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                  </Button>
-                  {totalYearWindows > 1 ? (
-                    <div className="w-full max-w-[220px] sm:w-auto">
-                      <Select value={selectedYearWindow} onValueChange={setSelectedYearWindow}>
-                        <SelectTrigger className="w-full max-w-[220px]">
-                          <SelectValue placeholder="Select year window" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Array.from({ length: totalYearWindows }).map((_, index) => (
-                            <SelectItem key={index} value={String(index)}>
-                              {index === 0 ? 'Latest year' : `${index}-${index + 1} years ago`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
               {dashboardReloadResult ? (
                 <p className="text-right text-xs text-slate-300/72">{dashboardReloadResult}</p>
               ) : null}

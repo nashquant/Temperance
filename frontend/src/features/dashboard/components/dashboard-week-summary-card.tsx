@@ -61,9 +61,9 @@ const summaryToneClassNames = {
 
 export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summary, isCurrentWeek = false }: DashboardWeekSummaryCardProps): JSX.Element {
   return (
-    <Card className="rounded-xl border-border/80 bg-card/80 shadow-sm lg:h-[430px]">
-      <CardContent className="flex h-full flex-col space-y-3 overflow-y-auto p-2.5">
-        <div className="space-y-1">
+    <Card className="rounded-xl border-border/80 bg-card/80 shadow-sm md:h-[410px] lg:h-[430px]">
+      <CardContent className="flex h-full flex-col space-y-2 overflow-y-auto p-2 md:p-2.5">
+        <div className="space-y-0.5">
           <Badge
             variant="outline"
             className={`h-5 rounded-full px-2 text-[10px] font-semibold tracking-wide ${
@@ -74,35 +74,35 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
           >
             Week {weekNumber}
           </Badge>
-          <p className="text-[13px] font-medium leading-5 text-muted-foreground">
+          <p className="text-[12px] font-medium leading-4.5 text-muted-foreground md:text-[11.5px] lg:text-[13px]">
             {weekStart} - {weekEnd}
           </p>
         </div>
 
-        <div className="grid grid-cols-[1fr_auto] gap-x-1.5 gap-y-1">
-          <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.vdot.label}`}>
+        <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-0.5">
+          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.vdot.label}`}>
             <Gauge className={`h-3 w-3 ${summaryToneClassNames.vdot.icon}`} />
-            VDOT Max
+            VDOT
           </p>
-          <p className={`text-right text-[11px] font-semibold tabular-nums ${summaryToneClassNames.vdot.value}`}>{fmtNumber(summary.vdot_max)}</p>
-          <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.time.label}`}><Clock3 className={`h-3 w-3 ${summaryToneClassNames.time.icon}`} />Time</p>
-          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.time.value}`}>{formatCompactDurationHours(summary.duration_h)}</p>
-          <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.distance.label}`}><Route className={`h-3 w-3 ${summaryToneClassNames.distance.icon}`} />Dist</p>
-          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.distance.value}`}>{fmtNumber(summary.distance_km)} km</p>
-          <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.equivalent.label}`}><Ruler className={`h-3 w-3 ${summaryToneClassNames.equivalent.icon}`} />Eqv</p>
-          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.equivalent.value}`}>{fmtNumber(summary.distance_eqv_km)} km</p>
-          <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.calories.label}`}><Flame className={`h-3 w-3 ${summaryToneClassNames.calories.icon}`} />kcal</p>
-          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.calories.value}`}>{fmtNumber(summary.calories)}</p>
-          <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.stress.label}`}><Activity className={`h-3 w-3 ${summaryToneClassNames.stress.icon}`} />TSS | rTSS</p>
-          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
-          <p className={`inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] ${summaryToneClassNames.risk.label}`}><AlertTriangle className={`h-3 w-3 ${summaryToneClassNames.risk.icon}`} />Ovr | Risk</p>
-          <p className={`text-right text-[11px] font-medium tabular-nums ${summaryToneClassNames.risk.value}`}>{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
+          <p className={`text-right text-[10.5px] font-semibold tabular-nums lg:text-[11px] ${summaryToneClassNames.vdot.value}`}>{fmtNumber(summary.vdot_max)}</p>
+          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.time.label}`}><Clock3 className={`h-3 w-3 ${summaryToneClassNames.time.icon}`} />Time</p>
+          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.time.value}`}>{formatCompactDurationHours(summary.duration_h)}</p>
+          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.distance.label}`}><Route className={`h-3 w-3 ${summaryToneClassNames.distance.icon}`} />Dist</p>
+          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.distance.value}`}>{fmtNumber(summary.distance_km)} km</p>
+          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.equivalent.label}`}><Ruler className={`h-3 w-3 ${summaryToneClassNames.equivalent.icon}`} />Eqv</p>
+          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.equivalent.value}`}>{fmtNumber(summary.distance_eqv_km)} km</p>
+          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.calories.label}`}><Flame className={`h-3 w-3 ${summaryToneClassNames.calories.icon}`} />kcal</p>
+          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.calories.value}`}>{fmtNumber(summary.calories)}</p>
+          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.stress.label}`}><Activity className={`h-3 w-3 ${summaryToneClassNames.stress.icon}`} />TSS|rTSS</p>
+          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
+          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.risk.label}`}><AlertTriangle className={`h-3 w-3 ${summaryToneClassNames.risk.icon}`} />Ovr|Risk</p>
+          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.risk.value}`}>{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
         </div>
 
         <Separator className="bg-border/70" />
 
-        <div className="space-y-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Zones</p>
+        <div className="space-y-0.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Zones</p>
           {summary.zones.map((zone) => (
             <ZoneBar key={zone.zone} zone={zone.zone} seconds={zone.seconds} pct={zone.pct} />
           ))}

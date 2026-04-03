@@ -1,6 +1,7 @@
+import type { ReactNode } from 'react';
 import { BarChart3, CalendarDays, ChevronLeft, ChevronRight, CircleHelp, Database, HeartPulse, LogOut, Menu, Settings, X } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -31,6 +32,16 @@ const headerMetaByPrefix: Array<{ prefix: string; section: string; title: string
 ];
 
 const DESKTOP_NAV_STORAGE_KEY = 'temperance.desktop-nav-expanded';
+const DEFAULT_PAGE_WIDTH_CLASS_NAME = 'max-w-7xl';
+
+export interface AppLayoutOutletContext {
+  setHeaderActions: (actions: ReactNode | null) => void;
+  setPageWidthClassName: (className: string | null) => void;
+}
+
+export function useAppLayoutContext(): AppLayoutOutletContext {
+  return useOutletContext<AppLayoutOutletContext>();
+}
 
 function getHeaderMeta(pathname: string): { section: string; title: string } {
   return (
@@ -173,6 +184,8 @@ export function AppLayout(): JSX.Element {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [switchingOwner, setSwitchingOwner] = useState(false);
   const [desktopNavExpanded, setDesktopNavExpanded] = useState(false);
+  const [headerActions, setHeaderActions] = useState<ReactNode | null>(null);
+  const [pageWidthClassName, setPageWidthClassName] = useState(DEFAULT_PAGE_WIDTH_CLASS_NAME);
   const headerMeta = getHeaderMeta(location.pathname);
 
   useEffect(() => {
@@ -231,7 +244,7 @@ export function AppLayout(): JSX.Element {
         <aside
           className={cn(
             'fixed inset-y-0 left-0 z-20 hidden overflow-y-auto border-r bg-card/50 transition-[width,padding] duration-200 lg:block',
-            desktopNavExpanded ? 'w-[250px] p-6' : 'w-[72px] p-3',
+            desktopNavExpanded ? 'w-[236px] p-5' : 'w-[72px] p-3',
           )}
         >
           <div className={cn('mb-6 flex items-center justify-between', desktopNavExpanded ? '' : 'justify-center')}>
@@ -292,11 +305,11 @@ export function AppLayout(): JSX.Element {
         <div
           className={cn(
             'flex h-[100dvh] min-w-0 flex-col overflow-y-auto transition-[padding] duration-200',
-            desktopNavExpanded ? 'lg:pl-[250px]' : 'lg:pl-[72px]',
+            desktopNavExpanded ? 'lg:pl-[236px]' : 'lg:pl-[72px]',
           )}
         >
           <header className="sticky top-0 z-30 border-b bg-background/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4">
-            <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3">
+            <div className={cn('mx-auto flex w-full items-center justify-between gap-3', pageWidthClassName)}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   variant="outline"
@@ -313,20 +326,29 @@ export function AppLayout(): JSX.Element {
                   <h2 className="truncate text-lg font-semibold sm:text-xl">{headerMeta.title}</h2>
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="icon"
-                className="lg:hidden"
-                onClick={() => setMobileNavOpen(true)}
-                aria-label="Open navigation"
-              >
-                <Menu className="h-5 w-5" aria-hidden="true" />
-              </Button>
+              <div className="flex items-center gap-2">
+                {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="lg:hidden"
+                  onClick={() => setMobileNavOpen(true)}
+                  aria-label="Open navigation"
+                >
+                  <Menu className="h-5 w-5" aria-hidden="true" />
+                </Button>
+              </div>
             </div>
           </header>
           <main id="app-main-content" tabIndex={-1} className="min-h-0 flex-1">
-            <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
-              <Outlet />
+            <div className={cn('mx-auto w-full px-3 py-4 sm:px-6 sm:py-6', pageWidthClassName)}>
+              <Outlet
+                context={{
+                  setHeaderActions,
+                  setPageWidthClassName: (className: string | null) =>
+                    setPageWidthClassName(className || DEFAULT_PAGE_WIDTH_CLASS_NAME),
+                }}
+              />
             </div>
           </main>
         </div>
