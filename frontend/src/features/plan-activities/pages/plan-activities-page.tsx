@@ -98,6 +98,201 @@ function buildQuickAddEntryText(
   return `${resolvedDateText}: ${resolvedWorkoutText}`.trim();
 }
 
+function formatPlannedMetricsSummary(row: PlannedActivityRow): string {
+  return `${Math.round(row.tss)} TSS · ${Math.round(row.rtss)} rTSS · ${row.distance_eqv_km.toFixed(1)} km · ${row.if_proxy_pct.toFixed(0)}% IF`;
+}
+
+interface QuickAddActivityFormProps {
+  quickAddDay: string;
+  quickAddActivityType: QuickAddActivityType;
+  quickAddWorkout: string;
+  isPending: boolean;
+  onQuickAddDayChange: (value: string) => void;
+  onQuickAddActivityTypeChange: (value: QuickAddActivityType) => void;
+  onQuickAddWorkoutChange: (value: string) => void;
+  onSubmit: () => void;
+}
+
+function QuickAddActivityForm({
+  quickAddDay,
+  quickAddActivityType,
+  quickAddWorkout,
+  isPending,
+  onQuickAddDayChange,
+  onQuickAddActivityTypeChange,
+  onQuickAddWorkoutChange,
+  onSubmit,
+}: QuickAddActivityFormProps): JSX.Element {
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center gap-2">
+        <label
+          className="relative flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-white/10 bg-black/20 text-slate-200 transition hover:bg-white/[0.05]"
+          title={`Selected day: ${dayLabel(quickAddDay)}`}
+          aria-label={`Select planned day. Current day is ${dayLabel(quickAddDay)}.`}
+        >
+          <CalendarDays className="pointer-events-none h-4 w-4" />
+          <input
+            type="date"
+            value={quickAddDay}
+            onChange={(event) => onQuickAddDayChange(event.target.value)}
+            className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
+            aria-hidden="true"
+            tabIndex={-1}
+          />
+        </label>
+        <div className="inline-flex rounded-xl bg-white/[0.03] p-1">
+          {QUICK_ADD_ACTIVITY_OPTIONS.map((option) => {
+            const isActive = quickAddActivityType === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold leading-none whitespace-nowrap transition ${
+                  isActive
+                    ? 'bg-white/10 text-slate-50'
+                    : 'text-slate-300/62 hover:text-slate-100'
+                }`}
+                onClick={() => onQuickAddActivityTypeChange(option.value)}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <input
+        className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-slate-400/55 focus-visible:ring-2 focus-visible:ring-ring"
+        value={quickAddWorkout}
+        onChange={(event) => onQuickAddWorkoutChange(event.target.value)}
+        placeholder="e.g. 10min @ 4:30/km + 3x10min @ 3:45/km"
+      />
+
+      <div className="flex justify-end">
+        <Button
+          variant="default"
+          size="sm"
+          className="px-3"
+          onClick={onSubmit}
+          disabled={isPending || !quickAddDay.trim() || !quickAddWorkout.trim()}
+        >
+          {isPending ? 'Adding...' : 'Add'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+interface PlannedActivityCardProps {
+  row: PlannedActivityRow;
+  rowKey: string;
+  workoutText: string;
+  isDirty: boolean;
+  isPendingDelete: boolean;
+  isSavingRow: boolean;
+  saveResult?: { tone: 'error' | 'success'; message: string };
+  onWorkoutTextChange: (value: string) => void;
+  onManualDoneChange: (checked: boolean) => void;
+  onSave: () => void;
+  onDelete: () => void;
+  onUndoDelete: () => void;
+}
+
+function PlannedActivityCard({
+  row,
+  rowKey,
+  workoutText,
+  isDirty,
+  isPendingDelete,
+  isSavingRow,
+  saveResult,
+  onWorkoutTextChange,
+  onManualDoneChange,
+  onSave,
+  onDelete,
+  onUndoDelete,
+}: PlannedActivityCardProps): JSX.Element {
+  return (
+    <div
+      key={rowKey}
+      className={`rounded-2xl border p-4 ${
+        isPendingDelete
+          ? 'border-rose-400/20 bg-rose-500/8'
+          : 'border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))]'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-slate-50">{dayLabel(row.day_utc)}</p>
+          <p className="text-xs uppercase tracking-[0.14em] text-sky-200/70">{row.activity}</p>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-slate-300/80">
+          <input
+            className="h-4 w-4 accent-sky-400"
+            type="checkbox"
+            checked={row.manual_done}
+            disabled={isPendingDelete}
+            onChange={(event) => onManualDoneChange(event.target.checked)}
+          />
+          Done
+        </label>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        <input
+          className={`w-full rounded-xl border px-3 py-2 text-sm outline-none transition ${
+            isPendingDelete
+              ? 'border-rose-400/20 bg-rose-500/8 text-slate-400'
+              : 'border-white/10 bg-black/20 text-foreground focus-visible:ring-2 focus-visible:ring-ring'
+          }`}
+          value={workoutText}
+          disabled={isPendingDelete}
+          onChange={(event) => onWorkoutTextChange(event.target.value)}
+        />
+        <p className="text-[11px] text-slate-300/70">{formatPlannedMetricsSummary(row)}</p>
+        {saveResult ? (
+          <p className={`text-xs ${saveResult.tone === 'error' ? 'text-red-400' : 'text-slate-300/72'}`}>
+            {saveResult.message}
+          </p>
+        ) : null}
+        {isPendingDelete ? <p className="text-xs text-rose-200/85">Delete pending. Undo is available below.</p> : null}
+      </div>
+
+      <div className="mt-4 flex justify-end gap-1.5">
+        <Button
+          variant={isDirty ? 'default' : 'outline'}
+          size="sm"
+          className={isDirty ? 'px-2.5' : 'border-white/10 px-2.5 text-slate-200 hover:bg-white/10 hover:text-white'}
+          disabled={!isDirty || isSavingRow || isPendingDelete}
+          onClick={onSave}
+        >
+          {isSavingRow ? 'Saving...' : isDirty ? 'Save' : 'Saved'}
+        </Button>
+        {isPendingDelete ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-amber-200/40 px-2.5 text-amber-50 hover:bg-amber-500/15"
+            onClick={onUndoDelete}
+          >
+            Undo
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-rose-400/25 px-2.5 text-rose-100 hover:bg-rose-500/12 hover:text-rose-50"
+            onClick={onDelete}
+          >
+            Delete
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function clipboardSportToken(rawSport: string): string {
   const normalized = String(rawSport || '').trim().toLowerCase();
   if (!normalized) return 'activity';
@@ -818,7 +1013,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
               {selectedWeekMeta ? (
                 <SecondaryPageSectionCard contentClassName="p-4">
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
                       {selectedWeekItems.map((item) => (
                         <SecondaryStatCard
                           key={item.label}
@@ -833,7 +1028,86 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
               <PlannedWeekChart data={chartRows} metric={metric} onMetricChange={setMetric} />
 
-              <SecondaryPageSectionCard contentClassName="p-0">
+              <SecondaryPageSectionCard className="md:hidden" contentClassName="space-y-3 p-4">
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">Quick Add</h3>
+                  <p className="mt-1 text-xs text-slate-300/72">Add a planned activity without using the desktop table layout.</p>
+                </div>
+                <QuickAddActivityForm
+                  quickAddDay={quickAddDay}
+                  quickAddActivityType={quickAddActivityType}
+                  quickAddWorkout={quickAddWorkout}
+                  isPending={ingestMutation.isPending}
+                  onQuickAddDayChange={setQuickAddDay}
+                  onQuickAddActivityTypeChange={setQuickAddActivityType}
+                  onQuickAddWorkoutChange={setQuickAddWorkout}
+                  onSubmit={() =>
+                    ingestMutation.mutate({
+                      text: buildQuickAddEntryText(quickAddDay, quickAddWorkout, quickAddActivityType),
+                      source: 'inline-row',
+                    })
+                  }
+                />
+              </SecondaryPageSectionCard>
+
+              <SecondaryPageSectionCard className="md:hidden" contentClassName="space-y-3 p-4">
+                {selectedRows.length === 0 ? (
+                  <p className="py-2 text-center text-sm text-slate-300/60">No planned activities in the selected week.</p>
+                ) : (
+                  selectedRows.map((row) => {
+                    const rowKey = `${row.day_utc}-${row.line_no}`;
+                    const workoutText = editValues[rowKey] ?? '';
+                    const isDirty = workoutText !== row.workout_text;
+                    const isPendingDelete =
+                      pendingDelete?.row.day_utc === row.day_utc && pendingDelete.row.line_no === row.line_no;
+                    const isSavingRow =
+                      workoutUpdateMutation.isPending
+                      && workoutUpdateMutation.variables?.dayUtc === row.day_utc
+                      && workoutUpdateMutation.variables?.lineNo === row.line_no;
+
+                    return (
+                      <PlannedActivityCard
+                        key={rowKey}
+                        row={row}
+                        rowKey={rowKey}
+                        workoutText={workoutText}
+                        isDirty={isDirty}
+                        isPendingDelete={isPendingDelete}
+                        isSavingRow={isSavingRow}
+                        saveResult={rowSaveResults[rowKey]}
+                        onWorkoutTextChange={(value) => {
+                          setEditValues((previous) => ({ ...previous, [rowKey]: value }));
+                          setRowSaveResults((previous) => {
+                            if (!(rowKey in previous)) return previous;
+                            const next = { ...previous };
+                            delete next[rowKey];
+                            return next;
+                          });
+                        }}
+                        onManualDoneChange={(checked) =>
+                          manualDoneMutation.mutate({
+                            dayUtc: row.day_utc,
+                            lineNo: row.line_no,
+                            manualDone: checked,
+                          })
+                        }
+                        onSave={() =>
+                          workoutUpdateMutation.mutate({
+                            dayUtc: row.day_utc,
+                            lineNo: row.line_no,
+                            workoutText,
+                            manualDone: row.manual_done,
+                          })
+                        }
+                        onDelete={() => queueDelete(row)}
+                        onUndoDelete={handleUndoDelete}
+                      />
+                    );
+                  })
+                )}
+              </SecondaryPageSectionCard>
+
+              <SecondaryPageSectionCard className="hidden md:block" contentClassName="p-0">
                   <div className="overflow-x-auto rounded-2xl pb-1">
                     <table className="min-w-[720px] w-full table-fixed text-sm lg:min-w-[980px]">
                       <colgroup>

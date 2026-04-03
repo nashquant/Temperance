@@ -106,12 +106,12 @@ export function SecondaryPageHeader({
   actions,
 }: SecondaryPageHeaderProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="max-w-3xl">
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
       </div>
-      {actions ? <div className="flex w-full flex-col gap-3 md:w-auto md:items-end">{actions}</div> : null}
+      {actions ? <div className="flex w-full flex-col gap-3 lg:w-auto lg:items-end">{actions}</div> : null}
     </div>
   );
 }

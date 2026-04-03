@@ -1,5 +1,5 @@
-import { BarChart3, CalendarDays, CircleHelp, Database, HeartPulse, LogOut, Menu, Settings, X } from 'lucide-react';
-import { useId, useState } from 'react';
+import { BarChart3, CalendarDays, ChevronLeft, ChevronRight, CircleHelp, Database, HeartPulse, LogOut, Menu, Settings, X } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,8 @@ const headerMetaByPrefix: Array<{ prefix: string; section: string; title: string
   { prefix: '/app/about', section: 'About', title: 'About Temperance' },
 ];
 
+const DESKTOP_NAV_STORAGE_KEY = 'temperance.desktop-nav-expanded';
+
 function getHeaderMeta(pathname: string): { section: string; title: string } {
   return (
     headerMetaByPrefix.find((item) => pathname.startsWith(item.prefix)) ?? {
@@ -39,16 +41,23 @@ function getHeaderMeta(pathname: string): { section: string; title: string } {
   );
 }
 
-function NavigationLinks({ onNavigate }: { onNavigate?: () => void }): JSX.Element {
+function NavigationLinks({ onNavigate, collapsed = false }: { onNavigate?: () => void; collapsed?: boolean }): JSX.Element {
   return (
     <nav aria-label="Primary navigation" className="space-y-1">
       {navItems.map((item) => {
         const Icon = item.icon;
         if (item.disabled) {
           return (
-            <div key={item.label} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground">
+            <div
+              key={item.label}
+              title={collapsed ? item.label : undefined}
+              className={cn(
+                'flex items-center rounded-md px-3 py-2 text-sm text-muted-foreground',
+                collapsed ? 'justify-center' : 'gap-2',
+              )}
+            >
               <Icon className="h-4 w-4" aria-hidden="true" />
-              <span>{item.label}</span>
+              {collapsed ? <span className="sr-only">{item.label}</span> : <span>{item.label}</span>}
             </div>
           );
         }
@@ -58,15 +67,17 @@ function NavigationLinks({ onNavigate }: { onNavigate?: () => void }): JSX.Eleme
             key={item.to}
             to={item.to}
             onClick={onNavigate}
+            title={collapsed ? item.label : undefined}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+                'flex items-center rounded-md px-3 py-2 text-sm transition-colors',
+                collapsed ? 'justify-center' : 'gap-2',
                 isActive ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/70 hover:text-foreground',
               )
             }
           >
             <Icon className="h-4 w-4" aria-hidden="true" />
-            <span>{item.label}</span>
+            {collapsed ? <span className="sr-only">{item.label}</span> : <span>{item.label}</span>}
           </NavLink>
         );
       })}
@@ -81,6 +92,7 @@ interface SessionPanelProps {
   session: AuthSession | null;
   switchingOwner: boolean;
   onOwnerChange: (owner: string) => void;
+  collapsed?: boolean;
 }
 
 function SessionPanel({
@@ -90,9 +102,28 @@ function SessionPanel({
   session,
   switchingOwner,
   onOwnerChange,
+  collapsed = false,
 }: SessionPanelProps): JSX.Element {
   const ownerSelectId = useId();
   const showOwnerSwitcher = profile?.role === 'admin' && owners.length > 1;
+
+  if (collapsed) {
+    return (
+      <div className="space-y-3">
+        <Button
+          variant="outline"
+          size="icon"
+          className="w-full"
+          onClick={logout}
+          disabled={!session}
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3 text-xs text-muted-foreground">
@@ -141,7 +172,22 @@ export function AppLayout(): JSX.Element {
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [switchingOwner, setSwitchingOwner] = useState(false);
+  const [desktopNavExpanded, setDesktopNavExpanded] = useState(false);
   const headerMeta = getHeaderMeta(location.pathname);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem(DESKTOP_NAV_STORAGE_KEY);
+    if (saved === 'expanded') {
+      setDesktopNavExpanded(true);
+      return;
+    }
+    if (saved === 'collapsed') {
+      setDesktopNavExpanded(false);
+      return;
+    }
+    setDesktopNavExpanded(window.innerWidth >= 1280);
+  }, []);
 
   const handleOwnerChange = async (nextOwner: string) => {
     if (!profile || !session?.token) {
@@ -165,6 +211,14 @@ export function AppLayout(): JSX.Element {
     }
   };
 
+  const toggleDesktopNav = () => {
+    const next = !desktopNavExpanded;
+    setDesktopNavExpanded(next);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(DESKTOP_NAV_STORAGE_KEY, next ? 'expanded' : 'collapsed');
+    }
+  };
+
   return (
     <div className="h-[100dvh] overflow-hidden bg-background">
       <a
@@ -174,11 +228,16 @@ export function AppLayout(): JSX.Element {
         Skip to main content
       </a>
       <div className="h-[100dvh]">
-        <aside className="fixed inset-y-0 left-0 z-20 hidden w-[250px] overflow-y-auto border-r bg-card/50 p-4 lg:block lg:p-6">
-          <div className="mb-6 flex items-center justify-between">
-            <h1 className="text-lg font-semibold">Temperance</h1>
+        <aside
+          className={cn(
+            'fixed inset-y-0 left-0 z-20 hidden overflow-y-auto border-r bg-card/50 transition-[width,padding] duration-200 lg:block',
+            desktopNavExpanded ? 'w-[250px] p-6' : 'w-[72px] p-3',
+          )}
+        >
+          <div className={cn('mb-6 flex items-center justify-between', desktopNavExpanded ? '' : 'justify-center')}>
+            {desktopNavExpanded ? <h1 className="text-lg font-semibold">Temperance</h1> : <h1 className="text-lg font-semibold">T</h1>}
           </div>
-          <NavigationLinks />
+          <NavigationLinks collapsed={!desktopNavExpanded} />
           <Separator className="my-4" />
           <SessionPanel
             logout={logout}
@@ -187,6 +246,7 @@ export function AppLayout(): JSX.Element {
             session={session}
             switchingOwner={switchingOwner}
             onOwnerChange={(owner) => void handleOwnerChange(owner)}
+            collapsed={!desktopNavExpanded}
           />
         </aside>
 
@@ -229,12 +289,29 @@ export function AppLayout(): JSX.Element {
           </div>
         ) : null}
 
-        <div className="flex h-[100dvh] min-w-0 flex-col overflow-y-auto lg:pl-[250px]">
+        <div
+          className={cn(
+            'flex h-[100dvh] min-w-0 flex-col overflow-y-auto transition-[padding] duration-200',
+            desktopNavExpanded ? 'lg:pl-[250px]' : 'lg:pl-[72px]',
+          )}
+        >
           <header className="sticky top-0 z-30 border-b bg-background/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4">
             <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">{headerMeta.section}</p>
-                <h2 className="truncate text-lg font-semibold sm:text-xl">{headerMeta.title}</h2>
+              <div className="flex min-w-0 items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="hidden lg:inline-flex"
+                  onClick={toggleDesktopNav}
+                  aria-label={desktopNavExpanded ? 'Collapse navigation' : 'Expand navigation'}
+                  title={desktopNavExpanded ? 'Collapse navigation' : 'Expand navigation'}
+                >
+                  {desktopNavExpanded ? <ChevronLeft className="h-5 w-5" aria-hidden="true" /> : <ChevronRight className="h-5 w-5" aria-hidden="true" />}
+                </Button>
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">{headerMeta.section}</p>
+                  <h2 className="truncate text-lg font-semibold sm:text-xl">{headerMeta.title}</h2>
+                </div>
               </div>
               <Button
                 variant="outline"

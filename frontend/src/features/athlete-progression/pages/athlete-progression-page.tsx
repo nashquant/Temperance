@@ -110,7 +110,7 @@ export function AthleteProgressionPage(): JSX.Element {
           {normalizedChartData.length === 0 ? (
             <Card><CardContent className="p-8 text-sm text-muted-foreground">No progression data available for this selection.</CardContent></Card>
           ) : (
-            <div className="grid gap-4">
+            <div className="grid gap-4 xl:grid-cols-2">
               <ProgressionLineChartCard
                 title="Stress Score: TSS vs rTSS"
                 data={deferredNormalizedChartData}
@@ -193,6 +193,7 @@ export function AthleteProgressionPage(): JSX.Element {
               {hasVdotData ? (
                 <ProgressionLineChartCard
                   title="VDOT Evolution"
+                  className="xl:col-span-2"
                   data={deferredNormalizedChartData}
                   yLabel="VDOT"
                   series={[

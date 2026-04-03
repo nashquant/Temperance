@@ -102,11 +102,11 @@ export function AnalyticsToolbar({
   return (
     <div
       className={cn(
-        'flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end sm:justify-end',
+        'flex w-full flex-col gap-3 lg:w-auto lg:flex-row lg:flex-wrap lg:items-end lg:justify-end',
         className,
       )}
     >
-      <div className={compactLabels ? 'sm:min-w-[9rem]' : 'grid gap-1.5 sm:min-w-[9rem]'}>
+      <div className={compactLabels ? 'lg:min-w-[9rem]' : 'grid gap-1.5 lg:min-w-[9rem]'}>
         {compactLabels ? null : <FieldLabel id={lookbackLabelId}>Lookback</FieldLabel>}
         <Select
           value={String(days)}
@@ -117,7 +117,7 @@ export function AnalyticsToolbar({
           <SelectTrigger
             aria-label="Lookback window"
             aria-labelledby={compactLabels ? undefined : lookbackLabelId}
-            className={cn(secondaryPageInputClassName, 'w-full sm:w-[9rem]')}
+            className={cn(secondaryPageInputClassName, 'w-full lg:w-[9rem]')}
           >
             <SelectValue placeholder="Lookback" />
           </SelectTrigger>
