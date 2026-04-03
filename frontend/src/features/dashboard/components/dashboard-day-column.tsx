@@ -408,7 +408,7 @@ export function DashboardDayColumn({
       ? mobileFullWidth
         ? 'w-full min-w-0'
         : 'w-[240px] shrink-0 min-h-[340px]'
-      : 'sm:min-h-[340px] lg:h-[430px]',
+      : 'md:h-[410px] lg:h-[430px]',
     day.is_today ? 'border-primary/70' : undefined,
   );
 
@@ -424,7 +424,7 @@ export function DashboardDayColumn({
           <div className="flex min-h-[24px] items-center">
             <p
               className={cn(
-                compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[13px] font-semibold leading-5',
+                compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[12px] font-semibold leading-4.5 lg:text-[13px] lg:leading-5',
                 day.is_today ? 'text-primary' : 'text-foreground',
               )}
             >
@@ -638,7 +638,7 @@ export function DashboardDayColumn({
                     )}
                     <div className="min-w-0 pr-6">
                       <div className="min-w-0 flex-1">
-                        <p className={cn('truncate text-[13px] font-semibold leading-4.5 text-foreground', isInvalid ? 'text-rose-100/92' : undefined)}>
+                        <p className={cn('truncate text-[12px] font-semibold leading-4 text-foreground lg:text-[13px] lg:leading-4.5', isInvalid ? 'text-rose-100/92' : undefined)}>
                           {formatActivityTitle(activity.sport)}
                           {timeLabel ? ` ${timeLabel}` : ''}
                         </p>
@@ -668,7 +668,7 @@ export function DashboardDayColumn({
                   key={activity.activity_id}
                     className={cn(
                       'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
-                      compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[102px] p-2 text-[12px]',
+                      compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[94px] p-1.5 text-[11px] lg:h-[102px] lg:p-2 lg:text-[12px]',
                       activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
                       isInvalid ? invalidActivityCardClasses : undefined,
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
@@ -688,7 +688,7 @@ export function DashboardDayColumn({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute right-1 top-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                      className="absolute right-1 top-1 h-3 w-3 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white lg:h-3.5 lg:w-3.5"
                       onClick={(event) => {
                         event.stopPropagation();
                         onDeleteCustomActivity?.(activity, item.index);
@@ -702,7 +702,7 @@ export function DashboardDayColumn({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute right-1 top-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                      className="absolute right-1 top-1 h-3 w-3 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white lg:h-3.5 lg:w-3.5"
                       onClick={(event) => {
                         event.stopPropagation();
                         onToggleActivityInvalid?.(activity, false);
@@ -716,7 +716,7 @@ export function DashboardDayColumn({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute right-1 top-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                      className="absolute right-1 top-1 h-3 w-3 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white lg:h-3.5 lg:w-3.5"
                       onClick={(event) => {
                         event.stopPropagation();
                         onToggleActivityInvalid?.(activity, true);
@@ -727,8 +727,8 @@ export function DashboardDayColumn({
                       <X className="h-1.5 w-1.5" />
                     </Button>
                   )}
-                  <div className="flex min-w-0 items-center">
-                    <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[14px] leading-5', isInvalid ? 'text-rose-100/92' : undefined)}>
+                  <div className="flex min-w-0 items-center pr-4 lg:pr-0">
+                    <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14px] lg:leading-5', isInvalid ? 'text-rose-100/92' : undefined)}>
                       {formatActivityTitle(activity.sport)}
                       {activity.is_custom ? '(C)' : ''}
                       {!activity.is_custom && timeLabel ? ` ${timeLabel}` : ''}
@@ -875,8 +875,8 @@ export function DashboardDayColumn({
                     <div
                       key={`${item.activity.day_utc}-${item.activity.line_no}`}
                       className={cn(
-                        'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-dashed transition-colors hover:bg-white/5',
-                        compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[102px] px-2.5 pb-2.5 pt-2 text-[12px]',
+                      'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-dashed transition-colors hover:bg-white/5',
+                      compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[94px] px-2 pb-2 pt-1.5 text-[11px] lg:h-[102px] lg:px-2.5 lg:pb-2.5 lg:pt-2 lg:text-[12px]',
                       )}
                       style={activityCardToneStyle(item.activity.intensity, true)}
                       onClick={() => onSelectActivity?.(item.activity.activity_id)}
@@ -892,7 +892,7 @@ export function DashboardDayColumn({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1 top-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        className="absolute right-1 top-1 h-3 w-3 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white lg:h-3.5 lg:w-3.5"
                         onClick={(event) => {
                           event.stopPropagation();
                           onMarkPlannedDone?.(item.activity, item.index);
@@ -905,7 +905,7 @@ export function DashboardDayColumn({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1 top-[22px] h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        className="absolute right-1 top-[18px] h-3 w-3 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white lg:top-[22px] lg:h-3.5 lg:w-3.5"
                         onClick={(event) => {
                           event.stopPropagation();
                           onDeletePlannedActivity?.(item.activity, item.index);
@@ -915,8 +915,8 @@ export function DashboardDayColumn({
                       >
                         <X className="h-1.5 w-1.5" />
                       </Button>
-                      <div className="flex min-w-0 items-center pr-5">
-                        <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[14px] leading-5')}>
+                      <div className="flex min-w-0 items-center pr-4 lg:pr-5">
+                        <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14px] lg:leading-5')}>
                           {formatActivityTitle(item.activity.activity)} <span className="text-muted-foreground">(P)</span>
                         </p>
                       </div>
