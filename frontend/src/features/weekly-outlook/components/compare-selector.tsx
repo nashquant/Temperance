@@ -1,7 +1,6 @@
-import { secondaryPageFieldLabelClassName, secondaryPageInsetClassName } from '@/components/ui/secondary-page';
+import { FieldLabel, InsetBox } from '@/components/ui/secondary-page';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { WeeklyCompare } from '@/features/weekly-outlook/types/weekly-outlook';
-import { cn } from '@/lib/utils';
 
 interface CompareSelectorProps {
   value: WeeklyCompare;
@@ -16,26 +15,27 @@ export function CompareSelector({ value, onValueChange }: CompareSelectorProps):
 
   return (
     <div className="grid gap-1.5 sm:w-auto">
-      <p className={cn(secondaryPageFieldLabelClassName, 'text-[10px]')}>Compare</p>
-      <ToggleGroup
-        type="single"
-        value={value}
-        onValueChange={(next) => {
-          if (next) onValueChange(next as WeeklyCompare);
-        }}
-        className={cn(secondaryPageInsetClassName, 'w-full p-1 sm:w-auto')}
-      >
-        {items.map((item) => (
-          <ToggleGroupItem
-            key={item.value}
-            value={item.value}
-            size="sm"
-            className="flex-1 sm:flex-none"
-          >
-            {item.label}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      <FieldLabel className="text-[10px]">Compare</FieldLabel>
+      <InsetBox className="w-full p-1 sm:w-auto">
+        <ToggleGroup
+          type="single"
+          value={value}
+          onValueChange={(next) => {
+            if (next) onValueChange(next as WeeklyCompare);
+          }}
+        >
+          {items.map((item) => (
+            <ToggleGroupItem
+              key={item.value}
+              value={item.value}
+              size="sm"
+              className="flex-1 sm:flex-none"
+            >
+              {item.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </InsetBox>
     </div>
   );
 }

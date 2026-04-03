@@ -41,6 +41,10 @@ const config: Config = {
         md: 'calc(0.8rem - 2px)',
         sm: 'calc(0.8rem - 4px)',
       },
+      fontSize: {
+        '2xs': ['0.6875rem', { lineHeight: '1rem' }],  // 11px — replaces text-[11px]
+        '3xs': ['0.625rem', { lineHeight: '0.875rem' }], // 10px — replaces text-[10px]
+      },
     },
   },
   plugins: [],

@@ -8,12 +8,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { QueryShell } from '@/components/ui/query-shell';
 import {
+  FieldLabel,
   SecondaryPageHeader,
   SurfaceCard,
-  secondaryPageActionButtonClassName,
-  secondaryPageFieldLabelClassName,
   secondaryPageInputClassName,
 } from '@/components/ui/secondary-page';
+
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useSettingsQuery } from '@/features/settings/hooks/use-settings-query';
 import { useVdotQuery } from '@/features/settings/hooks/use-vdot-query';
@@ -368,7 +368,7 @@ export function SettingsPage(): JSX.Element {
             <div className="grid gap-2 sm:gap-3 lg:grid-cols-5">
               {(['z1_max', 'z2_max', 'z3_max', 'z4_max'] as const).map((key) => (
                 <div key={key} className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
-                  <Label htmlFor={`if-zone-${key}`} className={secondaryPageFieldLabelClassName}>{formatIfZoneLabel(key)}</Label>
+                  <FieldLabel htmlFor={`if-zone-${key}`}>{formatIfZoneLabel(key)}</FieldLabel>
                   <div className="relative">
                     <Input
                       id={`if-zone-${key}`}
@@ -390,7 +390,7 @@ export function SettingsPage(): JSX.Element {
                 </div>
               ))}
               <div className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 lg:w-[96px] lg:justify-self-end">
-                <Label htmlFor="vdot-lookback-days" className={secondaryPageFieldLabelClassName}>VDOT Days</Label>
+                <FieldLabel htmlFor="vdot-lookback-days">VDOT Days</FieldLabel>
                 <div className="relative">
                   <Input
                     id="vdot-lookback-days"
@@ -407,7 +407,7 @@ export function SettingsPage(): JSX.Element {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
-                className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`}
+                variant="surface" className="w-full sm:w-auto"
                 onClick={() => saveMutation.mutate({ if_zone_thresholds: ifZones, vdot_lookback_days: vdotLookbackDays })}
                 disabled={saveMutation.isPending}
               >
@@ -421,7 +421,7 @@ export function SettingsPage(): JSX.Element {
             <div className="grid gap-2 sm:gap-3 md:grid-cols-4">
               {(['non_running', 'treadmill', 'elliptical', 'cycling'] as const).map((key) => (
                 <div key={key} className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
-                  <Label htmlFor={`specificity-${key}`} className={secondaryPageFieldLabelClassName}>{formatSpecificityLabel(key)}</Label>
+                  <FieldLabel htmlFor={`specificity-${key}`}>{formatSpecificityLabel(key)}</FieldLabel>
                   <div className="relative">
                     <Input
                       id={`specificity-${key}`}
@@ -443,7 +443,7 @@ export function SettingsPage(): JSX.Element {
                 </div>
               ))}
             </div>
-            <Button className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save</Button>
+            <Button variant="surface" className="w-full sm:w-auto" onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save</Button>
         </SurfaceCard>
       </div>
 
@@ -504,7 +504,7 @@ export function SettingsPage(): JSX.Element {
                 </div>
               ))}
             </div>
-            <Button className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`} onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save</Button>
+            <Button variant="surface" className="w-full sm:w-auto" onClick={() => saveMutation.mutate({ lthr_curve: parsedCurves.lthr })} disabled={saveMutation.isPending}>Save</Button>
         </SurfaceCard>
 
         <SurfaceCard contentClassName="space-y-3 p-3 sm:p-4">
@@ -565,7 +565,7 @@ export function SettingsPage(): JSX.Element {
             </div>
             {parsedCurves.paceError ? <p className="text-xs text-red-400">{parsedCurves.paceError}</p> : null}
             <Button
-              className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`}
+              variant="surface" className="w-full sm:w-auto"
               onClick={() => {
                 if (parsedCurves.paceError) {
                   setSaveMsg(parsedCurves.paceError);

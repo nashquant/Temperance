@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { CompactDateInput } from '@/components/ui/compact-date-input';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { QueryShell } from '@/components/ui/query-shell';
 import {
   FieldLabel,
@@ -15,11 +14,7 @@ import {
   SecondaryPageHeader,
   SecondaryPageSectionCard,
   SurfaceCard,
-  secondaryPageActionButtonClassName,
-  secondaryPageFieldLabelClassName,
   secondaryPageInputClassName,
-  secondaryPageInsetClassName,
-  secondaryPageMutedInsetClassName,
   secondaryPageTextAreaClassName,
 } from '@/components/ui/secondary-page';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -380,7 +375,7 @@ export function DataExtractPage(): JSX.Element {
             </div>
             <Button
               type="button"
-              className={`${secondaryPageActionButtonClassName} relative z-10 w-full rounded-xl sm:w-auto`}
+              variant="surface" className="relative z-10 w-full sm:w-auto"
               onClick={() => comprehensiveMutation.mutate()}
               disabled={comprehensiveMutation.isPending || extractRunning || oauthBlocksExtract}
             >
@@ -438,7 +433,7 @@ export function DataExtractPage(): JSX.Element {
               {garminCapabilities?.reason ?? 'Garmin OAuth is connected, but extract endpoints are not configured for this deployment.'}
             </p>
           ) : null}
-          <div className={`${secondaryPageInsetClassName} p-2`}>
+          <div className="rounded-xl border border-white/10 bg-black/15 p-2">
             <div className="mb-1 flex items-center justify-between gap-2">
               <p className="text-xs font-medium text-muted-foreground">Extraction logs</p>
               <Button
@@ -467,7 +462,7 @@ export function DataExtractPage(): JSX.Element {
       {!isAdmin ? (
         <SecondaryPageSectionCard contentClassName="space-y-3 p-3 sm:p-4">
           <h2 className="text-lg font-semibold text-foreground">Garmin OAuth</h2>
-          <div className={`${secondaryPageMutedInsetClassName} space-y-2 p-3`}>
+          <div className={`rounded-xl border border-white/8 bg-white/[0.03] space-y-2 p-3`}>
             <p className="text-xs text-muted-foreground">
               Status:{' '}
               <span className="font-medium text-foreground">
@@ -489,7 +484,7 @@ export function DataExtractPage(): JSX.Element {
           </div>
           <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <Button
-              className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`}
+              variant="surface" className="w-full sm:w-auto"
               onClick={() => startGarminOAuthMutation.mutate()}
               disabled={startGarminOAuthMutation.isPending || garminOauthConnected}
             >
@@ -542,7 +537,7 @@ export function DataExtractPage(): JSX.Element {
               </p>
               <div className="grid gap-2 sm:gap-3 md:grid-cols-2">
                 <div className="space-y-1">
-                  <Label htmlFor="garmin-email" className={secondaryPageFieldLabelClassName}>Garmin email</Label>
+                  <FieldLabel htmlFor="garmin-email">Garmin email</FieldLabel>
                   <Input
                     id="garmin-email"
                     className={secondaryPageInputClassName}
@@ -553,7 +548,7 @@ export function DataExtractPage(): JSX.Element {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="garmin-password" className={secondaryPageFieldLabelClassName}>Garmin password</Label>
+                  <FieldLabel htmlFor="garmin-password">Garmin password</FieldLabel>
                   <Input
                     id="garmin-password"
                     className={secondaryPageInputClassName}
@@ -567,7 +562,7 @@ export function DataExtractPage(): JSX.Element {
               </div>
               <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <Button
-                  className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`}
+                  variant="surface" className="w-full sm:w-auto"
                   onClick={() => setGarminCredsMutation.mutate({ email: garminEmail.trim(), password: garminPassword })}
                   disabled={setGarminCredsMutation.isPending || !garminEmail.trim() || !garminPassword}
                 >
@@ -603,9 +598,7 @@ export function DataExtractPage(): JSX.Element {
 
       <SecondaryPageSectionCard contentClassName="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] sm:space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Add Custom Activity</h2>
-          <Label htmlFor="custom-activity-entry" className={secondaryPageFieldLabelClassName}>
-            Activity input
-          </Label>
+          <FieldLabel htmlFor="custom-activity-entry">Activity input</FieldLabel>
           <textarea
             id="custom-activity-entry"
             className={`min-h-[104px] ${secondaryPageTextAreaClassName} sm:min-h-[120px]`}
@@ -617,7 +610,7 @@ export function DataExtractPage(): JSX.Element {
             <p className="text-xs text-muted-foreground">This keeps the existing custom-activity save flow, just with the newer composer styling.</p>
             <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button
-                className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`}
+                variant="surface" className="w-full sm:w-auto"
                 onClick={() => customIngestMutation.mutate()}
                 disabled={customIngestMutation.isPending || !customEntryText.trim()}
               >
@@ -649,7 +642,7 @@ export function DataExtractPage(): JSX.Element {
               </div>
 
               {selectedCustomWeek ? (
-                <div className={`${secondaryPageInsetClassName} p-2 text-xs`}>
+                <div className={`rounded-xl border border-white/10 bg-black/15 p-2 text-xs`}>
                   <p className="text-muted-foreground">
                     {selectedCustomWeek.week_start} - {selectedCustomWeek.week_end}
                   </p>
@@ -756,19 +749,19 @@ export function DataExtractPage(): JSX.Element {
       {isAdmin ? (
         <SecondaryPageSectionCard contentClassName="space-y-3 p-3 text-sm sm:space-y-4 sm:p-4">
             <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2.5 text-xs md:hidden">
-              <div className={`${secondaryPageInsetClassName} px-3 py-2.5`}>
+              <div className={`rounded-xl border border-white/10 bg-black/15 px-3 py-2.5`}>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">DB</p>
                 <p className="mt-1 break-all text-slate-200/88">{status?.db_path}</p>
               </div>
-              <div className={`${secondaryPageInsetClassName} px-3 py-2.5`}>
+              <div className={`rounded-xl border border-white/10 bg-black/15 px-3 py-2.5`}>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">Garmin Creds</p>
                 <p className="mt-1 text-slate-200/88">{status?.garmin_credentials_available ? 'available' : 'missing'}</p>
               </div>
-              <div className={`${secondaryPageInsetClassName} px-3 py-2.5`}>
+              <div className={`rounded-xl border border-white/10 bg-black/15 px-3 py-2.5`}>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">Import Dir</p>
                 <p className="mt-1 break-all text-slate-200/88">{status?.import_dir}</p>
               </div>
-              <div className={`${secondaryPageInsetClassName} px-3 py-2.5`}>
+              <div className={`rounded-xl border border-white/10 bg-black/15 px-3 py-2.5`}>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">Last Sync</p>
                 <p className="mt-1 text-slate-200/88">
                   {status?.last_sync
@@ -778,28 +771,28 @@ export function DataExtractPage(): JSX.Element {
               </div>
             </div>
             <div className="hidden gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2.5 text-xs sm:gap-3 sm:p-3 md:grid md:grid-cols-2">
-              <p className={`truncate ${secondaryPageInsetClassName} px-3 py-2 text-slate-200/88`}>
+              <p className={`truncate rounded-xl border border-white/10 bg-black/15 px-3 py-2 text-slate-200/88`}>
                 <span className="text-slate-300/58">DB:</span> {status?.db_path}
               </p>
-              <p className={`${secondaryPageInsetClassName} px-3 py-2 text-slate-200/88`}>
+              <p className={`rounded-xl border border-white/10 bg-black/15 px-3 py-2 text-slate-200/88`}>
                 <span className="text-slate-300/58">Garmin creds:</span> {status?.garmin_credentials_available ? 'available' : 'missing'}
               </p>
-              <p className={`truncate ${secondaryPageInsetClassName} px-3 py-2 text-slate-200/88`}>
+              <p className={`truncate rounded-xl border border-white/10 bg-black/15 px-3 py-2 text-slate-200/88`}>
                 <span className="text-slate-300/58">Import dir:</span> {status?.import_dir}
               </p>
               {status?.last_sync ? (
-                <p className={`truncate ${secondaryPageInsetClassName} px-3 py-2 text-slate-200/88`}>
+                <p className={`truncate rounded-xl border border-white/10 bg-black/15 px-3 py-2 text-slate-200/88`}>
                   <span className="text-slate-300/58">Last sync:</span> {status.last_sync.sync_time_utc} | {status.last_sync.source} | {status.last_sync.success ? 'success' : 'failed'}
                 </p>
               ) : (
-                <p className={`${secondaryPageInsetClassName} px-3 py-2 text-slate-300/60`}>No sync has been run yet.</p>
+                <p className={`rounded-xl border border-white/10 bg-black/15 px-3 py-2 text-slate-300/60`}>No sync has been run yet.</p>
               )}
             </div>
             <div className="grid gap-2 md:hidden">
               {Object.entries(status?.counts ?? {}).map(([key, value]) => (
                 <div
                   key={key}
-                  className={`flex items-center justify-between ${secondaryPageMutedInsetClassName} px-3 py-2.5 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]`}
+                  className={`flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]`}
                 >
                   <p className="pr-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/74">{key}</p>
                   <p className="text-sm font-semibold leading-5 text-slate-100">{value}</p>
@@ -810,7 +803,7 @@ export function DataExtractPage(): JSX.Element {
               {Object.entries(status?.counts ?? {}).map(([key, value]) => (
                 <div
                   key={key}
-                  className={`${secondaryPageMutedInsetClassName} px-3 py-2 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]`}
+                  className={`rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]`}
                 >
                   <p className="truncate text-slate-300/58">{key}</p>
                   <p className="text-sm font-semibold leading-5 text-slate-100">{value}</p>

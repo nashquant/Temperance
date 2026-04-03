@@ -5,13 +5,10 @@ import { CalendarDays } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { QueryShell } from '@/components/ui/query-shell';
 import {
+  SecondaryPageSectionCard,
   SecondaryStatCard,
-  secondaryPageActionButtonClassName,
-  secondaryPageMutedInsetClassName,
-  secondaryPageSurfaceClassName,
   secondaryPageTextAreaClassName,
 } from '@/components/ui/secondary-page';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -735,19 +732,17 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
       {!query.isLoading && !query.isError && query.data ? (
         <>
-          <Card className={`${secondaryPageSurfaceClassName} sm:hidden`}>
-            <CardContent className="grid gap-2 p-4">
+          <SecondaryPageSectionCard className="sm:hidden" contentClassName="grid gap-2 p-4">
               {goalItems.map((item) => (
                 <div
                   key={item.label}
-                  className={`flex items-center justify-between ${secondaryPageMutedInsetClassName} px-3 py-2.5`}
+                  className={`flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5`}
                 >
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/74">{item.label}</p>
                   <p className="text-sm font-semibold text-slate-50">{item.value}</p>
                 </div>
               ))}
-            </CardContent>
-          </Card>
+          </SecondaryPageSectionCard>
           <div className="hidden flex-wrap items-center gap-2 sm:flex">
             <Badge variant="outline">TSS goal: {Math.round(query.data.goals.tss)}</Badge>
             <Badge variant="outline">rTSS goal: {Math.round(query.data.goals.rtss)}</Badge>
@@ -756,8 +751,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         </>
       ) : null}
 
-      <Card className={secondaryPageSurfaceClassName}>
-        <CardContent className="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-3 sm:space-y-4 sm:p-5">
+      <SecondaryPageSectionCard contentClassName="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-3 sm:space-y-4 sm:p-5">
           <h2 className="text-lg font-semibold text-foreground">Add Planned Activity</h2>
           <textarea
             className={`min-h-[104px] ${secondaryPageTextAreaClassName} sm:min-h-[120px]`}
@@ -769,7 +763,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
             <p className="text-xs text-muted-foreground">Multiple entries are supported with new lines, `;`, or `,`.</p>
             <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button
-                className={`${secondaryPageActionButtonClassName} w-full sm:w-auto`}
+                variant="surface" className="w-full sm:w-auto"
                 onClick={() => ingestMutation.mutate({ text: entryText, source: 'composer' })}
                 disabled={ingestMutation.isPending || !entryText.trim()}
               >
@@ -778,8 +772,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
             </div>
           </div>
-        </CardContent>
-      </Card>
+      </SecondaryPageSectionCard>
 
       <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load planned activities" skeleton="compact">
 
@@ -800,9 +793,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       {query.data ? (
         <>
           {weeks.length === 0 ? (
-              <Card className={secondaryPageSurfaceClassName}>
-                <CardContent className="p-8 text-sm text-slate-300/72">No planned activities found in this time window.</CardContent>
-              </Card>
+              <SecondaryPageSectionCard contentClassName="p-8 text-sm text-slate-300/72">No planned activities found in this time window.</SecondaryPageSectionCard>
           ) : (
             <>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
@@ -826,8 +817,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               </div>
 
               {selectedWeekMeta ? (
-                <Card className={secondaryPageSurfaceClassName}>
-                  <CardContent className="p-4">
+                <SecondaryPageSectionCard contentClassName="p-4">
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                       {selectedWeekItems.map((item) => (
                         <SecondaryStatCard
@@ -838,14 +828,12 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                         />
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
+                </SecondaryPageSectionCard>
               ) : null}
 
               <PlannedWeekChart data={chartRows} metric={metric} onMetricChange={setMetric} />
 
-              <Card className={secondaryPageSurfaceClassName}>
-                <CardContent className="p-0">
+              <SecondaryPageSectionCard contentClassName="p-0">
                   <div className="overflow-x-auto rounded-2xl pb-1">
                     <table className="min-w-[720px] w-full table-fixed text-sm lg:min-w-[980px]">
                       <colgroup>
@@ -1064,8 +1052,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                       </tbody>
                     </table>
                   </div>
-                </CardContent>
-              </Card>
+              </SecondaryPageSectionCard>
             </>
           )}
         </>
