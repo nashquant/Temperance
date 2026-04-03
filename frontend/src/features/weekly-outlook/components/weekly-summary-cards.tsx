@@ -46,7 +46,7 @@ export function WeeklySummaryCards({ data, selectedMetric }: WeeklySummaryCardsP
 
   return (
     <SecondaryPageSectionCard contentClassName="p-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         {summaryItems.map((item) => (
           <SecondaryStatCard
             key={item.title}

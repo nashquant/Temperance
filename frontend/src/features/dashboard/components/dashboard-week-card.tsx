@@ -151,7 +151,7 @@ export function DashboardWeekCard({
         <CardContent className="relative p-1 sm:p-1.5">
           <div className="pointer-events-none absolute inset-[1px] rounded-[calc(1rem-1px)] bg-[radial-gradient(circle_at_10%_18%,rgba(59,130,246,0.14),transparent_24%),radial-gradient(circle_at_88%_16%,rgba(147,51,234,0.14),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.025),transparent_20%,transparent_78%,rgba(15,23,42,0.12))]" />
           <div className="pointer-events-none absolute inset-x-16 top-[1px] h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-          <div className="relative space-y-1.5 sm:hidden">
+          <div className="relative space-y-1.5 md:hidden">
             <MobileWeekSummary week={week} />
             <div className="-mx-0.5 grid gap-1.5 pb-1">
               {week.days.map((day) => (
@@ -180,34 +180,41 @@ export function DashboardWeekCard({
             </div>
           </div>
 
-          <div className="relative hidden gap-1.5 sm:grid lg:grid-cols-[1.15fr_repeat(7,minmax(0,1fr))] sm:items-start">
-            <DashboardWeekSummaryCard
-              weekNumber={week.week_number}
-              weekStart={shortDay(week.week_start)}
-              weekEnd={shortDayWithYear(week.week_end)}
-              summary={week.summary}
-            />
-            {week.days.map((day) => (
-              <DashboardDayColumn
-                key={day.day_utc}
-                day={day}
-                onAddPlannedActivity={onAddPlannedActivity}
-                onMarkPlannedDone={onMarkPlannedDone}
-                onDeletePlannedActivity={onDeletePlannedActivity}
-                onDeleteCustomActivity={onDeleteCustomActivity}
-                onToggleActivityInvalid={onToggleActivityInvalid}
-                onSelectActivity={onSelectActivity}
-                addingPlannedActivity={addingPlannedActivity}
-                markingPlannedDone={markingPlannedDone}
-                deletingPlannedActivity={deletingPlannedActivity}
-                deletingCustomActivity={deletingCustomActivity}
-                togglingActivityInvalid={togglingActivityInvalid}
-                userTimeZone={userTimeZone}
-                undoActivity={undoActivity}
-                undoVisible={undoVisible}
-                onUndoActivity={onUndoActivity}
-              />
-            ))}
+          <div className="relative hidden md:block">
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-[rgba(6,11,22,0.96)] to-transparent" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-[rgba(6,11,22,0.96)] to-transparent" />
+            <div className="overflow-x-auto overscroll-x-contain pb-1 touch-pan-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="grid min-w-[1180px] grid-cols-[220px_repeat(7,minmax(132px,1fr))] items-start gap-1.5 xl:min-w-[1320px] xl:grid-cols-[1.15fr_repeat(7,minmax(0,1fr))]">
+                <DashboardWeekSummaryCard
+                  weekNumber={week.week_number}
+                  weekStart={shortDay(week.week_start)}
+                  weekEnd={shortDayWithYear(week.week_end)}
+                  summary={week.summary}
+                />
+                {week.days.map((day) => (
+                  <DashboardDayColumn
+                    key={day.day_utc}
+                    day={day}
+                    onAddPlannedActivity={onAddPlannedActivity}
+                    onMarkPlannedDone={onMarkPlannedDone}
+                    onDeletePlannedActivity={onDeletePlannedActivity}
+                    onDeleteCustomActivity={onDeleteCustomActivity}
+                    onToggleActivityInvalid={onToggleActivityInvalid}
+                    onSelectActivity={onSelectActivity}
+                    addingPlannedActivity={addingPlannedActivity}
+                    markingPlannedDone={markingPlannedDone}
+                    deletingPlannedActivity={deletingPlannedActivity}
+                    deletingCustomActivity={deletingCustomActivity}
+                    togglingActivityInvalid={togglingActivityInvalid}
+                    userTimeZone={userTimeZone}
+                    undoActivity={undoActivity}
+                    undoVisible={undoVisible}
+                    onUndoActivity={onUndoActivity}
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="mt-2 px-1 text-[11px] font-medium text-slate-300/58 xl:hidden">Swipe horizontally to view the full week.</p>
           </div>
         </CardContent>
       </Card>

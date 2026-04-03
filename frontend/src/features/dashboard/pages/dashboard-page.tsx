@@ -130,7 +130,7 @@ function applyComposerActivityFallback(
 }
 
 export function DashboardPage(): JSX.Element {
-  const dashboardPageSize = 10;
+  const dashboardPageSize = 4;
   const dashboardYearWindowWeeks = 52;
   const dashboardMaxWeeks = 52;
   const { session, profile } = useAuth();
@@ -785,6 +785,7 @@ export function DashboardPage(): JSX.Element {
                   <div
                     key={row.week.week_start}
                     className="scroll-mt-24 sm:scroll-mt-28"
+                    style={{ contentVisibility: 'auto', containIntrinsicSize: '720px' }}
                     ref={(node) => {
                       weekRefs.current[row.week.week_start] = node;
                     }}

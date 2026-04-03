@@ -34,6 +34,7 @@ interface Props {
   targetKey?: string;
   targetLabel?: string;
   rightAxisLabel?: string;
+  className?: string;
 }
 
 const INTEGER_LIKE_KEYS = new Set([
@@ -148,6 +149,7 @@ export function ProgressionLineChartCard({
   targetKey,
   targetLabel,
   rightAxisLabel,
+  className,
 }: Props): JSX.Element {
   const leftAxisUsesIntegers = series
     .filter((item) => (item.yAxisId ?? 'left') === 'left')
@@ -199,7 +201,7 @@ export function ProgressionLineChartCard({
   }) as Array<Record<string, number | string | null | undefined>>;
   const labelMap = new Map(chartData.map((row) => [String(row._x ?? ''), String(row['label'] ?? row._x ?? '')]));
   return (
-    <ChartCard title={title} heightClassName="h-[280px]">
+    <ChartCard title={title} heightClassName="h-[280px]" className={className}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 14, right: 14, bottom: 6, left: 2 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(125,211,252,0.14)" />
