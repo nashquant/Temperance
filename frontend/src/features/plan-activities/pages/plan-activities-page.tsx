@@ -752,45 +752,45 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       ) : null}
 
       <SecondaryPageSectionCard contentClassName="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-3 sm:space-y-4 sm:p-5">
-          <h2 className="text-lg font-semibold text-foreground">Add Planned Activity</h2>
-          <textarea
-            className={`min-h-[104px] ${secondaryPageTextAreaClassName} sm:min-h-[120px]`}
-            placeholder="e.g. 3Mar26: 80min elliptical @140bpm; 2026-03-26: 10min run @4:50 + 5x6min @3:40/km"
-            value={entryText}
-            onChange={(event) => setEntryText(event.target.value)}
-          />
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-            <p className="text-xs text-muted-foreground">Multiple entries are supported with new lines, `;`, or `,`.</p>
-            <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <Button
-                variant="surface" className="w-full sm:w-auto"
-                onClick={() => ingestMutation.mutate({ text: entryText, source: 'composer' })}
-                disabled={ingestMutation.isPending || !entryText.trim()}
-              >
-                {ingestMutation.isPending ? 'Saving...' : 'Save'}
-              </Button>
-              {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
-            </div>
+        <h2 className="text-lg font-semibold text-foreground">Add Planned Activity</h2>
+        <textarea
+          className={`min-h-[104px] ${secondaryPageTextAreaClassName} sm:min-h-[120px]`}
+          placeholder="e.g. 3Mar26: 80min elliptical @140bpm; 2026-03-26: 10min run @4:50 + 5x6min @3:40/km"
+          value={entryText}
+          onChange={(event) => setEntryText(event.target.value)}
+        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <p className="text-xs text-muted-foreground">Multiple entries are supported with new lines, `;`, or `,`.</p>
+          <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <Button
+              variant="surface"
+              className="w-full sm:w-auto"
+              onClick={() => ingestMutation.mutate({ text: entryText, source: 'composer' })}
+              disabled={ingestMutation.isPending || !entryText.trim()}
+            >
+              {ingestMutation.isPending ? 'Saving...' : 'Save'}
+            </Button>
+            {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
           </div>
+        </div>
       </SecondaryPageSectionCard>
 
       <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load planned activities" skeleton="compact">
+        {deleteResult ? (
+          <Alert className="border-white/15 bg-white/[0.03] text-slate-100">
+            <AlertTitle>Delete status</AlertTitle>
+            <AlertDescription>{deleteResult}</AlertDescription>
+          </Alert>
+        ) : null}
 
-      {deleteResult ? (
-        <Alert className="border-white/15 bg-white/[0.03] text-slate-100">
-          <AlertTitle>Delete status</AlertTitle>
-          <AlertDescription>{deleteResult}</AlertDescription>
-        </Alert>
-      ) : null}
+        {copyResult ? (
+          <Alert className="border-white/15 bg-white/[0.03] text-slate-100">
+            <AlertTitle>Clipboard</AlertTitle>
+            <AlertDescription>{copyResult}</AlertDescription>
+          </Alert>
+        ) : null}
 
-      {copyResult ? (
-        <Alert className="border-white/15 bg-white/[0.03] text-slate-100">
-          <AlertTitle>Clipboard</AlertTitle>
-          <AlertDescription>{copyResult}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {query.data ? (
+        {query.data ? (
         <>
           {weeks.length === 0 ? (
               <SecondaryPageSectionCard contentClassName="p-8 text-sm text-slate-300/72">No planned activities found in this time window.</SecondaryPageSectionCard>
