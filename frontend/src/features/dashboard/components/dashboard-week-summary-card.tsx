@@ -3,8 +3,8 @@ import { Activity, AlertTriangle, Clock3, Flame, Gauge, Route, Ruler } from 'luc
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { ZoneBar } from '@/features/dashboard/components/zone-bar';
 import { formatCompactDurationHours } from '@/features/dashboard/utils/format-duration';
-import { zoneHexFromLabel, zoneTrackClassNames, zoneTrackFallbackClassName } from '@/features/dashboard/utils/intensity-palette';
 import type { DashboardWeekSummary } from '@/features/dashboard/types/dashboard';
 
 interface DashboardWeekSummaryCardProps {
@@ -19,22 +19,6 @@ function fmtNumber(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-';
   return Math.round(value).toString();
 }
-
-function fmtSeconds(seconds: number): string {
-  const totalMin = Math.max(0, Math.round(seconds / 60));
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  if (h > 0) return m > 0 ? `${h}h${m}'` : `${h}h`;
-  return `${m}'`;
-}
-
-const zoneColors: Record<string, string> = {
-  Z1: zoneHexFromLabel('Z1'),
-  Z2: zoneHexFromLabel('Z2'),
-  Z3: zoneHexFromLabel('Z3'),
-  Z4: zoneHexFromLabel('Z4'),
-  Z5: zoneHexFromLabel('Z5'),
-};
 
 
 const summaryToneClassNames = {
@@ -120,28 +104,7 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
         <div className="space-y-1">
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Zones</p>
           {summary.zones.map((zone) => (
-            <div key={zone.zone} className="grid grid-cols-[32px_minmax(36px,1fr)_42px_24px] items-center gap-1 text-[11px] leading-4 text-muted-foreground">
-              <span className="inline-flex items-center gap-1 text-[11.5px] font-medium leading-[1.28] tracking-[0.01em] text-slate-200/92">
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: zoneColors[zone.zone] ?? zoneHexFromLabel('Z1') }}
-                />
-                {zone.zone}
-              </span>
-              <div
-                className={`h-1.5 w-full overflow-hidden rounded-full border ${zoneTrackClassNames[zone.zone] ?? zoneTrackFallbackClassName}`}
-              >
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    backgroundColor: zoneColors[zone.zone] ?? zoneHexFromLabel('Z1'),
-                    width: `${zone.pct > 0 ? Math.max(3, Math.min(100, zone.pct)) : 0}%`,
-                  }}
-                />
-              </div>
-              <span className="text-right font-medium tabular-nums text-slate-200/92">{fmtSeconds(zone.seconds)}</span>
-              <span className="text-right">{zone.pct.toFixed(0)}%</span>
-            </div>
+            <ZoneBar key={zone.zone} zone={zone.zone} seconds={zone.seconds} pct={zone.pct} />
           ))}
         </div>
       </CardContent>

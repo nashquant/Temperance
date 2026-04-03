@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-import { Card, CardContent } from '@/components/ui/card';
-import { SecondaryPageHeader, secondaryPageSurfaceClassName } from '@/components/ui/secondary-page';
+import { SecondaryPageHeader, SecondaryPageSectionCard } from '@/components/ui/secondary-page';
 import { cn } from '@/lib/utils';
 
 type AboutBodyItem =
@@ -247,8 +246,7 @@ export function AboutTemperancePage(): JSX.Element {
         description="Context for the training model, the workflow behind each tab, and the syntax used throughout the app."
       />
 
-      <Card className={secondaryPageSurfaceClassName}>
-        <CardContent className="p-0">
+      <SecondaryPageSectionCard contentClassName="p-0">
           <div className="divide-y divide-white/8">
             {aboutBlocks.map((block, index) => {
               const isOpen = openSections.has(block.id);
@@ -343,8 +341,7 @@ export function AboutTemperancePage(): JSX.Element {
               );
             })}
           </div>
-        </CardContent>
-      </Card>
+      </SecondaryPageSectionCard>
     </section>
   );
 }

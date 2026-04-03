@@ -57,9 +57,9 @@ export function InsetBox({ muted = false, className, ...props }: InsetBoxProps):
   );
 }
 
-/** Field label with uppercase micro-text styling. */
-export function FieldLabel({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>): JSX.Element {
-  return <p className={cn(secondaryPageFieldLabelClassName, className)} {...props} />;
+/** Field label with uppercase micro-text styling. Renders as a `<label>` so it accepts `htmlFor`. */
+export function FieldLabel({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>): JSX.Element {
+  return <label className={cn(secondaryPageFieldLabelClassName, className)} {...props} />;
 }
 
 /* ------------------------------------------------------------------ */

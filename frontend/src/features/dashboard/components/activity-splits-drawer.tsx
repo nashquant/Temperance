@@ -2,14 +2,14 @@ import { useMutation } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Clock3, HeartPulse, Route, Target, X } from 'lucide-react';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { QueryShell } from '@/components/ui/query-shell';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { ActivitySplitsBarChart } from '@/features/dashboard/components/activity-splits-bar-chart';
+import { ZoneBar } from '@/features/dashboard/components/zone-bar';
 import { useActivityDetailQuery } from '@/features/dashboard/hooks/use-activity-detail-query';
 import type { ActivityDetailResponse, ActivityDetailZoneRow } from '@/features/dashboard/types/activity-detail';
-import { zoneHexFromLabel, zoneTrackClassNames, zoneTrackFallbackClassName } from '@/features/dashboard/utils/intensity-palette';
+import { formatDurationHMS } from '@/features/dashboard/utils/format-duration';
 import { updateCustomActivityWorkout } from '@/features/custom-activities/services/custom-activities-api';
 import { updatePlannedWorkout } from '@/features/plan-activities/services/plan-activities-api';
 import { queryClient } from '@/lib/query-client';
@@ -117,14 +117,6 @@ function formatLocalActivityDateTime(
   return `${datePart} @${timePart.toLowerCase()}`;
 }
 
-function fmtDurationSeconds(seconds: number): string {
-  const total = Math.max(0, Math.round(Number(seconds) || 0));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  return `${m}m ${s}s`;
-}
 
 function paceLabelFromSpeed(speed: number): string {
   const numeric = Number(speed) || 0;
@@ -184,7 +176,7 @@ function normalizedLapRows(detail: ActivityDetailResponse | undefined): DrawerLa
       return {
         lap: Number(lap?.lapIndex) || index + 1,
         description: '-',
-        duration_label: fmtDurationSeconds(duration),
+        duration_label: formatDurationHMS(duration),
         duration_seconds: duration,
         avg_hr: avgHr,
         if_pct: 0,
@@ -195,16 +187,9 @@ function normalizedLapRows(detail: ActivityDetailResponse | undefined): DrawerLa
         display_mode: runningLike ? ('running' as const) : ('eqv' as const),
       };
     })
-    .filter((lap) => lap.duration_label !== fmtDurationSeconds(0) || lap.distance_km > 0);
+    .filter((lap) => lap.duration_label !== formatDurationHMS(0) || lap.distance_km > 0);
 }
 
-function fmtZoneSeconds(seconds: number): string {
-  const total = Math.max(0, Math.round(Number(seconds) || 0));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.round((total % 3600) / 60);
-  if (hours > 0) return `${hours}h${String(minutes).padStart(2, '0')}'`;
-  return `${minutes}'`;
-}
 
 function zoneFromIfPct(ifPct: number): string {
   const value = Number(ifPct) || 0;
@@ -356,23 +341,14 @@ export function ActivitySplitsDrawer({
           </Button>
         </div>
 
-        {detailQuery.isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-56 w-full" />
-          </div>
-        ) : null}
-
-        {detailQuery.isError ? (
-          <Alert className="border-red-500/40 text-red-300">
-            <AlertTitle>Unable to load activity details</AlertTitle>
-            <AlertDescription>
-              {detailQuery.error instanceof Error ? detailQuery.error.message : 'Unexpected error.'}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        {!detailQuery.isLoading && !detailQuery.isError && detailQuery.data ? (
+        <QueryShell
+          isLoading={detailQuery.isLoading}
+          isError={detailQuery.isError}
+          error={detailQuery.error}
+          errorTitle="Unable to load activity details"
+          skeleton="compact"
+        >
+          {detailQuery.data ? (
           <div className="space-y-4">
             <div className="grid grid-cols-[minmax(0,1fr)_190px] gap-2 max-[560px]:grid-cols-1">
               <div className="grid grid-cols-2 gap-2 text-sm">
@@ -400,29 +376,13 @@ export function ActivitySplitsDrawer({
                 </div>
                 <div className="space-y-1.5">
                   {zoneSummary.map((zone) => (
-                    <div
+                    <ZoneBar
                       key={zone.zone}
+                      zone={zone.zone}
+                      seconds={zone.seconds}
+                      pct={zone.pct}
                       className="grid grid-cols-[26px_minmax(0,1fr)_34px_24px] items-center gap-1 text-[10.5px] leading-4 text-slate-300/72"
-                    >
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-200/92">
-                        <span
-                          className="h-2 w-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: zoneHexFromLabel(zone.zone) }}
-                        />
-                        {zone.zone}
-                      </span>
-                      <div className={`h-1.5 w-full overflow-hidden rounded-full border ${zoneTrackClassNames[zone.zone] ?? zoneTrackFallbackClassName}`}>
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            backgroundColor: zoneHexFromLabel(zone.zone),
-                            width: `${zone.pct > 0 ? Math.max(3, Math.min(100, zone.pct)) : 0}%`,
-                          }}
-                        />
-                      </div>
-                      <span className="text-right font-medium tabular-nums text-slate-200/92">{fmtZoneSeconds(zone.seconds)}</span>
-                      <span className="text-right tabular-nums">{Math.round(zone.pct)}%</span>
-                    </div>
+                    />
                   ))}
                 </div>
               </div>
@@ -505,7 +465,7 @@ export function ActivitySplitsDrawer({
                         <tr key={`${lap.lap ?? index}-${index}`} className="border-t border-white/10 text-foreground/94">
                           <td className="px-3 py-2">{lap.lap ?? index + 1}</td>
                           <td className="px-3 py-2">{lap.description || '-'}</td>
-                          <td className="px-3 py-2">{lap.duration_label || fmtDurationSeconds(0)}</td>
+                          <td className="px-3 py-2">{lap.duration_label || formatDurationHMS(0)}</td>
                           <td className="px-3 py-2">{Number(useEqv ? lap.distance_eqv_km : lap.distance_km).toFixed(2)} km</td>
                           <td className="px-3 py-2">{useEqv ? lap.pace_eqv_label : lap.pace_label}</td>
                           <td className="px-3 py-2">{Math.round(Number(lap.avg_hr) || 0)}</td>
@@ -518,7 +478,8 @@ export function ActivitySplitsDrawer({
               </div>
             )}
           </div>
-        ) : null}
+          ) : null}
+        </QueryShell>
       </div>
     </div>
   );

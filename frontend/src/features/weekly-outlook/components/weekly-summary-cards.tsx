@@ -1,8 +1,4 @@
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  SecondaryStatCard,
-  secondaryPageSurfaceClassName,
-} from '@/components/ui/secondary-page';
+import { SecondaryPageSectionCard, SecondaryStatCard } from '@/components/ui/secondary-page';
 import { type WeeklyMetric, type WeeklyOutlookViewModel } from '@/features/weekly-outlook/types/weekly-outlook';
 import { formatMetricValue } from '@/features/weekly-outlook/utils/formatters';
 
@@ -49,24 +45,22 @@ export function WeeklySummaryCards({ data, selectedMetric }: WeeklySummaryCardsP
   ];
 
   return (
-    <Card className={secondaryPageSurfaceClassName}>
-      <CardContent className="p-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {summaryItems.map((item) => (
-            <SecondaryStatCard
-              key={item.title}
-              label={item.title}
-              meta={item.meta}
-              value={
-                <>
-                  {item.value}
-                  {item.valueSuffix ? <span className="ml-2 text-sm font-medium text-slate-300/72">{item.valueSuffix}</span> : null}
-                </>
-              }
-            />
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+    <SecondaryPageSectionCard contentClassName="p-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {summaryItems.map((item) => (
+          <SecondaryStatCard
+            key={item.title}
+            label={item.title}
+            meta={item.meta}
+            value={
+              <>
+                {item.value}
+                {item.valueSuffix ? <span className="ml-2 text-sm font-medium text-slate-300/72">{item.valueSuffix}</span> : null}
+              </>
+            }
+          />
+        ))}
+      </div>
+    </SecondaryPageSectionCard>
   );
 }

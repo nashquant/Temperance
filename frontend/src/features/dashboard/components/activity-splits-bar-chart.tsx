@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Gauge, Moon, Sparkles, Target, Waves } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
+import { formatDurationMS } from '@/features/dashboard/utils/format-duration';
 import { intensityHexFromKey, intensityHexFromThreshold } from '@/features/dashboard/utils/intensity-palette';
 
 type ActivitySplitsBarChartRow = {
@@ -96,13 +97,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function formatDuration(seconds: number): string {
-  const total = Math.max(0, Math.round(Number(seconds) || 0));
-  const minutes = Math.floor(total / 60);
-  const secs = total % 60;
-  if (secs === 0) return `${minutes}'`;
-  return `${minutes}'${String(secs).padStart(2, '0')}"`;
-}
 
 function formatElapsedTick(seconds: number): string {
   const roundedMinutes = Math.max(0, Math.round((Number(seconds) || 0) / 60));
@@ -205,7 +199,7 @@ function ActivitySplitsBarTooltip({ tooltip }: { tooltip: TooltipState }): JSX.E
       <div className="space-y-1 text-[9px]">
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-300/80">Duration</span>
-          <span className="font-semibold text-foreground">{formatDuration(datum.duration_s)}</span>
+          <span className="font-semibold text-foreground">{formatDurationMS(datum.duration_s)}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-300/80">Dist</span>
