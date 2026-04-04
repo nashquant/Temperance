@@ -759,11 +759,6 @@ export function DashboardPage(): JSX.Element {
   );
 
   useEffect(() => {
-    setPageWidthClassName('max-w-[1560px]');
-    return () => setPageWidthClassName(null);
-  }, [setPageWidthClassName]);
-
-  useEffect(() => {
     setHeaderActions(dashboardHeaderActions);
     return () => setHeaderActions(null);
   }, [dashboardHeaderActions, setHeaderActions]);
