@@ -164,9 +164,8 @@ export function DashboardPage(): JSX.Element {
   const lastAnchoredWeekRef = useRef<string>('');
   const undoTimerRef = useRef<number | null>(null);
   const undoDismissTimerRef = useRef<number | null>(null);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const isLoadingMoreRef = useRef(false);
-  const isSentinelVisible = useIntersectionObserver(sentinelRef, { rootMargin: '200px' });
+  const [sentinelRef, isSentinelVisible] = useIntersectionObserver({ rootMargin: '200px' });
   const undoStateRef = useRef<{
     id: number;
     lane: 'planned' | 'actual';
