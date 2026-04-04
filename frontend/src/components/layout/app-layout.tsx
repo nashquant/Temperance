@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { BarChart3, CalendarDays, ChevronLeft, ChevronRight, CircleHelp, Database, HeartPulse, LogOut, Menu, Settings, X } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -37,6 +37,7 @@ const DEFAULT_PAGE_WIDTH_CLASS_NAME = 'max-w-[1560px]';
 export interface AppLayoutOutletContext {
   setHeaderActions: (actions: ReactNode | null) => void;
   setPageWidthClassName: (className: string | null) => void;
+  mainScrollContainer: HTMLDivElement | null;
 }
 
 export function useAppLayoutContext(): AppLayoutOutletContext {
@@ -186,6 +187,7 @@ export function AppLayout(): JSX.Element {
   const [desktopNavExpanded, setDesktopNavExpanded] = useState(false);
   const [headerActions, setHeaderActions] = useState<ReactNode | null>(null);
   const [pageWidthClassName, setPageWidthClassName] = useState(DEFAULT_PAGE_WIDTH_CLASS_NAME);
+  const mainScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const headerMeta = getHeaderMeta(location.pathname);
 
   useEffect(() => {
@@ -303,6 +305,7 @@ export function AppLayout(): JSX.Element {
         ) : null}
 
         <div
+          ref={mainScrollContainerRef}
           className={cn(
             'flex h-[100dvh] min-w-0 flex-col overflow-y-auto transition-[padding] duration-200',
             desktopNavExpanded ? 'lg:pl-[236px]' : 'lg:pl-[72px]',
@@ -347,6 +350,7 @@ export function AppLayout(): JSX.Element {
                   setHeaderActions,
                   setPageWidthClassName: (className: string | null) =>
                     setPageWidthClassName(className || DEFAULT_PAGE_WIDTH_CLASS_NAME),
+                  mainScrollContainer: mainScrollContainerRef.current,
                 }}
               />
             </div>

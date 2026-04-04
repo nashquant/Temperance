@@ -158,7 +158,7 @@ export function DashboardPage(): JSX.Element {
     finalize: (() => Promise<void>) | null;
   } | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
-  const { setHeaderActions, setPageWidthClassName } = useAppLayoutContext();
+  const { setHeaderActions, mainScrollContainer } = useAppLayoutContext();
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -700,23 +700,34 @@ export function DashboardPage(): JSX.Element {
     if (!node) return;
     if (!query.data?.has_more_weeks) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting) return;
-        if (query.isFetching) return;
-        const nextWeeks = Math.min(visibleWeeks + dashboardPageSize, dashboardMaxWeeks);
-        if (nextWeeks <= visibleWeeks) return;
-        startTransition(() => {
-          setVisibleWeeks(nextWeeks);
-        });
-      },
-      { rootMargin: '900px 0px' },
-    );
+    const maybeLoadMore = () => {
+      const scrollContainer = mainScrollContainer;
+      if (!scrollContainer) return;
+      const remaining = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
+      const withinThreshold = remaining <= 900;
+      if (!withinThreshold) return;
+      if (query.isFetching) return;
+      const nextWeeks = Math.min(visibleWeeks + dashboardPageSize, dashboardMaxWeeks);
+      if (nextWeeks <= visibleWeeks) return;
+      startTransition(() => {
+        setVisibleWeeks(nextWeeks);
+      });
+    };
 
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [dashboardMaxWeeks, dashboardPageSize, query.data?.has_more_weeks, query.isFetching, visibleWeeks]);
+    maybeLoadMore();
+
+    const handleScroll = () => {
+      maybeLoadMore();
+    };
+
+    mainScrollContainer?.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll);
+
+    return () => {
+      mainScrollContainer?.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [dashboardMaxWeeks, dashboardPageSize, mainScrollContainer, query.data?.has_more_weeks, query.isFetching, visibleWeeks]);
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
   const reloadButtonBusy = dashboardReloadMutation.isPending || extractRunning || dashboardReloadQueued;
   const dashboardHeaderActions = useMemo(
