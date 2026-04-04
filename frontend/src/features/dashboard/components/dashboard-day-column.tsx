@@ -279,6 +279,18 @@ function formatVdotLabel(vdot: number): string {
 
 type MetricBadgeTone = 'duration' | 'distance' | 'pace' | 'hr' | 'load' | 'if' | 'vdot';
 
+const dashboardScaleClassNames = {
+  metricBadgeIcon: 'h-2.5 w-2.5 shrink-0 lg:h-3 lg:w-3',
+  summaryMetaIcon: 'h-3 w-3 shrink-0 lg:h-3.5 lg:w-3.5',
+  activityMetricIcon: 'h-2.5 w-2.5 shrink-0 lg:h-3 lg:w-3',
+  footerMetricIcon: 'h-2.5 w-2.5 shrink-0 lg:h-3 lg:w-3',
+  actionButtonShell: 'h-3.5 w-3.5 shrink-0 lg:h-4 lg:w-4',
+  actionButtonGlyph: 'h-1.5 w-1.5 lg:h-2 lg:w-2',
+  plusButtonShell: 'h-6 w-6 shrink-0 lg:h-7 lg:w-7',
+  plusButtonGlyph: 'h-3.5 w-3.5 lg:h-4 lg:w-4',
+  undoButtonGlyph: 'h-3 w-3 lg:h-3.5 lg:w-3.5',
+} as const;
+
 interface MetricBadgeItem {
   tone: MetricBadgeTone;
   label: string;
@@ -287,19 +299,19 @@ interface MetricBadgeItem {
 function metricBadgeIcon(tone: MetricBadgeTone): JSX.Element {
   switch (tone) {
     case 'duration':
-      return <Clock3 className="h-2.5 w-2.5 shrink-0 text-cyan-300/80" />;
+      return <Clock3 className={cn(dashboardScaleClassNames.metricBadgeIcon, 'text-cyan-300/80')} />;
     case 'distance':
-      return <Route className="h-2.5 w-2.5 shrink-0 text-emerald-300/80" />;
+      return <Route className={cn(dashboardScaleClassNames.metricBadgeIcon, 'text-emerald-300/80')} />;
     case 'pace':
-      return <Gauge className="h-2.5 w-2.5 shrink-0 text-violet-300/80" />;
+      return <Gauge className={cn(dashboardScaleClassNames.metricBadgeIcon, 'text-violet-300/80')} />;
     case 'hr':
-      return <Heart className="h-2.5 w-2.5 shrink-0 text-rose-300/80" />;
+      return <Heart className={cn(dashboardScaleClassNames.metricBadgeIcon, 'text-rose-300/80')} />;
     case 'load':
-      return <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />;
+      return <Activity className={cn(dashboardScaleClassNames.metricBadgeIcon, 'text-blue-300/80')} />;
     case 'if':
-      return <Zap className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />;
+      return <Zap className={cn(dashboardScaleClassNames.metricBadgeIcon, 'text-amber-300/80')} />;
     case 'vdot':
-      return <Gauge className="h-2.5 w-2.5 shrink-0 text-sky-300/80" />;
+      return <Gauge className={cn(dashboardScaleClassNames.metricBadgeIcon, 'text-sky-300/80')} />;
   }
 }
 
@@ -353,6 +365,11 @@ function MetricRow({
     </p>
   );
 }
+
+const tabletDesktopCardShellClassName = 'h-[102px] p-2 text-[12px] lg:h-[112px] lg:p-2.5 lg:text-[12.5px]';
+const tabletDesktopActionButtonClassName =
+  `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`;
+const tabletDesktopSecondaryActionButtonClassName = `${tabletDesktopActionButtonClassName} top-[22px] lg:top-[24px]`;
 
 export function DashboardDayColumn({
   day,
@@ -408,23 +425,23 @@ export function DashboardDayColumn({
       ? mobileFullWidth
         ? 'w-full min-w-0'
         : 'w-[240px] shrink-0 min-h-[340px]'
-      : 'md:h-[410px] lg:h-[430px]',
+      : 'md:h-[418px] lg:h-[442px]',
     day.is_today ? 'border-primary/70' : undefined,
   );
 
   const contentClassName = cn(
     'flex h-full flex-col',
-    compactMobile ? 'gap-1.5 p-2' : 'gap-2 p-2.5',
+    compactMobile ? 'gap-1.5 p-2' : 'gap-2.5 p-2.5 lg:gap-3 lg:p-3',
   );
 
   return (
     <Card className={cardClassName}>
       <CardContent className={contentClassName}>
-        <div className="space-y-1">
-          <div className="flex min-h-[24px] items-center">
+        <div className="space-y-1.5 lg:space-y-2">
+          <div className="flex min-h-[40px] items-start lg:min-h-[28px] lg:items-center">
             <p
               className={cn(
-                compactMobile ? 'text-[12px] font-semibold leading-4' : 'text-[12px] font-semibold leading-4.5 lg:text-[13px] lg:leading-5',
+                compactMobile ? 'text-[12px] font-semibold leading-4' : 'max-w-[calc(100%-1.75rem)] text-[12px] font-semibold leading-4.5 lg:max-w-none lg:text-[14px] lg:leading-5',
                 day.is_today ? 'text-primary' : 'text-foreground',
               )}
             >
@@ -433,12 +450,12 @@ export function DashboardDayColumn({
             <Button
               variant="ghost"
               size="icon"
-              className="ml-auto h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
+              className={cn('ml-auto rounded-full text-muted-foreground hover:text-foreground', dashboardScaleClassNames.plusButtonShell)}
               onClick={() => onAddPlannedActivity?.(day.day_utc)}
               disabled={addingPlannedActivity}
               aria-label={`Add activity for ${day.day_label}`}
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className={dashboardScaleClassNames.plusButtonGlyph} />
             </Button>
           </div>
           {compactMobile ? (
@@ -450,36 +467,36 @@ export function DashboardDayColumn({
             >
               {[...desktopPrimaryMetaItems, ...wellnessMetaItems].map((item) => (
                 <div key={item.key} className="inline-flex min-w-0 shrink items-center gap-1 whitespace-nowrap">
-                  {item.icon === 'distance' ? <Route className={cn('h-3 w-3', item.muted ? 'text-slate-500/65' : 'text-emerald-300/90')} /> : null}
-                  {item.icon === 'tss' ? <Activity className={cn('h-3 w-3', item.muted ? 'text-slate-500/65' : 'text-cyan-300/90')} /> : null}
-                  {item.icon === 'fitness' ? <Gauge className={cn('h-3 w-3', item.muted ? 'text-slate-500/65' : 'text-sky-300/90')} /> : null}
-                  {item.icon === 'fatigue' ? <HeartPulse className={cn('h-3 w-3', item.muted ? 'text-slate-500/65' : 'text-rose-300/90')} /> : null}
-                  {item.icon === 'resting_hr' ? <Heart className={cn('h-3 w-3', item.muted ? 'text-slate-500/65' : 'text-rose-300/90')} /> : null}
-                  {item.icon === 'hrv_status' ? <HeartPulse className={cn('h-3 w-3', item.muted ? 'text-slate-500/65' : 'text-fuchsia-300/90')} /> : null}
-                  {item.icon === 'calories' ? <Flame className={cn('h-3 w-3', item.muted ? 'text-slate-500/65' : 'text-amber-300/90')} /> : null}
+                  {item.icon === 'distance' ? <Route className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/65' : 'text-emerald-300/90')} /> : null}
+                  {item.icon === 'tss' ? <Activity className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/65' : 'text-cyan-300/90')} /> : null}
+                  {item.icon === 'fitness' ? <Gauge className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/65' : 'text-sky-300/90')} /> : null}
+                  {item.icon === 'fatigue' ? <HeartPulse className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/65' : 'text-rose-300/90')} /> : null}
+                  {item.icon === 'resting_hr' ? <Heart className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/65' : 'text-rose-300/90')} /> : null}
+                  {item.icon === 'hrv_status' ? <HeartPulse className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/65' : 'text-fuchsia-300/90')} /> : null}
+                  {item.icon === 'calories' ? <Flame className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/65' : 'text-amber-300/90')} /> : null}
                   <span className={cn('font-medium tabular-nums', item.muted ? 'text-slate-500/72' : 'text-slate-200/92')}>{item.value}</span>
                 </div>
               ))}
             </div>
           ) : (
             <div className="flex items-start">
-              <div className="w-full space-y-0.5">
-                <div className="grid min-h-[16px] grid-cols-3 items-center gap-x-1.5 text-[11px] leading-none text-slate-300/84">
+              <div className="w-full space-y-1 lg:space-y-1.5">
+                <div className="grid min-h-[16px] grid-cols-3 items-center gap-x-1.5 text-[11px] leading-none text-slate-300/84 lg:min-h-[18px] lg:text-[12px]">
                   {desktopPrimaryMetaItems.map((item, index) => (
                     <div key={item.key} className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap">
-                      {item.icon === 'tss' ? <Activity className={cn('h-3 w-3', item.muted ? 'text-slate-500/65' : 'text-cyan-300/90')} /> : null}
-                      {item.icon === 'fitness' ? <Gauge className={cn('h-3 w-3', item.muted ? 'text-slate-500/65' : 'text-sky-300/90')} /> : null}
-                      {item.icon === 'fatigue' ? <HeartPulse className={cn('h-3 w-3', item.muted ? 'text-slate-500/65' : 'text-rose-300/90')} /> : null}
+                      {item.icon === 'tss' ? <Activity className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/65' : 'text-cyan-300/90')} /> : null}
+                      {item.icon === 'fitness' ? <Gauge className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/65' : 'text-sky-300/90')} /> : null}
+                      {item.icon === 'fatigue' ? <HeartPulse className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/65' : 'text-rose-300/90')} /> : null}
                       <span className={cn('font-medium tabular-nums', item.muted ? 'text-slate-500/72' : 'text-slate-100/92')}>{item.value}</span>
                     </div>
                   ))}
                 </div>
-                <div className="grid min-h-[15px] grid-cols-3 items-center gap-x-1.5 text-[10px] leading-none text-slate-300/72">
+                <div className="grid min-h-[15px] grid-cols-3 items-center gap-x-1.5 text-[10px] leading-none text-slate-300/72 lg:min-h-[17px] lg:text-[11px]">
                   {wellnessMetaItems.map((item) => (
                     <div key={item.key} className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap">
-                      {item.icon === 'resting_hr' ? <Heart className={cn('h-3 w-3', item.muted ? 'text-slate-500/60' : 'text-rose-300/85')} /> : null}
-                      {item.icon === 'hrv_status' ? <HeartPulse className={cn('h-3 w-3', item.muted ? 'text-slate-500/60' : 'text-fuchsia-300/85')} /> : null}
-                      {item.icon === 'calories' ? <Flame className={cn('h-3 w-3', item.muted ? 'text-slate-500/60' : 'text-amber-300/85')} /> : null}
+                      {item.icon === 'resting_hr' ? <Heart className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/60' : 'text-rose-300/85')} /> : null}
+                      {item.icon === 'hrv_status' ? <HeartPulse className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/60' : 'text-fuchsia-300/85')} /> : null}
+                      {item.icon === 'calories' ? <Flame className={cn(dashboardScaleClassNames.summaryMetaIcon, item.muted ? 'text-slate-500/60' : 'text-amber-300/85')} /> : null}
                       <span className={cn('font-medium tabular-nums', item.muted ? 'text-slate-500/68' : 'text-slate-300/92')}>{item.value}</span>
                     </div>
                   ))}
@@ -546,7 +563,7 @@ export function DashboardDayColumn({
                     className="h-7 rounded-lg border-sky-300/25 bg-sky-300/8 px-2.5 text-[11px] font-medium text-sky-100 hover:bg-sky-300/14"
                     onClick={onUndoActivity}
                   >
-                    <RotateCcw className="mr-1.5 h-3 w-3" />
+                    <RotateCcw className={cn('mr-1.5', dashboardScaleClassNames.undoButtonGlyph)} />
                     Undo
                   </Button>
                 </div>
@@ -597,35 +614,35 @@ export function DashboardDayColumn({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1 top-1 h-4.5 w-4.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        className={`absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
                         onClick={(event) => {
                           event.stopPropagation();
                           onDeleteCustomActivity?.(activity, item.index);
                         }}
-                        disabled={deletingCustomActivity}
-                        aria-label="Delete custom activity"
-                      >
-                        <X className="h-2 w-2" />
-                      </Button>
+                      disabled={deletingCustomActivity}
+                      aria-label="Delete custom activity"
+                    >
+                      <X className={dashboardScaleClassNames.actionButtonGlyph} />
+                    </Button>
                     ) : isInvalid ? (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1 top-1 h-4.5 w-4.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        className={`absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
                         onClick={(event) => {
                           event.stopPropagation();
                           onToggleActivityInvalid?.(activity, false);
                         }}
-                        disabled={togglingActivityInvalid}
-                        aria-label="Restore activity"
-                      >
-                        <RotateCcw className="h-2 w-2" />
-                      </Button>
+                      disabled={togglingActivityInvalid}
+                      aria-label="Restore activity"
+                    >
+                      <RotateCcw className={dashboardScaleClassNames.actionButtonGlyph} />
+                    </Button>
                     ) : (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1 top-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                        className={`absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
                         onClick={(event) => {
                           event.stopPropagation();
                           onToggleActivityInvalid?.(activity, true);
@@ -633,7 +650,7 @@ export function DashboardDayColumn({
                         disabled={togglingActivityInvalid}
                         aria-label="Mark activity invalid"
                       >
-                        <X className="h-1.5 w-1.5" />
+                        <X className={dashboardScaleClassNames.actionButtonGlyph} />
                       </Button>
                     )}
                     <div className="min-w-0 pr-6">
@@ -667,8 +684,8 @@ export function DashboardDayColumn({
                 <div
                   key={activity.activity_id}
                     className={cn(
-                      'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
-                      compactMobile ? 'h-[82px] p-1.5 text-[11px]' : 'h-[94px] p-1.5 text-[11px] lg:h-[102px] lg:p-2 lg:text-[12px]',
+                  'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
+                      compactMobile ? 'h-[82px] p-1.5 text-[11px]' : tabletDesktopCardShellClassName,
                       activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
                       isInvalid ? invalidActivityCardClasses : undefined,
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
@@ -688,7 +705,7 @@ export function DashboardDayColumn({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute right-1 top-1 h-3 w-3 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white lg:h-3.5 lg:w-3.5"
+                      className={tabletDesktopActionButtonClassName}
                       onClick={(event) => {
                         event.stopPropagation();
                         onDeleteCustomActivity?.(activity, item.index);
@@ -696,13 +713,13 @@ export function DashboardDayColumn({
                       disabled={deletingCustomActivity}
                       aria-label="Delete custom activity"
                     >
-                      <X className="h-1.5 w-1.5" />
+                      <X className={dashboardScaleClassNames.actionButtonGlyph} />
                     </Button>
                   ) : isInvalid ? (
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute right-1 top-1 h-3 w-3 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white lg:h-3.5 lg:w-3.5"
+                      className={tabletDesktopActionButtonClassName}
                       onClick={(event) => {
                         event.stopPropagation();
                         onToggleActivityInvalid?.(activity, false);
@@ -710,13 +727,13 @@ export function DashboardDayColumn({
                       disabled={togglingActivityInvalid}
                       aria-label="Restore activity"
                     >
-                      <RotateCcw className="h-1.5 w-1.5" />
+                      <RotateCcw className={dashboardScaleClassNames.actionButtonGlyph} />
                     </Button>
                   ) : (
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute right-1 top-1 h-3 w-3 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white lg:h-3.5 lg:w-3.5"
+                      className={tabletDesktopActionButtonClassName}
                       onClick={(event) => {
                         event.stopPropagation();
                         onToggleActivityInvalid?.(activity, true);
@@ -724,11 +741,11 @@ export function DashboardDayColumn({
                       disabled={togglingActivityInvalid}
                       aria-label="Mark activity invalid"
                     >
-                      <X className="h-1.5 w-1.5" />
+                      <X className={dashboardScaleClassNames.actionButtonGlyph} />
                     </Button>
                   )}
-                  <div className="flex min-w-0 items-center pr-4 lg:pr-0">
-                    <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14px] lg:leading-5', isInvalid ? 'text-rose-100/92' : undefined)}>
+                  <div className="flex min-w-0 items-center pr-5 lg:pr-0">
+                    <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14.5px] lg:leading-5', isInvalid ? 'text-rose-100/92' : undefined)}>
                       {formatActivityTitle(activity.sport)}
                       {activity.is_custom ? '(C)' : ''}
                       {!activity.is_custom && timeLabel ? ` ${timeLabel}` : ''}
@@ -737,21 +754,21 @@ export function DashboardDayColumn({
                   <div className={compactMobile ? 'mt-1 space-y-0.5' : 'mt-1.5 space-y-0.5'}>
                     <MetricRow
                       compactMobile={compactMobile}
-                      icon={<Clock3 className="h-2.5 w-2.5 shrink-0 text-cyan-300/80" />}
+                      icon={<Clock3 className={cn(dashboardScaleClassNames.activityMetricIcon, 'text-cyan-300/80')} />}
                       text={compactLine([durationLabel, activity.distance_label])}
                     />
                     <MetricRow
                       compactMobile={compactMobile}
                       icon={
                         runningLike
-                          ? <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />
-                          : <Heart className="h-2.5 w-2.5 shrink-0 text-rose-300/80" />
+                          ? <Gauge className={cn(dashboardScaleClassNames.activityMetricIcon, 'text-amber-300/80')} />
+                          : <Heart className={cn(dashboardScaleClassNames.activityMetricIcon, 'text-rose-300/80')} />
                       }
                       text={compactLine([preferredEffortLabel(runningLike, activity.pace_label, activity.hr_label), formatIfPctLabel(activity.if_pct), activity.vdot != null ? formatVdotLabel(activity.vdot) : null])}
                     />
                   </div>
-                  <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold text-foreground/95', compactMobile ? 'text-[10.5px] leading-4' : 'text-[11.5px] leading-[1.25]')}>
-                    <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />
+                  <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold text-foreground/95', compactMobile ? 'text-[10.5px] leading-4' : 'text-[11.5px] leading-[1.25] lg:text-[12.5px] lg:leading-[1.3]')}>
+                    <Activity className={cn(dashboardScaleClassNames.footerMetricIcon, 'text-blue-300/80')} />
                     <span className="truncate">
                       {formatTssLabel(activity.tss, activity.rtss, !activity.is_custom && runningLike, runningLike)}
                     </span>
@@ -780,7 +797,7 @@ export function DashboardDayColumn({
                     className="h-7 rounded-lg border-sky-300/25 bg-sky-300/8 px-2.5 text-[11px] font-medium text-sky-100 hover:bg-sky-300/14"
                     onClick={onUndoActivity}
                   >
-                    <RotateCcw className="mr-1.5 h-3 w-3" />
+                    <RotateCcw className={cn('mr-1.5', dashboardScaleClassNames.undoButtonGlyph)} />
                     Undo
                   </Button>
                 </div>
@@ -824,7 +841,7 @@ export function DashboardDayColumn({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-4.5 w-4.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                      className={`${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
                       onClick={(event) => {
                         event.stopPropagation();
                         onMarkPlannedDone?.(item.activity, item.index);
@@ -832,12 +849,12 @@ export function DashboardDayColumn({
                       disabled={markingPlannedDone}
                       aria-label="Mark planned activity as done"
                     >
-                      <Check className="h-2 w-2" />
+                      <Check className={dashboardScaleClassNames.actionButtonGlyph} />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-4.5 w-4.5 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white"
+                      className={`${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
                       onClick={(event) => {
                         event.stopPropagation();
                         onDeletePlannedActivity?.(item.activity, item.index);
@@ -845,7 +862,7 @@ export function DashboardDayColumn({
                       disabled={deletingPlannedActivity}
                       aria-label="Delete planned activity"
                     >
-                      <X className="h-2 w-2" />
+                      <X className={dashboardScaleClassNames.actionButtonGlyph} />
                     </Button>
                   </div>
                   <div className="min-w-0 pr-7">
@@ -876,7 +893,7 @@ export function DashboardDayColumn({
                       key={`${item.activity.day_utc}-${item.activity.line_no}`}
                       className={cn(
                       'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-dashed transition-colors hover:bg-white/5',
-                      compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : 'h-[94px] px-2 pb-2 pt-1.5 text-[11px] lg:h-[102px] lg:px-2.5 lg:pb-2.5 lg:pt-2 lg:text-[12px]',
+                      compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : tabletDesktopCardShellClassName,
                       )}
                       style={activityCardToneStyle(item.activity.intensity, true)}
                       onClick={() => onSelectActivity?.(item.activity.activity_id)}
@@ -892,52 +909,52 @@ export function DashboardDayColumn({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1 top-1 h-3 w-3 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white lg:h-3.5 lg:w-3.5"
+                        className={tabletDesktopActionButtonClassName}
                         onClick={(event) => {
                           event.stopPropagation();
                           onMarkPlannedDone?.(item.activity, item.index);
                         }}
-                        disabled={markingPlannedDone}
-                        aria-label="Mark planned activity as done"
-                      >
-                        <Check className="h-1.5 w-1.5" />
+                      disabled={markingPlannedDone}
+                      aria-label="Mark planned activity as done"
+                    >
+                        <Check className={dashboardScaleClassNames.actionButtonGlyph} />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1 top-[18px] h-3 w-3 shrink-0 rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white lg:top-[22px] lg:h-3.5 lg:w-3.5"
+                        className={tabletDesktopSecondaryActionButtonClassName}
                         onClick={(event) => {
                           event.stopPropagation();
                           onDeletePlannedActivity?.(item.activity, item.index);
                         }}
-                        disabled={deletingPlannedActivity}
-                        aria-label="Delete planned activity"
-                      >
-                        <X className="h-1.5 w-1.5" />
+                      disabled={deletingPlannedActivity}
+                      aria-label="Delete planned activity"
+                    >
+                        <X className={dashboardScaleClassNames.actionButtonGlyph} />
                       </Button>
-                      <div className="flex min-w-0 items-center pr-4 lg:pr-5">
-                        <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14px] lg:leading-5')}>
+                      <div className="flex min-w-0 items-center pr-5 lg:pr-6">
+                        <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14.5px] lg:leading-5')}>
                           {formatActivityTitle(item.activity.activity)} <span className="text-muted-foreground">(P)</span>
                         </p>
                       </div>
                       <div className={compactMobile ? 'mt-1 space-y-0.5' : 'mt-1.5 space-y-0.5'}>
                         <MetricRow
                           compactMobile={compactMobile}
-                          icon={<Clock3 className="h-2.5 w-2.5 shrink-0 text-cyan-300/80" />}
+                          icon={<Clock3 className={cn(dashboardScaleClassNames.activityMetricIcon, 'text-cyan-300/80')} />}
                           text={compactLine([durationLabel, formatEquivalentDistance(item.activity.distance_eqv_km, runningLike)])}
                         />
                         <MetricRow
                           compactMobile={compactMobile}
                           icon={
                             runningLike
-                              ? <Gauge className="h-2.5 w-2.5 shrink-0 text-amber-300/80" />
-                              : <Heart className="h-2.5 w-2.5 shrink-0 text-rose-300/80" />
+                              ? <Gauge className={cn(dashboardScaleClassNames.activityMetricIcon, 'text-amber-300/80')} />
+                              : <Heart className={cn(dashboardScaleClassNames.activityMetricIcon, 'text-rose-300/80')} />
                           }
                           text={compactLine([preferredEffortLabel(runningLike, item.activity.pace_label, item.activity.hr_label), `${Math.round(item.activity.if_pct)}%`])}
                         />
                       </div>
-                      <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10.5px] leading-4' : 'text-[11.5px] leading-[1.25]')}>
-                        <Activity className="h-2.5 w-2.5 shrink-0 text-blue-300/80" />
+                      <p className={cn('mt-auto inline-flex min-w-0 items-center gap-1 truncate font-semibold tracking-[0.02em] text-foreground/95', compactMobile ? 'text-[10.5px] leading-4' : 'text-[11.5px] leading-[1.25] lg:text-[12.5px] lg:leading-[1.3]')}>
+                        <Activity className={cn(dashboardScaleClassNames.footerMetricIcon, 'text-blue-300/80')} />
                         <span className="truncate">{primaryLoadLabel(item.activity.tss, item.activity.rtss, runningLike)}</span>
                       </p>
                     </div>
