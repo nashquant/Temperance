@@ -103,7 +103,7 @@ export function WellnessPage(): JSX.Element {
           {chartData.length === 0 ? (
             <SurfaceCard contentClassName="p-8 text-sm text-slate-300/72">No wellness data available for this selection.</SurfaceCard>
           ) : (
-            <div className="grid gap-4">
+            <div className="grid gap-4 xl:grid-cols-2">
               <ProgressionLineChartCard
                 title="Recovery Scores"
                 data={deferredChartData}

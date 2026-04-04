@@ -262,6 +262,38 @@ class FitnessFormArgs(BaseModel):
     sport: Optional[str] = None
 
 
+# --- Phase 4: Load analysis and estimation models ---
+
+class WorkoutTSSEntry(BaseModel):
+    workout_text: str
+    day_utc: Optional[str] = None
+
+
+class EstimateWorkoutTSSArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    entries: list[WorkoutTSSEntry]
+
+
+class SimulatePlanWeekArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    entries: list[PlannedEntry]
+
+
+class CritiqueDayPlanArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    start_day_utc: Optional[str] = None
+    end_day_utc: Optional[str] = None
+    extra_entries: Optional[list[PlannedEntry]] = None
+
+
+class EstimateXtrainTSSArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    activity_kind: str
+    duration_min: float
+    avg_hr_bpm: float
+    target_day_utc: Optional[str] = None
+
+
 def _backend_main_module() -> Any:
     global _BACKEND_MAIN_MODULE
     if _BACKEND_MAIN_MODULE is None:
@@ -1120,6 +1152,21 @@ def _lt_pace_for_day(db_path: Path, day_utc: str) -> float:
     if backend_main.pd.isna(day_ts):
         raise ValueError(f"Invalid target_day_utc: {day_utc}")
     return float(backend_main._curve_value_at(pace_curve, pace_default, day_ts))
+
+
+def _lthr_for_day(db_path: Path, day_utc: str) -> float:
+    backend_main = _backend_main_module()
+    lthr_curve = backend_main._load_curve_points(
+        db_path=db_path,
+        key=backend_main.SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=backend_main.DEFAULT_LTHR,
+    )
+    lthr_default = float(lthr_curve[-1][1]) if lthr_curve else backend_main.DEFAULT_LTHR
+    day_ts = backend_main.pd.to_datetime(day_utc, utc=True, errors="coerce")
+    if backend_main.pd.isna(day_ts):
+        raise ValueError(f"Invalid target_day_utc: {day_utc}")
+    return float(backend_main._curve_value_at(lthr_curve, lthr_default, day_ts))
 
 
 def _weekly_baseline_tss_for_day(db_path: Path, day_utc: str) -> float:
@@ -2137,6 +2184,497 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Phase 4: Load analysis and estimation tools
+# ---------------------------------------------------------------------------
+
+
+def _modality_from_workout_text(text: str) -> str:
+    """Infer primary modality from workout text prefix for stress classification."""
+    t = str(text or "").strip().lower()
+    if t.startswith("elliptical") or " elliptical" in t[:30]:
+        return "elliptical"
+    if t.startswith("cycl") or t.startswith("bike") or " cycling" in t[:30] or " bike" in t[:30]:
+        return "cycling"
+    if t.startswith("treadmill"):
+        return "treadmill"
+    if t.startswith("swim"):
+        return "swim"
+    return "running"
+
+
+def _build_metrics_df_for_entries(
+    entries: list[dict[str, Any]],
+    db_path: Path,
+) -> Any:
+    """Build a TSS metrics DataFrame for a list of {day_utc, workout_text} dicts."""
+    backend_main = _backend_main_module()
+    today_str = _utc_now().date().isoformat()
+    rows = [
+        {
+            "day_utc": str(e.get("day_utc") or today_str),
+            "workout_text": str(e.get("workout_text") or ""),
+            "parsed_json": None,
+        }
+        for e in entries
+    ]
+    planned_df = backend_main.pd.DataFrame(rows)
+    lthr_curve = backend_main._load_curve_points(
+        db_path=db_path,
+        key=backend_main.SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=backend_main.DEFAULT_LTHR,
+    )
+    pace_curve = backend_main._load_curve_points(
+        db_path=db_path,
+        key=backend_main.SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=backend_main.DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    specificity_profile = backend_main._load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    return backend_main._compute_planned_rows_metrics_df(
+        planned_rows=planned_df,
+        lthr_curve_points=lthr_curve,
+        lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else backend_main.DEFAULT_LTHR,
+        lt_pace_curve_points=pace_curve,
+        lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else backend_main.DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        specificity_profile=specificity_profile,
+    )
+
+
+def _day_summaries_from_entries(
+    entries: list[dict[str, str]],
+    metrics_df: Any,
+    weekly_baseline_tss: float = 350.0,
+) -> list[dict[str, Any]]:
+    """Aggregate entry-level metrics to day-level summaries with stress classification."""
+    day_map: dict[str, dict[str, Any]] = {}
+    for idx, e in enumerate(entries):
+        day_utc = str(e["day_utc"])
+        workout_text = str(e["workout_text"])
+        if idx < len(metrics_df):
+            row = metrics_df.iloc[idx]
+            tss = float(row.get("tss") or 0.0)
+            rtss = float(row.get("rtss") or 0.0)
+            dur_s = float(row.get("duration_s") or 0.0)
+            if_proxy = float(row.get("if_proxy") or 0.0)
+        else:
+            tss = rtss = dur_s = if_proxy = 0.0
+        if day_utc not in day_map:
+            day_map[day_utc] = {
+                "day_utc": day_utc,
+                "total_tss": 0.0,
+                "total_rtss": 0.0,
+                "total_duration_s": 0.0,
+                "max_if": 0.0,
+                "sum_if_dur": 0.0,
+                "activities": 0,
+                "first_workout_text": workout_text,
+            }
+        d = day_map[day_utc]
+        d["total_tss"] += tss
+        d["total_rtss"] += rtss
+        d["total_duration_s"] += dur_s
+        if dur_s > 0:
+            d["sum_if_dur"] += if_proxy * dur_s
+        d["max_if"] = max(d["max_if"], if_proxy)
+        d["activities"] += 1
+
+    summaries = []
+    for day_utc in sorted(day_map):
+        d = day_map[day_utc]
+        dur_s = d["total_duration_s"]
+        avg_if = d["sum_if_dur"] / dur_s if dur_s > 0 else 0.0
+        max_if_val = d["max_if"]
+        dur_min = dur_s / 60.0
+        modality = _modality_from_workout_text(d["first_workout_text"])
+        stress_class, _, _ = classify_session_stress(
+            estimated_tss=d["total_tss"],
+            avg_if=avg_if,
+            max_if=max_if_val,
+            total_minutes=dur_min,
+            modality=modality,
+            weekly_baseline_tss=weekly_baseline_tss,
+        )
+        is_long = is_long_run_candidate(
+            modality=modality,
+            total_minutes=dur_min,
+            avg_if=avg_if,
+            max_if=max_if_val,
+        )
+        summaries.append({
+            "day_utc": day_utc,
+            "total_tss": round(d["total_tss"], 1),
+            "total_rtss": round(d["total_rtss"], 1),
+            "duration_min": round(dur_min, 1),
+            "stress_class": stress_class.value,
+            "is_long_run": is_long,
+            "activities": d["activities"],
+        })
+    return summaries
+
+
+def _scan_density_warnings(
+    day_summaries: list[dict[str, Any]],
+    three_day_threshold: float,
+) -> list[dict[str, Any]]:
+    """Scan sorted day summaries for stress-class and TSS-cluster density warnings."""
+    warnings: list[dict[str, Any]] = []
+    days_sorted = sorted(day_summaries, key=lambda d: d["day_utc"])
+    n = len(days_sorted)
+    if n == 0:
+        return warnings
+
+    # --- Tier A: stress-class pattern checks ---
+    streak: int = 0
+    streak_days: list[str] = []
+    for i, day in enumerate(days_sorted):
+        sc = day.get("stress_class", "easy")
+        is_loading = sc in ("moderate", "hard")
+        is_long = day.get("is_long_run", False)
+
+        if is_loading:
+            streak += 1
+            streak_days.append(day["day_utc"])
+        else:
+            if streak >= 3:
+                tag = "consecutive_loading_streak_4" if streak >= 4 else "consecutive_loading_streak_3"
+                warnings.append({
+                    "tag": tag,
+                    "days": streak_days[:],
+                    "message": f"{streak} consecutive moderate/hard days with no rest or easy gap",
+                })
+            streak = 0
+            streak_days = []
+
+        if sc == "hard" and i > 0 and days_sorted[i - 1].get("stress_class") == "hard":
+            warnings.append({
+                "tag": "back_to_back_hard",
+                "days": [days_sorted[i - 1]["day_utc"], day["day_utc"]],
+                "message": "Two consecutive hard days with no recovery gap",
+            })
+
+        if is_long and i > 0 and days_sorted[i - 1].get("stress_class") == "hard":
+            warnings.append({
+                "tag": "pre_long_run_heavy",
+                "days": [days_sorted[i - 1]["day_utc"], day["day_utc"]],
+                "message": "Hard session the day before a long run — insufficient recovery going in",
+            })
+
+    # flush trailing streak
+    if streak >= 3:
+        tag = "consecutive_loading_streak_4" if streak >= 4 else "consecutive_loading_streak_3"
+        warnings.append({
+            "tag": tag,
+            "days": streak_days[:],
+            "message": f"{streak} consecutive moderate/hard days with no rest or easy gap",
+        })
+
+    # long run spacing
+    long_run_days = [d["day_utc"] for d in days_sorted if d.get("is_long_run")]
+    for i in range(1, len(long_run_days)):
+        gap = (date.fromisoformat(long_run_days[i]) - date.fromisoformat(long_run_days[i - 1])).days
+        if gap < 6:
+            warnings.append({
+                "tag": "long_run_spacing_tight",
+                "days": [long_run_days[i - 1], long_run_days[i]],
+                "gap_days": gap,
+                "message": f"Long runs only {gap} days apart (minimum 6 recommended)",
+            })
+
+    # --- Tier B: rolling 3-day TSS cluster density ---
+    window_tss_vals: list[float] = []
+    for i in range(max(0, n - 2)):
+        w = days_sorted[i:i + 3]
+        window_tss_vals.append(sum(d.get("total_tss", 0.0) for d in w))
+
+    for i, w_tss in enumerate(window_tss_vals):
+        if w_tss > three_day_threshold:
+            pct = round((w_tss / three_day_threshold - 1.0) * 100)
+            warnings.append({
+                "tag": "tss_cluster_spike",
+                "days": [d["day_utc"] for d in days_sorted[i:i + 3]],
+                "window_tss": round(w_tss, 1),
+                "threshold": round(three_day_threshold, 1),
+                "message": f"3-day TSS of {w_tss:.1f} is {pct}% above the {three_day_threshold:.1f} density threshold",
+            })
+
+    # runaway: contiguous runs of 2+ over-threshold windows
+    over_flags = [v > three_day_threshold for v in window_tss_vals] + [False]
+    run_start: int | None = None
+    for i, over in enumerate(over_flags):
+        if over and run_start is None:
+            run_start = i
+        elif not over and run_start is not None:
+            run_len = i - run_start
+            if run_len >= 2:
+                span_end = min(run_start + run_len + 2, n)
+                warnings.append({
+                    "tag": "tss_cluster_runaway",
+                    "days": [d["day_utc"] for d in days_sorted[run_start:span_end]],
+                    "message": (
+                        f"Sustained overload: {run_len + 1} consecutive 3-day windows "
+                        f"all exceed the {three_day_threshold:.1f} density threshold"
+                    ),
+                })
+            run_start = None
+
+    return warnings
+
+
+def tool_estimate_workout_tss(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = EstimateWorkoutTSSArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    today_str = _utc_now().date().isoformat()
+    raw_entries = [
+        {"day_utc": e.day_utc or today_str, "workout_text": e.workout_text}
+        for e in args.entries
+    ]
+    if not raw_entries:
+        return {"owner": args.owner, "results": []}
+    metrics_df = _build_metrics_df_for_entries(raw_entries, db_path)
+    results = []
+    for idx, e in enumerate(raw_entries):
+        if idx < len(metrics_df):
+            row = metrics_df.iloc[idx]
+            dur_s = float(row.get("duration_s") or 0.0)
+            results.append({
+                "workout_text": e["workout_text"],
+                "day_utc": e["day_utc"],
+                "tss": round(float(row.get("tss") or 0.0), 1),
+                "rtss": round(float(row.get("rtss") or 0.0), 1),
+                "distance_proxy_km": round(float(row.get("distance_proxy_km") or 0.0), 2),
+                "duration_min": round(dur_s / 60.0, 1),
+                "if_proxy": round(float(row.get("if_proxy") or 0.0), 3),
+                "avg_hr_bpm": round(float(row.get("avg_hr_bpm") or 0.0), 1),
+                "pace_proxy_sec_per_km": round(float(row.get("pace_proxy_sec_per_km") or 0.0), 1),
+            })
+        else:
+            results.append({
+                "workout_text": e["workout_text"],
+                "day_utc": e["day_utc"],
+                "tss": 0.0, "rtss": 0.0, "distance_proxy_km": 0.0,
+                "duration_min": 0.0, "if_proxy": 0.0, "avg_hr_bpm": 0.0,
+                "pace_proxy_sec_per_km": 0.0,
+            })
+    return {"owner": args.owner, "results": results}
+
+
+def tool_simulate_plan_week(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = SimulatePlanWeekArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    if not args.entries:
+        return {
+            "owner": args.owner,
+            "weekly_tss": 0.0, "weekly_rtss": 0.0,
+            "weekly_distance_proxy_km": 0.0, "run_share": 0.0,
+            "daily_breakdown": [], "warnings": [],
+        }
+    today_str = _utc_now().date().isoformat()
+    raw_entries = [{"day_utc": e.day_utc, "workout_text": e.workout_text} for e in args.entries]
+    metrics_df = _build_metrics_df_for_entries(raw_entries, db_path)
+    weekly_baseline = _weekly_baseline_tss_for_day(db_path, today_str)
+
+    # Compute run share from entry-level durations
+    total_dur_s = 0.0
+    running_dur_s = 0.0
+    weekly_tss = 0.0
+    weekly_rtss = 0.0
+    weekly_dist = 0.0
+    for idx, e in enumerate(raw_entries):
+        modality = _modality_from_workout_text(e["workout_text"])
+        dur_s = float(metrics_df.iloc[idx].get("duration_s") or 0.0) if idx < len(metrics_df) else 0.0
+        total_dur_s += dur_s
+        if modality in ("running", "treadmill"):
+            running_dur_s += dur_s
+        if idx < len(metrics_df):
+            row = metrics_df.iloc[idx]
+            weekly_tss += float(row.get("tss") or 0.0)
+            weekly_rtss += float(row.get("rtss") or 0.0)
+            weekly_dist += float(row.get("distance_proxy_km") or 0.0)
+
+    run_share = running_dur_s / total_dur_s if total_dur_s > 0 else 0.0
+    three_day_threshold = weekly_baseline / 7.0 * 3.0 * 1.5
+
+    day_summaries = _day_summaries_from_entries(raw_entries, metrics_df, weekly_baseline)
+    warnings = _scan_density_warnings(day_summaries, three_day_threshold)
+
+    daily_breakdown = [
+        {
+            "day_utc": d["day_utc"],
+            "tss": d["total_tss"],
+            "rtss": d["total_rtss"],
+            "duration_min": d["duration_min"],
+            "stress_class": d["stress_class"],
+            "is_long_run": d["is_long_run"],
+        }
+        for d in day_summaries
+    ]
+    return {
+        "owner": args.owner,
+        "weekly_tss": round(weekly_tss, 1),
+        "weekly_rtss": round(weekly_rtss, 1),
+        "weekly_distance_proxy_km": round(weekly_dist, 2),
+        "run_share": round(run_share, 3),
+        "weekly_baseline_tss_ref": round(weekly_baseline, 1),
+        "three_day_density_threshold": round(three_day_threshold, 1),
+        "daily_breakdown": daily_breakdown,
+        "warnings": warnings,
+    }
+
+
+def tool_critique_day_plan(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = CritiqueDayPlanArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+    today = _utc_now().date()
+
+    # Default range: current week start to two weeks out
+    start_day = date.fromisoformat(args.start_day_utc) if args.start_day_utc else today - timedelta(days=today.weekday())
+    end_day = date.fromisoformat(args.end_day_utc) if args.end_day_utc else start_day + timedelta(days=13)
+
+    # Fetch existing planned activities
+    try:
+        planned_df = backend_main.get_planned_activities_df(
+            db_path=db_path,
+            start_day_utc=start_day.isoformat(),
+            end_day_utc=end_day.isoformat(),
+        )
+    except Exception:
+        planned_df = backend_main.pd.DataFrame(columns=["day_utc", "workout_text"])
+
+    raw_entries: list[dict[str, str]] = []
+    if not planned_df.empty and "workout_text" in planned_df.columns:
+        for _, row in planned_df.iterrows():
+            day_val = str(row.get("day_utc") or "")
+            text_val = str(row.get("workout_text") or "")
+            if day_val and text_val:
+                raw_entries.append({"day_utc": day_val, "workout_text": text_val})
+
+    # Merge extra_entries (append, do not replace)
+    if args.extra_entries:
+        for e in args.extra_entries:
+            raw_entries.append({"day_utc": e.day_utc, "workout_text": e.workout_text})
+
+    today_str = today.isoformat()
+    weekly_baseline = _weekly_baseline_tss_for_day(db_path, today_str)
+    three_day_threshold = weekly_baseline / 7.0 * 3.0 * 1.5
+
+    if not raw_entries:
+        return {
+            "owner": args.owner,
+            "period": {"start": start_day.isoformat(), "end": end_day.isoformat()},
+            "weekly_baseline_tss_ref": round(weekly_baseline, 1),
+            "three_day_density_threshold": round(three_day_threshold, 1),
+            "day_summary": [],
+            "warnings": [],
+        }
+
+    metrics_df = _build_metrics_df_for_entries(raw_entries, db_path)
+    day_summaries = _day_summaries_from_entries(raw_entries, metrics_df, weekly_baseline)
+
+    # Additional critique checks (weekday long run, heavy Monday after long Sunday)
+    days_sorted = sorted(day_summaries, key=lambda d: d["day_utc"])
+    extra_warnings: list[dict[str, Any]] = []
+    for i, day in enumerate(days_sorted):
+        if day.get("is_long_run"):
+            try:
+                dow = date.fromisoformat(day["day_utc"]).weekday()  # 0=Mon, 6=Sun
+                if dow <= 3:  # Mon–Thu
+                    extra_warnings.append({
+                        "tag": "long_run_on_weekday",
+                        "days": [day["day_utc"]],
+                        "message": "Long run placed on a weekday (Mon–Thu) — weekend placement preferred for recovery",
+                    })
+            except ValueError:
+                pass
+        if i > 0:
+            prev = days_sorted[i - 1]
+            try:
+                curr_dow = date.fromisoformat(day["day_utc"]).weekday()
+                prev_dow = date.fromisoformat(prev["day_utc"]).weekday()
+                if curr_dow == 0 and prev_dow == 6 and prev.get("is_long_run") and day.get("stress_class") == "hard":
+                    extra_warnings.append({
+                        "tag": "heavy_monday_after_long_sunday",
+                        "days": [prev["day_utc"], day["day_utc"]],
+                        "message": "Hard Monday immediately after a long Sunday — recovery window is too short",
+                    })
+            except ValueError:
+                pass
+
+    warnings = _scan_density_warnings(day_summaries, three_day_threshold) + extra_warnings
+    return {
+        "owner": args.owner,
+        "period": {"start": start_day.isoformat(), "end": end_day.isoformat()},
+        "weekly_baseline_tss_ref": round(weekly_baseline, 1),
+        "three_day_density_threshold": round(three_day_threshold, 1),
+        "day_summary": day_summaries,
+        "warnings": warnings,
+    }
+
+
+def tool_estimate_xtrain_tss(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = EstimateXtrainTSSArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    today_str = _utc_now().date().isoformat()
+    target_day = args.target_day_utc or today_str
+    backend_main = _backend_main_module()
+
+    lthr_bpm = _lthr_for_day(db_path, target_day)
+    lt_pace = _lt_pace_for_day(db_path, target_day)
+    specificity_profile = backend_main._load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    specificity_factor = backend_main._specificity_factor_for_plan_kind(args.activity_kind, specificity_profile)
+
+    duration_s = args.duration_min * 60.0
+    if lthr_bpm <= 0 or args.avg_hr_bpm <= 0 or duration_s <= 0:
+        return {
+            "owner": args.owner, "activity_kind": args.activity_kind,
+            "error": "Invalid inputs: lthr, avg_hr_bpm, and duration_min must all be positive",
+        }
+
+    if_proxy = args.avg_hr_bpm / lthr_bpm
+    tss = (duration_s * (if_proxy ** 2) / 3600.0) * 100.0
+    effective_rtss = tss * specificity_factor
+
+    # Solve running-equivalent distance proxy (mirrors compute_distance_proxy in tss.py)
+    distance_proxy_km: float | None = None
+    pace_proxy_sec_per_km: float | None = None
+    if effective_rtss > 0 and lt_pace > 0:
+        denom = (effective_rtss * 3600.0) / (duration_s * 100.0)
+        if denom > 0:
+            solved_pace = lt_pace / (denom ** 0.5)
+            min_pace = max(90.0, lt_pace / 2.0)
+            max_pace = min(1800.0, lt_pace * 6.0)
+            if min_pace <= solved_pace <= max_pace and solved_pace > 0:
+                distance_proxy_km = round(duration_s / solved_pace, 2)
+                pace_proxy_sec_per_km = round(solved_pace, 1)
+
+    # Build human-readable explanation
+    pace_str = ""
+    if pace_proxy_sec_per_km:
+        mins = int(pace_proxy_sec_per_km) // 60
+        secs = int(pace_proxy_sec_per_km) % 60
+        pace_str = f", equivalent to ~{distance_proxy_km} km at {mins}:{secs:02d}/km running pace"
+    explanation = (
+        f"TSS {tss:.1f} × {specificity_factor:.2f} specificity = {effective_rtss:.1f} effective rTSS{pace_str}"
+    )
+
+    return {
+        "owner": args.owner,
+        "activity_kind": args.activity_kind,
+        "duration_min": args.duration_min,
+        "avg_hr_bpm": args.avg_hr_bpm,
+        "lthr_bpm": round(lthr_bpm, 1),
+        "if_proxy": round(if_proxy, 3),
+        "tss": round(tss, 1),
+        "specificity_factor": specificity_factor,
+        "effective_rtss": round(effective_rtss, 1),
+        "distance_proxy_km": distance_proxy_km,
+        "pace_proxy_sec_per_km": pace_proxy_sec_per_km,
+        "explanation": explanation,
+    }
+
+
 def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     tool_name = str(name or "").strip()
     spec = TOOLS.get(tool_name)
@@ -2299,6 +2837,45 @@ TOOLS: dict[str, ToolSpec] = {
         description="Query the full CTL/ATL/TSB fitness model with daily time series. Returns chronic training load, acute training load, and training stress balance.",
         input_schema=FitnessFormArgs.model_json_schema(),
         handler=tool_get_fitness_form,
+    ),
+    # --- Phase 4: Load analysis and estimation tools ---
+    "estimate_workout_tss": ToolSpec(
+        name="estimate_workout_tss",
+        description=(
+            "Parse one or more workout text strings and return predicted TSS, rTSS, distance proxy, IF, and duration. "
+            "Does not save anything. Useful for evaluating planned sessions before committing them."
+        ),
+        input_schema=EstimateWorkoutTSSArgs.model_json_schema(),
+        handler=tool_estimate_workout_tss,
+    ),
+    "simulate_plan_week": ToolSpec(
+        name="simulate_plan_week",
+        description=(
+            "Given a list of dated planned entries, return projected weekly TSS, rTSS, distance, run share, "
+            "and spacing/density warnings (back-to-back hard days, consecutive loading streaks, 3-day TSS cluster spikes)."
+        ),
+        input_schema=SimulatePlanWeekArgs.model_json_schema(),
+        handler=tool_simulate_plan_week,
+    ),
+    "critique_day_plan": ToolSpec(
+        name="critique_day_plan",
+        description=(
+            "Audit a range of existing planned days (optionally blended with extra proposed entries) for hidden density "
+            "and spacing problems. Runs both stress-class pattern checks and rolling 3-day TSS cluster analysis. "
+            "Detects patterns like Thu+Fri+Sat+Sun consecutive loading, long run spacing violations, and sustained overload."
+        ),
+        input_schema=CritiqueDayPlanArgs.model_json_schema(),
+        handler=tool_critique_day_plan,
+    ),
+    "estimate_xtrain_tss": ToolSpec(
+        name="estimate_xtrain_tss",
+        description=(
+            "Estimate TSS and effective rTSS for a cross-training session (elliptical, cycling, etc.) from HR. "
+            "Returns raw TSS (HR-based), specificity factor, effective rTSS after applying the specificity ratio, "
+            "and a running-equivalent distance/pace proxy."
+        ),
+        input_schema=EstimateXtrainTSSArgs.model_json_schema(),
+        handler=tool_estimate_xtrain_tss,
     ),
 }
 
