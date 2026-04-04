@@ -32,7 +32,7 @@ const headerMetaByPrefix: Array<{ prefix: string; section: string; title: string
 ];
 
 const DESKTOP_NAV_STORAGE_KEY = 'temperance.desktop-nav-expanded';
-const DEFAULT_PAGE_WIDTH_CLASS_NAME = 'max-w-7xl';
+const DEFAULT_PAGE_WIDTH_CLASS_NAME = 'max-w-[1560px]';
 
 export interface AppLayoutOutletContext {
   setHeaderActions: (actions: ReactNode | null) => void;

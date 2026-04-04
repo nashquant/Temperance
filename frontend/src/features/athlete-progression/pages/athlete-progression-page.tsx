@@ -193,7 +193,6 @@ export function AthleteProgressionPage(): JSX.Element {
               {hasVdotData ? (
                 <ProgressionLineChartCard
                   title="VDOT Evolution"
-                  className="xl:col-span-2"
                   data={deferredNormalizedChartData}
                   yLabel="VDOT"
                   series={[
