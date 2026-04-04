@@ -688,6 +688,13 @@ export function DashboardPage(): JSX.Element {
   }, [dashboardPageSize, weekOffset]);
 
   useEffect(() => {
+    // Reset the loading guard when the fetch completes so the next
+    // intersection can trigger another page load.  This must happen
+    // *before* the early-return checks below — otherwise the guard
+    // stays true and the sentinel-visible check never runs again
+    // (the two effects fired in definition order, creating a race).
+    if (!query.isFetching) isLoadingMoreRef.current = false;
+
     if (!isSentinelVisible) return;
     if (!canLoadMoreWeeks) return;
     if (query.isFetching) return;
@@ -701,10 +708,6 @@ export function DashboardPage(): JSX.Element {
       });
     });
   }, [isSentinelVisible, canLoadMoreWeeks, query.isFetching, dashboardPageSize, dashboardMaxWeeks]);
-
-  useEffect(() => {
-    if (!query.isFetching) isLoadingMoreRef.current = false;
-  }, [query.isFetching]);
 
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
   const reloadButtonBusy = dashboardReloadMutation.isPending || extractRunning || dashboardReloadQueued;
