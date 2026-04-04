@@ -189,8 +189,8 @@ export function DashboardWeekCard({
                 summary={week.summary}
               />
             </div>
-            <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain pb-2 touch-pan-x">
-              <div className="grid min-w-[1120px] grid-cols-7 gap-3 lg:min-w-[896px] lg:gap-1.5 xl:min-w-full">
+            <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain pb-2 touch-pan-x snap-x snap-mandatory scroll-pl-0">
+              <div className="grid min-w-[1120px] grid-cols-7 gap-3 lg:min-w-[1064px] lg:gap-1.5 xl:min-w-full">
                 {week.days.map((day) => (
                   <DashboardDayColumn
                     key={day.day_utc}
