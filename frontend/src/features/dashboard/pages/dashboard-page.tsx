@@ -635,6 +635,15 @@ export function DashboardPage(): JSX.Element {
     const weeksTotal = Math.max(Number(query.data?.weeks_total ?? 0), 0);
     return Math.max(1, Math.ceil(weeksTotal / dashboardYearWindowWeeks));
   }, [dashboardYearWindowWeeks, query.data?.weeks_total, sortedWeeks.length]);
+  const availableWeeksInWindow = useMemo(() => {
+    const weeksTotal = Math.max(Number(query.data?.weeks_total ?? 0), 0);
+    return Math.max(0, Math.min(dashboardYearWindowWeeks, weeksTotal - weekOffset));
+  }, [dashboardYearWindowWeeks, query.data?.weeks_total, weekOffset]);
+  const visibleWeeksInWindow = Math.min(
+    Math.max(Number(query.data?.weeks_visible ?? sortedWeeks.length ?? 0), sortedWeeks.length),
+    availableWeeksInWindow || dashboardYearWindowWeeks,
+  );
+  const canLoadMoreWeeks = Boolean(query.data?.has_more_weeks) && visibleWeeks < dashboardMaxWeeks;
 
   const currentWeekStart = useMemo(() => {
     if (sortedWeeks.length === 0) return '';
@@ -669,40 +678,6 @@ export function DashboardPage(): JSX.Element {
     node.scrollIntoView({ block: 'start', behavior: 'auto' });
     lastAnchoredWeekRef.current = currentWeekStart;
   }, [currentWeekStart]);
-
-  useEffect(() => {
-    if (!session?.token) return;
-    if (!query.data?.has_more_weeks) return;
-    const nextWeeks = Math.min(visibleWeeks + dashboardPageSize, dashboardMaxWeeks);
-    if (nextWeeks <= visibleWeeks) return;
-
-    void queryClient.prefetchQuery({
-      queryKey: ['dashboard', profile?.owner, nextWeeks, weekOffset, 'all'],
-      queryFn: async () =>
-        getDashboard({
-          token: session.token,
-          owner: profile?.owner,
-          weeks: nextWeeks,
-          weekOffset,
-        }),
-      staleTime: 0,
-    });
-  }, [dashboardMaxWeeks, dashboardPageSize, profile?.owner, query.data?.has_more_weeks, session?.token, visibleWeeks, weekOffset]);
-
-  useEffect(() => {
-    if (!query.data?.has_more_weeks) return;
-    if (query.isFetching) return;
-    const nextWeeks = Math.min(visibleWeeks + dashboardPageSize, dashboardMaxWeeks);
-    if (nextWeeks <= visibleWeeks) return;
-
-    const timer = window.setTimeout(() => {
-      startTransition(() => {
-        setVisibleWeeks(nextWeeks);
-      });
-    }, 120);
-
-    return () => window.clearTimeout(timer);
-  }, [dashboardMaxWeeks, dashboardPageSize, query.data?.has_more_weeks, query.isFetching, visibleWeeks]);
 
   useEffect(() => {
     lastAnchoredWeekRef.current = '';
@@ -904,6 +879,38 @@ export function DashboardPage(): JSX.Element {
                   </div>
                 ),
               )}
+              {availableWeeksInWindow > 0 ? (
+                <div className="flex flex-col items-center gap-2 pt-2">
+                  <p className="text-xs text-slate-300/72">
+                    Showing {visibleWeeksInWindow} of {availableWeeksInWindow} weeks
+                  </p>
+                  {canLoadMoreWeeks ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-white/10 bg-black/20 text-slate-100"
+                      onClick={() => {
+                        if (query.isFetching) return;
+                        const nextWeeks = Math.min(visibleWeeks + dashboardPageSize, dashboardMaxWeeks);
+                        if (nextWeeks <= visibleWeeks) return;
+                        startTransition(() => {
+                          setVisibleWeeks(nextWeeks);
+                        });
+                      }}
+                      disabled={query.isFetching}
+                    >
+                      {query.isFetching ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Loading older weeks…
+                        </>
+                      ) : (
+                        `Show ${Math.min(dashboardPageSize, Math.max(availableWeeksInWindow - visibleWeeksInWindow, 0))} older weeks`
+                      )}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           )}
         </>
