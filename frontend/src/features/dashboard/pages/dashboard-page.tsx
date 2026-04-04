@@ -158,10 +158,9 @@ export function DashboardPage(): JSX.Element {
     finalize: (() => Promise<void>) | null;
   } | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
-  const { setHeaderActions, mainScrollContainer } = useAppLayoutContext();
+  const { setHeaderActions } = useAppLayoutContext();
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const undoTimerRef = useRef<number | null>(null);
   const undoDismissTimerRef = useRef<number | null>(null);
   const undoStateRef = useRef<{
@@ -691,43 +690,24 @@ export function DashboardPage(): JSX.Element {
   }, [dashboardMaxWeeks, dashboardPageSize, profile?.owner, query.data?.has_more_weeks, session?.token, visibleWeeks, weekOffset]);
 
   useEffect(() => {
-    lastAnchoredWeekRef.current = '';
-    setVisibleWeeks(dashboardPageSize);
-  }, [dashboardPageSize, weekOffset]);
-
-  useEffect(() => {
-    const node = loadMoreRef.current;
-    if (!node) return;
     if (!query.data?.has_more_weeks) return;
+    if (query.isFetching) return;
+    const nextWeeks = Math.min(visibleWeeks + dashboardPageSize, dashboardMaxWeeks);
+    if (nextWeeks <= visibleWeeks) return;
 
-    const maybeLoadMore = () => {
-      const scrollContainer = mainScrollContainer;
-      if (!scrollContainer) return;
-      const remaining = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
-      const withinThreshold = remaining <= 900;
-      if (!withinThreshold) return;
-      if (query.isFetching) return;
-      const nextWeeks = Math.min(visibleWeeks + dashboardPageSize, dashboardMaxWeeks);
-      if (nextWeeks <= visibleWeeks) return;
+    const timer = window.setTimeout(() => {
       startTransition(() => {
         setVisibleWeeks(nextWeeks);
       });
-    };
+    }, 120);
 
-    maybeLoadMore();
+    return () => window.clearTimeout(timer);
+  }, [dashboardMaxWeeks, dashboardPageSize, query.data?.has_more_weeks, query.isFetching, visibleWeeks]);
 
-    const handleScroll = () => {
-      maybeLoadMore();
-    };
-
-    mainScrollContainer?.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('resize', handleScroll);
-
-    return () => {
-      mainScrollContainer?.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleScroll);
-    };
-  }, [dashboardMaxWeeks, dashboardPageSize, mainScrollContainer, query.data?.has_more_weeks, query.isFetching, visibleWeeks]);
+  useEffect(() => {
+    lastAnchoredWeekRef.current = '';
+    setVisibleWeeks(dashboardPageSize);
+  }, [dashboardPageSize, weekOffset]);
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
   const reloadButtonBusy = dashboardReloadMutation.isPending || extractRunning || dashboardReloadQueued;
   const dashboardHeaderActions = useMemo(
@@ -924,7 +904,6 @@ export function DashboardPage(): JSX.Element {
                   </div>
                 ),
               )}
-              {query.data.has_more_weeks ? <div ref={loadMoreRef} className="h-8 w-full" aria-hidden="true" /> : null}
             </div>
           )}
         </>
