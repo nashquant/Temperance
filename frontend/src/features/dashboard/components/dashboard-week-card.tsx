@@ -144,7 +144,7 @@ export function DashboardWeekCard({
   onUndoActivity,
 }: DashboardWeekCardProps): JSX.Element {
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,rgba(37,99,235,0.34),rgba(79,70,229,0.28)_48%,rgba(147,51,234,0.24))] p-[1.5px] shadow-[0_16px_38px_rgba(2,6,23,0.42)]">
+    <div className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,rgba(37,99,235,0.34),rgba(79,70,229,0.28)_48%,rgba(147,51,234,0.24))] p-[1.5px] shadow-[0_16px_38px_rgba(2,6,23,0.42),0_0_60px_rgba(37,99,235,0.07)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_18%,rgba(96,165,250,0.22),transparent_30%),radial-gradient(circle_at_84%_14%,rgba(168,85,247,0.18),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.05),transparent_22%,transparent_78%,rgba(15,23,42,0.12))]" />
       <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent" />
       <Card className="relative overflow-hidden rounded-2xl border border-[rgba(51,65,85,0.76)] bg-[linear-gradient(180deg,rgba(9,16,29,0.99),rgba(6,11,22,0.97))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_0_0_1px_rgba(15,23,42,0.72)]">

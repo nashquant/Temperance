@@ -68,7 +68,7 @@ const summaryToneClassNames = {
 
 export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summary, isCurrentWeek = false }: DashboardWeekSummaryCardProps): JSX.Element {
   return (
-    <Card className="rounded-xl border-border/80 bg-card/80 shadow-sm md:h-[418px] lg:h-[442px]">
+    <Card className="rounded-xl border border-white/[0.07] bg-[linear-gradient(180deg,rgba(9,16,29,0.96),rgba(6,11,22,0.93))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_12px_rgba(2,6,23,0.22)] md:h-[418px] lg:h-[442px]">
       <CardContent className="flex h-full flex-col space-y-2 overflow-y-auto p-2 md:p-2.5 lg:space-y-3 lg:p-3">
         <div className="space-y-0.5">
           <Badge

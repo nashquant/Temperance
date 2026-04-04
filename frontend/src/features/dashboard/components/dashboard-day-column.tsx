@@ -1,4 +1,4 @@
-import { Activity, Check, Clock3, Flame, Gauge, Heart, HeartPulse, Plus, Route, RotateCcw, Zap, X } from 'lucide-react';
+import { Activity, Check, Clock3, Flame, Gauge, Heart, HeartPulse, Moon, Plus, Route, RotateCcw, Zap, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -317,7 +317,7 @@ function metricBadgeIcon(tone: MetricBadgeTone): JSX.Element {
 
 function MetricBadge({ item }: { item: MetricBadgeItem }): JSX.Element {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-medium leading-none text-slate-300/92">
+    <span className="inline-flex items-center gap-1 rounded-full border border-white/[0.11] bg-white/[0.05] px-1.5 py-0.5 text-[10px] font-medium leading-none text-slate-300/92 backdrop-blur-sm">
       {metricBadgeIcon(item.tone)}
       {item.label}
     </span>
@@ -368,7 +368,7 @@ function MetricRow({
 
 const tabletDesktopCardShellClassName = 'h-[102px] p-2 text-[12px] lg:h-[112px] lg:p-2.5 lg:text-[12.5px]';
 const tabletDesktopActionButtonClassName =
-  `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`;
+  `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-[colors,transform] hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:scale-110 hover:text-white active:scale-95`;
 const tabletDesktopSecondaryActionButtonClassName = `${tabletDesktopActionButtonClassName} top-[22px] lg:top-[24px]`;
 
 export function DashboardDayColumn({
@@ -420,13 +420,15 @@ export function DashboardDayColumn({
   }
 
   const cardClassName = cn(
-    'rounded-xl border-border/80 bg-card/75 shadow-sm',
+    'rounded-xl border border-white/[0.07] bg-[linear-gradient(180deg,rgba(9,16,29,0.96),rgba(6,11,22,0.93))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_22px_rgba(2,6,23,0.32)]',
     compactMobile
       ? mobileFullWidth
         ? 'w-full min-w-0'
         : 'w-[240px] shrink-0 min-h-[340px]'
       : 'md:h-[418px] lg:h-[442px]',
-    day.is_today ? 'border-primary/70' : undefined,
+    day.is_today
+      ? 'border-primary/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_8px_22px_rgba(2,6,23,0.32),0_0_0_1px_rgba(99,102,241,0.22)]'
+      : undefined,
   );
 
   const contentClassName = cn(
@@ -593,7 +595,7 @@ export function DashboardDayColumn({
                   <div
                     key={activity.activity_id}
                     className={cn(
-                      'relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
+                      'relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all hover:brightness-110',
                       'px-2 py-1.5',
                       activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
                       isInvalid ? invalidActivityCardClasses : undefined,
@@ -684,7 +686,7 @@ export function DashboardDayColumn({
                 <div
                   key={activity.activity_id}
                     className={cn(
-                  'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-colors hover:bg-white/5',
+                  'relative flex cursor-pointer flex-col overflow-hidden rounded-xl border transition-all hover:brightness-110 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.12)]',
                       compactMobile ? 'h-[82px] p-1.5 text-[11px]' : tabletDesktopCardShellClassName,
                       activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
                       isInvalid ? invalidActivityCardClasses : undefined,
@@ -745,7 +747,7 @@ export function DashboardDayColumn({
                     </Button>
                   )}
                   <div className="flex min-w-0 items-center pr-5 lg:pr-0">
-                    <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14.5px] lg:leading-5', isInvalid ? 'text-rose-100/92' : undefined)}>
+                    <p className={cn('truncate font-semibold tracking-[0.01em] text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14.5px] lg:leading-5', isInvalid ? 'text-rose-100/92' : undefined)}>
                       {formatActivityTitle(activity.sport)}
                       {activity.is_custom ? '(C)' : ''}
                       {!activity.is_custom && timeLabel ? ` ${timeLabel}` : ''}
@@ -823,7 +825,7 @@ export function DashboardDayColumn({
                 <div
                   key={`${item.activity.day_utc}-${item.activity.line_no}`}
                   className={cn(
-                    'relative overflow-hidden rounded-[1rem] border border-dashed shadow-[0_10px_22px_rgba(2,6,23,0.18)]',
+                    'relative overflow-hidden rounded-[1rem] border border-dashed bg-[linear-gradient(135deg,rgba(255,255,255,0.025),transparent_60%)] shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all hover:brightness-110',
                     'px-2 py-1.5',
                   )}
                   style={activityCardToneStyle(item.activity.intensity, true)}
@@ -892,7 +894,7 @@ export function DashboardDayColumn({
                     <div
                       key={`${item.activity.day_utc}-${item.activity.line_no}`}
                       className={cn(
-                      'relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-dashed transition-colors hover:bg-white/5',
+                      'relative flex cursor-pointer flex-col overflow-hidden rounded-xl border border-dashed bg-[linear-gradient(135deg,rgba(255,255,255,0.025),transparent_60%)] transition-all hover:brightness-110',
                       compactMobile ? 'h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]' : tabletDesktopCardShellClassName,
                       )}
                       style={activityCardToneStyle(item.activity.intensity, true)}
@@ -965,8 +967,9 @@ export function DashboardDayColumn({
           )}
 
           {day.actual_activities.length === 0 && day.planned_activities.length === 0 && day.is_past ? (
-            <div className={cn(compactMobile ? 'rounded-[0.95rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-2 text-center text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]' : 'rounded-lg border border-border/70 bg-muted/25 p-2 text-center text-muted-foreground', compactMobile ? 'text-[11px]' : 'text-[12px]')}>
-              <p className="font-semibold text-foreground">Rest Day</p>
+            <div className={cn(compactMobile ? 'rounded-[0.95rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-2 text-center text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]' : 'rounded-xl border border-white/[0.07] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] py-3 text-center text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]', compactMobile ? 'text-[11px]' : 'text-[12px]')}>
+              {!compactMobile ? <Moon className="mx-auto mb-1.5 h-4 w-4 text-slate-500/50" /> : null}
+              <p className="font-semibold text-foreground/80">Rest Day</p>
               <p>Rest is part of training.</p>
             </div>
           ) : null}
