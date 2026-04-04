@@ -262,6 +262,16 @@ class FitnessFormArgs(BaseModel):
     sport: Optional[str] = None
 
 
+class WeeklyVolumeArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    weeks: int = 8
+    sport: Optional[str] = None
+
+
+class CoachingBriefArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+
+
 # --- Phase 4: Load analysis and estimation models ---
 
 class WorkoutTSSEntry(BaseModel):
@@ -437,6 +447,29 @@ def _distance_km(value_meters: Any) -> float:
     return round(max(_safe_float(value_meters), 0.0) / 1000.0, 2)
 
 
+def _format_pace(sec_per_km: Any) -> Optional[str]:
+    """Format seconds-per-km as a 'M:SS' pace string, or None if unavailable."""
+    val = _safe_float(sec_per_km)
+    if val <= 0:
+        return None
+    minutes = int(val // 60)
+    seconds = int(val % 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+def _hr_zone_dict(row: Any) -> Optional[dict[str, float]]:
+    """Extract HR zone percentages as a compact dict, or None if all zeros."""
+    zones = {}
+    total = 0.0
+    for i in range(1, 6):
+        pct = _safe_float(row.get(f"hr_zone_{i}_pct"))
+        zones[f"z{i}"] = round(pct, 1)
+        total += pct
+    if total <= 0:
+        return None
+    return zones
+
+
 def _daily_tss_target_from_week_outlook(payload: dict[str, Any]) -> float:
     goal = max(_safe_float(payload.get("goal")), 0.0)
     return round(goal / 7.0, 1) if goal > 0 else 0.0
@@ -467,6 +500,48 @@ def _recent_metrics_df(owner: str, sport: Optional[str] = None, days: int = 45) 
     return db_path, metrics_df
 
 
+def _require_pandas() -> None:
+    if pd is None:
+        raise RuntimeError("pandas is required but not installed")
+
+
+def _compute_current_fitness_form(metrics_df: Any) -> dict[str, Any]:
+    """Compute current CTL/ATL/TSB/ACWR from a metrics DataFrame. Returns empty dict if no data."""
+    _require_pandas()
+    if metrics_df.empty:
+        return {}
+    daily = metrics_df.copy()
+    daily["day"] = pd.to_datetime(
+        daily.get("start_time_utc"), utc=True, errors="coerce"
+    ).dt.tz_convert(None).dt.normalize()
+    daily = daily.dropna(subset=["day"]).copy()
+    grouped = (
+        daily.groupby("day", as_index=False)
+        .agg(tss=("tss", "sum"))
+        .sort_values("day")
+    )
+    grouped["tss"] = pd.to_numeric(grouped["tss"], errors="coerce").fillna(0.0)
+    tss_vals = grouped["tss"].values
+    n = len(tss_vals)
+    if n == 0:
+        return {}
+    ctl_k = 2.0 / (42 + 1)
+    atl_k = 2.0 / (7 + 1)
+    ctl = float(tss_vals[0])
+    atl = float(tss_vals[0])
+    for i in range(1, n):
+        ctl = ctl + ctl_k * (float(tss_vals[i]) - ctl)
+        atl = atl + atl_k * (float(tss_vals[i]) - atl)
+    tsb = ctl - atl
+    acwr = round(atl / ctl, 2) if ctl > 0 else None
+    return _clean_mapping({
+        "ctl": round(ctl, 1),
+        "atl": round(atl, 1),
+        "tsb": round(tsb, 1),
+        "acwr": acwr,
+    })
+
+
 def _activity_row_summary(row: Any, include_extended_metrics: bool = True) -> dict[str, Any]:
     payload = {
         "activity_id": str(row.get("activity_id") or ""),
@@ -478,6 +553,9 @@ def _activity_row_summary(row: Any, include_extended_metrics: bool = True) -> di
         "rtss": round(_safe_float(row.get("rtss")), 1),
         "if_proxy": round(_safe_float(row.get("if_proxy")), 3),
         "avg_hr": round(_safe_float(row.get("avg_hr")), 1),
+        "max_hr": round(_safe_float(row.get("max_hr")), 1) or None,
+        "avg_pace": _format_pace(row.get("avg_pace_s_per_km")),
+        "elevation_gain_m": round(_safe_float(row.get("elevation_gain_m")), 0) or None,
     }
     if include_extended_metrics:
         payload.update(
@@ -485,6 +563,8 @@ def _activity_row_summary(row: Any, include_extended_metrics: bool = True) -> di
                 "distance_equivalent_km": round(_safe_float(row.get("distance_proxy_km")), 2),
                 "training_load_garmin": round(_safe_float(row.get("training_load_garmin")), 1),
                 "mechanical_load": round(_safe_float(row.get("mechanical_load")), 2),
+                "avg_cadence": round(_safe_float(row.get("avg_cadence")), 0) or None,
+                "hr_zones": _hr_zone_dict(row),
             }
         )
     else:
@@ -501,7 +581,7 @@ def tool_get_today_status(arguments: dict[str, Any]) -> dict[str, Any]:
     args = TodayStatusArgs.model_validate(arguments or {})
     db = _db_helpers()
     analytics = _analytics_helpers()
-    db_path, metrics_df = _recent_metrics_df(args.owner, sport=args.sport, days=45)
+    db_path, metrics_df = _recent_metrics_df(args.owner, sport=args.sport, days=90)
     wellness_payload = analytics["_build_wellness_payload"](db_path=db_path, days=14, aggregation="daily", owner=args.owner)
     week_outlook = analytics["_build_week_outlook_payload"](
         db_path=db_path,
@@ -520,6 +600,8 @@ def tool_get_today_status(arguments: dict[str, Any]) -> dict[str, Any]:
 
     latest_wellness = _latest_wellness_point(wellness_payload)
 
+    fitness_form = _compute_current_fitness_form(metrics_df) if pd is not None else {}
+
     return {
         "owner": args.owner,
         "db_path": str(db_path),
@@ -527,6 +609,8 @@ def tool_get_today_status(arguments: dict[str, Any]) -> dict[str, Any]:
         "generated_at_utc": _utc_now().isoformat(),
         "latest_activity": latest_activity,
         "latest_wellness": latest_wellness,
+        "fitness_form": fitness_form or None,
+        "guideline_context": _active_build_brief() or None,
         "week_outlook": _clean_mapping(
             {
                 "metric": str(week_outlook.get("metric") or "tss"),
@@ -554,7 +638,32 @@ def tool_get_recent_activities(arguments: dict[str, Any]) -> dict[str, Any]:
     args = RecentActivitiesArgs.model_validate(arguments or {})
     db_path, metrics_df = _recent_metrics_df(args.owner, sport=args.sport, days=max(args.days, args.limit))
     limit = max(1, min(int(args.limit), 50))
-    items = [_activity_row_summary(row) for _, row in metrics_df.head(limit).iterrows()]
+    today_str = _utc_now().date().isoformat()
+    weekly_baseline = _weekly_baseline_tss_for_day(db_path, today_str)
+    items: list[dict[str, Any]] = []
+    for _, row in metrics_df.head(limit).iterrows():
+        summary = _activity_row_summary(row)
+        sport = str(row.get("sport_type") or "").strip().lower()
+        modality = "running" if sport in ("running", "treadmill_running", "trail_running") else sport
+        dur_min = _format_duration_minutes(row.get("duration_s"))
+        avg_if = _safe_float(row.get("if_proxy"))
+        max_if = avg_if
+        stress_class, _, _ = classify_session_stress(
+            estimated_tss=_safe_float(row.get("tss")),
+            avg_if=avg_if,
+            max_if=max_if,
+            total_minutes=dur_min,
+            modality=modality,
+            weekly_baseline_tss=weekly_baseline,
+        )
+        summary["stress_class"] = stress_class.value
+        summary["is_long_run"] = is_long_run_candidate(
+            modality=modality,
+            total_minutes=dur_min,
+            avg_if=avg_if,
+            max_if=max_if,
+        )
+        items.append(summary)
     return {
         "owner": args.owner,
         "db_path": str(db_path),
@@ -646,6 +755,10 @@ def tool_get_load_trend(arguments: dict[str, Any]) -> dict[str, Any]:
     grouped["ctl_42_tss"] = grouped["tss"].ewm(alpha=(2.0 / 43.0), adjust=False).mean()
     grouped["atl_7_tss"] = grouped["tss"].ewm(alpha=(2.0 / 8.0), adjust=False).mean()
     grouped["tsb_proxy"] = grouped["ctl_42_tss"] - grouped["atl_7_tss"]
+    grouped["acwr"] = grouped.apply(
+        lambda r: round(r["atl_7_tss"] / r["ctl_42_tss"], 2) if r["ctl_42_tss"] > 0 else None,
+        axis=1,
+    )
 
     daily_rows: list[dict[str, Any]] = []
     for _, row in grouped.tail(21).iterrows():
@@ -653,7 +766,7 @@ def tool_get_load_trend(arguments: dict[str, Any]) -> dict[str, Any]:
         if pd.isna(day):
             continue
         daily_rows.append(
-            {
+            _clean_mapping({
                 "day": day.date().isoformat(),
                 "tss": round(_safe_float(row.get("tss")), 1),
                 "rtss": round(_safe_float(row.get("rtss")), 1),
@@ -663,24 +776,47 @@ def tool_get_load_trend(arguments: dict[str, Any]) -> dict[str, Any]:
                 "ctl_42_tss": round(_safe_float(row.get("ctl_42_tss")), 1),
                 "atl_7_tss": round(_safe_float(row.get("atl_7_tss")), 1),
                 "tsb_proxy": round(_safe_float(row.get("tsb_proxy")), 1),
-            }
+                "acwr": _extract_numeric(row.get("acwr")),
+            })
         )
 
+    latest_ctl = _safe_float(grouped["ctl_42_tss"].iloc[-1])
+    latest_atl = _safe_float(grouped["atl_7_tss"].iloc[-1])
     summary = {
         "days": int(max(args.days, 14)),
         "total_tss": round(_safe_float(grouped["tss"].sum()), 1),
         "total_rtss": round(_safe_float(grouped["rtss"].sum()), 1),
         "avg_daily_tss": round(_safe_float(grouped["tss"].mean()), 1),
         "avg_daily_rtss": round(_safe_float(grouped["rtss"].mean()), 1),
-        "latest_ctl_42_tss": round(_safe_float(grouped["ctl_42_tss"].iloc[-1]), 1),
-        "latest_atl_7_tss": round(_safe_float(grouped["atl_7_tss"].iloc[-1]), 1),
+        "latest_ctl_42_tss": round(latest_ctl, 1),
+        "latest_atl_7_tss": round(latest_atl, 1),
         "latest_tsb_proxy": round(_safe_float(grouped["tsb_proxy"].iloc[-1]), 1),
+        "latest_acwr": round(latest_atl / latest_ctl, 2) if latest_ctl > 0 else None,
     }
+
+    hr_zone_summary: Optional[dict[str, Any]] = None
+    zone_cols = [f"hr_zone_{i}_pct" for i in range(1, 6)]
+    if all(col in metrics_df.columns for col in zone_cols):
+        dur_s = pd.to_numeric(metrics_df["duration_s"], errors="coerce").fillna(0.0)
+        total_dur = dur_s.sum()
+        if total_dur > 0:
+            zone_pcts = {}
+            for i in range(1, 6):
+                col = f"hr_zone_{i}_pct"
+                weighted = (pd.to_numeric(metrics_df[col], errors="coerce").fillna(0.0) * dur_s).sum() / total_dur
+                zone_pcts[f"z{i}_pct"] = round(float(weighted), 1)
+            low_intensity = zone_pcts.get("z1_pct", 0) + zone_pcts.get("z2_pct", 0)
+            hr_zone_summary = {
+                **zone_pcts,
+                "polarization_index": round(low_intensity / 100.0, 2) if low_intensity > 0 else 0.0,
+            }
+
     return {
         "owner": args.owner,
         "db_path": str(db_path),
-        "summary": summary,
+        "summary": _clean_mapping(summary),
         "daily": daily_rows,
+        "hr_zone_summary": hr_zone_summary,
     }
 
 
@@ -1040,6 +1176,36 @@ def _build_active_build_payload() -> dict[str, Any]:
         "watchouts": _section_bullets(sections.get("Current watchouts", "")),
         "history_memo_ref": _resource_uri_for_doc_id(HISTORY_DOC_ID),
     }
+
+
+def _active_build_brief() -> dict[str, Any]:
+    """Lightweight summary of active build context for embedding in tool outputs."""
+    try:
+        active_build = _build_active_build_payload()
+    except Exception:
+        return {}
+    phase_bullets = active_build.get("current_phase_and_immediate_objective") or []
+    phase = phase_bullets[0] if phase_bullets else None
+    overlays = list((active_build.get("overlay_set") or {}).values())
+    anchors = active_build.get("active_anchor_mapping") or {}
+    weekly_baseline = None
+    for key, value in anchors.items():
+        if "weekly" in key.lower() and "tss" in key.lower():
+            try:
+                weekly_baseline = float("".join(c for c in str(value) if c.isdigit() or c == "."))
+            except (ValueError, TypeError):
+                pass
+            break
+    return _clean_mapping({
+        "phase": phase,
+        "overlays": overlays if overlays else None,
+        "weekly_baseline_tss": weekly_baseline,
+        "watchouts": active_build.get("watchouts") or None,
+        "resource_refs": [
+            _resource_uri("guidelines/active-build"),
+            _resource_uri("guidelines/read-order"),
+        ],
+    })
 
 
 def _build_workout_overview_payload() -> dict[str, Any]:
@@ -1719,7 +1885,9 @@ def _answer_history_question(payload: dict[str, Any], question: Optional[str]) -
 
 
 def tool_judge_training_history(arguments: dict[str, Any]) -> dict[str, Any]:
-    return _build_history_judgment_payload(arguments)
+    payload = _build_history_judgment_payload(arguments)
+    payload["guideline_context"] = _active_build_brief() or None
+    return payload
 
 
 def tool_explain_history_judgment(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1824,6 +1992,7 @@ def tool_plan_next_day(arguments: dict[str, Any]) -> dict[str, Any]:
         methodology_id=str(planning_args.methodology_id or "").strip() or None,
         schedule_constraints=_coerce_constraints(arguments),
     )
+    payload["guideline_context"] = _active_build_brief() or None
     return payload
 
 
@@ -2153,10 +2322,12 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
     day_agg["ctl"] = [round(v, 1) for v in ctl_vals]
     day_agg["atl"] = [round(v, 1) for v in atl_vals]
     day_agg["tsb"] = [round(c - a, 1) for c, a in zip(ctl_vals, atl_vals)]
+    acwr_vals = [round(a / c, 2) if c > 0 else None for c, a in zip(ctl_vals, atl_vals)]
+    day_agg["acwr"] = acwr_vals
 
     daily_out = []
     for _, row in day_agg.iterrows():
-        daily_out.append({
+        daily_out.append(_clean_mapping({
             "day": str(row["day"]),
             "tss": round(float(row["tss"]), 1),
             "rtss": round(float(row["rtss"]), 1),
@@ -2166,21 +2337,188 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
             "ctl": row["ctl"],
             "atl": row["atl"],
             "tsb": row["tsb"],
-        })
+            "acwr": row["acwr"],
+        }))
 
     current = daily_out[-1] if daily_out else {}
+    current_ctl = _safe_float(current.get("ctl"))
+    current_atl = _safe_float(current.get("atl"))
     return {
         "owner": args.owner,
         "db_path": str(db_path),
         "days": int(max(args.days, 14)),
-        "summary": {
+        "summary": _clean_mapping({
             "current_ctl": current.get("ctl"),
             "current_atl": current.get("atl"),
             "current_tsb": current.get("tsb"),
+            "current_acwr": round(current_atl / current_ctl, 2) if current_ctl > 0 else None,
             "peak_ctl": max(ctl_vals) if ctl_vals else None,
             "total_days": len(daily_out),
-        },
+        }),
         "daily": daily_out,
+    }
+
+
+def tool_get_weekly_volume(arguments: dict[str, Any]) -> dict[str, Any]:
+    _require_pandas()
+    args = WeeklyVolumeArgs.model_validate(arguments or {})
+    weeks = max(1, min(int(args.weeks), 52))
+    days_needed = weeks * 7 + 7
+    db_path, metrics_df = _recent_metrics_df(args.owner, sport=args.sport, days=days_needed)
+    if metrics_df.empty:
+        return {
+            "owner": args.owner,
+            "db_path": str(db_path),
+            "weeks": weeks,
+            "weekly": [],
+        }
+
+    daily = metrics_df.copy()
+    daily["day"] = pd.to_datetime(
+        daily.get("start_time_utc"), utc=True, errors="coerce"
+    ).dt.tz_convert(None).dt.normalize()
+    daily = daily.dropna(subset=["day"]).copy()
+    daily["week"] = daily["day"].dt.to_period("W-SUN")
+
+    sport_col = daily.get("sport_type")
+    if sport_col is not None:
+        sport_lower = sport_col.astype(str).str.strip().str.lower()
+        daily["is_running"] = sport_lower.isin(["running", "treadmill_running", "trail_running"])
+        daily["modality"] = sport_lower.where(~daily["is_running"], "running")
+    else:
+        daily["is_running"] = False
+        daily["modality"] = "unknown"
+
+    grouped = daily.groupby("week", as_index=False).agg(
+        total_distance_km=("distance_m", lambda x: round(x.sum() / 1000.0, 2)),
+        total_duration_min=("duration_s", lambda x: round(x.sum() / 60.0, 1)),
+        total_tss=("tss", "sum"),
+        total_rtss=("rtss", "sum"),
+        activity_count=("activity_id", "count"),
+        run_count=("is_running", "sum"),
+    )
+    grouped = grouped.sort_values("week", ascending=False).head(weeks)
+
+    weekly_rows: list[dict[str, Any]] = []
+    for _, row in grouped.iterrows():
+        period = row["week"]
+        week_data = daily[daily["week"] == period]
+        total_dur = _safe_float(week_data["duration_s"].sum())
+        modality_dur: dict[str, float] = {}
+        for mod, group in week_data.groupby("modality"):
+            mod_dur = _safe_float(group["duration_s"].sum())
+            if mod_dur > 0:
+                modality_dur[str(mod)] = round(mod_dur / total_dur, 2) if total_dur > 0 else 0.0
+        weekly_rows.append(_clean_mapping({
+            "week_start": period.start_time.date().isoformat(),
+            "week_end": period.end_time.date().isoformat(),
+            "total_distance_km": round(_safe_float(row["total_distance_km"]), 2),
+            "total_duration_min": round(_safe_float(row["total_duration_min"]), 1),
+            "total_tss": round(_safe_float(row["total_tss"]), 1),
+            "total_rtss": round(_safe_float(row["total_rtss"]), 1),
+            "activity_count": int(_safe_float(row["activity_count"])),
+            "run_count": int(_safe_float(row["run_count"])),
+            "avg_daily_tss": round(_safe_float(row["total_tss"]) / 7.0, 1),
+            "modality_split": modality_dur if modality_dur else None,
+        }))
+    return {
+        "owner": args.owner,
+        "db_path": str(db_path),
+        "weeks": len(weekly_rows),
+        "weekly": weekly_rows,
+    }
+
+
+def tool_get_coaching_brief(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = CoachingBriefArgs.model_validate(arguments or {})
+    db_path, metrics_df = _recent_metrics_df(args.owner, days=90)
+    analytics = _analytics_helpers()
+    db = _db_helpers()
+    today_str = _utc_now().date().isoformat()
+
+    fitness_form = _compute_current_fitness_form(metrics_df) if pd is not None else {}
+
+    wellness_payload = analytics["_build_wellness_payload"](
+        db_path=db_path, days=14, aggregation="daily", owner=args.owner,
+    )
+    latest_w = _latest_wellness_point(wellness_payload)
+    recovery_snapshot = _clean_mapping({
+        "training_readiness": latest_w.get("training_readiness"),
+        "sleep_score": latest_w.get("sleep_score"),
+        "stress_avg": latest_w.get("stress_avg"),
+        "body_battery_end": latest_w.get("body_battery_end"),
+        "resting_hr": latest_w.get("resting_hr"),
+        "hrv_status": latest_w.get("hrv_status"),
+    }) if latest_w else {}
+
+    guideline_ctx = _active_build_brief()
+
+    week_outlook = analytics["_build_week_outlook_payload"](
+        db_path=db_path, days=120, start_day=None, end_day=None,
+        sport=None, metric="tss", compare="planned", week_start=None,
+    )
+    week_progress = _clean_mapping({
+        "goal": round(_safe_float(week_outlook.get("goal")), 1),
+        "wtd_current": round(_safe_float(week_outlook.get("wtd_current")), 1),
+        "remaining_to_go": round(_safe_float(week_outlook.get("remaining_to_go")), 1),
+        "remaining_days": _remaining_days_in_week(week_outlook),
+    })
+
+    recent_pattern: list[dict[str, Any]] = []
+    if not metrics_df.empty:
+        weekly_baseline = _weekly_baseline_tss_for_day(db_path, today_str)
+        recent_7 = metrics_df.head(14)
+        day_seen: set[str] = set()
+        for _, row in recent_7.iterrows():
+            ts = _normalize_timestamp(row.get("start_time_utc"))
+            if ts is None:
+                continue
+            day_key = ts.date().isoformat()
+            if day_key in day_seen:
+                continue
+            day_seen.add(day_key)
+            sport = str(row.get("sport_type") or "").strip().lower()
+            modality = "running" if sport in ("running", "treadmill_running", "trail_running") else sport
+            dur_min = _format_duration_minutes(row.get("duration_s"))
+            avg_if = _safe_float(row.get("if_proxy"))
+            stress_class, _, _ = classify_session_stress(
+                estimated_tss=_safe_float(row.get("tss")),
+                avg_if=avg_if, max_if=avg_if,
+                total_minutes=dur_min, modality=modality,
+                weekly_baseline_tss=weekly_baseline,
+            )
+            recent_pattern.append({"day": day_key, "stress_class": stress_class.value})
+            if len(recent_pattern) >= 7:
+                break
+
+    flags: list[str] = []
+    acwr_val = _safe_float(fitness_form.get("acwr"))
+    if acwr_val > 1.5:
+        flags.append("high_acwr")
+    elif acwr_val > 1.3:
+        flags.append("elevated_acwr")
+    if latest_w.get("training_readiness") is not None and _safe_float(latest_w["training_readiness"]) < 40:
+        flags.append("low_training_readiness")
+    sleep_score = latest_w.get("sleep_score")
+    if sleep_score is not None and _safe_float(sleep_score) < 60:
+        flags.append("poor_sleep")
+
+    return {
+        "owner": args.owner,
+        "db_path": str(db_path),
+        "generated_at_utc": _utc_now().isoformat(),
+        "fitness_form": fitness_form or None,
+        "recovery_snapshot": recovery_snapshot or None,
+        "active_build_summary": guideline_ctx or None,
+        "week_progress": week_progress or None,
+        "recent_pattern": recent_pattern or None,
+        "flags": flags or None,
+        "guideline_refs": [
+            _resource_uri("guidelines/read-order"),
+            _resource_uri("guidelines/active-build"),
+            _resource_uri("workouts/overview"),
+        ],
+        "last_sync": db["get_last_sync"](db_path),
     }
 
 
@@ -2834,9 +3172,28 @@ TOOLS: dict[str, ToolSpec] = {
     ),
     "get_fitness_form": ToolSpec(
         name="get_fitness_form",
-        description="Query the full CTL/ATL/TSB fitness model with daily time series. Returns chronic training load, acute training load, and training stress balance.",
+        description="Query the full CTL/ATL/TSB/ACWR fitness model with daily time series. Returns chronic training load, acute training load, training stress balance, and acute:chronic workload ratio.",
         input_schema=FitnessFormArgs.model_json_schema(),
         handler=tool_get_fitness_form,
+    ),
+    "get_weekly_volume": ToolSpec(
+        name="get_weekly_volume",
+        description=(
+            "Return weekly volume summaries for the last N weeks: distance, duration, TSS, run count, "
+            "modality split, and average daily TSS. Essential for volume management conversations."
+        ),
+        input_schema=WeeklyVolumeArgs.model_json_schema(),
+        handler=tool_get_weekly_volume,
+    ),
+    "get_coaching_brief": ToolSpec(
+        name="get_coaching_brief",
+        description=(
+            "Single-call coaching situational awareness. Returns current fitness form (CTL/ATL/TSB/ACWR), "
+            "recovery snapshot, active build context with guideline refs, week progress, recent 7-day stress "
+            "pattern, and actionable flags. Start here for coaching conversations."
+        ),
+        input_schema=CoachingBriefArgs.model_json_schema(),
+        handler=tool_get_coaching_brief,
     ),
     # --- Phase 4: Load analysis and estimation tools ---
     "estimate_workout_tss": ToolSpec(
@@ -2882,7 +3239,7 @@ TOOLS: dict[str, ToolSpec] = {
 
 SERVER_INFO = {
     "name": "temperance-mcp",
-    "version": "0.3.0",
+    "version": "0.4.0",
 }
 
 

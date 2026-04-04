@@ -203,31 +203,51 @@ cd /Users/matheus/Temperance
 python3 -m backend.app.mcp_server --stdio
 ```
 
-The MCP surface is now doctrine-aware and resources-first:
+The MCP surface is doctrine-aware and resources-first:
 - static resources expose doctrine read order, the core bundle, the active build, workout overview, and workout catalog
 - resource templates expose individual guideline docs, workout families, workout templates, planning context, and history snapshots
-- tools remain available for computed planning, analytics, and history judgment
+- tools return guideline context inline (active phase, overlays, build refs) so the LLM has doctrine awareness without extra calls
+- activity summaries include pace, HR zones, elevation, stress classification, and mechanical load
+- fitness form (CTL/ATL/TSB/ACWR) is embedded in `get_today_status` and available via dedicated tools
 
-### Canonical tools
+### Tools
 
-- planning:
-  - `plan_next_day`
-  - `preview_cycle`
-  - `explain_planning_decision`
-- analytics / data:
-  - `get_today_status`
-  - `get_recent_activities`
-  - `get_planned_activities`
-  - `get_week_outlook`
-  - `get_load_trend`
-  - `get_recovery_trend`
-  - `get_activity_detail`
-- legacy heuristic tools, still callable but deprecated:
-  - `recommend_training`
-  - `explain_recommendation`
-- history:
-  - `judge_training_history`
-  - `explain_history_judgment`
+**Coaching entry point:**
+- `get_coaching_brief` — single-call situational awareness: fitness form, recovery, active build, week progress, recent stress pattern, and flags
+
+**Planning:**
+- `plan_next_day` — generate next workout suggestion with planning decision metadata and guideline context
+- `preview_cycle` — preview multi-day training horizon using methodology and athlete state
+- `explain_planning_decision` — explain planner choices including long-run and weekend constraints
+
+**Analytics and status:**
+- `get_today_status` — latest activity, wellness, week outlook, inline fitness form (CTL/ATL/TSB/ACWR), and guideline context
+- `get_recent_activities` — recent activities with pace, HR zones, stress classification (hard/easy/moderate), and long-run flag
+- `get_planned_activities` — planned workouts for the next N days
+- `get_week_outlook` — weekly TSS goal, progress, and projected finish
+- `get_load_trend` — daily TSS/rTSS with CTL/ATL/TSB/ACWR proxies, plus HR zone distribution and polarization index
+- `get_recovery_trend` — 28-day wellness trend: training readiness, sleep, stress, body battery
+- `get_activity_detail` — full activity detail with time-series records
+- `get_fitness_form` — full CTL/ATL/TSB/ACWR daily time series
+- `get_weekly_volume` — weekly distance, duration, TSS, run count, and modality split for last N weeks
+
+**History judgment:**
+- `judge_training_history` — assess recent history against active build and doctrine with guideline context
+- `explain_history_judgment` — structured explanation with evidence refs and question-specific focus
+
+**Load analysis and estimation:**
+- `estimate_workout_tss` — parse workout text and predict TSS/rTSS/IF/distance without saving
+- `simulate_plan_week` — project weekly totals and density warnings for proposed plan entries
+- `critique_day_plan` — audit planned days for spacing, density, and overload problems
+- `estimate_xtrain_tss` — estimate cross-training TSS from HR with specificity adjustment
+- `search_workouts` — filter workout template catalog by category, load role, phase, modality, TSS range
+
+**Write tools:**
+- `save_planned_activities`, `update_planned_activity`, `delete_planned_activities`, `mark_planned_done`
+- `save_custom_activities`, `delete_custom_activities`
+
+**Admin:**
+- `trigger_sync`, `get_sync_status`, `mark_activity_invalid`, `get_settings`, `update_settings`
 
 ### Static resources
 
