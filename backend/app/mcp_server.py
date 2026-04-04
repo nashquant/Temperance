@@ -51,11 +51,6 @@ DEFAULT_METHODOLOGY_ID = None
 _BACKEND_MAIN_MODULE: Any = None
 
 
-def _require_pandas() -> None:
-    if pd is None:
-        raise RuntimeError("pandas is required for this tool but is not installed in the current environment")
-
-
 @dataclass
 class ToolSpec:
     name: str
