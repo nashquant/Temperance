@@ -20,6 +20,7 @@ import {
   setPlannedManualDone,
 } from '@/features/plan-activities/services/plan-activities-api';
 import { queryClient } from '@/lib/query-client';
+import { useIntersectionObserver } from '@/hooks/use-intersection-observer';
 
 const ActivitySplitsDrawer = lazy(async () => ({
   default: (await import('@/features/dashboard/components/activity-splits-drawer')).ActivitySplitsDrawer,
@@ -163,6 +164,9 @@ export function DashboardPage(): JSX.Element {
   const lastAnchoredWeekRef = useRef<string>('');
   const undoTimerRef = useRef<number | null>(null);
   const undoDismissTimerRef = useRef<number | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const isLoadingMoreRef = useRef(false);
+  const isSentinelVisible = useIntersectionObserver(sentinelRef, { rootMargin: '200px' });
   const undoStateRef = useRef<{
     id: number;
     lane: 'planned' | 'actual';
@@ -683,6 +687,26 @@ export function DashboardPage(): JSX.Element {
     lastAnchoredWeekRef.current = '';
     setVisibleWeeks(dashboardPageSize);
   }, [dashboardPageSize, weekOffset]);
+
+  useEffect(() => {
+    if (!isSentinelVisible) return;
+    if (!canLoadMoreWeeks) return;
+    if (query.isFetching) return;
+    if (isLoadingMoreRef.current) return;
+    isLoadingMoreRef.current = true;
+    startTransition(() => {
+      setVisibleWeeks((prev) => {
+        const next = Math.min(prev + dashboardPageSize, dashboardMaxWeeks);
+        if (next <= prev) { isLoadingMoreRef.current = false; return prev; }
+        return next;
+      });
+    });
+  }, [isSentinelVisible, canLoadMoreWeeks, query.isFetching, dashboardPageSize, dashboardMaxWeeks]);
+
+  useEffect(() => {
+    if (!query.isFetching) isLoadingMoreRef.current = false;
+  }, [query.isFetching]);
+
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
   const reloadButtonBusy = dashboardReloadMutation.isPending || extractRunning || dashboardReloadQueued;
   const dashboardHeaderActions = useMemo(
@@ -880,34 +904,19 @@ export function DashboardPage(): JSX.Element {
                 ),
               )}
               {availableWeeksInWindow > 0 ? (
-                <div className="flex flex-col items-center gap-2 pt-2">
-                  <p className="text-xs text-slate-300/72">
+                <div
+                  ref={sentinelRef}
+                  className="flex flex-col items-center gap-2 pb-6 pt-3"
+                  style={{ overflowAnchor: 'none' }}
+                >
+                  <p className="text-xs text-slate-400/60">
                     Showing {visibleWeeksInWindow} of {availableWeeksInWindow} weeks
                   </p>
-                  {canLoadMoreWeeks ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-white/10 bg-black/20 text-slate-100"
-                      onClick={() => {
-                        if (query.isFetching) return;
-                        const nextWeeks = Math.min(visibleWeeks + dashboardPageSize, dashboardMaxWeeks);
-                        if (nextWeeks <= visibleWeeks) return;
-                        startTransition(() => {
-                          setVisibleWeeks(nextWeeks);
-                        });
-                      }}
-                      disabled={query.isFetching}
-                    >
-                      {query.isFetching ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Loading older weeks…
-                        </>
-                      ) : (
-                        `Show ${Math.min(dashboardPageSize, Math.max(availableWeeksInWindow - visibleWeeksInWindow, 0))} older weeks`
-                      )}
-                    </Button>
+                  {query.isFetching && canLoadMoreWeeks ? (
+                    <div className="flex items-center gap-2 text-xs text-slate-400/72">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Loading older weeks…</span>
+                    </div>
                   ) : null}
                 </div>
               ) : null}
