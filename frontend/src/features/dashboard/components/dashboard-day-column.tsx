@@ -425,7 +425,7 @@ export function DashboardDayColumn({
       ? mobileFullWidth
         ? 'w-full min-w-0'
         : 'w-[240px] shrink-0 min-h-[340px]'
-      : 'md:h-[418px] lg:h-[442px]',
+      : 'snap-start md:h-[418px] lg:h-[442px]',
     day.is_today
       ? 'border-primary/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_8px_22px_rgba(2,6,23,0.32),0_0_0_1px_rgba(99,102,241,0.22)]'
       : undefined,
