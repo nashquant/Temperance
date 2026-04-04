@@ -20,6 +20,13 @@ function fmtNumber(value: number | null | undefined): string {
   return Math.round(value).toString();
 }
 
+const summaryRowClassNames = {
+  icon: 'h-3 w-3 lg:h-3.5 lg:w-3.5',
+  label: 'text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[12px] lg:leading-[1.32]',
+  value: 'text-[10.5px] tabular-nums lg:text-[11.5px]',
+  zoneLabel: 'text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground lg:text-[11px]',
+} as const;
+
 
 const summaryToneClassNames = {
   vdot: {
@@ -61,8 +68,8 @@ const summaryToneClassNames = {
 
 export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summary, isCurrentWeek = false }: DashboardWeekSummaryCardProps): JSX.Element {
   return (
-    <Card className="rounded-xl border-border/80 bg-card/80 shadow-sm md:h-[410px] lg:h-[430px]">
-      <CardContent className="flex h-full flex-col space-y-2 overflow-y-auto p-2 md:p-2.5">
+    <Card className="rounded-xl border-border/80 bg-card/80 shadow-sm md:h-[418px] lg:h-[442px]">
+      <CardContent className="flex h-full flex-col space-y-2 overflow-y-auto p-2 md:p-2.5 lg:space-y-3 lg:p-3">
         <div className="space-y-0.5">
           <Badge
             variant="outline"
@@ -74,35 +81,35 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
           >
             Week {weekNumber}
           </Badge>
-          <p className="text-[12px] font-medium leading-4.5 text-muted-foreground md:text-[11.5px] lg:text-[13px]">
+          <p className="text-[12px] font-medium leading-4.5 text-muted-foreground md:text-[11.5px] lg:text-[13.5px]">
             {weekStart} - {weekEnd}
           </p>
         </div>
 
         <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-0.5">
-          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.vdot.label}`}>
-            <Gauge className={`h-3 w-3 ${summaryToneClassNames.vdot.icon}`} />
+          <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.vdot.label}`}>
+            <Gauge className={`${summaryRowClassNames.icon} ${summaryToneClassNames.vdot.icon}`} />
             VDOT
           </p>
-          <p className={`text-right text-[10.5px] font-semibold tabular-nums lg:text-[11px] ${summaryToneClassNames.vdot.value}`}>{fmtNumber(summary.vdot_max)}</p>
-          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.time.label}`}><Clock3 className={`h-3 w-3 ${summaryToneClassNames.time.icon}`} />Time</p>
-          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.time.value}`}>{formatCompactDurationHours(summary.duration_h)}</p>
-          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.distance.label}`}><Route className={`h-3 w-3 ${summaryToneClassNames.distance.icon}`} />Dist</p>
-          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.distance.value}`}>{fmtNumber(summary.distance_km)} km</p>
-          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.equivalent.label}`}><Ruler className={`h-3 w-3 ${summaryToneClassNames.equivalent.icon}`} />Eqv</p>
-          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.equivalent.value}`}>{fmtNumber(summary.distance_eqv_km)} km</p>
-          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.calories.label}`}><Flame className={`h-3 w-3 ${summaryToneClassNames.calories.icon}`} />kcal</p>
-          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.calories.value}`}>{fmtNumber(summary.calories)}</p>
-          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.stress.label}`}><Activity className={`h-3 w-3 ${summaryToneClassNames.stress.icon}`} />TSS|rTSS</p>
-          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
-          <p className={`inline-flex items-center gap-1 text-[10.5px] font-medium leading-[1.2] tracking-[0.01em] lg:text-[11.5px] lg:leading-[1.28] ${summaryToneClassNames.risk.label}`}><AlertTriangle className={`h-3 w-3 ${summaryToneClassNames.risk.icon}`} />Ovr|Risk</p>
-          <p className={`text-right text-[10.5px] font-medium tabular-nums lg:text-[11px] ${summaryToneClassNames.risk.value}`}>{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
+          <p className={`text-right ${summaryRowClassNames.value} font-semibold ${summaryToneClassNames.vdot.value}`}>{fmtNumber(summary.vdot_max)}</p>
+          <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.time.label}`}><Clock3 className={`${summaryRowClassNames.icon} ${summaryToneClassNames.time.icon}`} />Time</p>
+          <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.time.value}`}>{formatCompactDurationHours(summary.duration_h)}</p>
+          <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.distance.label}`}><Route className={`${summaryRowClassNames.icon} ${summaryToneClassNames.distance.icon}`} />Dist</p>
+          <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.distance.value}`}>{fmtNumber(summary.distance_km)} km</p>
+          <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.equivalent.label}`}><Ruler className={`${summaryRowClassNames.icon} ${summaryToneClassNames.equivalent.icon}`} />Eqv</p>
+          <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.equivalent.value}`}>{fmtNumber(summary.distance_eqv_km)} km</p>
+          <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.calories.label}`}><Flame className={`${summaryRowClassNames.icon} ${summaryToneClassNames.calories.icon}`} />kcal</p>
+          <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.calories.value}`}>{fmtNumber(summary.calories)}</p>
+          <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.stress.label}`}><Activity className={`${summaryRowClassNames.icon} ${summaryToneClassNames.stress.icon}`} />TSS|rTSS</p>
+          <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
+          <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.risk.label}`}><AlertTriangle className={`${summaryRowClassNames.icon} ${summaryToneClassNames.risk.icon}`} />Ovr|Risk</p>
+          <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.risk.value}`}>{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
         </div>
 
         <Separator className="bg-border/70" />
 
         <div className="space-y-0.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Zones</p>
+          <p className={summaryRowClassNames.zoneLabel}>Zones</p>
           {summary.zones.map((zone) => (
             <ZoneBar key={zone.zone} zone={zone.zone} seconds={zone.seconds} pct={zone.pct} />
           ))}

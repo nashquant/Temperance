@@ -180,8 +180,8 @@ export function DashboardWeekCard({
             </div>
           </div>
 
-          <div className="relative hidden md:flex md:gap-1.5">
-            <div className="w-[176px] shrink-0 lg:w-[188px]">
+          <div className="relative hidden md:flex md:gap-3 lg:gap-1.5">
+            <div className="w-[214px] shrink-0 lg:w-[188px]">
               <DashboardWeekSummaryCard
                 weekNumber={week.week_number}
                 weekStart={shortDay(week.week_start)}
@@ -190,7 +190,7 @@ export function DashboardWeekCard({
               />
             </div>
             <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain pb-2 touch-pan-x">
-              <div className="grid min-w-[896px] grid-cols-7 gap-1.5 xl:min-w-full">
+              <div className="grid min-w-[1120px] grid-cols-7 gap-3 lg:min-w-[896px] lg:gap-1.5 xl:min-w-full">
                 {week.days.map((day) => (
                   <DashboardDayColumn
                     key={day.day_utc}

@@ -17,11 +17,11 @@ export function ZoneBar({ zone, seconds, pct, className }: ZoneBarProps): JSX.El
     <div
       className={
         className ??
-        'grid grid-cols-[32px_minmax(36px,1fr)_42px_24px] items-center gap-1 text-[11px] leading-4 text-muted-foreground'
+        'grid grid-cols-[32px_minmax(36px,1fr)_42px_24px] items-center gap-1 text-[11px] leading-4 text-muted-foreground lg:text-[11.5px]'
       }
     >
       <span className="inline-flex items-center gap-1 font-medium text-slate-200/92">
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: hex }} />
+        <span className="h-2 w-2 shrink-0 rounded-full lg:h-2.5 lg:w-2.5" style={{ backgroundColor: hex }} />
         {zone}
       </span>
       <div className={`h-1.5 w-full overflow-hidden rounded-full border ${zoneTrackClassNames[zone] ?? zoneTrackFallbackClassName}`}>
