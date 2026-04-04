@@ -45,6 +45,10 @@ export function useIntersectionObserver(
   const [element, setElement] = useState<Element | null>(null);
   const [isIntersecting, setIsIntersecting] = useState(false);
   const optionsRef = useRef(options);
+  optionsRef.current = options;
+
+  // Re-create observer when root changes (e.g. null → mounted DOM element).
+  const root = options?.root ?? null;
 
   // Callback ref for the preferred API.
   const callbackRef = useCallback((node: Element | null) => {
@@ -69,7 +73,7 @@ export function useIntersectionObserver(
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [element]);
+  }, [element, root]);
 
   if (legacyRef) return isIntersecting;
   return [callbackRef, isIntersecting];
