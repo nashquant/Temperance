@@ -9,7 +9,7 @@ from backend.app import mcp_server
 class MCPServerHelpersTest(unittest.TestCase):
     def test_module_imports_without_fastapi_dependency_path(self):
         self.assertEqual(mcp_server.SERVER_INFO["name"], "temperance-mcp")
-        self.assertEqual(mcp_server.SERVER_INFO["version"], "0.3.0")
+        self.assertEqual(mcp_server.SERVER_INFO["version"], "0.4.0")
         self.assertEqual(mcp_server.SERVER_PROTOCOL_VERSION, "2025-03-26")
         self.assertIn("plan_next_day", mcp_server.TOOLS)
         self.assertIn("get_activity_detail", mcp_server.TOOLS)
@@ -314,6 +314,91 @@ class MCPServerHelpersTest(unittest.TestCase):
         result = mcp_server.tool_search_workouts({"category": "nonexistent-category-xyz"})
         self.assertEqual(result["count"], 0)
         self.assertEqual(result["templates"], [])
+
+    def test_activity_row_summary_includes_pace_and_extended_metrics(self):
+        summary = mcp_server._activity_row_summary(
+            {
+                "activity_id": 99,
+                "start_time_utc": "2026-03-31T09:15:00Z",
+                "sport_type": "running",
+                "duration_s": 3660,
+                "distance_m": 12345,
+                "tss": 71.27,
+                "rtss": 74.61,
+                "if_proxy": 0.8871,
+                "avg_hr": 151.3,
+                "max_hr": 172.0,
+                "avg_pace_s_per_km": 280,
+                "elevation_gain_m": 95.5,
+                "mechanical_load": 88.812,
+                "distance_proxy_km": 12.35,
+                "training_load_garmin": 45.2,
+                "avg_cadence": 178.0,
+                "hr_zone_1_pct": 10.0,
+                "hr_zone_2_pct": 40.0,
+                "hr_zone_3_pct": 30.0,
+                "hr_zone_4_pct": 15.0,
+                "hr_zone_5_pct": 5.0,
+            },
+            include_extended_metrics=True,
+        )
+        self.assertEqual(summary["avg_pace"], "4:40")
+        self.assertEqual(summary["max_hr"], 172.0)
+        self.assertEqual(summary["elevation_gain_m"], 96.0)
+        self.assertEqual(summary["avg_cadence"], 178.0)
+        self.assertIn("hr_zones", summary)
+        self.assertEqual(summary["hr_zones"]["z1"], 10.0)
+        self.assertEqual(summary["hr_zones"]["z5"], 5.0)
+
+    def test_format_pace_helper(self):
+        self.assertEqual(mcp_server._format_pace(280), "4:40")
+        self.assertEqual(mcp_server._format_pace(300), "5:00")
+        self.assertEqual(mcp_server._format_pace(195), "3:15")
+        self.assertIsNone(mcp_server._format_pace(0))
+        self.assertIsNone(mcp_server._format_pace(None))
+
+    def test_hr_zone_dict_returns_none_for_zero_zones(self):
+        result = mcp_server._hr_zone_dict({
+            "hr_zone_1_pct": 0,
+            "hr_zone_2_pct": 0,
+            "hr_zone_3_pct": 0,
+            "hr_zone_4_pct": 0,
+            "hr_zone_5_pct": 0,
+        })
+        self.assertIsNone(result)
+
+    def test_hr_zone_dict_returns_dict_for_valid_zones(self):
+        result = mcp_server._hr_zone_dict({
+            "hr_zone_1_pct": 50.0,
+            "hr_zone_2_pct": 30.0,
+            "hr_zone_3_pct": 10.0,
+            "hr_zone_4_pct": 7.0,
+            "hr_zone_5_pct": 3.0,
+        })
+        self.assertIsNotNone(result)
+        self.assertEqual(result["z1"], 50.0)
+
+    def test_new_tools_are_registered(self):
+        for tool_name in [
+            "get_weekly_volume",
+            "get_coaching_brief",
+        ]:
+            self.assertIn(tool_name, mcp_server.TOOLS, f"Missing tool: {tool_name}")
+
+    def test_require_pandas_raises_when_missing(self):
+        original_pd = mcp_server.pd
+        try:
+            mcp_server.pd = None
+            with self.assertRaises(RuntimeError):
+                mcp_server._require_pandas()
+        finally:
+            mcp_server.pd = original_pd
+
+    def test_active_build_brief_returns_dict(self):
+        brief = mcp_server._active_build_brief()
+        self.assertIsInstance(brief, dict)
+        if brief:
+            self.assertIn("resource_refs", brief)
 
     def test_all_tool_schemas_are_valid_json_schema(self):
         for name, spec in mcp_server.TOOLS.items():
