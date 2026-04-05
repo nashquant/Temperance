@@ -717,16 +717,43 @@ export function DashboardPage(): JSX.Element {
   }, [isSentinelVisible, loadMoreWeeks]);
 
   useEffect(() => {
-    if (!mainScrollContainer) return;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
     const handleScroll = () => {
-      const remaining = mainScrollContainer.scrollHeight - mainScrollContainer.scrollTop - mainScrollContainer.clientHeight;
-      if (remaining > 240) return;
-      loadMoreWeeks();
+      if (mainScrollContainer) {
+        const containerRemaining =
+          mainScrollContainer.scrollHeight - mainScrollContainer.scrollTop - mainScrollContainer.clientHeight;
+        if (containerRemaining <= 240) {
+          loadMoreWeeks();
+          return;
+        }
+      }
+
+      const scrollingElement = document.scrollingElement;
+      if (!scrollingElement) return;
+      const viewportRemaining =
+        scrollingElement.scrollHeight - scrollingElement.scrollTop - window.innerHeight;
+      if (viewportRemaining <= 240) {
+        loadMoreWeeks();
+      }
     };
 
-    mainScrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-    return () => mainScrollContainer.removeEventListener('scroll', handleScroll);
+    const scrollTargets: EventTarget[] = [];
+    if (mainScrollContainer) {
+      mainScrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+      scrollTargets.push(mainScrollContainer);
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    scrollTargets.push(window);
+
+    // Try once immediately in case the sentinel starts inside the threshold.
+    handleScroll();
+
+    return () => {
+      for (const target of scrollTargets) {
+        target.removeEventListener('scroll', handleScroll);
+      }
+    };
   }, [mainScrollContainer, loadMoreWeeks]);
 
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
