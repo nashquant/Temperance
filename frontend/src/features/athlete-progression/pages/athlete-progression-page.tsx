@@ -17,6 +17,7 @@ const PROGRESSION_CHART_COLORS = {
   purpleSoft: '#c4b5fd',
   gray: '#f87171',
   graySoft: '#cbd5e1',
+  greenStrong: '#22c55e',
   grayDeep: '#dc2626',
   redMuted: '#fb7185',
 } as const;
@@ -70,6 +71,7 @@ export function AthleteProgressionPage(): JSX.Element {
       return {
         ...row,
         stress_target_tss: rawTarget,
+        daily_baseline_tss: aggregation === 'weekly' ? rawTarget / 7 : rawTarget,
         distance_target_km: rawDistanceTarget,
       };
     });
@@ -116,8 +118,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 title="Stress Score: TSS vs rTSS"
                 data={deferredNormalizedChartData}
                 yLabel={aggregation === 'weekly' ? 'Weekly Stress' : 'Daily Stress'}
-                targetKey={aggregation === 'weekly' ? 'stress_target_tss' : undefined}
-                targetLabel="Weekly Baseline"
+                targetKey="stress_target_tss"
+                targetLabel={aggregation === 'weekly' ? 'Weekly Baseline' : 'Daily Baseline'}
                 series={[
                   { key: 'tss', label: 'TSS', color: PROGRESSION_CHART_COLORS.blue },
                   { key: 'rtss', label: 'rTSS', color: PROGRESSION_CHART_COLORS.gray },
@@ -128,6 +130,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 title="Durability vs Pounding"
                 data={deferredNormalizedChartData}
                 yLabel="rTSS"
+                targetKey="daily_baseline_tss"
+                targetLabel="Daily Baseline"
                 series={[
                   { key: 'durability', label: 'Durability', color: PROGRESSION_CHART_COLORS.blueAlt },
                   { key: 'pounding', label: 'Pounding', color: PROGRESSION_CHART_COLORS.redMuted },
@@ -138,11 +142,11 @@ export function AthleteProgressionPage(): JSX.Element {
                 title="Distance vs Dist Eqv"
                 data={deferredNormalizedChartData}
                 yLabel="km"
-                targetKey={aggregation === 'weekly' ? 'distance_target_km' : undefined}
-                targetLabel="Weekly Baseline"
+                targetKey="distance_target_km"
+                targetLabel={aggregation === 'weekly' ? 'Weekly Baseline' : 'Daily Baseline'}
                 series={[
                   { key: 'distance_km', label: 'Distance', color: PROGRESSION_CHART_COLORS.blueAlt },
-                  { key: 'distance_eqv_km', label: 'Dist Eqv', color: PROGRESSION_CHART_COLORS.graySoft, dashed: true, strokeOpacity: 0.85, dotOpacity: 0.4 },
+                  { key: 'distance_eqv_km', label: 'Dist Eqv', color: PROGRESSION_CHART_COLORS.greenStrong, dashed: true, strokeOpacity: 0.95, dotOpacity: 0.5 },
                 ]}
               />
 
@@ -150,6 +154,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 title="Fitness vs Fatigue"
                 data={deferredNormalizedChartData}
                 yLabel="Load"
+                targetKey="daily_baseline_tss"
+                targetLabel="Daily Baseline"
                 series={[
                   { key: 'fitness', label: 'Fitness', color: PROGRESSION_CHART_COLORS.blue },
                   { key: 'fatigue', label: 'Fatigue', color: PROGRESSION_CHART_COLORS.grayDeep },
