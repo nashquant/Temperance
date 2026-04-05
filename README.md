@@ -228,7 +228,7 @@ The MCP surface is doctrine-aware and resources-first:
 - `get_load_trend` — daily TSS/rTSS with CTL/ATL/TSB/ACWR proxies, plus HR zone distribution and polarization index
 - `get_recovery_trend` — 28-day wellness trend: training readiness, sleep, stress, body battery
 - `get_activity_detail` — full activity detail with time-series records
-- `get_fitness_form` — full CTL/ATL/TSB/ACWR daily time series
+- `get_fitness_form` — full CTL/ATL/TSB/ACWR daily time series plus weekly baseline history
 - `get_weekly_volume` — weekly distance, duration, TSS, run count, and modality split for last N weeks
 
 **History judgment:**
