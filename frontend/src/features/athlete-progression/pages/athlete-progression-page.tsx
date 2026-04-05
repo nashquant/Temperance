@@ -110,13 +110,13 @@ export function AthleteProgressionPage(): JSX.Element {
           {normalizedChartData.length === 0 ? (
             <Card><CardContent className="p-8 text-sm text-muted-foreground">No progression data available for this selection.</CardContent></Card>
           ) : (
-            <div className="grid gap-4 xl:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2">
               <ProgressionLineChartCard
                 title="Stress Score: TSS vs rTSS"
                 data={deferredNormalizedChartData}
                 yLabel={aggregation === 'weekly' ? 'Weekly Stress' : 'Daily Stress'}
-                targetKey="stress_target_tss"
-                targetLabel={aggregation === 'weekly' ? 'Weekly Target' : 'Daily Target'}
+                targetKey={aggregation === 'weekly' ? 'stress_target_tss' : undefined}
+                targetLabel="Weekly Target"
                 series={[
                   { key: 'tss', label: 'TSS', color: PROGRESSION_CHART_COLORS.blue },
                   { key: 'rtss', label: 'rTSS', color: PROGRESSION_CHART_COLORS.gray },
@@ -124,14 +124,12 @@ export function AthleteProgressionPage(): JSX.Element {
               />
 
               <ProgressionLineChartCard
-                title="Durability vs Pounding"
+                title="Running CTL vs ATL"
                 data={deferredNormalizedChartData}
-                yLabel="Load"
-                targetKey="pounding_target_tss"
-                targetLabel="Daily Target"
+                yLabel="rTSS"
                 series={[
-                  { key: 'durability', label: 'Durability', color: PROGRESSION_CHART_COLORS.blueAlt },
-                  { key: 'pounding', label: 'Pounding', color: PROGRESSION_CHART_COLORS.redMuted },
+                  { key: 'durability', label: 'Run Base (CTL)', color: PROGRESSION_CHART_COLORS.blueAlt },
+                  { key: 'pounding', label: 'Run Load (ATL)', color: PROGRESSION_CHART_COLORS.redMuted },
                 ]}
               />
 
@@ -139,8 +137,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 title="Distance vs Dist Eqv"
                 data={deferredNormalizedChartData}
                 yLabel="km"
-                targetKey="target_distance_km"
-                targetLabel="Distance Target"
+                targetKey={aggregation === 'weekly' ? 'target_distance_km' : undefined}
+                targetLabel="Weekly Target"
                 series={[
                   { key: 'distance_km', label: 'Distance', color: PROGRESSION_CHART_COLORS.blueAlt },
                   { key: 'distance_eqv_km', label: 'Dist Eqv', color: PROGRESSION_CHART_COLORS.graySoft, dashed: true, strokeOpacity: 0.85, dotOpacity: 0.4 },
@@ -158,12 +156,13 @@ export function AthleteProgressionPage(): JSX.Element {
               />
 
               <ProgressionLineChartCard
-                title="Overreach vs Injury Risk"
+                title="Overreach vs ACWR"
                 data={deferredNormalizedChartData}
-                yLabel="Risk"
+                yLabel="Overreach (TSS)"
+                rightAxisLabel="ACWR"
                 series={[
-                  { key: 'overreach', label: 'Overreach', color: PROGRESSION_CHART_COLORS.blue },
-                  { key: 'injury_risk', label: 'Injury Risk', color: PROGRESSION_CHART_COLORS.grayDeep },
+                  { key: 'overreach', label: 'Overreach', color: PROGRESSION_CHART_COLORS.blue, yAxisId: 'left' },
+                  { key: 'injury_risk', label: 'ACWR', color: PROGRESSION_CHART_COLORS.grayDeep, yAxisId: 'right' },
                 ]}
               />
 
