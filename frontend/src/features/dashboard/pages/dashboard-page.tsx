@@ -133,11 +133,11 @@ function applyComposerActivityFallback(
 
 export function DashboardPage(): JSX.Element {
   const dashboardPageSize = 8;
-  const dashboardYearWindowWeeks = 52;
+  const dashboardWindowWeeks = 26;
   const dashboardMaxWeeks = 52;
   const { session, profile } = useAuth();
   const [visibleWeeks, setVisibleWeeks] = useState(dashboardPageSize);
-  const [selectedYearWindow, setSelectedYearWindow] = useState('0');
+  const [selectedWindow, setSelectedWindow] = useState('0');
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [addActivityDayUtc, setAddActivityDayUtc] = useState<string | null>(null);
   const [addActivityText, setAddActivityText] = useState('');
@@ -176,12 +176,12 @@ export function DashboardPage(): JSX.Element {
     action: (() => Promise<void>) | null;
     finalize: (() => Promise<void>) | null;
   } | null>(null);
-  const selectedYearWindowIndex = useMemo(() => {
-    const parsed = Number(selectedYearWindow);
+  const selectedWindowIndex = useMemo(() => {
+    const parsed = Number(selectedWindow);
     if (!Number.isFinite(parsed) || parsed < 0) return 0;
     return parsed;
-  }, [selectedYearWindow]);
-  const weekOffset = selectedYearWindowIndex * dashboardYearWindowWeeks;
+  }, [selectedWindow]);
+  const weekOffset = selectedWindowIndex * dashboardWindowWeeks;
   const query = useDashboardQuery(visibleWeeks, 'all', weekOffset);
   const extractStatusQuery = useDataExtractStatusQuery();
   const userTimeZone = useMemo(() => {
@@ -634,17 +634,17 @@ export function DashboardPage(): JSX.Element {
     return rows;
   }, [sortedWeeks]);
 
-  const totalYearWindows = useMemo(() => {
+  const totalWindows = useMemo(() => {
     const weeksTotal = Math.max(Number(query.data?.weeks_total ?? 0), 0);
-    return Math.max(1, Math.ceil(weeksTotal / dashboardYearWindowWeeks));
-  }, [dashboardYearWindowWeeks, query.data?.weeks_total, sortedWeeks.length]);
+    return Math.max(1, Math.ceil(weeksTotal / dashboardWindowWeeks));
+  }, [dashboardWindowWeeks, query.data?.weeks_total, sortedWeeks.length]);
   const availableWeeksInWindow = useMemo(() => {
     const weeksTotal = Math.max(Number(query.data?.weeks_total ?? 0), 0);
-    return Math.max(0, Math.min(dashboardYearWindowWeeks, weeksTotal - weekOffset));
-  }, [dashboardYearWindowWeeks, query.data?.weeks_total, weekOffset]);
+    return Math.max(0, Math.min(dashboardWindowWeeks, weeksTotal - weekOffset));
+  }, [dashboardWindowWeeks, query.data?.weeks_total, weekOffset]);
   const visibleWeeksInWindow = Math.min(
     Math.max(Number(query.data?.weeks_visible ?? sortedWeeks.length ?? 0), sortedWeeks.length),
-    availableWeeksInWindow || dashboardYearWindowWeeks,
+    availableWeeksInWindow || dashboardWindowWeeks,
   );
   const canLoadMoreWeeks = visibleWeeksInWindow < availableWeeksInWindow && visibleWeeks < dashboardMaxWeeks;
 
@@ -776,16 +776,16 @@ export function DashboardPage(): JSX.Element {
             <RefreshCw className="h-4 w-4" />
           )}
         </Button>
-        {totalYearWindows > 1 ? (
+        {totalWindows > 1 ? (
           <div className="w-[180px] max-w-[180px] sm:w-[220px] sm:max-w-[220px]">
-            <Select value={selectedYearWindow} onValueChange={setSelectedYearWindow}>
+            <Select value={selectedWindow} onValueChange={setSelectedWindow}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select year window" />
+                <SelectValue placeholder="Select 6-month period" />
               </SelectTrigger>
               <SelectContent>
-                {Array.from({ length: totalYearWindows }).map((_, index) => (
+                {Array.from({ length: totalWindows }).map((_, index) => (
                   <SelectItem key={index} value={String(index)}>
-                    {index === 0 ? 'Latest year' : `${index}-${index + 1} years ago`}
+                    {index === 0 ? 'Latest 6 months' : `${index * 6}-${(index + 1) * 6} months ago`}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -794,7 +794,7 @@ export function DashboardPage(): JSX.Element {
         ) : null}
       </>
     ),
-    [dashboardReloadMutation, reloadButtonBusy, selectedYearWindow, session?.token, totalYearWindows],
+    [dashboardReloadMutation, reloadButtonBusy, selectedWindow, session?.token, totalWindows],
   );
 
   useEffect(() => {
