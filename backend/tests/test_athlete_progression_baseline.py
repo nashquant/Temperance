@@ -138,6 +138,17 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
         self.assertIn("smoothed_baseline_tss", last_point)
         self.assertAlmostEqual(last_point["smoothed_baseline_tss"], last_point["baseline_tss"], places=3)
 
+    def test_points_include_raw_and_stateful_risk_signals(self):
+        payload = self._build_payload(([90.0] * 10) + ([20.0] * 20) + ([5.0] * 12))
+        last_point = payload["points"][-1]
+
+        self.assertIn("raw_overreach_signal", last_point)
+        self.assertIn("raw_injury_signal", last_point)
+        self.assertIn("overreach_state", last_point)
+        self.assertIn("injury_risk_state", last_point)
+        self.assertGreaterEqual(last_point["overreach"], last_point["raw_overreach_signal"])
+        self.assertGreaterEqual(last_point["injury_risk"], last_point["raw_injury_signal"])
+
     def test_sparse_history_keeps_baseline_history_components_populated(self):
         payload = self._build_payload([30.0, 40.0, 35.0])
         points = payload["points"]

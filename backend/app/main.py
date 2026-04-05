@@ -4642,6 +4642,38 @@ def _baseline_load_scale(
     return pd.Series(np.where(ratio < 0.7, low_band_scale, high_band_scale), index=load_series.index, dtype=float)
 
 
+def _autoregressive_risk_state(
+    raw_signal: pd.Series,
+    *,
+    decay: float,
+    impulse_gain: float,
+    activation_floor: float = 0.0,
+    upper_bound: float | None = 100.0,
+) -> pd.Series:
+    """
+    Build a carried risk state from a local-window risk signal.
+
+    The state follows:
+      state[t] = decay * state[t-1] + impulse[t]
+    where impulse is the activated portion of today's raw signal.
+
+    A small activation floor prevents low-load noise from accumulating.
+    Higher decay preserves memory longer (e.g., injury_risk vs overreach).
+    """
+    signal = pd.to_numeric(raw_signal, errors="coerce").fillna(0.0).clip(lower=0.0)
+    prior_state = 0.0
+    state_values: list[float] = []
+    for value in signal.tolist():
+        activated = max(float(value) - float(activation_floor), 0.0)
+        impulse = activated * float(impulse_gain)
+        next_state = (float(decay) * prior_state) + impulse
+        if upper_bound is not None:
+            next_state = min(next_state, float(upper_bound))
+        state_values.append(max(next_state, 0.0))
+        prior_state = next_state
+    return pd.Series(state_values, index=signal.index, dtype=float)
+
+
 def _day_lookup_with_daily_model(
     metrics_df: pd.DataFrame,
     daily_tss_target: float,
@@ -4709,8 +4741,24 @@ def _day_lookup_with_daily_model(
     injury_excess = (rtss_emas[10] - target).clip(lower=0.0)
     load_scale_tss = _baseline_load_scale(tss_emas[10], target)
     load_scale_rtss = _baseline_load_scale(rtss_emas[10], target)
-    model_df["overreach"] = overreach_excess * load_scale_tss
-    model_df["injury_risk"] = injury_excess * load_scale_rtss
+    model_df["raw_overreach_signal"] = overreach_excess * load_scale_tss
+    model_df["raw_injury_signal"] = injury_excess * load_scale_rtss
+    model_df["overreach_state"] = _autoregressive_risk_state(
+        model_df["raw_overreach_signal"],
+        decay=0.82,
+        impulse_gain=0.30,
+        activation_floor=1.5,
+        upper_bound=None,
+    )
+    model_df["injury_risk_state"] = _autoregressive_risk_state(
+        model_df["raw_injury_signal"],
+        decay=0.90,
+        impulse_gain=0.24,
+        activation_floor=1.0,
+        upper_bound=None,
+    )
+    model_df["overreach"] = np.maximum(model_df["raw_overreach_signal"], model_df["overreach_state"])
+    model_df["injury_risk"] = np.maximum(model_df["raw_injury_signal"], model_df["injury_risk_state"])
 
     fitfat_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
@@ -4725,6 +4773,10 @@ def _day_lookup_with_daily_model(
             "fatigue": _safe_float(row.get("fatigue")),
             "overreach": _safe_float(row.get("overreach")),
             "injury_risk": _safe_float(row.get("injury_risk")),
+            "raw_overreach_signal": _safe_float(row.get("raw_overreach_signal")),
+            "raw_injury_signal": _safe_float(row.get("raw_injury_signal")),
+            "overreach_state": _safe_float(row.get("overreach_state")),
+            "injury_risk_state": _safe_float(row.get("injury_risk_state")),
             "vdot_max": _safe_float(row.get("vdot_max")),
         }
 
@@ -5390,8 +5442,28 @@ def _build_athlete_progression_payload(
     injury_base = (1.0 / (1.0 + np.exp(-4.0 * (_rtss_acwr - 1.8)))) * 100.0
     overreach_scale = _baseline_load_scale(tss_emas[7], daily_tss_target_series)
     injury_scale = _baseline_load_scale(rtss_emas[7], daily_tss_target_series)
-    model_df["overreach"] = (overreach_base * overreach_scale).clip(lower=0.0, upper=100.0)
-    model_df["injury_risk"] = (injury_base * injury_scale).clip(lower=0.0, upper=100.0)
+    model_df["raw_overreach_signal"] = (overreach_base * overreach_scale).clip(lower=0.0, upper=100.0)
+    model_df["raw_injury_signal"] = (injury_base * injury_scale).clip(lower=0.0, upper=100.0)
+    # Carried-state risk model:
+    # - raw_*_signal keeps the local-window ACWR + baseline-load view.
+    # - *_state carries short-term strain memory forward with daily decay.
+    # - injury_risk uses slower decay to represent longer tissue-recovery memory.
+    model_df["overreach_state"] = _autoregressive_risk_state(
+        model_df["raw_overreach_signal"],
+        decay=0.82,
+        impulse_gain=0.22,
+        activation_floor=5.0,
+        upper_bound=100.0,
+    )
+    model_df["injury_risk_state"] = _autoregressive_risk_state(
+        model_df["raw_injury_signal"],
+        decay=0.90,
+        impulse_gain=0.16,
+        activation_floor=4.0,
+        upper_bound=100.0,
+    )
+    model_df["overreach"] = np.maximum(model_df["raw_overreach_signal"], model_df["overreach_state"]).clip(lower=0.0, upper=100.0)
+    model_df["injury_risk"] = np.maximum(model_df["raw_injury_signal"], model_df["injury_risk_state"]).clip(lower=0.0, upper=100.0)
     model_df["durability"] = rtss_emas[42]
     model_df["pounding"] = rtss_emas[7]
 
@@ -5422,6 +5494,10 @@ def _build_athlete_progression_payload(
                 fatigue=("fatigue", "mean"),
                 overreach=("overreach", "mean"),
                 injury_risk=("injury_risk", "mean"),
+                raw_overreach_signal=("raw_overreach_signal", "mean"),
+                raw_injury_signal=("raw_injury_signal", "mean"),
+                overreach_state=("overreach_state", "mean"),
+                injury_risk_state=("injury_risk_state", "mean"),
                 durability=("durability", "mean"),
                 pounding=("pounding", "mean"),
                 vdot=("vdot", "max"),
@@ -5495,6 +5571,10 @@ def _build_athlete_progression_payload(
                 "fatigue": round(_safe_float(row.get("fatigue")), 3),
                 "overreach": round(_safe_float(row.get("overreach")), 3),
                 "injury_risk": round(_safe_float(row.get("injury_risk")), 3),
+                "raw_overreach_signal": round(_safe_float(row.get("raw_overreach_signal")), 3),
+                "raw_injury_signal": round(_safe_float(row.get("raw_injury_signal")), 3),
+                "overreach_state": round(_safe_float(row.get("overreach_state")), 3),
+                "injury_risk_state": round(_safe_float(row.get("injury_risk_state")), 3),
                 "durability": round(_safe_float(row.get("durability")), 3),
                 "pounding": round(_safe_float(row.get("pounding")), 3),
                 "vdot": (
