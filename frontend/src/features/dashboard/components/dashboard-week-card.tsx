@@ -1,3 +1,4 @@
+import { memo, useEffect, useState } from 'react';
 import { Activity, AlertTriangle, ChevronDown, Clock3, Gauge, HeartPulse, Route } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -47,6 +48,24 @@ function shortDayWithYear(iso: string): string {
 function fmtNumber(value: number | null): string {
   if (value === null || Number.isNaN(value)) return '-';
   return Math.round(value).toString();
+}
+
+function useIsDesktop(): boolean {
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.matchMedia('(min-width: 768px)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const media = window.matchMedia('(min-width: 768px)');
+    const update = () => setIsDesktop(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return isDesktop;
 }
 
 function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
@@ -125,7 +144,7 @@ function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
   );
 }
 
-export function DashboardWeekCard({
+function DashboardWeekCardComponent({
   week,
   onAddPlannedActivity,
   onMarkPlannedDone,
@@ -143,6 +162,8 @@ export function DashboardWeekCard({
   undoVisible,
   onUndoActivity,
 }: DashboardWeekCardProps): JSX.Element {
+  const isDesktop = useIsDesktop();
+
   return (
     <div className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,rgba(37,99,235,0.34),rgba(79,70,229,0.28)_48%,rgba(147,51,234,0.24))] p-[1.5px] shadow-[0_16px_38px_rgba(2,6,23,0.42),0_0_60px_rgba(37,99,235,0.07)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_18%,rgba(96,165,250,0.22),transparent_30%),radial-gradient(circle_at_84%_14%,rgba(168,85,247,0.18),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.05),transparent_22%,transparent_78%,rgba(15,23,42,0.12))]" />
@@ -151,46 +172,46 @@ export function DashboardWeekCard({
         <CardContent className="relative p-1 sm:p-1.5">
           <div className="pointer-events-none absolute inset-[1px] rounded-[calc(1rem-1px)] bg-[radial-gradient(circle_at_10%_18%,rgba(59,130,246,0.14),transparent_24%),radial-gradient(circle_at_88%_16%,rgba(147,51,234,0.14),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.025),transparent_20%,transparent_78%,rgba(15,23,42,0.12))]" />
           <div className="pointer-events-none absolute inset-x-16 top-[1px] h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-          <div className="relative space-y-1.5 md:hidden">
-            <MobileWeekSummary week={week} />
-            <div className="-mx-0.5 grid gap-1.5 pb-1">
-              {week.days.map((day) => (
-                <DashboardDayColumn
-                  key={day.day_utc}
-                  day={day}
-                  onAddPlannedActivity={onAddPlannedActivity}
-                  onMarkPlannedDone={onMarkPlannedDone}
-                  onDeletePlannedActivity={onDeletePlannedActivity}
-                  onDeleteCustomActivity={onDeleteCustomActivity}
-                  onToggleActivityInvalid={onToggleActivityInvalid}
-                  onSelectActivity={onSelectActivity}
-                  addingPlannedActivity={addingPlannedActivity}
-                  markingPlannedDone={markingPlannedDone}
-                  deletingPlannedActivity={deletingPlannedActivity}
-                  deletingCustomActivity={deletingCustomActivity}
-                  togglingActivityInvalid={togglingActivityInvalid}
-                  userTimeZone={userTimeZone}
-                  undoActivity={undoActivity}
-                  undoVisible={undoVisible}
-                  onUndoActivity={onUndoActivity}
-                  compactMobile
-                  mobileFullWidth
+          {isDesktop ? (
+            <div className="relative md:flex md:gap-3 lg:gap-1.5">
+              <div className="w-[214px] shrink-0 lg:w-[188px]">
+                <DashboardWeekSummaryCard
+                  weekNumber={week.week_number}
+                  weekStart={shortDay(week.week_start)}
+                  weekEnd={shortDayWithYear(week.week_end)}
+                  summary={week.summary}
                 />
-              ))}
+              </div>
+              <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-2 touch-pan-x snap-x snap-mandatory scroll-pl-0">
+                <div className="grid min-w-[1120px] grid-cols-7 gap-3 lg:min-w-[1064px] lg:gap-1.5 xl:min-w-full">
+                  {week.days.map((day) => (
+                    <DashboardDayColumn
+                      key={day.day_utc}
+                      day={day}
+                      onAddPlannedActivity={onAddPlannedActivity}
+                      onMarkPlannedDone={onMarkPlannedDone}
+                      onDeletePlannedActivity={onDeletePlannedActivity}
+                      onDeleteCustomActivity={onDeleteCustomActivity}
+                      onToggleActivityInvalid={onToggleActivityInvalid}
+                      onSelectActivity={onSelectActivity}
+                      addingPlannedActivity={addingPlannedActivity}
+                      markingPlannedDone={markingPlannedDone}
+                      deletingPlannedActivity={deletingPlannedActivity}
+                      deletingCustomActivity={deletingCustomActivity}
+                      togglingActivityInvalid={togglingActivityInvalid}
+                      userTimeZone={userTimeZone}
+                      undoActivity={undoActivity}
+                      undoVisible={undoVisible}
+                      onUndoActivity={onUndoActivity}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-
-          <div className="relative hidden md:flex md:gap-3 lg:gap-1.5">
-            <div className="w-[214px] shrink-0 lg:w-[188px]">
-              <DashboardWeekSummaryCard
-                weekNumber={week.week_number}
-                weekStart={shortDay(week.week_start)}
-                weekEnd={shortDayWithYear(week.week_end)}
-                summary={week.summary}
-              />
-            </div>
-            <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-2 touch-pan-x snap-x snap-mandatory scroll-pl-0">
-              <div className="grid min-w-[1120px] grid-cols-7 gap-3 lg:min-w-[1064px] lg:gap-1.5 xl:min-w-full">
+          ) : (
+            <div className="relative space-y-1.5">
+              <MobileWeekSummary week={week} />
+              <div className="-mx-0.5 grid gap-1.5 pb-1">
                 {week.days.map((day) => (
                   <DashboardDayColumn
                     key={day.day_utc}
@@ -210,13 +231,27 @@ export function DashboardWeekCard({
                     undoActivity={undoActivity}
                     undoVisible={undoVisible}
                     onUndoActivity={onUndoActivity}
+                    compactMobile
+                    mobileFullWidth
                   />
                 ))}
               </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
+
+export const DashboardWeekCard = memo(DashboardWeekCardComponent, (prev, next) => (
+  prev.week === next.week
+  && prev.addingPlannedActivity === next.addingPlannedActivity
+  && prev.markingPlannedDone === next.markingPlannedDone
+  && prev.deletingPlannedActivity === next.deletingPlannedActivity
+  && prev.deletingCustomActivity === next.deletingCustomActivity
+  && prev.togglingActivityInvalid === next.togglingActivityInvalid
+  && prev.userTimeZone === next.userTimeZone
+  && prev.undoActivity === next.undoActivity
+  && prev.undoVisible === next.undoVisible
+));

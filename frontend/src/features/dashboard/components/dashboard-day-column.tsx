@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Activity, Check, Clock3, Flame, Gauge, Heart, HeartPulse, Moon, Plus, Route, RotateCcw, Zap, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -217,16 +218,8 @@ function deriveCompactTimeLabel(
       const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const tz = String(userTimeZone || '').trim() || browserTz;
       try {
-        const hh = new Intl.DateTimeFormat('en-US', {
-          hour: 'numeric',
-          hour12: false,
-          timeZone: tz,
-        }).format(parsed);
-        const mm = new Intl.DateTimeFormat('en-US', {
-          minute: '2-digit',
-          hour12: false,
-          timeZone: tz,
-        }).format(parsed);
+        const hh = getHourFormatter(tz).format(parsed);
+        const mm = getMinuteFormatter(tz).format(parsed);
         const hour24 = Number(hh);
         const minute = Number(mm);
         if (!Number.isNaN(hour24) && !Number.isNaN(minute)) {
@@ -258,6 +251,33 @@ function deriveCompactTimeLabel(
     }
   }
   return '';
+}
+
+const hourFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const minuteFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function getHourFormatter(timeZone: string): Intl.DateTimeFormat {
+  const cached = hourFormatterCache.get(timeZone);
+  if (cached) return cached;
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    hour12: false,
+    timeZone,
+  });
+  hourFormatterCache.set(timeZone, formatter);
+  return formatter;
+}
+
+function getMinuteFormatter(timeZone: string): Intl.DateTimeFormat {
+  const cached = minuteFormatterCache.get(timeZone);
+  if (cached) return cached;
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    minute: '2-digit',
+    hour12: false,
+    timeZone,
+  });
+  minuteFormatterCache.set(timeZone, formatter);
+  return formatter;
 }
 
 function activityTypeLabel(isCustom: boolean): string | null {
@@ -371,7 +391,7 @@ const tabletDesktopActionButtonClassName =
   `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-[colors,transform] hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:scale-110 hover:text-white active:scale-95`;
 const tabletDesktopSecondaryActionButtonClassName = `${tabletDesktopActionButtonClassName} top-[22px] lg:top-[24px]`;
 
-export function DashboardDayColumn({
+function DashboardDayColumnComponent({
   day,
   onAddPlannedActivity,
   onMarkPlannedDone,
@@ -975,3 +995,17 @@ export function DashboardDayColumn({
     </Card>
   );
 }
+
+export const DashboardDayColumn = memo(DashboardDayColumnComponent, (prev, next) => (
+  prev.day === next.day
+  && prev.addingPlannedActivity === next.addingPlannedActivity
+  && prev.markingPlannedDone === next.markingPlannedDone
+  && prev.deletingPlannedActivity === next.deletingPlannedActivity
+  && prev.deletingCustomActivity === next.deletingCustomActivity
+  && prev.togglingActivityInvalid === next.togglingActivityInvalid
+  && prev.userTimeZone === next.userTimeZone
+  && prev.compactMobile === next.compactMobile
+  && prev.mobileFullWidth === next.mobileFullWidth
+  && prev.undoActivity === next.undoActivity
+  && prev.undoVisible === next.undoVisible
+));

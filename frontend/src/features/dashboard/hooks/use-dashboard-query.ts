@@ -28,6 +28,8 @@ export function useDashboardQuery(weeks: number, sportFilter: DashboardSportFilt
       });
     },
     enabled: Boolean(session?.token),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
     placeholderData: (previousData, previousQuery) => {
       const previousOwner = Array.isArray(previousQuery?.queryKey) ? previousQuery.queryKey[1] : undefined;
       return previousOwner === profile?.owner ? previousData : undefined;
