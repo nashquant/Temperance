@@ -391,7 +391,6 @@ export function DashboardDayColumn({
   undoVisible = false,
   onUndoActivity,
 }: DashboardDayColumnProps): JSX.Element {
-  const activityCount = day.actual_activities.length + day.planned_activities.length;
   const metaItems = fmtMeta(day);
   const desktopPrimaryMetaItems: DayMetaItem[] = [
     metricByKey(metaItems, 'tss') ?? { key: 'tss', icon: 'tss', value: '-', muted: true },
@@ -403,7 +402,6 @@ export function DashboardDayColumn({
     metricByKey(metaItems, 'hrv_status') ?? { key: 'hrv_status', icon: 'hrv_status', value: '-', muted: true },
     metricByKey(metaItems, 'calories') ?? { key: 'calories', icon: 'calories', value: '-', muted: true },
   ];
-  const shouldScrollActivities = activityCount > 3;
   const actualCards: Array<
     | { type: 'activity'; activity: DashboardDayColumnType['actual_activities'][number]; index: number }
     | { type: 'undo'; slotIndex: number }
@@ -432,7 +430,7 @@ export function DashboardDayColumn({
   );
 
   const contentClassName = cn(
-    'flex h-full flex-col',
+    'flex h-full min-h-0 flex-col',
     compactMobile ? 'gap-1.5 p-2' : 'gap-2.5 p-2.5 lg:gap-3 lg:p-3',
   );
 
@@ -521,12 +519,10 @@ export function DashboardDayColumn({
 
         <div
           className={cn(
-            'flex-1',
-            shouldScrollActivities
-              ? compactMobile
-                ? 'overflow-visible'
-                : 'overflow-visible sm:overflow-y-auto sm:pr-1 sm:[scrollbar-width:none] sm:[-ms-overflow-style:none] sm:[&::-webkit-scrollbar]:hidden'
-              : 'overflow-visible',
+            'min-h-0 flex-1',
+            compactMobile
+              ? 'overflow-visible'
+              : 'overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
           )}
         >
           <div

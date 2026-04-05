@@ -73,6 +73,46 @@ function currentWeekStartIso(): string {
   return `${year}-${month}-${day}`;
 }
 
+function parseIsoDate(dayUtc: string): Date | null {
+  const parsed = new Date(`${dayUtc}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function formatCompactWindowDate(value: Date): string {
+  const day = String(value.getDate()).padStart(2, '0');
+  const month = value.toLocaleString('en-US', { month: 'short' });
+  const year = String(value.getFullYear()).slice(-2);
+  return `${day}${month}${year}`;
+}
+
+function formatWindowLabelFromWeeks(
+  weeks: Array<{ week_start: string; week_end: string }>,
+): { start: Date; end: Date } | null {
+  if (weeks.length === 0) return '';
+
+  const parsedWeeks = weeks
+    .map((week) => ({
+      start: parseIsoDate(week.week_start),
+      end: parseIsoDate(week.week_end),
+    }))
+    .filter((week): week is { start: Date; end: Date } => Boolean(week.start && week.end));
+
+  if (parsedWeeks.length === 0) return null;
+
+  const earliestStart = parsedWeeks.reduce((earliest, week) => (week.start < earliest ? week.start : earliest), parsedWeeks[0].start);
+  const latestEnd = parsedWeeks.reduce((latest, week) => (week.end > latest ? week.end : latest), parsedWeeks[0].end);
+
+  return { start: earliestStart, end: latestEnd };
+}
+
 function formatLongDate(dayUtc: string): string {
   const parsed = new Date(`${dayUtc}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return dayUtc;
@@ -671,19 +711,42 @@ export function DashboardPage(): JSX.Element {
     lastAnchoredWeekRef.current = '';
   }, [weekOffset]);
 
+  const selectedWindowBounds = useMemo(() => {
+    return formatWindowLabelFromWeeks(displayWeeks);
+  }, [displayWeeks]);
+
+  const selectedWindowLabel = useMemo(() => {
+    if (selectedWindowBounds) {
+      return `${formatCompactWindowDate(selectedWindowBounds.start)} - ${formatCompactWindowDate(selectedWindowBounds.end)}`;
+    }
+
+    const currentWeekStart = parseIsoDate(currentWeekStartIso());
+    if (!currentWeekStart) return '';
+
+    const endDate = addDays(currentWeekStart, 6 - (selectedWindowIndex * dashboardWindowWeeks * 7));
+    const startDate = addDays(endDate, -((dashboardWindowWeeks * 7) - 1));
+    return `${formatCompactWindowDate(startDate)} - ${formatCompactWindowDate(endDate)}`;
+  }, [dashboardWindowWeeks, selectedWindowBounds, selectedWindowIndex]);
+
   const formatWindowLabel = (windowIndex: number): string => {
-    const today = new Date();
-    const endDate = new Date(today);
-    endDate.setMonth(endDate.getMonth() - windowIndex * 6);
-    const startDate = new Date(today);
-    startDate.setMonth(startDate.getMonth() - (windowIndex + 1) * 6);
-    const formatDate = (value: Date): string => {
-      const day = String(value.getDate()).padStart(2, '0');
-      const month = value.toLocaleString('en-US', { month: 'short' });
-      const year = String(value.getFullYear()).slice(-2);
-      return `${day}${month}${year}`;
-    };
-    return `${formatDate(startDate)} - ${formatDate(endDate)}`;
+    if (windowIndex === selectedWindowIndex && selectedWindowLabel) {
+      return selectedWindowLabel;
+    }
+
+    if (selectedWindowBounds) {
+      const windowSpanDays = dashboardWindowWeeks * 7;
+      const shiftDays = (selectedWindowIndex - windowIndex) * windowSpanDays;
+      const startDate = addDays(selectedWindowBounds.start, shiftDays);
+      const endDate = addDays(selectedWindowBounds.end, shiftDays);
+      return `${formatCompactWindowDate(startDate)} - ${formatCompactWindowDate(endDate)}`;
+    }
+
+    const currentWeekStart = parseIsoDate(currentWeekStartIso());
+    if (!currentWeekStart) return '';
+
+    const endDate = addDays(currentWeekStart, 6 - (windowIndex * dashboardWindowWeeks * 7));
+    const startDate = addDays(endDate, -((dashboardWindowWeeks * 7) - 1));
+    return `${formatCompactWindowDate(startDate)} - ${formatCompactWindowDate(endDate)}`;
   };
 
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
@@ -710,7 +773,9 @@ export function DashboardPage(): JSX.Element {
           <div className="w-[180px] max-w-[180px] sm:w-[220px] sm:max-w-[220px]">
             <Select value={selectedWindow} onValueChange={setSelectedWindow}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select 6-month period" />
+                <SelectValue placeholder="Select 6-month period">
+                  {selectedWindowLabel || 'Select 6-month period'}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {Array.from({ length: totalWindows }).map((_, index) => (
@@ -724,7 +789,7 @@ export function DashboardPage(): JSX.Element {
         ) : null}
       </>
     ),
-    [dashboardReloadMutation, reloadButtonBusy, selectedWindow, session?.token, totalWindows],
+    [dashboardReloadMutation, reloadButtonBusy, selectedWindow, selectedWindowLabel, session?.token, totalWindows],
   );
 
   useEffect(() => {
