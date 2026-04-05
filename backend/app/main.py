@@ -5045,11 +5045,12 @@ def _build_athlete_progression_payload(
         rtss_series = tss_series.copy()
 
     tss_emas = ema_multi(tss_series, [42, 7, 10])
-    rtss_emas = ema_multi(rtss_series, [100, 7, 10])
+    rtss_emas = ema_multi(rtss_series, [100, 28, 7, 10])
     model_df["fitness"] = tss_emas[42]
     model_df["fatigue"] = tss_emas[7]
     model_df["overreach"] = (tss_emas[10] - daily_tss_target_series).clip(lower=0.0)
-    model_df["injury_risk"] = (rtss_emas[10] - daily_tss_target_series).clip(lower=0.0)
+    _rtss_chronic = rtss_emas[28].replace(0.0, float("nan"))
+    model_df["injury_risk"] = (rtss_emas[7] / _rtss_chronic).fillna(0.0)
     model_df["durability"] = rtss_emas[100]
     model_df["pounding"] = rtss_emas[7]
 
