@@ -687,14 +687,14 @@ export function DashboardPage(): JSX.Element {
     setVisibleWeeks(dashboardPageSize);
   }, [dashboardPageSize, weekOffset]);
 
+  // Reset the loading guard whenever visibleWeeks actually increments so that
+  // a cache-hit response (where isFetching never flips true→false) doesn't
+  // leave the guard permanently set and block the next scroll trigger.
   useEffect(() => {
-    // Reset the loading guard when the fetch completes so the next
-    // intersection can trigger another page load.  This must happen
-    // *before* the early-return checks below — otherwise the guard
-    // stays true and the sentinel-visible check never runs again
-    // (the two effects fired in definition order, creating a race).
-    if (!query.isFetching) isLoadingMoreRef.current = false;
+    isLoadingMoreRef.current = false;
+  }, [visibleWeeks]);
 
+  useEffect(() => {
     if (!isSentinelVisible) return;
     if (!canLoadMoreWeeks) return;
     if (query.isFetching) return;
@@ -787,7 +787,6 @@ export function DashboardPage(): JSX.Element {
                   <div
                     key={row.week.week_start}
                     className="scroll-mt-24 sm:scroll-mt-28"
-                    style={{ contentVisibility: 'auto', containIntrinsicSize: '720px' }}
                     ref={(node) => {
                       weekRefs.current[row.week.week_start] = node;
                     }}
