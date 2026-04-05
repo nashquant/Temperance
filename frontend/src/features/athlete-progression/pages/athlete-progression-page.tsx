@@ -124,12 +124,12 @@ export function AthleteProgressionPage(): JSX.Element {
               />
 
               <ProgressionLineChartCard
-                title="Running CTL vs ATL"
+                title="Durability vs Pounding"
                 data={deferredNormalizedChartData}
                 yLabel="rTSS"
                 series={[
-                  { key: 'durability', label: 'Run Base (CTL)', color: PROGRESSION_CHART_COLORS.blueAlt },
-                  { key: 'pounding', label: 'Run Load (ATL)', color: PROGRESSION_CHART_COLORS.redMuted },
+                  { key: 'durability', label: 'Durability', color: PROGRESSION_CHART_COLORS.blueAlt },
+                  { key: 'pounding', label: 'Pounding', color: PROGRESSION_CHART_COLORS.redMuted },
                 ]}
               />
 
