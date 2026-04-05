@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from backend.app.main import _build_athlete_progression_payload
+from backend.app.main import _blend_baseline_tss, _build_athlete_progression_payload
 
 
 def _metrics_frame(daily_tss_values: list[float], start_day: str = "2026-01-05") -> pd.DataFrame:
@@ -106,6 +106,18 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
         self.assertEqual(last_point["lt_target_tss"], 0.0)
         self.assertGreater(last_point["baseline_tss"], 0.0)
         self.assertAlmostEqual(last_point["baseline_distance_km"], last_point["lt_target_distance_km"], places=3)
+
+    def test_smoothing_dampens_sharp_weekly_baseline_jumps(self):
+        payload = self._build_payload(([10.0] * 21) + ([90.0] * 21))
+        points = payload["points"]
+
+        raw_low = _blend_baseline_tss(420.0, 210.0)
+        raw_high = _blend_baseline_tss(420.0, 1890.0)
+        raw_jump = raw_high - raw_low
+        smoothed_jump = points[-1]["baseline_tss"] - points[2]["baseline_tss"]
+
+        self.assertGreater(smoothed_jump, 0.0)
+        self.assertLess(smoothed_jump, raw_jump)
 
 
 if __name__ == "__main__":

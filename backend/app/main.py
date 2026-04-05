@@ -5181,7 +5181,7 @@ def _build_athlete_progression_payload(
     lt_daily_distance_target_series = pd.to_numeric(model_df.get("lt_target_distance_km"), errors="coerce").fillna(0.0)
     recent_load_21d = tss_series.shift(1, fill_value=0.0).rolling(window=21, min_periods=1).sum()
     weekly_capacity_series = lt_daily_tss_target_series * 7.0
-    blended_weekly_baseline = pd.Series(
+    blended_weekly_baseline_raw = pd.Series(
         [
             float(_blend_baseline_tss(_safe_float(capacity), _safe_float(recent_load)))
             for capacity, recent_load in zip(weekly_capacity_series.tolist(), recent_load_21d.tolist())
@@ -5189,6 +5189,9 @@ def _build_athlete_progression_payload(
         index=model_df.index,
         dtype=float,
     )
+    # Smooth the displayed/progression baseline so it tracks capacity plus recent load
+    # without whipsawing from day to day as the trailing 21-day window moves.
+    blended_weekly_baseline = blended_weekly_baseline_raw.ewm(span=14, adjust=False).mean()
     daily_tss_target_series = (blended_weekly_baseline / 7.0).fillna(0.0)
     blend_factor_series = pd.Series(
         np.where(
