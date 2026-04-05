@@ -3578,11 +3578,23 @@ def _generated_activity_context(
             )
         )
 
+    earliest_actual_day = min(day_lookup.keys()) if day_lookup else pd.NaT
+
+    def _observed_actual_days(days_back: int) -> int:
+        if pd.isna(earliest_actual_day):
+            return 0
+        start = selected_day - pd.Timedelta(days=days_back)
+        effective_start = max(pd.Timestamp(earliest_actual_day).normalize(), start)
+        return max(int((selected_day - effective_start).days), 0)
+
     base_weekly_goal_tss = _blend_baseline_tss(
         base_weekly_goal_tss,
         _sum_actual(21, "tss"),
         _sum_actual(63, "tss"),
         _sum_actual(365, "tss"),
+        observed_days_21d=_observed_actual_days(21),
+        observed_days_63d=_observed_actual_days(63),
+        observed_days_365d=_observed_actual_days(365),
     )
     base_daily_goal_tss = max(float(base_weekly_goal_tss) / 7.0, 0.0)
 
@@ -4259,6 +4271,21 @@ def _generated_activity_planning_state(
         working = working[(working["day"] >= start) & (working["day"] < selected_day)]
         return float(pd.to_numeric(working.get(key), errors="coerce").fillna(0.0).sum())
 
+    def _observed_actual_days(days_back: int) -> int:
+        working = metrics_df.copy()
+        if working.empty:
+            return 0
+        working["day"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+        working = working.dropna(subset=["day"])
+        if working.empty:
+            return 0
+        earliest_day = pd.to_datetime(working["day"], errors="coerce").min()
+        if pd.isna(earliest_day):
+            return 0
+        start = selected_day - pd.Timedelta(days=days_back)
+        effective_start = max(pd.Timestamp(earliest_day).normalize(), start)
+        return max(int((selected_day - effective_start).days), 0)
+
     fatigue_payload = {
         "fitness": _safe_float(latest_model.get("fitness")),
         "fatigue": _safe_float(latest_model.get("fatigue")),
@@ -4281,7 +4308,15 @@ def _generated_activity_planning_state(
     recent_load_63d = _sum_actual(63, "tss")
     recent_load_365d = _sum_actual(365, "tss")
     recent_load_ratio = ((recent_load_7d / 7.0) / (recent_load_28d / 28.0)) if recent_load_28d > 0 else 1.0
-    weekly_baseline_tss = _blend_baseline_tss(capacity_baseline, recent_load_21d, recent_load_63d, recent_load_365d)
+    weekly_baseline_tss = _blend_baseline_tss(
+        capacity_baseline,
+        recent_load_21d,
+        recent_load_63d,
+        recent_load_365d,
+        observed_days_21d=_observed_actual_days(21),
+        observed_days_63d=_observed_actual_days(63),
+        observed_days_365d=_observed_actual_days(365),
+    )
     methodology = get_methodology(methodology_id)
 
     planning_state = build_user_planning_state(
@@ -5262,6 +5297,10 @@ def _build_athlete_progression_payload(
     recent_load_21d = tss_series.shift(1, fill_value=0.0).rolling(window=21, min_periods=1).sum()
     recent_load_63d = tss_series.shift(1, fill_value=0.0).rolling(window=63, min_periods=1).sum()
     recent_load_365d = tss_series.shift(1, fill_value=0.0).rolling(window=365, min_periods=1).sum()
+    observed_days_series = pd.Series(np.arange(1, len(model_df.index) + 1), index=model_df.index, dtype=float)
+    observed_days_21d = observed_days_series.clip(upper=21).astype(int)
+    observed_days_63d = observed_days_series.clip(upper=63).astype(int)
+    observed_days_365d = observed_days_series.clip(upper=365).astype(int)
     weekly_capacity_series = lt_daily_tss_target_series * 7.0
     blended_weekly_baseline_raw = pd.Series(
         [
@@ -5271,13 +5310,19 @@ def _build_athlete_progression_payload(
                     _safe_float(load_21d),
                     _safe_float(load_63d),
                     _safe_float(load_365d),
+                    observed_days_21d=int(days_21d),
+                    observed_days_63d=int(days_63d),
+                    observed_days_365d=int(days_365d),
                 )
             )
-            for capacity, load_21d, load_63d, load_365d in zip(
+            for capacity, load_21d, load_63d, load_365d, days_21d, days_63d, days_365d in zip(
                 weekly_capacity_series.tolist(),
                 recent_load_21d.tolist(),
                 recent_load_63d.tolist(),
                 recent_load_365d.tolist(),
+                observed_days_21d.tolist(),
+                observed_days_63d.tolist(),
+                observed_days_365d.tolist(),
             )
         ],
         index=model_df.index,
