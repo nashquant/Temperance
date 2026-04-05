@@ -4395,6 +4395,35 @@ def _activity_palette_token(
     return if_token
 
 
+def _baseline_load_scale(
+    load_ema: pd.Series,
+    baseline_daily_target: pd.Series | float,
+) -> pd.Series:
+    """
+    Scale risk by absolute load level vs baseline.
+
+    Below 70% of baseline we dampen risk aggressively so relative jumps at low
+    absolute load do not dominate the signal. At/above baseline, we keep the
+    base risk and allow a modest amplification as load climbs well above
+    baseline.
+    """
+    load_series = pd.to_numeric(load_ema, errors="coerce").fillna(0.0)
+    if isinstance(baseline_daily_target, pd.Series):
+        baseline_series = pd.to_numeric(baseline_daily_target, errors="coerce").fillna(0.0)
+    else:
+        baseline_series = pd.Series(
+            [float(_safe_float(baseline_daily_target))] * len(load_series),
+            index=load_series.index,
+            dtype=float,
+        )
+    baseline_series = baseline_series.where(baseline_series > 0.0, np.nan)
+    ratio = (load_series / baseline_series).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    low_band_scale = ((ratio / 0.7).clip(lower=0.0, upper=1.0)) ** 2.0
+    high_band_scale = 1.0 + 0.35 * ((ratio - 0.7).clip(lower=0.0, upper=1.0))
+    return pd.Series(np.where(ratio < 0.7, low_band_scale, high_band_scale), index=load_series.index, dtype=float)
+
+
 def _day_lookup_with_daily_model(
     metrics_df: pd.DataFrame,
     daily_tss_target: float,
@@ -4458,8 +4487,12 @@ def _day_lookup_with_daily_model(
 
     model_df["fitness"] = tss_emas[42]
     model_df["fatigue"] = tss_emas[7]
-    model_df["overreach"] = (tss_emas[10] - target).clip(lower=0.0)
-    model_df["injury_risk"] = (rtss_emas[10] - target).clip(lower=0.0)
+    overreach_excess = (tss_emas[10] - target).clip(lower=0.0)
+    injury_excess = (rtss_emas[10] - target).clip(lower=0.0)
+    load_scale_tss = _baseline_load_scale(tss_emas[10], target)
+    load_scale_rtss = _baseline_load_scale(rtss_emas[10], target)
+    model_df["overreach"] = overreach_excess * load_scale_tss
+    model_df["injury_risk"] = injury_excess * load_scale_rtss
 
     fitfat_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
@@ -5052,8 +5085,12 @@ def _build_athlete_progression_payload(
     _rtss_chronic = rtss_emas[28].replace(0.0, float("nan"))
     _tss_acwr = (tss_emas[7] / _tss_chronic).fillna(0.0)
     _rtss_acwr = (rtss_emas[7] / _rtss_chronic).fillna(0.0)
-    model_df["overreach"] = (1.0 / (1.0 + np.exp(-4.0 * (_tss_acwr - 1.8)))) * 100.0
-    model_df["injury_risk"] = (1.0 / (1.0 + np.exp(-4.0 * (_rtss_acwr - 1.8)))) * 100.0
+    overreach_base = (1.0 / (1.0 + np.exp(-4.0 * (_tss_acwr - 1.8)))) * 100.0
+    injury_base = (1.0 / (1.0 + np.exp(-4.0 * (_rtss_acwr - 1.8)))) * 100.0
+    overreach_scale = _baseline_load_scale(tss_emas[7], daily_tss_target_series)
+    injury_scale = _baseline_load_scale(rtss_emas[7], daily_tss_target_series)
+    model_df["overreach"] = (overreach_base * overreach_scale).clip(lower=0.0, upper=100.0)
+    model_df["injury_risk"] = (injury_base * injury_scale).clip(lower=0.0, upper=100.0)
     model_df["durability"] = rtss_emas[42]
     model_df["pounding"] = rtss_emas[7]
 
