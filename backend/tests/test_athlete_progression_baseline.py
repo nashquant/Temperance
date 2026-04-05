@@ -1,0 +1,112 @@
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import pandas as pd
+
+from backend.app.main import _build_athlete_progression_payload
+
+
+def _metrics_frame(daily_tss_values: list[float], start_day: str = "2026-01-05") -> pd.DataFrame:
+    start = pd.Timestamp(start_day, tz="UTC")
+    rows: list[dict[str, object]] = []
+    for index, tss in enumerate(daily_tss_values, start=1):
+        start_time = start + pd.Timedelta(days=index - 1, hours=12)
+        rows.append(
+            {
+                "activity_id": index,
+                "start_time_utc": start_time.isoformat(),
+                "sport_type": "running",
+                "distance_m": 10_000.0,
+                "distance_proxy_km": 10.0,
+                "duration_s": 3_600.0,
+                "tss": float(tss),
+                "rtss": float(tss),
+                "training_load_garmin": float(tss),
+                "calories_total": 600.0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _empty_vdot_frame(_: pd.DataFrame, __: Path) -> pd.DataFrame:
+    return pd.DataFrame(columns=["day", "vdot", "vdot_max"])
+
+
+class AthleteProgressionBaselineTest(unittest.TestCase):
+    def _build_payload(
+        self,
+        daily_tss_values: list[float],
+        *,
+        weekly_tss_target: float = 420.0,
+        weekly_distance_target: float = 70.0,
+    ) -> dict[str, object]:
+        metrics_df = _metrics_frame(daily_tss_values)
+        with (
+            patch("backend.app.main.get_setting", return_value=None),
+            patch("backend.app.main._metrics_for_filters", return_value=metrics_df),
+            patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
+            patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=float(weekly_tss_target)),
+            patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=float(weekly_distance_target)),
+        ):
+            return _build_athlete_progression_payload(
+                db_path=Path("/tmp/athlete-progression-baseline-test.sqlite"),
+                days=84,
+                activity_filter="all",
+                aggregation="weekly",
+                owner="tester",
+            )
+
+    def test_low_recent_load_pulls_weekly_baselines_below_lt_targets(self):
+        payload = self._build_payload([10.0] * 42)
+        last_point = payload["points"][-1]
+
+        self.assertLess(last_point["baseline_tss"], last_point["lt_target_tss"])
+        self.assertLess(last_point["baseline_distance_km"], last_point["lt_target_distance_km"])
+        self.assertAlmostEqual(
+            last_point["baseline_distance_km"] / last_point["lt_target_distance_km"],
+            last_point["baseline_tss"] / last_point["lt_target_tss"],
+            places=3,
+        )
+
+    def test_recent_load_near_capacity_keeps_baselines_close_to_lt_targets(self):
+        payload = self._build_payload([60.0] * 42)
+        last_point = payload["points"][-1]
+
+        self.assertAlmostEqual(last_point["baseline_tss"], last_point["lt_target_tss"], delta=1.0)
+        self.assertAlmostEqual(
+            last_point["baseline_distance_km"],
+            last_point["lt_target_distance_km"],
+            delta=0.2,
+        )
+
+    def test_high_recent_load_pushes_weekly_baselines_above_lt_targets(self):
+        payload = self._build_payload([90.0] * 42)
+        last_point = payload["points"][-1]
+
+        self.assertGreater(last_point["baseline_tss"], last_point["lt_target_tss"])
+        self.assertGreater(last_point["baseline_distance_km"], last_point["lt_target_distance_km"])
+        self.assertAlmostEqual(
+            last_point["baseline_distance_km"] / last_point["lt_target_distance_km"],
+            last_point["baseline_tss"] / last_point["lt_target_tss"],
+            places=3,
+        )
+
+    def test_weekly_baselines_change_with_trailing_twenty_one_day_history(self):
+        payload = self._build_payload(([10.0] * 21) + ([90.0] * 21))
+        points = payload["points"]
+
+        self.assertGreater(points[-1]["baseline_tss"], points[2]["baseline_tss"])
+        self.assertGreater(points[-1]["baseline_distance_km"], points[2]["baseline_distance_km"])
+
+    def test_zero_lt_tss_target_keeps_distance_baseline_stable(self):
+        payload = self._build_payload([40.0] * 42, weekly_tss_target=0.0, weekly_distance_target=70.0)
+        last_point = payload["points"][-1]
+
+        self.assertEqual(last_point["lt_target_tss"], 0.0)
+        self.assertGreater(last_point["baseline_tss"], 0.0)
+        self.assertAlmostEqual(last_point["baseline_distance_km"], last_point["lt_target_distance_km"], places=3)
+
+
+if __name__ == "__main__":
+    unittest.main()

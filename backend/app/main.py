@@ -5113,18 +5113,40 @@ def _build_athlete_progression_payload(
     model_df["lt_pace_target_sec_per_km"] = model_df["day"].map(
         lambda day: float(_curve_value_at(pace_curve, pace_default, pd.Timestamp(day).to_pydatetime()))
     )
-    model_df["target_tss"] = pd.to_numeric(model_df["lt_pace_target_sec_per_km"], errors="coerce").map(
+    model_df["lt_target_tss"] = pd.to_numeric(model_df["lt_pace_target_sec_per_km"], errors="coerce").map(
         lambda pace: float(max(_weekly_tss_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
     )
-    model_df["target_distance_km"] = pd.to_numeric(model_df["lt_pace_target_sec_per_km"], errors="coerce").map(
+    model_df["lt_target_distance_km"] = pd.to_numeric(model_df["lt_pace_target_sec_per_km"], errors="coerce").map(
         lambda pace: float(max(_weekly_distance_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
     )
-    daily_tss_target_series = pd.to_numeric(model_df.get("target_tss"), errors="coerce").fillna(0.0)
-
     tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
     rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
     if float(rtss_series.abs().sum()) <= 1e-9:
         rtss_series = tss_series.copy()
+    lt_daily_tss_target_series = pd.to_numeric(model_df.get("lt_target_tss"), errors="coerce").fillna(0.0)
+    lt_daily_distance_target_series = pd.to_numeric(model_df.get("lt_target_distance_km"), errors="coerce").fillna(0.0)
+    recent_load_21d = tss_series.shift(1, fill_value=0.0).rolling(window=21, min_periods=1).sum()
+    weekly_capacity_series = lt_daily_tss_target_series * 7.0
+    blended_weekly_baseline = pd.Series(
+        [
+            float(_blend_baseline_tss(_safe_float(capacity), _safe_float(recent_load)))
+            for capacity, recent_load in zip(weekly_capacity_series.tolist(), recent_load_21d.tolist())
+        ],
+        index=model_df.index,
+        dtype=float,
+    )
+    daily_tss_target_series = (blended_weekly_baseline / 7.0).fillna(0.0)
+    blend_factor_series = pd.Series(
+        np.where(
+            lt_daily_tss_target_series > 0.0,
+            daily_tss_target_series / lt_daily_tss_target_series,
+            1.0,
+        ),
+        index=model_df.index,
+        dtype=float,
+    ).replace([np.inf, -np.inf], 1.0).fillna(1.0)
+    model_df["baseline_tss"] = daily_tss_target_series
+    model_df["baseline_distance_km"] = (lt_daily_distance_target_series * blend_factor_series).fillna(0.0)
 
     tss_emas = ema_multi(tss_series, [42, 28, 7])
     rtss_emas = ema_multi(rtss_series, [42, 28, 7])
@@ -5173,14 +5195,26 @@ def _build_athlete_progression_payload(
                 pounding=("pounding", "mean"),
                 vdot=("vdot", "max"),
                 vdot_max=("vdot_max", "max"),
-                target_tss_daily=("target_tss", "mean"),
-                target_distance_km_daily=("target_distance_km", "mean"),
+                baseline_tss_daily=("baseline_tss", "mean"),
+                baseline_distance_km_daily=("baseline_distance_km", "mean"),
+                lt_target_tss_daily=("lt_target_tss", "mean"),
+                lt_target_distance_km_daily=("lt_target_distance_km", "mean"),
             )
             .sort_values("period_start")
         )
-        points_df["target_tss"] = pd.to_numeric(points_df.get("target_tss_daily"), errors="coerce").fillna(0.0) * 7.0
-        points_df["target_distance_km"] = pd.to_numeric(points_df.get("target_distance_km_daily"), errors="coerce").fillna(0.0) * 7.0
-        points_df = points_df.drop(columns=["target_tss_daily", "target_distance_km_daily"], errors="ignore")
+        points_df["baseline_tss"] = pd.to_numeric(points_df.get("baseline_tss_daily"), errors="coerce").fillna(0.0) * 7.0
+        points_df["baseline_distance_km"] = pd.to_numeric(points_df.get("baseline_distance_km_daily"), errors="coerce").fillna(0.0) * 7.0
+        points_df["lt_target_tss"] = pd.to_numeric(points_df.get("lt_target_tss_daily"), errors="coerce").fillna(0.0) * 7.0
+        points_df["lt_target_distance_km"] = pd.to_numeric(points_df.get("lt_target_distance_km_daily"), errors="coerce").fillna(0.0) * 7.0
+        points_df = points_df.drop(
+            columns=[
+                "baseline_tss_daily",
+                "baseline_distance_km_daily",
+                "lt_target_tss_daily",
+                "lt_target_distance_km_daily",
+            ],
+            errors="ignore",
+        )
     else:
         points_df = model_df.rename(columns={"day": "period_start"}).copy()
 
@@ -5230,8 +5264,12 @@ def _build_athlete_progression_payload(
                     and _safe_float(row.get("vdot_max")) > 0
                     else None
                 ),
-                "target_tss": round(_safe_float(row.get("target_tss")), 3),
-                "target_distance_km": round(_safe_float(row.get("target_distance_km")), 3),
+                "baseline_tss": round(_safe_float(row.get("baseline_tss")), 3),
+                "baseline_distance_km": round(_safe_float(row.get("baseline_distance_km")), 3),
+                "lt_target_tss": round(_safe_float(row.get("lt_target_tss")), 3),
+                "lt_target_distance_km": round(_safe_float(row.get("lt_target_distance_km")), 3),
+                "target_tss": round(_safe_float(row.get("baseline_tss")), 3),
+                "target_distance_km": round(_safe_float(row.get("baseline_distance_km")), 3),
             }
         )
 

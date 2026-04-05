@@ -65,11 +65,12 @@ export function AthleteProgressionPage(): JSX.Element {
 
   const normalizedChartData = useMemo(() => {
     return chartData.map((row) => {
-      const rawTarget = Number(row.target_tss ?? 0);
+      const rawTarget = Number(row.baseline_tss ?? row.target_tss ?? 0);
+      const rawDistanceTarget = Number(row.baseline_distance_km ?? row.target_distance_km ?? 0);
       return {
         ...row,
         stress_target_tss: rawTarget,
-        pounding_target_tss: aggregation === 'weekly' ? rawTarget / 7 : rawTarget,
+        distance_target_km: rawDistanceTarget,
       };
     });
   }, [aggregation, chartData]);
@@ -116,7 +117,7 @@ export function AthleteProgressionPage(): JSX.Element {
                 data={deferredNormalizedChartData}
                 yLabel={aggregation === 'weekly' ? 'Weekly Stress' : 'Daily Stress'}
                 targetKey={aggregation === 'weekly' ? 'stress_target_tss' : undefined}
-                targetLabel="Weekly Target"
+                targetLabel="Weekly Baseline"
                 series={[
                   { key: 'tss', label: 'TSS', color: PROGRESSION_CHART_COLORS.blue },
                   { key: 'rtss', label: 'rTSS', color: PROGRESSION_CHART_COLORS.gray },
@@ -137,8 +138,8 @@ export function AthleteProgressionPage(): JSX.Element {
                 title="Distance vs Dist Eqv"
                 data={deferredNormalizedChartData}
                 yLabel="km"
-                targetKey={aggregation === 'weekly' ? 'target_distance_km' : undefined}
-                targetLabel="Weekly Target"
+                targetKey={aggregation === 'weekly' ? 'distance_target_km' : undefined}
+                targetLabel="Weekly Baseline"
                 series={[
                   { key: 'distance_km', label: 'Distance', color: PROGRESSION_CHART_COLORS.blueAlt },
                   { key: 'distance_eqv_km', label: 'Dist Eqv', color: PROGRESSION_CHART_COLORS.graySoft, dashed: true, strokeOpacity: 0.85, dotOpacity: 0.4 },
