@@ -5356,6 +5356,14 @@ def _build_athlete_progression_payload(
     # without whipsawing from day to day as the trailing 21-day window moves.
     blended_weekly_baseline = blended_weekly_baseline_raw.ewm(span=21, adjust=False).mean()
     daily_tss_target_series = (blended_weekly_baseline / 7.0).fillna(0.0)
+    capacity_baseline_tss_series = (weekly_capacity_series / 7.0).fillna(0.0)
+    recent_load_anchor_tss_series = (
+        ((recent_load_21d / 3.0) * 0.20)
+        + ((recent_load_63d / 9.0) * 0.35)
+        + ((recent_load_365d / 52.0) * 0.45)
+    ).fillna(0.0)
+    blended_baseline_tss_before_smoothing_series = (blended_weekly_baseline_raw / 7.0).fillna(0.0)
+    smoothed_baseline_tss_series = daily_tss_target_series
     blend_factor_series = pd.Series(
         np.where(
             lt_daily_tss_target_series > 0.0,
@@ -5367,6 +5375,10 @@ def _build_athlete_progression_payload(
     ).replace([np.inf, -np.inf], 1.0).fillna(1.0)
     model_df["baseline_tss"] = daily_tss_target_series
     model_df["baseline_distance_km"] = (lt_daily_distance_target_series * blend_factor_series).fillna(0.0)
+    model_df["capacity_baseline_tss"] = capacity_baseline_tss_series
+    model_df["recent_load_anchor_tss"] = recent_load_anchor_tss_series
+    model_df["blended_baseline_tss_before_smoothing"] = blended_baseline_tss_before_smoothing_series
+    model_df["smoothed_baseline_tss"] = smoothed_baseline_tss_series
 
     tss_emas = ema_multi(tss_series, [42, 28, 7])
     rtss_emas = ema_multi(rtss_series, [42, 28, 7])
@@ -5418,6 +5430,10 @@ def _build_athlete_progression_payload(
                 baseline_distance_km_daily=("baseline_distance_km", "mean"),
                 lt_target_tss_daily=("lt_target_tss", "mean"),
                 lt_target_distance_km_daily=("lt_target_distance_km", "mean"),
+                capacity_baseline_tss_daily=("capacity_baseline_tss", "mean"),
+                recent_load_anchor_tss_daily=("recent_load_anchor_tss", "mean"),
+                blended_baseline_tss_before_smoothing_daily=("blended_baseline_tss_before_smoothing", "mean"),
+                smoothed_baseline_tss_daily=("smoothed_baseline_tss", "mean"),
             )
             .sort_values("period_start")
         )
@@ -5425,12 +5441,22 @@ def _build_athlete_progression_payload(
         points_df["baseline_distance_km"] = pd.to_numeric(points_df.get("baseline_distance_km_daily"), errors="coerce").fillna(0.0) * 7.0
         points_df["lt_target_tss"] = pd.to_numeric(points_df.get("lt_target_tss_daily"), errors="coerce").fillna(0.0) * 7.0
         points_df["lt_target_distance_km"] = pd.to_numeric(points_df.get("lt_target_distance_km_daily"), errors="coerce").fillna(0.0) * 7.0
+        points_df["capacity_baseline_tss"] = pd.to_numeric(points_df.get("capacity_baseline_tss_daily"), errors="coerce").fillna(0.0) * 7.0
+        points_df["recent_load_anchor_tss"] = pd.to_numeric(points_df.get("recent_load_anchor_tss_daily"), errors="coerce").fillna(0.0) * 7.0
+        points_df["blended_baseline_tss_before_smoothing"] = (
+            pd.to_numeric(points_df.get("blended_baseline_tss_before_smoothing_daily"), errors="coerce").fillna(0.0) * 7.0
+        )
+        points_df["smoothed_baseline_tss"] = pd.to_numeric(points_df.get("smoothed_baseline_tss_daily"), errors="coerce").fillna(0.0) * 7.0
         points_df = points_df.drop(
             columns=[
                 "baseline_tss_daily",
                 "baseline_distance_km_daily",
                 "lt_target_tss_daily",
                 "lt_target_distance_km_daily",
+                "capacity_baseline_tss_daily",
+                "recent_load_anchor_tss_daily",
+                "blended_baseline_tss_before_smoothing_daily",
+                "smoothed_baseline_tss_daily",
             ],
             errors="ignore",
         )
@@ -5487,6 +5513,10 @@ def _build_athlete_progression_payload(
                 "baseline_distance_km": round(_safe_float(row.get("baseline_distance_km")), 3),
                 "lt_target_tss": round(_safe_float(row.get("lt_target_tss")), 3),
                 "lt_target_distance_km": round(_safe_float(row.get("lt_target_distance_km")), 3),
+                "capacity_baseline_tss": round(_safe_float(row.get("capacity_baseline_tss")), 3),
+                "recent_load_anchor_tss": round(_safe_float(row.get("recent_load_anchor_tss")), 3),
+                "blended_baseline_tss_before_smoothing": round(_safe_float(row.get("blended_baseline_tss_before_smoothing")), 3),
+                "smoothed_baseline_tss": round(_safe_float(row.get("smoothed_baseline_tss")), 3),
                 "target_tss": round(_safe_float(row.get("baseline_tss")), 3),
                 "target_distance_km": round(_safe_float(row.get("baseline_distance_km")), 3),
             }
