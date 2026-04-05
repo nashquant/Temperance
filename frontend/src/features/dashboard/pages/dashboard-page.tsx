@@ -132,7 +132,7 @@ function applyComposerActivityFallback(
 }
 
 export function DashboardPage(): JSX.Element {
-  const dashboardPageSize = 4;
+  const dashboardPageSize = 8;
   const dashboardYearWindowWeeks = 52;
   const dashboardMaxWeeks = 52;
   const { session, profile } = useAuth();
@@ -960,6 +960,18 @@ export function DashboardPage(): JSX.Element {
                   <p className="text-xs text-slate-400/60">
                     Showing {visibleWeeksInWindow} of {availableWeeksInWindow} weeks
                   </p>
+                  {canLoadMoreWeeks ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-white/10 bg-black/20 text-slate-200 hover:bg-black/30"
+                      onClick={() => loadMoreWeeks()}
+                      disabled={query.isFetching}
+                    >
+                      Load older weeks
+                    </Button>
+                  ) : null}
                   {query.isFetching && canLoadMoreWeeks ? (
                     <div className="flex items-center gap-2 text-xs text-slate-400/72">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
