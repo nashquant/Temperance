@@ -828,7 +828,7 @@ export function DashboardPage(): JSX.Element {
                 ) : (
                   <div
                     key={row.week.week_start}
-                    className="scroll-mt-24 sm:scroll-mt-28"
+                    className="scroll-mt-24 sm:scroll-mt-28 [content-visibility:auto] [contain-intrinsic-size:560px]"
                     ref={(node) => {
                       weekRefs.current[row.week.week_start] = node;
                     }}
