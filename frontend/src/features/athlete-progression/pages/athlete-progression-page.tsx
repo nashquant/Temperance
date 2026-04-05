@@ -156,13 +156,12 @@ export function AthleteProgressionPage(): JSX.Element {
               />
 
               <ProgressionLineChartCard
-                title="Overreach vs ACWR"
+                title="Overreach vs Injury Risk"
                 data={deferredNormalizedChartData}
-                yLabel="Overreach (TSS)"
-                rightAxisLabel="ACWR"
+                yLabel="Risk %"
                 series={[
-                  { key: 'overreach', label: 'Overreach', color: PROGRESSION_CHART_COLORS.blue, yAxisId: 'left' },
-                  { key: 'injury_risk', label: 'ACWR', color: PROGRESSION_CHART_COLORS.grayDeep, yAxisId: 'right' },
+                  { key: 'overreach', label: 'Overreach', color: PROGRESSION_CHART_COLORS.blue },
+                  { key: 'injury_risk', label: 'Injury Risk', color: PROGRESSION_CHART_COLORS.grayDeep },
                 ]}
               />
 

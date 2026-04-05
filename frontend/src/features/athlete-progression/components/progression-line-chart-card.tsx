@@ -57,6 +57,7 @@ const INTEGER_LIKE_KEYS = new Set([
   'fitness',
   'fatigue',
   'overreach',
+  'injury_risk',
   'durability',
   'pounding',
   'vdot',
