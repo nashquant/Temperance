@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { Suspense, lazy, startTransition, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { QueryShell } from '@/components/ui/query-shell';
@@ -694,8 +694,7 @@ export function DashboardPage(): JSX.Element {
     isLoadingMoreRef.current = false;
   }, [visibleWeeks]);
 
-  useEffect(() => {
-    if (!isSentinelVisible) return;
+  const loadMoreWeeks = useCallback(() => {
     if (!canLoadMoreWeeks) return;
     if (query.isFetching) return;
     if (isLoadingMoreRef.current) return;
@@ -703,11 +702,32 @@ export function DashboardPage(): JSX.Element {
     startTransition(() => {
       setVisibleWeeks((prev) => {
         const next = Math.min(prev + dashboardPageSize, dashboardMaxWeeks);
-        if (next <= prev) { isLoadingMoreRef.current = false; return prev; }
+        if (next <= prev) {
+          isLoadingMoreRef.current = false;
+          return prev;
+        }
         return next;
       });
     });
-  }, [isSentinelVisible, canLoadMoreWeeks, query.isFetching, dashboardPageSize, dashboardMaxWeeks]);
+  }, [canLoadMoreWeeks, query.isFetching, dashboardPageSize, dashboardMaxWeeks]);
+
+  useEffect(() => {
+    if (!isSentinelVisible) return;
+    loadMoreWeeks();
+  }, [isSentinelVisible, loadMoreWeeks]);
+
+  useEffect(() => {
+    if (!mainScrollContainer) return;
+
+    const handleScroll = () => {
+      const remaining = mainScrollContainer.scrollHeight - mainScrollContainer.scrollTop - mainScrollContainer.clientHeight;
+      if (remaining > 240) return;
+      loadMoreWeeks();
+    };
+
+    mainScrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    return () => mainScrollContainer.removeEventListener('scroll', handleScroll);
+  }, [mainScrollContainer, loadMoreWeeks]);
 
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
   const reloadButtonBusy = dashboardReloadMutation.isPending || extractRunning || dashboardReloadQueued;
