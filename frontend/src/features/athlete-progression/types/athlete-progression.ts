@@ -23,6 +23,10 @@ export interface AthleteProgressionPoint {
   pounding: number;
   vdot: number | null;
   vdot_max: number | null;
+  baseline_tss: number;
+  baseline_distance_km: number;
+  lt_target_tss: number;
+  lt_target_distance_km: number;
   target_tss: number;
   target_distance_km: number;
 }

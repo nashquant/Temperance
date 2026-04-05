@@ -40,6 +40,8 @@ interface Props {
 const INTEGER_LIKE_KEYS = new Set([
   'tss',
   'rtss',
+  'baseline_tss',
+  'lt_target_tss',
   'stress_target_tss',
   'pounding_target_tss',
   'sleep_score',
