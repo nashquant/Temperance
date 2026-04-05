@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from backend.app import mcp_server
 
@@ -314,6 +315,56 @@ class MCPServerHelpersTest(unittest.TestCase):
         result = mcp_server.tool_search_workouts({"category": "nonexistent-category-xyz"})
         self.assertEqual(result["count"], 0)
         self.assertEqual(result["templates"], [])
+
+    def test_get_fitness_form_exposes_baseline_history_fields(self):
+        fake_progression = {
+            "points": [
+                {
+                    "period_start": "2026-03-01",
+                    "tss": 55.0,
+                    "rtss": 57.0,
+                    "duration_h": 1.0,
+                    "distance_km": 10.0,
+                    "distance_eqv_km": 10.2,
+                    "target_tss": 60.0,
+                    "baseline_tss": 60.0,
+                    "baseline_distance_km": 11.0,
+                    "lt_target_tss": 63.0,
+                    "lt_target_distance_km": 11.5,
+                    "capacity_baseline_tss": 62.0,
+                    "recent_load_anchor_tss": 58.0,
+                    "blended_baseline_tss_before_smoothing": 59.0,
+                    "smoothed_baseline_tss": 60.0,
+                    "fitness": 45.0,
+                    "fatigue": 50.0,
+                    "overreach": 20.0,
+                    "injury_risk": 15.0,
+                    "durability": 40.0,
+                    "pounding": 42.0,
+                }
+            ]
+        }
+        with (
+            patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
+            patch(
+                "backend.app.mcp_server._analytics_helpers",
+                return_value={"_build_athlete_progression_payload": lambda **_: fake_progression},
+            ),
+        ):
+            result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
+
+        self.assertEqual(len(result["daily"]), 1)
+        point = result["daily"][0]
+        self.assertEqual(point["day"], "2026-03-01")
+        self.assertEqual(point["baseline_tss"], 60.0)
+        self.assertEqual(point["baseline_distance_km"], 11.0)
+        self.assertEqual(point["lt_target_tss"], 63.0)
+        self.assertEqual(point["capacity_baseline_tss"], 62.0)
+        self.assertEqual(point["recent_load_anchor_tss"], 58.0)
+        self.assertEqual(point["blended_baseline_tss_before_smoothing"], 59.0)
+        self.assertEqual(point["smoothed_baseline_tss"], 60.0)
+        self.assertEqual(point["fitness"], 45.0)
+        self.assertEqual(point["target_tss"], 60.0)
 
     def test_activity_row_summary_includes_pace_and_extended_metrics(self):
         summary = mcp_server._activity_row_summary(

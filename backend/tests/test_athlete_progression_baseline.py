@@ -125,6 +125,31 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
         self.assertTrue(smoothed_jumps)
         self.assertLess(max(smoothed_jumps), 50.0)
 
+    def test_points_include_baseline_history_components(self):
+        payload = self._build_payload([55.0] * 42)
+        last_point = payload["points"][-1]
+
+        self.assertIn("baseline_tss", last_point)
+        self.assertIn("baseline_distance_km", last_point)
+        self.assertIn("lt_target_tss", last_point)
+        self.assertIn("capacity_baseline_tss", last_point)
+        self.assertIn("recent_load_anchor_tss", last_point)
+        self.assertIn("blended_baseline_tss_before_smoothing", last_point)
+        self.assertIn("smoothed_baseline_tss", last_point)
+        self.assertAlmostEqual(last_point["smoothed_baseline_tss"], last_point["baseline_tss"], places=3)
+
+    def test_sparse_history_keeps_baseline_history_components_populated(self):
+        payload = self._build_payload([30.0, 40.0, 35.0])
+        points = payload["points"]
+
+        self.assertTrue(points)
+        last_point = points[-1]
+        self.assertGreaterEqual(last_point["baseline_tss"], 0.0)
+        self.assertGreaterEqual(last_point["capacity_baseline_tss"], 0.0)
+        self.assertGreaterEqual(last_point["recent_load_anchor_tss"], 0.0)
+        self.assertGreaterEqual(last_point["blended_baseline_tss_before_smoothing"], 0.0)
+        self.assertGreaterEqual(last_point["smoothed_baseline_tss"], 0.0)
+
     def test_weekly_view_extends_range_to_full_weeks(self):
         metrics_df = _metrics_frame([50.0] * 40, start_day="2026-01-01")
         with (
