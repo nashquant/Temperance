@@ -111,8 +111,8 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
         payload = self._build_payload(([10.0] * 21) + ([90.0] * 21))
         points = payload["points"]
 
-        raw_low = _blend_baseline_tss(420.0, 210.0)
-        raw_high = _blend_baseline_tss(420.0, 1890.0)
+        raw_low = _blend_baseline_tss(420.0, 210.0, 210.0, 210.0)
+        raw_high = _blend_baseline_tss(420.0, 1890.0, 3990.0, 8190.0)
         raw_jump = raw_high - raw_low
         smoothed_jump = points[-1]["baseline_tss"] - points[2]["baseline_tss"]
 

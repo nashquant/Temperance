@@ -66,6 +66,26 @@ class BlendBaselineTssTest(unittest.TestCase):
         # blended = 0.597 * 200 + 0.403 * 435.6 ≈ 119.4 + 175.5 ≈ 295
         self.assertAlmostEqual(result, 0.597 * 200.0 + (1 - 0.597) * capacity, delta=5.0)
 
+    def test_strong_chronic_history_anchors_low_recent_block(self):
+        result = _blend_baseline_tss(
+            capacity_baseline=400.0,
+            recent_load_21d=300.0,   # 100/wk recently
+            recent_load_63d=2700.0,  # 300/wk over 9 weeks
+            recent_load_365d=15600.0,  # 300/wk over a year
+        )
+        self.assertGreater(result, 250.0)
+        self.assertLess(result, 400.0)
+
+    def test_short_term_spike_is_damped_by_medium_and_long_history(self):
+        result = _blend_baseline_tss(
+            capacity_baseline=400.0,
+            recent_load_21d=1800.0,  # 600/wk recent spike
+            recent_load_63d=1800.0,  # 200/wk medium-term
+            recent_load_365d=10400.0,  # 200/wk long-term
+        )
+        self.assertGreater(result, 250.0)
+        self.assertLess(result, 450.0)
+
 
 if __name__ == "__main__":
     unittest.main()
