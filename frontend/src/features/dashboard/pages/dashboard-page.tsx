@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { Suspense, lazy, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { QueryShell } from '@/components/ui/query-shell';
@@ -20,7 +20,6 @@ import {
   setPlannedManualDone,
 } from '@/features/plan-activities/services/plan-activities-api';
 import { queryClient } from '@/lib/query-client';
-import { useIntersectionObserver } from '@/hooks/use-intersection-observer';
 
 const ActivitySplitsDrawer = lazy(async () => ({
   default: (await import('@/features/dashboard/components/activity-splits-drawer')).ActivitySplitsDrawer,
@@ -132,11 +131,8 @@ function applyComposerActivityFallback(
 }
 
 export function DashboardPage(): JSX.Element {
-  const dashboardPageSize = 8;
   const dashboardWindowWeeks = 26;
-  const dashboardMaxWeeks = 52;
   const { session, profile } = useAuth();
-  const [visibleWeeks, setVisibleWeeks] = useState(dashboardPageSize);
   const [selectedWindow, setSelectedWindow] = useState('0');
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [addActivityDayUtc, setAddActivityDayUtc] = useState<string | null>(null);
@@ -159,13 +155,11 @@ export function DashboardPage(): JSX.Element {
     finalize: (() => Promise<void>) | null;
   } | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
-  const { setHeaderActions, mainScrollContainer } = useAppLayoutContext();
+  const { setHeaderActions } = useAppLayoutContext();
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
   const undoTimerRef = useRef<number | null>(null);
   const undoDismissTimerRef = useRef<number | null>(null);
-  const isLoadingMoreRef = useRef(false);
-  const [sentinelRef, isSentinelVisible] = useIntersectionObserver({ root: mainScrollContainer, rootMargin: '200px' });
   const undoStateRef = useRef<{
     id: number;
     lane: 'planned' | 'actual';
@@ -182,7 +176,7 @@ export function DashboardPage(): JSX.Element {
     return parsed;
   }, [selectedWindow]);
   const weekOffset = selectedWindowIndex * dashboardWindowWeeks;
-  const query = useDashboardQuery(visibleWeeks, 'all', weekOffset);
+  const query = useDashboardQuery(dashboardWindowWeeks, 'all', weekOffset);
   const extractStatusQuery = useDataExtractStatusQuery();
   const userTimeZone = useMemo(() => {
     const profileAny = profile as unknown as Record<string, unknown> | null;
@@ -637,16 +631,7 @@ export function DashboardPage(): JSX.Element {
   const totalWindows = useMemo(() => {
     const weeksTotal = Math.max(Number(query.data?.weeks_total ?? 0), 0);
     return Math.max(1, Math.ceil(weeksTotal / dashboardWindowWeeks));
-  }, [dashboardWindowWeeks, query.data?.weeks_total, sortedWeeks.length]);
-  const availableWeeksInWindow = useMemo(() => {
-    const weeksTotal = Math.max(Number(query.data?.weeks_total ?? 0), 0);
-    return Math.max(0, Math.min(dashboardWindowWeeks, weeksTotal - weekOffset));
-  }, [dashboardWindowWeeks, query.data?.weeks_total, weekOffset]);
-  const visibleWeeksInWindow = Math.min(
-    Math.max(Number(query.data?.weeks_visible ?? sortedWeeks.length ?? 0), sortedWeeks.length),
-    availableWeeksInWindow || dashboardWindowWeeks,
-  );
-  const canLoadMoreWeeks = visibleWeeksInWindow < availableWeeksInWindow && visibleWeeks < dashboardMaxWeeks;
+  }, [dashboardWindowWeeks, query.data?.weeks_total]);
 
   const currentWeekStart = useMemo(() => {
     if (sortedWeeks.length === 0) return '';
@@ -684,77 +669,22 @@ export function DashboardPage(): JSX.Element {
 
   useEffect(() => {
     lastAnchoredWeekRef.current = '';
-    setVisibleWeeks(dashboardPageSize);
-  }, [dashboardPageSize, weekOffset]);
+  }, [weekOffset]);
 
-  // Reset the loading guard whenever visibleWeeks actually increments so that
-  // a cache-hit response (where isFetching never flips true→false) doesn't
-  // leave the guard permanently set and block the next scroll trigger.
-  useEffect(() => {
-    isLoadingMoreRef.current = false;
-  }, [visibleWeeks]);
-
-  const loadMoreWeeks = useCallback(() => {
-    if (!canLoadMoreWeeks) return;
-    if (query.isFetching) return;
-    if (isLoadingMoreRef.current) return;
-    isLoadingMoreRef.current = true;
-    startTransition(() => {
-      setVisibleWeeks((prev) => {
-        const next = Math.min(prev + dashboardPageSize, dashboardMaxWeeks);
-        if (next <= prev) {
-          isLoadingMoreRef.current = false;
-          return prev;
-        }
-        return next;
-      });
-    });
-  }, [canLoadMoreWeeks, query.isFetching, dashboardPageSize, dashboardMaxWeeks]);
-
-  useEffect(() => {
-    if (!isSentinelVisible) return;
-    loadMoreWeeks();
-  }, [isSentinelVisible, loadMoreWeeks]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof document === 'undefined') return;
-
-    const handleScroll = () => {
-      if (mainScrollContainer) {
-        const containerRemaining =
-          mainScrollContainer.scrollHeight - mainScrollContainer.scrollTop - mainScrollContainer.clientHeight;
-        if (containerRemaining <= 240) {
-          loadMoreWeeks();
-          return;
-        }
-      }
-
-      const scrollingElement = document.scrollingElement;
-      if (!scrollingElement) return;
-      const viewportRemaining =
-        scrollingElement.scrollHeight - scrollingElement.scrollTop - window.innerHeight;
-      if (viewportRemaining <= 240) {
-        loadMoreWeeks();
-      }
+  const formatWindowLabel = (windowIndex: number): string => {
+    const today = new Date();
+    const endDate = new Date(today);
+    endDate.setMonth(endDate.getMonth() - windowIndex * 6);
+    const startDate = new Date(today);
+    startDate.setMonth(startDate.getMonth() - (windowIndex + 1) * 6);
+    const formatDate = (value: Date): string => {
+      const day = String(value.getDate()).padStart(2, '0');
+      const month = value.toLocaleString('en-US', { month: 'short' });
+      const year = String(value.getFullYear()).slice(-2);
+      return `${day}${month}${year}`;
     };
-
-    const scrollTargets: EventTarget[] = [];
-    if (mainScrollContainer) {
-      mainScrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-      scrollTargets.push(mainScrollContainer);
-    }
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    scrollTargets.push(window);
-
-    // Try once immediately in case the sentinel starts inside the threshold.
-    handleScroll();
-
-    return () => {
-      for (const target of scrollTargets) {
-        target.removeEventListener('scroll', handleScroll);
-      }
-    };
-  }, [mainScrollContainer, loadMoreWeeks]);
+    return `${formatDate(startDate)} - ${formatDate(endDate)}`;
+  };
 
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
   const reloadButtonBusy = dashboardReloadMutation.isPending || extractRunning || dashboardReloadQueued;
@@ -785,7 +715,7 @@ export function DashboardPage(): JSX.Element {
               <SelectContent>
                 {Array.from({ length: totalWindows }).map((_, index) => (
                   <SelectItem key={index} value={String(index)}>
-                    {index === 0 ? 'Latest 6 months' : `${index * 6}-${(index + 1) * 6} months ago`}
+                    {formatWindowLabel(index)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -951,35 +881,6 @@ export function DashboardPage(): JSX.Element {
                   </div>
                 ),
               )}
-              {availableWeeksInWindow > 0 ? (
-                <div
-                  ref={sentinelRef}
-                  className="flex flex-col items-center gap-2 pb-6 pt-3"
-                  style={{ overflowAnchor: 'none' }}
-                >
-                  <p className="text-xs text-slate-400/60">
-                    Showing {visibleWeeksInWindow} of {availableWeeksInWindow} weeks
-                  </p>
-                  {canLoadMoreWeeks ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 border-white/10 bg-black/20 text-slate-200 hover:bg-black/30"
-                      onClick={() => loadMoreWeeks()}
-                      disabled={query.isFetching}
-                    >
-                      Load older weeks
-                    </Button>
-                  ) : null}
-                  {query.isFetching && canLoadMoreWeeks ? (
-                    <div className="flex items-center gap-2 text-xs text-slate-400/72">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Loading older weeks…</span>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           )}
         </>
