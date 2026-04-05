@@ -747,11 +747,18 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       .join('\n');
   }, [editValues, selectedRows]);
 
-  const goalItems = query.data
+  const displayedGoals = selectedWeekMeta
+    ? {
+        tss: selectedWeekMeta.goal_tss,
+        rtss: selectedWeekMeta.goal_rtss,
+        distance_eqv_km: selectedWeekMeta.goal_distance_eqv_km,
+      }
+    : query.data?.goals;
+  const goalItems = displayedGoals
     ? [
-        { label: 'TSS Goal', value: Math.round(query.data.goals.tss).toString() },
-        { label: 'rTSS Goal', value: Math.round(query.data.goals.rtss).toString() },
-        { label: 'Distance Goal', value: `${Math.round(query.data.goals.distance_eqv_km)} km` },
+        { label: 'TSS Goal', value: Math.round(displayedGoals.tss).toString() },
+        { label: 'rTSS Goal', value: Math.round(displayedGoals.rtss).toString() },
+        { label: 'Distance Goal', value: `${Math.round(displayedGoals.distance_eqv_km)} km` },
       ]
     : [];
 
@@ -939,9 +946,9 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               ))}
           </SecondaryPageSectionCard>
           <div className="hidden flex-wrap items-center gap-2 sm:flex">
-            <Badge variant="outline">TSS goal: {Math.round(query.data.goals.tss)}</Badge>
-            <Badge variant="outline">rTSS goal: {Math.round(query.data.goals.rtss)}</Badge>
-            <Badge variant="outline">Distance goal: {Math.round(query.data.goals.distance_eqv_km)} km</Badge>
+            <Badge variant="outline">TSS goal: {Math.round(displayedGoals?.tss ?? 0)}</Badge>
+            <Badge variant="outline">rTSS goal: {Math.round(displayedGoals?.rtss ?? 0)}</Badge>
+            <Badge variant="outline">Distance goal: {Math.round(displayedGoals?.distance_eqv_km ?? 0)} km</Badge>
           </div>
         </>
       ) : null}

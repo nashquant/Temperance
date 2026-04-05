@@ -1690,6 +1690,60 @@ def _blend_baseline_tss(capacity_baseline: float, recent_load_21d: float) -> flo
     return max(blended, capacity_baseline * 0.30)
 
 
+def _blended_weekly_targets_for_day(
+    db_path: Path,
+    target_day: pd.Timestamp | datetime | str,
+    actual_metrics_df: pd.DataFrame | None = None,
+) -> dict[str, float]:
+    day_ts = pd.Timestamp(target_day).normalize()
+    if pd.isna(day_ts):
+        return {"tss": 0.0, "rtss": 0.0, "distance_eqv_km": 0.0}
+
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
+
+    lt_weekly_tss = float(max(_weekly_tss_target_from_lt_pace(pace_for_day) * 1.10, 0.0)) if pace_for_day > 0 else 0.0
+    lt_weekly_rtss = float(max(_weekly_tss_target_from_lt_pace(pace_for_day) * 0.90, 0.0)) if pace_for_day > 0 else 0.0
+    lt_weekly_distance = float(max(_weekly_distance_target_from_lt_pace(pace_for_day), 0.0)) if pace_for_day > 0 else 0.0
+
+    metrics_df = actual_metrics_df
+    if metrics_df is None:
+        metrics_df = _metrics_for_filters(
+            db_path=db_path,
+            days=36500,
+            start_day=None,
+            end_day=None,
+            sport=None,
+        )
+
+    recent_load_21d = 0.0
+    if metrics_df is not None and not metrics_df.empty:
+        working = metrics_df.copy()
+        working["day"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+        working = working.dropna(subset=["day"])
+        if not working.empty:
+            start = day_ts - pd.Timedelta(days=21)
+            recent_rows = working[(working["day"] >= start) & (working["day"] < day_ts)]
+            recent_load_21d = float(pd.to_numeric(recent_rows.get("tss"), errors="coerce").fillna(0.0).sum())
+
+    blended_weekly_tss = float(_blend_baseline_tss(lt_weekly_tss, recent_load_21d))
+    blend_factor = (blended_weekly_tss / lt_weekly_tss) if lt_weekly_tss > 0 else 1.0
+    if not math.isfinite(blend_factor) or blend_factor <= 0:
+        blend_factor = 1.0
+
+    return {
+        "tss": round(blended_weekly_tss, 1),
+        "rtss": round(lt_weekly_rtss * blend_factor, 1),
+        "distance_eqv_km": round(lt_weekly_distance * blend_factor, 1),
+    }
+
+
 def _daniels_velocity_vo2(velocity_m_per_min: float) -> float:
     velocity = max(float(velocity_m_per_min), 0.0)
     return -4.60 + 0.182258 * velocity + 0.000104 * (velocity**2)
@@ -6236,19 +6290,12 @@ def _build_week_outlook_payload(
         )
         remaining_to_go = float(planned_remaining_metric_total)
 
-    pace_curve = _load_curve_points(
+    blended_targets = _blended_weekly_targets_for_day(
         db_path=db_path,
-        key=SETTINGS_KEY_LT_PACE_CURVE,
-        value_key="lt_pace_sec",
-        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        target_day=ws,
+        actual_metrics_df=metrics_df,
     )
-    latest_lt_pace = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-    if metric_key == "distance_eqv_km":
-        goal = _weekly_distance_target_from_lt_pace(latest_lt_pace)
-    elif metric_key == "rtss":
-        goal = _weekly_tss_target_from_lt_pace(latest_lt_pace) * 0.90
-    else:
-        goal = _weekly_tss_target_from_lt_pace(latest_lt_pace) * 1.10
+    goal = float(blended_targets.get(metric_key, blended_targets.get("tss", 0.0)))
 
     progress = int(round((week_total_current / goal) * 100.0)) if goal > 0 else 0
     projected_finish = float(wtd_current + remaining_to_go) if compare_key == "planned" else float("nan")
@@ -6378,12 +6425,19 @@ def _build_planned_activities_payload(
     # Keep all planned rows in scope so users can choose any prior/future week.
     in_scope_rows = planned_rows.copy()
 
-    latest_lt_pace = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-    goals = {
-        "tss": round(_weekly_tss_target_from_lt_pace(latest_lt_pace) * 1.10, 1),
-        "rtss": round(_weekly_tss_target_from_lt_pace(latest_lt_pace) * 0.90, 1),
-        "distance_eqv_km": round(_weekly_distance_target_from_lt_pace(latest_lt_pace), 1),
-    }
+    actual_metrics_df = _metrics_for_filters(
+        db_path=db_path,
+        days=36500,
+        start_day=None,
+        end_day=None,
+        sport=None,
+    )
+    current_week_start = _week_start_monday(pd.Timestamp(datetime.now().astimezone().date()))
+    goals = _blended_weekly_targets_for_day(
+        db_path=db_path,
+        target_day=current_week_start,
+        actual_metrics_df=actual_metrics_df,
+    )
 
     weeks_rows: list[dict[str, Any]] = []
     if not in_scope_rows.empty:
@@ -6409,6 +6463,11 @@ def _build_planned_activities_payload(
             we = ws + pd.Timedelta(days=6)
             dur_s = _safe_float(row.get("duration_s"))
             if_pct = (_safe_float(row.get("if_weighted")) / dur_s * 100.0) if dur_s > 0 else 0.0
+            week_goals = _blended_weekly_targets_for_day(
+                db_path=db_path,
+                target_day=ws,
+                actual_metrics_df=actual_metrics_df,
+            )
             weeks_rows.append(
                 {
                     "week_start": ws.date().isoformat(),
@@ -6420,6 +6479,9 @@ def _build_planned_activities_payload(
                     "rtss": round(_safe_float(row.get("rtss")), 1),
                     "distance_eqv_km": round(_safe_float(row.get("distance_eqv_km")), 1),
                     "if_proxy_pct": round(if_pct, 1),
+                    "goal_tss": float(week_goals.get("tss", 0.0)),
+                    "goal_rtss": float(week_goals.get("rtss", 0.0)),
+                    "goal_distance_eqv_km": float(week_goals.get("distance_eqv_km", 0.0)),
                 }
             )
 
