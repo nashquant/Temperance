@@ -317,7 +317,7 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(result["templates"], [])
 
     def test_get_fitness_form_exposes_baseline_history_fields(self):
-        fake_progression = {
+        fake_daily_progression = {
             "points": [
                 {
                     "period_start": "2026-03-01",
@@ -344,11 +344,32 @@ class MCPServerHelpersTest(unittest.TestCase):
                 }
             ]
         }
+        fake_weekly_progression = {
+            "points": [
+                {
+                    "period_start": "2026-02-23",
+                    "baseline_tss": 57.0,
+                    "baseline_distance_km": 10.5,
+                    "lt_target_tss": 63.0,
+                    "lt_target_distance_km": 11.5,
+                    "capacity_baseline_tss": 61.0,
+                    "recent_load_anchor_tss": 56.0,
+                    "blended_baseline_tss_before_smoothing": 57.5,
+                    "smoothed_baseline_tss": 57.0,
+                }
+            ]
+        }
+
+        def _fake_progression_builder(**kwargs):
+            if kwargs.get("aggregation") == "weekly":
+                return fake_weekly_progression
+            return fake_daily_progression
+
         with (
             patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
             patch(
                 "backend.app.mcp_server._analytics_helpers",
-                return_value={"_build_athlete_progression_payload": lambda **_: fake_progression},
+                return_value={"_build_athlete_progression_payload": _fake_progression_builder},
             ),
         ):
             result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
@@ -365,6 +386,11 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(point["smoothed_baseline_tss"], 60.0)
         self.assertEqual(point["fitness"], 45.0)
         self.assertEqual(point["target_tss"], 60.0)
+        self.assertEqual(len(result["weekly_baseline"]), 1)
+        weekly_point = result["weekly_baseline"][0]
+        self.assertEqual(weekly_point["week_start"], "2026-02-23")
+        self.assertEqual(weekly_point["baseline_tss"], 57.0)
+        self.assertEqual(weekly_point["capacity_baseline_tss"], 61.0)
 
     def test_activity_row_summary_includes_pace_and_extended_metrics(self):
         summary = mcp_server._activity_row_summary(

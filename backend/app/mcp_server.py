@@ -2346,7 +2346,8 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
 
     Delegates to _build_athlete_progression_payload so the metrics here are
     identical to those shown on the Athlete Progression dashboard, including
-    rTSS/specificity-aware overreach and injury_risk.
+    rTSS/specificity-aware overreach and injury_risk, plus weekly baseline
+    history points.
 
     Field glossary (per daily point):
       fitness    — 42-day TSS EMA (≈ CTL); aliased as ctl
@@ -2362,16 +2363,25 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
     args = FitnessFormArgs.model_validate(arguments or {})
     db_path = _resolve_db_path(args.owner)
     days = max(args.days, 14)
+    helpers = _analytics_helpers()
 
-    progression = _analytics_helpers()["_build_athlete_progression_payload"](
+    progression = helpers["_build_athlete_progression_payload"](
         db_path=db_path,
         days=days,
         activity_filter="all",
         aggregation="daily",
         owner=args.owner,
     )
+    weekly_progression = helpers["_build_athlete_progression_payload"](
+        db_path=db_path,
+        days=days,
+        activity_filter="all",
+        aggregation="weekly",
+        owner=args.owner,
+    )
 
     points = progression.get("points") or []
+    weekly_points = weekly_progression.get("points") or []
     if not points:
         return {
             "owner": args.owner,
@@ -2383,9 +2393,11 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
             ),
             "summary": {},
             "daily": [],
+            "weekly_baseline": [],
         }
 
     daily_out: list[dict[str, Any]] = []
+    weekly_baseline_out: list[dict[str, Any]] = []
     peak_fitness = 0.0
     for pt in points:
         fitness = _safe_float(pt.get("fitness"))
@@ -2423,6 +2435,25 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
             "tsb": form,
         }))
 
+    for pt in weekly_points:
+        weekly_baseline_out.append(
+            _clean_mapping(
+                {
+                    "week_start": str(pt.get("period_start") or ""),
+                    "baseline_tss": round(_safe_float(pt.get("baseline_tss")), 1),
+                    "baseline_distance_km": round(_safe_float(pt.get("baseline_distance_km")), 2),
+                    "lt_target_tss": round(_safe_float(pt.get("lt_target_tss")), 1),
+                    "lt_target_distance_km": round(_safe_float(pt.get("lt_target_distance_km")), 2),
+                    "capacity_baseline_tss": round(_safe_float(pt.get("capacity_baseline_tss")), 1),
+                    "recent_load_anchor_tss": round(_safe_float(pt.get("recent_load_anchor_tss")), 1),
+                    "blended_baseline_tss_before_smoothing": round(
+                        _safe_float(pt.get("blended_baseline_tss_before_smoothing")), 1
+                    ),
+                    "smoothed_baseline_tss": round(_safe_float(pt.get("smoothed_baseline_tss")), 1),
+                }
+            )
+        )
+
     current = daily_out[-1] if daily_out else {}
     current_fitness = _safe_float(current.get("fitness"))
     current_fatigue = _safe_float(current.get("fatigue"))
@@ -2451,6 +2482,7 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
             "current_tsb": current.get("form"),
         }),
         "daily": daily_out,
+        "weekly_baseline": weekly_baseline_out,
     }
 
 
@@ -3283,7 +3315,8 @@ TOOLS: dict[str, ToolSpec] = {
             "as the Athlete Progression dashboard. Returns per-day: fitness (42-day TSS EMA \u2248CTL), "
             "fatigue (7-day TSS EMA \u2248ATL), form (\u2248TSB), ACWR, overreach (excess 10-day TSS above "
             "daily target), injury_risk (excess 10-day rTSS above daily target, running-specific), "
-            "durability (100-day rTSS EMA), and pounding (7-day rTSS EMA). "
+            "durability (100-day rTSS EMA), and pounding (7-day rTSS EMA). Also includes "
+            "weekly baseline history (baseline, LT target, and blended baseline components by week). "
             "ctl/atl/tsb fields are included as backward-compat aliases."
         ),
         input_schema=FitnessFormArgs.model_json_schema(),
