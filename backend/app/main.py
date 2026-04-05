@@ -1667,6 +1667,29 @@ def _weekly_distance_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
     return max(_lt_target_from_regression(lt_pace_sec_per_km, value_index=1), 0.0)
 
 
+def _blend_baseline_tss(capacity_baseline: float, recent_load_21d: float) -> float:
+    """Blend LT-pace capacity model with empirical 3-week rolling average.
+
+    Implements the doctrine: baseline = average of the last 2-3 relevant weeks,
+    anchored by the capacity model when history is sparse.
+
+    history_weight scales from 0 (no recent activity) toward 0.65 (full 3 weeks
+    at or above expected load), using recent_load_21d / (capacity_baseline * 3)
+    as a data-richness proxy. The 1.30 multiplier means the weight reaches 0.65
+    when the athlete is doing ~50% of capacity — not requiring a full-capacity
+    three weeks to weight history heavily.
+
+    Floor: capacity_baseline * 0.30 prevents a trivially low baseline during
+    extended rest periods.
+    """
+    if capacity_baseline <= 0:
+        return max(recent_load_21d / 3.0, 1.0)
+    recent_weekly_avg = recent_load_21d / 3.0
+    history_weight = min(0.65, (recent_load_21d / max(capacity_baseline * 3.0, 1.0)) * 1.30)
+    blended = history_weight * recent_weekly_avg + (1.0 - history_weight) * capacity_baseline
+    return max(blended, capacity_baseline * 0.30)
+
+
 def _daniels_velocity_vo2(velocity_m_per_min: float) -> float:
     velocity = max(float(velocity_m_per_min), 0.0)
     return -4.60 + 0.182258 * velocity + 0.000104 * (velocity**2)
@@ -3428,6 +3451,9 @@ def _generated_activity_context(
             )
         )
 
+    base_weekly_goal_tss = _blend_baseline_tss(base_weekly_goal_tss, _sum_actual(21, "tss"))
+    base_daily_goal_tss = max(float(base_weekly_goal_tss) / 7.0, 0.0)
+
     actual_week_tss_to_date = float(
         sum(
             _safe_float(values.get("tss"))
@@ -4054,8 +4080,8 @@ def _generated_activity_planning_state(
     selected_day = pd.Timestamp(selected_day).normalize()
     recent_start = selected_day - pd.Timedelta(days=84)
     horizon_end = selected_day + pd.Timedelta(days=14)
-    weekly_baseline_tss = _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10 if threshold_pace_sec_per_km > 0 else 350.0
-    anchor_daily_tss = max(float(weekly_baseline_tss) * 0.14, 15.0)
+    capacity_baseline = _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10 if threshold_pace_sec_per_km > 0 else 350.0
+    anchor_daily_tss = max(float(capacity_baseline) * 0.14, 15.0)
 
     metrics_df = _metrics_for_filters(
         db_path=db_path,
@@ -4119,7 +4145,9 @@ def _generated_activity_planning_state(
     }
     recent_load_7d = _sum_actual(7, "tss")
     recent_load_28d = _sum_actual(28, "tss")
+    recent_load_21d = _sum_actual(21, "tss")
     recent_load_ratio = ((recent_load_7d / 7.0) / (recent_load_28d / 28.0)) if recent_load_28d > 0 else 1.0
+    weekly_baseline_tss = _blend_baseline_tss(capacity_baseline, recent_load_21d)
     methodology = get_methodology(methodology_id)
 
     planning_state = build_user_planning_state(
