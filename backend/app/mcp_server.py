@@ -22,6 +22,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional in pure-helper test e
     yaml = None
 
 from pydantic import BaseModel, Field
+from temperance.analytics import ema_multi
 from temperance.planning import get_methodology, preview_horizon
 from temperance.planning.state_builder import infer_hard_subtype
 from temperance.planning.stress import classify_session_stress, is_long_run_candidate
@@ -341,6 +342,7 @@ def _analytics_helpers() -> dict[str, Any]:
 
     return {
         "SETTINGS_KEY_USER_TIMEZONE": backend_main.SETTINGS_KEY_USER_TIMEZONE,
+        "_build_athlete_progression_payload": backend_main._build_athlete_progression_payload,
         "_build_week_outlook_payload": backend_main._build_week_outlook_payload,
         "_build_wellness_payload": backend_main._build_wellness_payload,
         "_db_path_for_owner": backend_main._db_path_for_owner,
@@ -505,40 +507,52 @@ def _require_pandas() -> None:
         raise RuntimeError("pandas is required but not installed")
 
 
-def _compute_current_fitness_form(metrics_df: Any) -> dict[str, Any]:
-    """Compute current CTL/ATL/TSB/ACWR from a metrics DataFrame. Returns empty dict if no data."""
+def _compute_fitness_metrics(db_path: Any, owner: str) -> dict[str, Any]:
+    """Compute current fitness metrics from the athlete progression model.
+
+    Uses the same ema_multi-based computation as the Athlete Progression dashboard,
+    including rTSS/specificity-aware metrics. Returns empty dict if no data.
+
+    Metric glossary:
+      fitness    — 42-day TSS EMA (≈ CTL, chronic training load)
+      fatigue    — 7-day TSS EMA (≈ ATL, acute training load)
+      form       — fitness − fatigue (≈ TSB, training stress balance)
+      acwr       — fatigue / fitness (acute:chronic workload ratio)
+      overreach  — excess 10-day TSS load above daily target (0 when on-plan)
+      injury_risk— excess 10-day rTSS load above daily target (running-specific overreach)
+      durability — 100-day rTSS EMA (long-term running robustness)
+      pounding   — 7-day rTSS EMA (acute running mechanical load)
+    """
     _require_pandas()
-    if metrics_df.empty:
+    try:
+        progression = _analytics_helpers()["_build_athlete_progression_payload"](
+            db_path=db_path,
+            days=180,
+            activity_filter="all",
+            aggregation="daily",
+            owner=owner,
+        )
+    except Exception:
         return {}
-    daily = metrics_df.copy()
-    daily["day"] = pd.to_datetime(
-        daily.get("start_time_utc"), utc=True, errors="coerce"
-    ).dt.tz_convert(None).dt.normalize()
-    daily = daily.dropna(subset=["day"]).copy()
-    grouped = (
-        daily.groupby("day", as_index=False)
-        .agg(tss=("tss", "sum"))
-        .sort_values("day")
-    )
-    grouped["tss"] = pd.to_numeric(grouped["tss"], errors="coerce").fillna(0.0)
-    tss_vals = grouped["tss"].values
-    n = len(tss_vals)
-    if n == 0:
+    points = progression.get("points") or []
+    if not points:
         return {}
-    ctl_k = 2.0 / (42 + 1)
-    atl_k = 2.0 / (7 + 1)
-    ctl = float(tss_vals[0])
-    atl = float(tss_vals[0])
-    for i in range(1, n):
-        ctl = ctl + ctl_k * (float(tss_vals[i]) - ctl)
-        atl = atl + atl_k * (float(tss_vals[i]) - atl)
-    tsb = ctl - atl
-    acwr = round(atl / ctl, 2) if ctl > 0 else None
+    last = points[-1]
+    fitness = _safe_float(last.get("fitness"))
+    fatigue = _safe_float(last.get("fatigue"))
     return _clean_mapping({
-        "ctl": round(ctl, 1),
-        "atl": round(atl, 1),
-        "tsb": round(tsb, 1),
-        "acwr": acwr,
+        "fitness": round(fitness, 1),
+        "fatigue": round(fatigue, 1),
+        "form": round(fitness - fatigue, 1),
+        "acwr": round(fatigue / fitness, 2) if fitness > 0 else None,
+        "overreach": round(_safe_float(last.get("overreach")), 1),
+        "injury_risk": round(_safe_float(last.get("injury_risk")), 1),
+        "durability": round(_safe_float(last.get("durability")), 1),
+        "pounding": round(_safe_float(last.get("pounding")), 1),
+        "_note": (
+            "fitness\u2248CTL (42-day TSS EMA), fatigue\u2248ATL (7-day TSS EMA); "
+            "overreach and injury_risk measure excess load above daily target"
+        ),
     })
 
 
@@ -600,7 +614,7 @@ def tool_get_today_status(arguments: dict[str, Any]) -> dict[str, Any]:
 
     latest_wellness = _latest_wellness_point(wellness_payload)
 
-    fitness_form = _compute_current_fitness_form(metrics_df) if pd is not None else {}
+    fitness_form = _compute_fitness_metrics(db_path, args.owner) if pd is not None else {}
 
     return {
         "owner": args.owner,
@@ -752,19 +766,24 @@ def tool_get_load_trend(arguments: dict[str, Any]) -> dict[str, Any]:
     grouped["rtss"] = pd.to_numeric(grouped["rtss"], errors="coerce").fillna(0.0)
     grouped["duration_s"] = pd.to_numeric(grouped["duration_s"], errors="coerce").fillna(0.0)
     grouped["distance_equivalent_km"] = pd.to_numeric(grouped["distance_equivalent_km"], errors="coerce").fillna(0.0)
-    grouped["ctl_42_tss"] = grouped["tss"].ewm(alpha=(2.0 / 43.0), adjust=False).mean()
-    grouped["atl_7_tss"] = grouped["tss"].ewm(alpha=(2.0 / 8.0), adjust=False).mean()
-    grouped["tsb_proxy"] = grouped["ctl_42_tss"] - grouped["atl_7_tss"]
-    grouped["acwr"] = grouped.apply(
-        lambda r: round(r["atl_7_tss"] / r["ctl_42_tss"], 2) if r["ctl_42_tss"] > 0 else None,
-        axis=1,
-    )
+
+    # Use shared ema_multi (same function as Athlete Progression dashboard)
+    tss_emas = ema_multi(grouped["tss"], [42, 7])
+    rtss_emas = ema_multi(grouped["rtss"], [100, 7])
+    grouped["fitness"] = tss_emas[42]       # 42-day TSS EMA (≈ CTL)
+    grouped["fatigue"] = tss_emas[7]        # 7-day TSS EMA (≈ ATL)
+    grouped["form"] = grouped["fitness"] - grouped["fatigue"]
+    grouped["durability"] = rtss_emas[100]  # 100-day rTSS EMA
+    grouped["pounding"] = rtss_emas[7]      # 7-day rTSS EMA
 
     daily_rows: list[dict[str, Any]] = []
     for _, row in grouped.tail(21).iterrows():
         day = pd.to_datetime(row.get("day"), errors="coerce")
         if pd.isna(day):
             continue
+        fitness = _safe_float(row.get("fitness"))
+        fatigue = _safe_float(row.get("fatigue"))
+        acwr = round(fatigue / fitness, 2) if fitness > 0 else None
         daily_rows.append(
             _clean_mapping({
                 "day": day.date().isoformat(),
@@ -773,25 +792,44 @@ def tool_get_load_trend(arguments: dict[str, Any]) -> dict[str, Any]:
                 "duration_min": _format_duration_minutes(row.get("duration_s")),
                 "activities": int(_safe_float(row.get("activities"))),
                 "distance_equivalent_km": round(_safe_float(row.get("distance_equivalent_km")), 2),
-                "ctl_42_tss": round(_safe_float(row.get("ctl_42_tss")), 1),
-                "atl_7_tss": round(_safe_float(row.get("atl_7_tss")), 1),
-                "tsb_proxy": round(_safe_float(row.get("tsb_proxy")), 1),
-                "acwr": _extract_numeric(row.get("acwr")),
+                "fitness": round(fitness, 1),
+                "fatigue": round(fatigue, 1),
+                "form": round(_safe_float(row.get("form")), 1),
+                "acwr": acwr,
+                "durability": round(_safe_float(row.get("durability")), 1),
+                "pounding": round(_safe_float(row.get("pounding")), 1),
+                # backward-compat aliases
+                "ctl_42_tss": round(fitness, 1),
+                "atl_7_tss": round(fatigue, 1),
+                "tsb_proxy": round(_safe_float(row.get("form")), 1),
             })
         )
 
-    latest_ctl = _safe_float(grouped["ctl_42_tss"].iloc[-1])
-    latest_atl = _safe_float(grouped["atl_7_tss"].iloc[-1])
+    latest_fitness = _safe_float(grouped["fitness"].iloc[-1])
+    latest_fatigue = _safe_float(grouped["fatigue"].iloc[-1])
+    latest_durability = _safe_float(grouped["durability"].iloc[-1])
+    latest_pounding = _safe_float(grouped["pounding"].iloc[-1])
     summary = {
         "days": int(max(args.days, 14)),
         "total_tss": round(_safe_float(grouped["tss"].sum()), 1),
         "total_rtss": round(_safe_float(grouped["rtss"].sum()), 1),
         "avg_daily_tss": round(_safe_float(grouped["tss"].mean()), 1),
         "avg_daily_rtss": round(_safe_float(grouped["rtss"].mean()), 1),
-        "latest_ctl_42_tss": round(latest_ctl, 1),
-        "latest_atl_7_tss": round(latest_atl, 1),
-        "latest_tsb_proxy": round(_safe_float(grouped["tsb_proxy"].iloc[-1]), 1),
-        "latest_acwr": round(latest_atl / latest_ctl, 2) if latest_ctl > 0 else None,
+        "latest_fitness": round(latest_fitness, 1),
+        "latest_fatigue": round(latest_fatigue, 1),
+        "latest_form": round(latest_fitness - latest_fatigue, 1),
+        "latest_acwr": round(latest_fatigue / latest_fitness, 2) if latest_fitness > 0 else None,
+        "latest_durability": round(latest_durability, 1),
+        "latest_pounding": round(latest_pounding, 1),
+        # backward-compat aliases
+        "latest_ctl_42_tss": round(latest_fitness, 1),
+        "latest_atl_7_tss": round(latest_fatigue, 1),
+        "latest_tsb_proxy": round(latest_fitness - latest_fatigue, 1),
+        "_note": (
+            "fitness\u2248CTL (42-day TSS EMA), fatigue\u2248ATL (7-day TSS EMA); "
+            "durability=100-day rTSS EMA, pounding=7-day rTSS EMA; "
+            "for overreach/injury_risk use get_fitness_form"
+        ),
     }
 
     hr_zone_summary: Optional[dict[str, Any]] = None
@@ -2285,75 +2323,105 @@ def tool_search_workouts(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Return the full daily fitness model time series.
+
+    Delegates to _build_athlete_progression_payload so the metrics here are
+    identical to those shown on the Athlete Progression dashboard, including
+    rTSS/specificity-aware overreach and injury_risk.
+
+    Field glossary (per daily point):
+      fitness    — 42-day TSS EMA (≈ CTL); aliased as ctl
+      fatigue    — 7-day TSS EMA (≈ ATL); aliased as atl
+      form       — fitness − fatigue (≈ TSB); aliased as tsb
+      acwr       — fatigue / fitness
+      overreach  — excess 10-day TSS load above daily target
+      injury_risk— excess 10-day rTSS above daily target (running-specific)
+      durability — 100-day rTSS EMA (long-term running robustness)
+      pounding   — 7-day rTSS EMA (acute running mechanical load)
+    """
     _require_pandas()
     args = FitnessFormArgs.model_validate(arguments or {})
-    db_path, metrics_df = _recent_metrics_df(args.owner, sport=args.sport, days=max(args.days, 14))
-    if metrics_df.empty:
+    db_path = _resolve_db_path(args.owner)
+    days = max(args.days, 14)
+
+    progression = _analytics_helpers()["_build_athlete_progression_payload"](
+        db_path=db_path,
+        days=days,
+        activity_filter="all",
+        aggregation="daily",
+        owner=args.owner,
+    )
+
+    points = progression.get("points") or []
+    if not points:
         return {
             "owner": args.owner,
             "db_path": str(db_path),
-            "days": int(max(args.days, 14)),
+            "days": days,
+            "_note": (
+                "fitness\u2248CTL (42-day TSS EMA), fatigue\u2248ATL (7-day TSS EMA); "
+                "overreach and injury_risk measure excess load above daily target"
+            ),
             "summary": {},
             "daily": [],
         }
 
-    daily = metrics_df.sort_values("start_date", ascending=True).copy()
-    daily["day"] = pd.to_datetime(daily["start_date"]).dt.date.astype(str)
-    day_agg = daily.groupby("day").agg(
-        tss=("tss", "sum"),
-        rtss=("rtss", "sum"),
-        duration_s=("duration_s", "sum"),
-        distance_km=("distance_km", "sum"),
-        mechanical_load=("mechanical_load", "sum"),
-    ).reset_index().sort_values("day")
-
-    tss_vals = day_agg["tss"].values
-    n = len(tss_vals)
-    ctl_vals = [0.0] * n
-    atl_vals = [0.0] * n
-    ctl_k = 2.0 / (42 + 1)
-    atl_k = 2.0 / (7 + 1)
-    for i in range(n):
-        prev_ctl = ctl_vals[i - 1] if i > 0 else float(tss_vals[0])
-        prev_atl = atl_vals[i - 1] if i > 0 else float(tss_vals[0])
-        ctl_vals[i] = prev_ctl + ctl_k * (float(tss_vals[i]) - prev_ctl)
-        atl_vals[i] = prev_atl + atl_k * (float(tss_vals[i]) - prev_atl)
-
-    day_agg["ctl"] = [round(v, 1) for v in ctl_vals]
-    day_agg["atl"] = [round(v, 1) for v in atl_vals]
-    day_agg["tsb"] = [round(c - a, 1) for c, a in zip(ctl_vals, atl_vals)]
-    acwr_vals = [round(a / c, 2) if c > 0 else None for c, a in zip(ctl_vals, atl_vals)]
-    day_agg["acwr"] = acwr_vals
-
-    daily_out = []
-    for _, row in day_agg.iterrows():
+    daily_out: list[dict[str, Any]] = []
+    peak_fitness = 0.0
+    for pt in points:
+        fitness = _safe_float(pt.get("fitness"))
+        fatigue = _safe_float(pt.get("fatigue"))
+        form = round(fitness - fatigue, 1)
+        acwr = round(fatigue / fitness, 2) if fitness > 0 else None
+        peak_fitness = max(peak_fitness, fitness)
         daily_out.append(_clean_mapping({
-            "day": str(row["day"]),
-            "tss": round(float(row["tss"]), 1),
-            "rtss": round(float(row["rtss"]), 1),
-            "duration_s": round(float(row["duration_s"]), 0),
-            "distance_km": round(float(row["distance_km"]), 2),
-            "mechanical_load": round(float(row["mechanical_load"]), 1),
-            "ctl": row["ctl"],
-            "atl": row["atl"],
-            "tsb": row["tsb"],
-            "acwr": row["acwr"],
+            "day": str(pt.get("period_start") or ""),
+            "tss": round(_safe_float(pt.get("tss")), 1),
+            "rtss": round(_safe_float(pt.get("rtss")), 1),
+            "duration_h": round(_safe_float(pt.get("duration_h")), 2),
+            "distance_km": round(_safe_float(pt.get("distance_km")), 2),
+            "distance_eqv_km": round(_safe_float(pt.get("distance_eqv_km")), 2),
+            "target_tss": round(_safe_float(pt.get("target_tss")), 1),
+            "fitness": round(fitness, 1),
+            "fatigue": round(fatigue, 1),
+            "form": form,
+            "acwr": acwr,
+            "overreach": round(_safe_float(pt.get("overreach")), 1),
+            "injury_risk": round(_safe_float(pt.get("injury_risk")), 1),
+            "durability": round(_safe_float(pt.get("durability")), 1),
+            "pounding": round(_safe_float(pt.get("pounding")), 1),
+            # backward-compat aliases
+            "ctl": round(fitness, 1),
+            "atl": round(fatigue, 1),
+            "tsb": form,
         }))
 
     current = daily_out[-1] if daily_out else {}
-    current_ctl = _safe_float(current.get("ctl"))
-    current_atl = _safe_float(current.get("atl"))
+    current_fitness = _safe_float(current.get("fitness"))
+    current_fatigue = _safe_float(current.get("fatigue"))
     return {
         "owner": args.owner,
         "db_path": str(db_path),
-        "days": int(max(args.days, 14)),
+        "days": days,
+        "_note": (
+            "fitness\u2248CTL (42-day TSS EMA), fatigue\u2248ATL (7-day TSS EMA); "
+            "overreach and injury_risk measure excess load above daily target"
+        ),
         "summary": _clean_mapping({
-            "current_ctl": current.get("ctl"),
-            "current_atl": current.get("atl"),
-            "current_tsb": current.get("tsb"),
-            "current_acwr": round(current_atl / current_ctl, 2) if current_ctl > 0 else None,
-            "peak_ctl": max(ctl_vals) if ctl_vals else None,
+            "current_fitness": round(current_fitness, 1),
+            "current_fatigue": round(current_fatigue, 1),
+            "current_form": current.get("form"),
+            "current_acwr": round(current_fatigue / current_fitness, 2) if current_fitness > 0 else None,
+            "current_overreach": current.get("overreach"),
+            "current_injury_risk": current.get("injury_risk"),
+            "current_durability": current.get("durability"),
+            "current_pounding": current.get("pounding"),
+            "peak_fitness": round(peak_fitness, 1),
             "total_days": len(daily_out),
+            # backward-compat aliases
+            "current_ctl": round(current_fitness, 1),
+            "current_atl": round(current_fatigue, 1),
+            "current_tsb": current.get("form"),
         }),
         "daily": daily_out,
     }
@@ -2436,7 +2504,7 @@ def tool_get_coaching_brief(arguments: dict[str, Any]) -> dict[str, Any]:
     db = _db_helpers()
     today_str = _utc_now().date().isoformat()
 
-    fitness_form = _compute_current_fitness_form(metrics_df) if pd is not None else {}
+    fitness_form = _compute_fitness_metrics(db_path, args.owner) if pd is not None else {}
 
     wellness_payload = analytics["_build_wellness_payload"](
         db_path=db_path, days=14, aggregation="daily", owner=args.owner,
@@ -2497,6 +2565,12 @@ def tool_get_coaching_brief(arguments: dict[str, Any]) -> dict[str, Any]:
         flags.append("high_acwr")
     elif acwr_val > 1.3:
         flags.append("elevated_acwr")
+    overreach_val = _safe_float(fitness_form.get("overreach"))
+    if overreach_val > 10:
+        flags.append("overreaching")
+    injury_risk_val = _safe_float(fitness_form.get("injury_risk"))
+    if injury_risk_val > 10:
+        flags.append("elevated_injury_risk")
     if latest_w.get("training_readiness") is not None and _safe_float(latest_w["training_readiness"]) < 40:
         flags.append("low_training_readiness")
     sleep_score = latest_w.get("sleep_score")
@@ -3067,7 +3141,12 @@ TOOLS: dict[str, ToolSpec] = {
     ),
     "get_load_trend": ToolSpec(
         name="get_load_trend",
-        description="Summarize recent load trend with daily TSS/rTSS and simple CTL/ATL proxies.",
+        description=(
+            "Summarize recent load trend with daily TSS/rTSS and specificity-aware training metrics. "
+            "Returns fitness (42-day TSS EMA \u2248CTL), fatigue (7-day TSS EMA \u2248ATL), form (fitness\u2212fatigue), "
+            "ACWR, durability (100-day rTSS EMA), and pounding (7-day rTSS EMA). "
+            "For overreach and injury_risk use get_fitness_form."
+        ),
         input_schema=RecentActivitiesArgs.model_json_schema(),
         handler=tool_get_load_trend,
     ),
@@ -3172,7 +3251,14 @@ TOOLS: dict[str, ToolSpec] = {
     ),
     "get_fitness_form": ToolSpec(
         name="get_fitness_form",
-        description="Query the full CTL/ATL/TSB/ACWR fitness model with daily time series. Returns chronic training load, acute training load, training stress balance, and acute:chronic workload ratio.",
+        description=(
+            "Full daily fitness model time series using the same rTSS/specificity-aware computation "
+            "as the Athlete Progression dashboard. Returns per-day: fitness (42-day TSS EMA \u2248CTL), "
+            "fatigue (7-day TSS EMA \u2248ATL), form (\u2248TSB), ACWR, overreach (excess 10-day TSS above "
+            "daily target), injury_risk (excess 10-day rTSS above daily target, running-specific), "
+            "durability (100-day rTSS EMA), and pounding (7-day rTSS EMA). "
+            "ctl/atl/tsb fields are included as backward-compat aliases."
+        ),
         input_schema=FitnessFormArgs.model_json_schema(),
         handler=tool_get_fitness_form,
     ),
@@ -3188,9 +3274,11 @@ TOOLS: dict[str, ToolSpec] = {
     "get_coaching_brief": ToolSpec(
         name="get_coaching_brief",
         description=(
-            "Single-call coaching situational awareness. Returns current fitness form (CTL/ATL/TSB/ACWR), "
+            "Single-call coaching situational awareness. Returns current fitness metrics (fitness\u2248CTL, "
+            "fatigue\u2248ATL, form\u2248TSB, ACWR, overreach, injury_risk, durability, pounding), "
             "recovery snapshot, active build context with guideline refs, week progress, recent 7-day stress "
-            "pattern, and actionable flags. Start here for coaching conversations."
+            "pattern, and actionable flags (including overreaching and elevated_injury_risk). "
+            "Start here for coaching conversations."
         ),
         input_schema=CoachingBriefArgs.model_json_schema(),
         handler=tool_get_coaching_brief,
