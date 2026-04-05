@@ -1667,27 +1667,68 @@ def _weekly_distance_target_from_lt_pace(lt_pace_sec_per_km: float) -> float:
     return max(_lt_target_from_regression(lt_pace_sec_per_km, value_index=1), 0.0)
 
 
-def _blend_baseline_tss(capacity_baseline: float, recent_load_21d: float) -> float:
-    """Blend LT-pace capacity model with empirical 3-week rolling average.
+def _blend_baseline_tss(
+    capacity_baseline: float,
+    recent_load_21d: float,
+    recent_load_63d: float | None = None,
+    recent_load_365d: float | None = None,
+    observed_days_21d: int | None = None,
+    observed_days_63d: int | None = None,
+    observed_days_365d: int | None = None,
+) -> float:
+    """Blend LT-based capacity with short, medium, and long-horizon training history.
 
-    Implements the doctrine: baseline = average of the last 2-3 relevant weeks,
-    anchored by the capacity model when history is sparse.
+    21d should influence the baseline, but not dominate it. 63d and 365d provide
+    inertia so the baseline moves smoothly around athlete potential rather than
+    chasing short-term spikes or troughs.
 
-    history_weight scales from 0 (no recent activity) toward 0.65 (full 3 weeks
-    at or above expected load), using recent_load_21d / (capacity_baseline * 3)
-    as a data-richness proxy. The 1.30 multiplier means the weight reaches 0.65
-    when the athlete is doing ~50% of capacity — not requiring a full-capacity
-    three weeks to weight history heavily.
-
-    Floor: capacity_baseline * 0.30 prevents a trivially low baseline during
-    extended rest periods.
+    Backward compatibility: when only 21d is supplied, preserve the previous
+    21d/capacity blend behavior so older callers and tests keep their intent.
     """
+    def _weekly_avg(load: float, window_days: int, observed_days: int | None) -> float:
+        effective_days = max(1, min(window_days, int(observed_days) if observed_days is not None else window_days))
+        return float(load) / (effective_days / 7.0)
+
     if capacity_baseline <= 0:
-        return max(recent_load_21d / 3.0, 1.0)
-    recent_weekly_avg = recent_load_21d / 3.0
-    history_weight = min(0.65, (recent_load_21d / max(capacity_baseline * 3.0, 1.0)) * 1.30)
-    blended = history_weight * recent_weekly_avg + (1.0 - history_weight) * capacity_baseline
-    return max(blended, capacity_baseline * 0.30)
+        if recent_load_63d is None and recent_load_365d is None:
+            return max(_weekly_avg(recent_load_21d, 21, observed_days_21d), 1.0)
+        avg21 = _weekly_avg(recent_load_21d, 21, observed_days_21d)
+        avg63 = _weekly_avg(recent_load_63d, 63, observed_days_63d) if recent_load_63d is not None else avg21
+        avg365 = _weekly_avg(recent_load_365d, 365, observed_days_365d) if recent_load_365d is not None else avg63
+        blended_history = 0.20 * avg21 + 0.35 * avg63 + 0.45 * avg365
+        return max(blended_history, 1.0)
+
+    if recent_load_63d is None and recent_load_365d is None:
+        recent_weekly_avg = _weekly_avg(recent_load_21d, 21, observed_days_21d)
+        history_weight = min(0.65, (recent_load_21d / max(capacity_baseline * 3.0, 1.0)) * 1.30)
+        blended = history_weight * recent_weekly_avg + (1.0 - history_weight) * capacity_baseline
+        return max(blended, capacity_baseline * 0.30)
+
+    avg21 = _weekly_avg(recent_load_21d, 21, observed_days_21d)
+    avg63 = _weekly_avg(recent_load_63d, 63, observed_days_63d) if recent_load_63d is not None else avg21
+    avg365 = _weekly_avg(recent_load_365d, 365, observed_days_365d) if recent_load_365d is not None else avg63
+
+    effective_weeks_21d = max(1e-6, min(21, int(observed_days_21d) if observed_days_21d is not None else 21) / 7.0)
+    effective_weeks_63d = max(1e-6, min(63, int(observed_days_63d) if observed_days_63d is not None else 63) / 7.0)
+    effective_weeks_365d = max(1e-6, min(365, int(observed_days_365d) if observed_days_365d is not None else 365) / 7.0)
+
+    richness21 = min(1.0, recent_load_21d / max(capacity_baseline * effective_weeks_21d * 0.50, 1.0))
+    richness63 = (
+        min(1.0, recent_load_63d / max(capacity_baseline * effective_weeks_63d * 0.45, 1.0))
+        if recent_load_63d is not None
+        else richness21
+    )
+    richness365 = (
+        min(1.0, recent_load_365d / max(capacity_baseline * effective_weeks_365d * 0.35, 1.0))
+        if recent_load_365d is not None
+        else richness63
+    )
+
+    history_anchor = 0.20 * avg21 + 0.35 * avg63 + 0.45 * avg365
+    history_weight = min(0.78, 0.18 * richness21 + 0.27 * richness63 + 0.33 * richness365)
+    blended = history_weight * history_anchor + (1.0 - history_weight) * capacity_baseline
+    chronic_floor = max(capacity_baseline * 0.30, avg63 * 0.60, avg365 * 0.75)
+    return max(blended, chronic_floor)
 
 
 def _blended_weekly_targets_for_day(
@@ -1723,16 +1764,48 @@ def _blended_weekly_targets_for_day(
         )
 
     recent_load_21d = 0.0
+    recent_load_63d = 0.0
+    recent_load_365d = 0.0
+    observed_days_21d = 0
+    observed_days_63d = 0
+    observed_days_365d = 0
     if metrics_df is not None and not metrics_df.empty:
         working = metrics_df.copy()
         working["day"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
         working = working.dropna(subset=["day"])
         if not working.empty:
-            start = day_ts - pd.Timedelta(days=21)
-            recent_rows = working[(working["day"] >= start) & (working["day"] < day_ts)]
-            recent_load_21d = float(pd.to_numeric(recent_rows.get("tss"), errors="coerce").fillna(0.0).sum())
+            earliest_day = pd.to_datetime(working["day"], errors="coerce").min()
 
-    blended_weekly_tss = float(_blend_baseline_tss(lt_weekly_tss, recent_load_21d))
+            def _sum_window(days_back: int) -> float:
+                start = day_ts - pd.Timedelta(days=days_back)
+                recent_rows = working[(working["day"] >= start) & (working["day"] < day_ts)]
+                return float(pd.to_numeric(recent_rows.get("tss"), errors="coerce").fillna(0.0).sum())
+
+            def _observed_window_days(days_back: int) -> int:
+                if pd.isna(earliest_day):
+                    return 0
+                start = day_ts - pd.Timedelta(days=days_back)
+                effective_start = max(pd.Timestamp(earliest_day).normalize(), start)
+                return max(int((day_ts - effective_start).days), 0)
+
+            recent_load_21d = _sum_window(21)
+            recent_load_63d = _sum_window(63)
+            recent_load_365d = _sum_window(365)
+            observed_days_21d = _observed_window_days(21)
+            observed_days_63d = _observed_window_days(63)
+            observed_days_365d = _observed_window_days(365)
+
+    blended_weekly_tss = float(
+        _blend_baseline_tss(
+            lt_weekly_tss,
+            recent_load_21d,
+            recent_load_63d,
+            recent_load_365d,
+            observed_days_21d=observed_days_21d,
+            observed_days_63d=observed_days_63d,
+            observed_days_365d=observed_days_365d,
+        )
+    )
     blend_factor = (blended_weekly_tss / lt_weekly_tss) if lt_weekly_tss > 0 else 1.0
     if not math.isfinite(blend_factor) or blend_factor <= 0:
         blend_factor = 1.0
@@ -3505,7 +3578,12 @@ def _generated_activity_context(
             )
         )
 
-    base_weekly_goal_tss = _blend_baseline_tss(base_weekly_goal_tss, _sum_actual(21, "tss"))
+    base_weekly_goal_tss = _blend_baseline_tss(
+        base_weekly_goal_tss,
+        _sum_actual(21, "tss"),
+        _sum_actual(63, "tss"),
+        _sum_actual(365, "tss"),
+    )
     base_daily_goal_tss = max(float(base_weekly_goal_tss) / 7.0, 0.0)
 
     actual_week_tss_to_date = float(
@@ -4200,8 +4278,10 @@ def _generated_activity_planning_state(
     recent_load_7d = _sum_actual(7, "tss")
     recent_load_28d = _sum_actual(28, "tss")
     recent_load_21d = _sum_actual(21, "tss")
+    recent_load_63d = _sum_actual(63, "tss")
+    recent_load_365d = _sum_actual(365, "tss")
     recent_load_ratio = ((recent_load_7d / 7.0) / (recent_load_28d / 28.0)) if recent_load_28d > 0 else 1.0
-    weekly_baseline_tss = _blend_baseline_tss(capacity_baseline, recent_load_21d)
+    weekly_baseline_tss = _blend_baseline_tss(capacity_baseline, recent_load_21d, recent_load_63d, recent_load_365d)
     methodology = get_methodology(methodology_id)
 
     planning_state = build_user_planning_state(
@@ -5180,18 +5260,32 @@ def _build_athlete_progression_payload(
     lt_daily_tss_target_series = pd.to_numeric(model_df.get("lt_target_tss"), errors="coerce").fillna(0.0)
     lt_daily_distance_target_series = pd.to_numeric(model_df.get("lt_target_distance_km"), errors="coerce").fillna(0.0)
     recent_load_21d = tss_series.shift(1, fill_value=0.0).rolling(window=21, min_periods=1).sum()
+    recent_load_63d = tss_series.shift(1, fill_value=0.0).rolling(window=63, min_periods=1).sum()
+    recent_load_365d = tss_series.shift(1, fill_value=0.0).rolling(window=365, min_periods=1).sum()
     weekly_capacity_series = lt_daily_tss_target_series * 7.0
     blended_weekly_baseline_raw = pd.Series(
         [
-            float(_blend_baseline_tss(_safe_float(capacity), _safe_float(recent_load)))
-            for capacity, recent_load in zip(weekly_capacity_series.tolist(), recent_load_21d.tolist())
+            float(
+                _blend_baseline_tss(
+                    _safe_float(capacity),
+                    _safe_float(load_21d),
+                    _safe_float(load_63d),
+                    _safe_float(load_365d),
+                )
+            )
+            for capacity, load_21d, load_63d, load_365d in zip(
+                weekly_capacity_series.tolist(),
+                recent_load_21d.tolist(),
+                recent_load_63d.tolist(),
+                recent_load_365d.tolist(),
+            )
         ],
         index=model_df.index,
         dtype=float,
     )
     # Smooth the displayed/progression baseline so it tracks capacity plus recent load
     # without whipsawing from day to day as the trailing 21-day window moves.
-    blended_weekly_baseline = blended_weekly_baseline_raw.ewm(span=14, adjust=False).mean()
+    blended_weekly_baseline = blended_weekly_baseline_raw.ewm(span=21, adjust=False).mean()
     daily_tss_target_series = (blended_weekly_baseline / 7.0).fillna(0.0)
     blend_factor_series = pd.Series(
         np.where(
