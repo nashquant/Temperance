@@ -16,7 +16,7 @@ class BaselineLoadScaleTest(unittest.TestCase):
 
     def test_scales_above_one_when_load_exceeds_baseline(self):
         scale = _baseline_load_scale(pd.Series([150.0]), 100.0)
-        self.assertAlmostEqual(float(scale.iloc[0]), 1.28, places=6)
+        self.assertAlmostEqual(float(scale.iloc[0]), 1.3952, places=6)
 
     def test_handles_series_baseline_targets(self):
         load = pd.Series([35.0, 70.0, 140.0])
@@ -25,6 +25,12 @@ class BaselineLoadScaleTest(unittest.TestCase):
         self.assertLess(float(scale.iloc[0]), 0.3)
         self.assertAlmostEqual(float(scale.iloc[1]), 1.0, places=6)
         self.assertGreater(float(scale.iloc[2]), 1.2)
+
+    def test_large_load_jumps_are_weighted_much_more_than_small_jumps(self):
+        baseline = 100.0
+        small_jump_scale = _baseline_load_scale(pd.Series([200.0]), baseline)
+        large_jump_scale = _baseline_load_scale(pd.Series([600.0]), baseline)
+        self.assertGreater(float(large_jump_scale.iloc[0]), float(small_jump_scale.iloc[0]) * 4.0)
 
 
 if __name__ == "__main__":

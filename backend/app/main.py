@@ -4404,8 +4404,8 @@ def _baseline_load_scale(
 
     Below 70% of baseline we dampen risk aggressively so relative jumps at low
     absolute load do not dominate the signal. At/above baseline, we keep the
-    base risk and allow a modest amplification as load climbs well above
-    baseline.
+    base risk and progressively amplify it as load climbs, with a stronger
+    non-linear response for very large load ratios.
     """
     load_series = pd.to_numeric(load_ema, errors="coerce").fillna(0.0)
     if isinstance(baseline_daily_target, pd.Series):
@@ -4420,7 +4420,8 @@ def _baseline_load_scale(
     ratio = (load_series / baseline_series).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     low_band_scale = ((ratio / 0.7).clip(lower=0.0, upper=1.0)) ** 2.0
-    high_band_scale = 1.0 + 0.35 * ((ratio - 0.7).clip(lower=0.0, upper=1.0))
+    high_band_excess = (ratio - 0.7).clip(lower=0.0)
+    high_band_scale = 1.0 + (0.35 * high_band_excess) + (0.18 * (high_band_excess**2.0))
     return pd.Series(np.where(ratio < 0.7, low_band_scale, high_band_scale), index=load_series.index, dtype=float)
 
 
