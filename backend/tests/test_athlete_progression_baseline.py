@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -123,6 +124,28 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
 
         self.assertTrue(smoothed_jumps)
         self.assertLess(max(smoothed_jumps), 50.0)
+
+    def test_weekly_view_extends_range_to_full_weeks(self):
+        metrics_df = _metrics_frame([50.0] * 40, start_day="2026-01-01")
+        with (
+            patch("backend.app.main.get_setting", return_value=None),
+            patch("backend.app.main._metrics_for_filters", return_value=metrics_df),
+            patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
+            patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=420.0),
+            patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=70.0),
+            patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
+        ):
+            mock_datetime.now.return_value = datetime(2026, 2, 10, tzinfo=timezone.utc)
+            payload = _build_athlete_progression_payload(
+                db_path=Path("/tmp/athlete-progression-baseline-test.sqlite"),
+                days=30,
+                activity_filter="all",
+                aggregation="weekly",
+                owner="tester",
+            )
+
+        self.assertTrue(payload["points"])
+        self.assertEqual(payload["points"][0]["period_start"], "2026-01-05")
 
 
 if __name__ == "__main__":

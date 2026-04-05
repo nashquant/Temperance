@@ -5103,6 +5103,8 @@ def _build_athlete_progression_payload(
     aggregation: str,
     owner: str,
 ) -> dict[str, Any]:
+    requested_days = max(30, int(days))
+    mode = "weekly" if str(aggregation).strip().lower() == "weekly" else "daily"
     empty_vdot_eligibility = {
         "running_like_activities": 0,
         "running_like_with_distance_duration": 0,
@@ -5123,7 +5125,7 @@ def _build_athlete_progression_payload(
 
     metrics_df = _metrics_for_filters(
         db_path=db_path,
-        days=max(30, int(days)),
+        days=requested_days + 6 if mode == "weekly" else requested_days,
         start_day=None,
         end_day=None,
         sport=None,
@@ -5131,9 +5133,9 @@ def _build_athlete_progression_payload(
     if metrics_df.empty:
         return {
             "owner": owner,
-            "days": max(30, int(days)),
+            "days": requested_days,
             "activity_filter": str(activity_filter or "all"),
-            "aggregation": "weekly" if str(aggregation).lower() == "weekly" else "daily",
+            "aggregation": mode,
             "range": {"start_day": "", "end_day": ""},
             "summary": {
                 "activities": 0,
@@ -5151,9 +5153,9 @@ def _build_athlete_progression_payload(
     if filtered.empty:
         return {
             "owner": owner,
-            "days": max(30, int(days)),
+            "days": requested_days,
             "activity_filter": str(activity_filter or "all"),
-            "aggregation": "weekly" if str(aggregation).lower() == "weekly" else "daily",
+            "aggregation": mode,
             "range": {"start_day": "", "end_day": ""},
             "summary": {
                 "activities": 0,
@@ -5171,6 +5173,28 @@ def _build_athlete_progression_payload(
     filtered["start_local"] = pd.to_datetime(filtered.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
     filtered = filtered.dropna(subset=["start_local"]).copy()
     filtered["day"] = filtered["start_local"].dt.normalize()
+    if mode == "weekly":
+        today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
+        cutoff_day = today_local - pd.Timedelta(days=requested_days)
+        filtered = filtered[filtered["day"] >= _week_start_monday(cutoff_day)].copy()
+        if filtered.empty:
+            return {
+                "owner": owner,
+                "days": requested_days,
+                "activity_filter": str(activity_filter or "all"),
+                "aggregation": mode,
+                "range": {"start_day": "", "end_day": ""},
+                "summary": {
+                    "activities": 0,
+                    "distance_km": 0.0,
+                    "distance_eqv_km": 0.0,
+                    "tss": 0.0,
+                    "rtss": 0.0,
+                },
+                "points": [],
+                "injury_windows": injury_rows,
+                "vdot_eligibility": empty_vdot_eligibility,
+            }
 
     numeric_cols = [
         "distance_m",
@@ -5364,7 +5388,6 @@ def _build_athlete_progression_payload(
     model_df["zone_high_aerobic_h"] = (model_df["hr_time_in_zone_3"] + model_df["hr_time_in_zone_4"]) / 3600.0
     model_df["zone_total_h"] = model_df["duration_s"] / 3600.0
 
-    mode = "weekly" if str(aggregation).strip().lower() == "weekly" else "daily"
     if mode == "weekly":
         weekly_df = model_df.copy()
         weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(_week_start_monday)
