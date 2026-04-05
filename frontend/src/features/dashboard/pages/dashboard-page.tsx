@@ -646,7 +646,7 @@ export function DashboardPage(): JSX.Element {
     Math.max(Number(query.data?.weeks_visible ?? sortedWeeks.length ?? 0), sortedWeeks.length),
     availableWeeksInWindow || dashboardYearWindowWeeks,
   );
-  const canLoadMoreWeeks = Boolean(query.data?.has_more_weeks) && visibleWeeks < dashboardMaxWeeks;
+  const canLoadMoreWeeks = visibleWeeksInWindow < availableWeeksInWindow && visibleWeeks < dashboardMaxWeeks;
 
   const currentWeekStart = useMemo(() => {
     if (sortedWeeks.length === 0) return '';
