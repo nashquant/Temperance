@@ -96,7 +96,7 @@ function formatCompactWindowDate(value: Date): string {
 function formatWindowLabelFromWeeks(
   weeks: Array<{ week_start: string; week_end: string }>,
 ): { start: Date; end: Date } | null {
-  if (weeks.length === 0) return '';
+  if (weeks.length === 0) return null;
 
   const parsedWeeks = weeks
     .map((week) => ({
