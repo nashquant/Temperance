@@ -4395,6 +4395,27 @@ def _activity_palette_token(
     return if_token
 
 
+
+
+def _acwr_with_baseline_floor(
+    acute_ema: pd.Series,
+    chronic_ema: pd.Series,
+    baseline_daily_target: pd.Series | float,
+) -> pd.Series:
+    acute_series = pd.to_numeric(acute_ema, errors="coerce").fillna(0.0)
+    chronic_series = pd.to_numeric(chronic_ema, errors="coerce").fillna(0.0)
+    if isinstance(baseline_daily_target, pd.Series):
+        baseline_series = pd.to_numeric(baseline_daily_target, errors="coerce").fillna(0.0)
+    else:
+        baseline_series = pd.Series(
+            [float(_safe_float(baseline_daily_target))] * len(acute_series),
+            index=acute_series.index,
+            dtype=float,
+        )
+    denominator = pd.concat([chronic_series, baseline_series], axis=1).max(axis=1)
+    denominator = denominator.where(denominator > 0.0, np.nan)
+    return (acute_series / denominator).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
 def _baseline_load_scale(
     load_ema: pd.Series,
     baseline_daily_target: pd.Series | float,
@@ -5081,10 +5102,8 @@ def _build_athlete_progression_payload(
     rtss_emas = ema_multi(rtss_series, [42, 28, 7])
     model_df["fitness"] = tss_emas[42]
     model_df["fatigue"] = tss_emas[7]
-    _tss_chronic = tss_emas[28].replace(0.0, float("nan"))
-    _rtss_chronic = rtss_emas[28].replace(0.0, float("nan"))
-    _tss_acwr = (tss_emas[7] / _tss_chronic).fillna(0.0)
-    _rtss_acwr = (rtss_emas[7] / _rtss_chronic).fillna(0.0)
+    _tss_acwr = _acwr_with_baseline_floor(tss_emas[7], tss_emas[28], daily_tss_target_series)
+    _rtss_acwr = _acwr_with_baseline_floor(rtss_emas[7], rtss_emas[28], daily_tss_target_series)
     overreach_base = (1.0 / (1.0 + np.exp(-4.0 * (_tss_acwr - 1.8)))) * 100.0
     injury_base = (1.0 / (1.0 + np.exp(-4.0 * (_rtss_acwr - 1.8)))) * 100.0
     overreach_scale = _baseline_load_scale(tss_emas[7], daily_tss_target_series)
