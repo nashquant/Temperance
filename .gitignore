@@ -6,6 +6,7 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+.omx/
 temperance/data/private/
 temperance/data/imports/
 temperance/guidelines/temperance-guidelines/*.local.md
