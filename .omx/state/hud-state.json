@@ -1,5 +1,6 @@
 {
-  "last_turn_at": "2026-04-06T01:35:30.431Z",
-  "turn_count": 0,
-  "last_agent_output": ""
+  "last_turn_at": "2026-04-06T01:37:57.130Z",
+  "turn_count": 2,
+  "last_agent_output": "The hang was real, and it was isolated to the MCP launch agent.\n\nRoot cause: [`temperance/scripts/se",
+  "last_progress_at": "2026-04-06T01:37:57.130Z"
 }
