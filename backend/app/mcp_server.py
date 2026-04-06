@@ -2462,7 +2462,7 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
         week_start = pd.Timestamp(ts).normalize() - pd.Timedelta(days=int(pd.Timestamp(ts).weekday()))
         return week_start.date().isoformat()
 
-    def _weekly_row_from_point(point: dict[str, Any]) -> dict[str, Any]:
+    def _weekly_row_from_point(point: dict[str, Any], *, week_start_iso: str | None = None) -> dict[str, Any]:
         baseline_tss = round(_safe_float(point.get("baseline_tss")), 1)
         lt_target_tss = round(_safe_float(point.get("lt_target_tss")), 1)
         capacity_baseline_tss = round(_safe_float(point.get("capacity_baseline_tss")), 1)
@@ -2475,7 +2475,7 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
         recent_vs_capacity_tss = round(recent_load_anchor_tss - capacity_baseline_tss, 1)
         smoothing_adjustment_tss = round(smoothed_baseline_tss - blended_baseline_tss_before_smoothing, 1)
         row = {
-            "week_start": _week_start_iso(point.get("period_start")),
+            "week_start": week_start_iso or _week_start_iso(point.get("period_start")),
             "baseline_tss": baseline_tss,
             "baseline_distance_km": round(_safe_float(point.get("baseline_distance_km")), 2),
             "lt_target_tss": lt_target_tss,
@@ -2493,19 +2493,77 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
         row["deviation_reason"] = _weekly_deviation_reason(row)
         return _clean_mapping(row)
 
-    for pt in weekly_points:
-        weekly_baseline_out.append(_weekly_row_from_point(pt))
+    def _expected_eow_point_for_week(week_start_iso: str) -> dict[str, Any] | None:
+        week_start_ts = pd.to_datetime(week_start_iso, errors="coerce")
+        if pd.isna(week_start_ts):
+            return None
+        week_end_ts = pd.Timestamp(week_start_ts).normalize() + pd.Timedelta(days=6)
+
+        daily_rows: list[dict[str, Any]] = []
+        for point in points:
+            point_day_ts = pd.to_datetime(point.get("period_start"), errors="coerce")
+            if pd.isna(point_day_ts):
+                continue
+            daily_rows.append({"day_ts": pd.Timestamp(point_day_ts).normalize(), "point": point})
+        if not daily_rows:
+            return None
+        daily_rows.sort(key=lambda row: row["day_ts"])
+        latest_day_ts = daily_rows[-1]["day_ts"]
+        if latest_day_ts < (pd.Timestamp(week_start_ts).normalize() - pd.Timedelta(days=1)):
+            return None
+
+        anchor = daily_rows[-1]
+        for row in reversed(daily_rows):
+            if _week_start_iso(row["point"].get("period_start")) == week_start_iso:
+                anchor = row
+                break
+
+        days_to_eow = int((week_end_ts - anchor["day_ts"]).days)
+        if days_to_eow <= 0:
+            return dict(anchor["point"])
+
+        recent_rows = daily_rows[-7:]
+        projected = dict(anchor["point"])
+        projection_fields = (
+            "baseline_tss",
+            "baseline_distance_km",
+            "lt_target_tss",
+            "lt_target_distance_km",
+            "capacity_baseline_tss",
+            "recent_load_anchor_tss",
+            "blended_baseline_tss_before_smoothing",
+            "smoothed_baseline_tss",
+        )
+        for field in projection_fields:
+            field_values: list[float] = []
+            for row in recent_rows:
+                value = pd.to_numeric(pd.Series([row["point"].get(field)]), errors="coerce").iloc[0]
+                if pd.notna(value):
+                    field_values.append(float(value))
+            if not field_values:
+                continue
+            latest = field_values[-1]
+            if len(field_values) == 1:
+                projected[field] = latest
+                continue
+            slope_per_day = (field_values[-1] - field_values[0]) / max(len(field_values) - 1, 1)
+            projected[field] = latest + (slope_per_day * days_to_eow)
+        projected["period_start"] = week_end_ts.date().isoformat()
+        return projected
 
     current_week_start_iso = _week_start_iso(datetime.now().astimezone().date())
-    if not any(row.get("week_start") == current_week_start_iso for row in weekly_baseline_out):
-        current_week_points = [
-            pt
-            for pt in points
-            if _week_start_iso(pt.get("period_start")) == current_week_start_iso
-        ]
-        if current_week_points:
-            weekly_baseline_out.append(_weekly_row_from_point(current_week_points[-1]))
-            weekly_baseline_out.sort(key=lambda row: str(row.get("week_start") or ""))
+    for pt in weekly_points:
+        if _week_start_iso(pt.get("period_start")) == current_week_start_iso:
+            continue
+        weekly_baseline_out.append(_weekly_row_from_point(pt))
+
+    expected_current_week_point = _expected_eow_point_for_week(current_week_start_iso)
+    if expected_current_week_point is not None:
+        weekly_baseline_out.append(
+            _weekly_row_from_point(expected_current_week_point, week_start_iso=current_week_start_iso)
+        )
+
+    weekly_baseline_out.sort(key=lambda row: str(row.get("week_start") or ""))
 
     current = daily_out[-1] if daily_out else {}
     current_fitness = _safe_float(current.get("fitness"))
