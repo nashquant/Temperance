@@ -39,6 +39,8 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
         self,
         daily_tss_values: list[float],
         *,
+        days: int = 84,
+        aggregation: str = "weekly",
         weekly_tss_target: float = 420.0,
         weekly_distance_target: float = 70.0,
     ) -> dict[str, object]:
@@ -54,9 +56,9 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
             mock_datetime.now.return_value = datetime(2026, 2, 15, tzinfo=timezone.utc)
             return _build_athlete_progression_payload(
                 db_path=Path("/tmp/athlete-progression-baseline-test.sqlite"),
-                days=84,
+                days=days,
                 activity_filter="all",
-                aggregation="weekly",
+                aggregation=aggregation,
                 owner="tester",
             )
 
@@ -184,6 +186,32 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
 
         self.assertTrue(payload["points"])
         self.assertEqual(payload["points"][0]["period_start"], "2026-01-05")
+
+    def test_short_weekly_request_keeps_latest_baseline_from_long_history(self):
+        daily_tss_values = ([55.0] * 60) + ([95.0] * 40)
+        short_payload = self._build_payload(daily_tss_values, days=30, aggregation="weekly")
+        long_payload = self._build_payload(daily_tss_values, days=120, aggregation="weekly")
+
+        self.assertTrue(short_payload["points"])
+        self.assertTrue(long_payload["points"])
+        self.assertEqual(short_payload["points"][-1]["period_start"], long_payload["points"][-1]["period_start"])
+        self.assertAlmostEqual(short_payload["points"][-1]["baseline_tss"], long_payload["points"][-1]["baseline_tss"], places=3)
+        self.assertAlmostEqual(
+            short_payload["points"][-1]["blended_baseline_tss_before_smoothing"],
+            long_payload["points"][-1]["blended_baseline_tss_before_smoothing"],
+            places=3,
+        )
+
+    def test_short_daily_request_keeps_latest_baseline_from_long_history(self):
+        daily_tss_values = ([40.0] * 80) + ([90.0] * 20)
+        short_payload = self._build_payload(daily_tss_values, days=30, aggregation="daily")
+        long_payload = self._build_payload(daily_tss_values, days=120, aggregation="daily")
+
+        self.assertTrue(short_payload["points"])
+        self.assertTrue(long_payload["points"])
+        self.assertEqual(short_payload["points"][-1]["period_start"], long_payload["points"][-1]["period_start"])
+        self.assertAlmostEqual(short_payload["points"][-1]["baseline_tss"], long_payload["points"][-1]["baseline_tss"], places=3)
+        self.assertAlmostEqual(short_payload["points"][-1]["smoothed_baseline_tss"], long_payload["points"][-1]["smoothed_baseline_tss"], places=3)
 
 
 if __name__ == "__main__":

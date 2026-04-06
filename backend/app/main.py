@@ -5158,6 +5158,7 @@ _ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS = (
     "blended_baseline_tss_before_smoothing",
     "smoothed_baseline_tss",
 )
+_ATHLETE_PROGRESSION_HISTORY_WARMUP_DAYS = 400
 
 
 def _apply_athlete_progression_baseline_fields(model_df: pd.DataFrame) -> pd.DataFrame:
@@ -5290,6 +5291,7 @@ def _build_athlete_progression_payload(
 ) -> dict[str, Any]:
     requested_days = max(30, int(days))
     mode = "weekly" if str(aggregation).strip().lower() == "weekly" else "daily"
+    history_days = max(requested_days, _ATHLETE_PROGRESSION_HISTORY_WARMUP_DAYS)
     empty_vdot_eligibility = {
         "running_like_activities": 0,
         "running_like_with_distance_duration": 0,
@@ -5310,7 +5312,7 @@ def _build_athlete_progression_payload(
 
     metrics_df = _metrics_for_filters(
         db_path=db_path,
-        days=requested_days + 6 if mode == "weekly" else requested_days,
+        days=history_days + 6 if mode == "weekly" else history_days,
         start_day=None,
         end_day=None,
         sport=None,
@@ -5358,28 +5360,11 @@ def _build_athlete_progression_payload(
     filtered["start_local"] = pd.to_datetime(filtered.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
     filtered = filtered.dropna(subset=["start_local"]).copy()
     filtered["day"] = filtered["start_local"].dt.normalize()
+    today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
     if mode == "weekly":
-        today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
-        cutoff_day = today_local - pd.Timedelta(days=requested_days)
-        filtered = filtered[filtered["day"] >= _week_start_monday(cutoff_day)].copy()
-        if filtered.empty:
-            return {
-                "owner": owner,
-                "days": requested_days,
-                "activity_filter": str(activity_filter or "all"),
-                "aggregation": mode,
-                "range": {"start_day": "", "end_day": ""},
-                "summary": {
-                    "activities": 0,
-                    "distance_km": 0.0,
-                    "distance_eqv_km": 0.0,
-                    "tss": 0.0,
-                    "rtss": 0.0,
-                },
-                "points": [],
-                "injury_windows": injury_rows,
-                "vdot_eligibility": empty_vdot_eligibility,
-            }
+        display_cutoff_day = _week_start_monday(today_local - pd.Timedelta(days=requested_days))
+    else:
+        display_cutoff_day = today_local - pd.Timedelta(days=requested_days - 1)
 
     numeric_cols = [
         "distance_m",
@@ -5407,6 +5392,9 @@ def _build_athlete_progression_payload(
     is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
     running_like_with_distance_duration = is_running_like & (filtered["distance_m"] > 0) & (filtered["duration_s"] > 0)
     filtered["distance_km_running"] = (filtered["distance_m"].where(is_running_like, 0.0) / 1000.0).fillna(0.0)
+    display_filtered = filtered[filtered["day"] >= display_cutoff_day].copy()
+    if display_filtered.empty:
+        display_filtered = filtered.copy()
     eligible_vdot_mask = (
         running_like_with_distance_duration
         & (filtered["if_proxy"] > 0.90)
@@ -5547,15 +5535,17 @@ def _build_athlete_progression_payload(
 
     if mode == "weekly":
         points_df = _rollup_athlete_progression_weekly_points(model_df)
+        points_df = points_df[pd.to_datetime(points_df.get("period_start"), errors="coerce") >= display_cutoff_day].copy()
     else:
         points_df = model_df.rename(columns={"day": "period_start"}).copy()
+        points_df = points_df[pd.to_datetime(points_df.get("period_start"), errors="coerce") >= display_cutoff_day].copy()
 
     summary = {
-        "activities": int(len(filtered.index)),
-        "distance_km": round(float(pd.to_numeric(filtered.get("distance_km_running"), errors="coerce").fillna(0.0).sum()), 1),
-        "distance_eqv_km": round(float(pd.to_numeric(filtered.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()), 1),
-        "tss": round(float(pd.to_numeric(filtered.get("tss"), errors="coerce").fillna(0.0).sum()), 1),
-        "rtss": round(float(pd.to_numeric(filtered.get("rtss"), errors="coerce").fillna(0.0).sum()), 1),
+        "activities": int(len(display_filtered.index)),
+        "distance_km": round(float(pd.to_numeric(display_filtered.get("distance_km_running"), errors="coerce").fillna(0.0).sum()), 1),
+        "distance_eqv_km": round(float(pd.to_numeric(display_filtered.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()), 1),
+        "tss": round(float(pd.to_numeric(display_filtered.get("tss"), errors="coerce").fillna(0.0).sum()), 1),
+        "rtss": round(float(pd.to_numeric(display_filtered.get("rtss"), errors="coerce").fillna(0.0).sum()), 1),
     }
 
     points: list[dict[str, Any]] = []
@@ -5619,8 +5609,8 @@ def _build_athlete_progression_payload(
         "activity_filter": str(activity_filter or "all"),
         "aggregation": mode,
         "range": {
-            "start_day": pd.Timestamp(min_day).date().isoformat() if pd.notna(min_day) else "",
-            "end_day": pd.Timestamp(max_day).date().isoformat() if pd.notna(max_day) else "",
+            "start_day": str(points[0]["period_start"]) if points else "",
+            "end_day": str(points[-1]["period_start"]) if points else "",
         },
         "summary": summary,
         "points": points,

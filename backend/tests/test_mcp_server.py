@@ -774,6 +774,37 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertIn("smoothing_adjustment_tss", actual_current_week)
         self.assertIn("deviation_reason", actual_current_week)
 
+    def test_get_fitness_form_short_window_keeps_latest_weekly_baseline_from_long_history(self):
+        daily_tss_values = ([50.0] * 70) + ([95.0] * 30)
+        short_result = self._run_fitness_form_with_canonical_progression(daily_tss_values, days=14)
+        long_result = self._run_fitness_form_with_canonical_progression(daily_tss_values, days=365)
+
+        self.assertTrue(short_result["weekly_baseline"])
+        self.assertTrue(long_result["weekly_baseline"])
+        self.assertEqual(short_result["weekly_baseline"][-1]["week_start"], long_result["weekly_baseline"][-1]["week_start"])
+        self.assertAlmostEqual(
+            short_result["weekly_baseline"][-1]["baseline_tss"],
+            long_result["weekly_baseline"][-1]["baseline_tss"],
+            places=1,
+        )
+        self.assertAlmostEqual(
+            short_result["weekly_baseline"][-1]["smoothed_baseline_tss"],
+            long_result["weekly_baseline"][-1]["smoothed_baseline_tss"],
+            places=1,
+        )
+
+    def test_compute_fitness_metrics_short_window_path_keeps_latest_baseline_driven_metrics(self):
+        daily_tss_values = ([45.0] * 90) + ([85.0] * 20)
+        short_form = self._run_fitness_form_with_canonical_progression(daily_tss_values, days=30)
+        long_form = self._run_fitness_form_with_canonical_progression(daily_tss_values, days=365)
+
+        self.assertTrue(short_form["daily"])
+        self.assertTrue(long_form["daily"])
+        self.assertEqual(short_form["daily"][-1]["day"], long_form["daily"][-1]["day"])
+        self.assertAlmostEqual(short_form["daily"][-1]["baseline_tss"], long_form["daily"][-1]["baseline_tss"], places=1)
+        self.assertAlmostEqual(short_form["daily"][-1]["overreach"], long_form["daily"][-1]["overreach"], places=1)
+        self.assertAlmostEqual(short_form["daily"][-1]["injury_risk"], long_form["daily"][-1]["injury_risk"], places=1)
+
     def test_activity_row_summary_includes_pace_and_extended_metrics(self):
         summary = mcp_server._activity_row_summary(
             {
