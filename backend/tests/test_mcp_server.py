@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from backend.app import mcp_server
@@ -391,6 +392,78 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(weekly_point["week_start"], "2026-02-23")
         self.assertEqual(weekly_point["baseline_tss"], 57.0)
         self.assertEqual(weekly_point["capacity_baseline_tss"], 61.0)
+        self.assertEqual(weekly_point["deviation_from_lt_tss"], -6.0)
+        self.assertAlmostEqual(weekly_point["deviation_from_lt_pct"], -0.0952, places=4)
+        self.assertEqual(weekly_point["capacity_vs_lt_tss"], -2.0)
+        self.assertEqual(weekly_point["recent_vs_capacity_tss"], -5.0)
+        self.assertEqual(weekly_point["smoothing_adjustment_tss"], -0.5)
+        self.assertEqual(weekly_point["deviation_reason"], "balanced_blend")
+
+    def test_get_fitness_form_weekly_baseline_includes_current_week(self):
+        fake_daily_progression = {
+            "points": [
+                {
+                    "period_start": "2026-03-05",
+                    "tss": 40.0,
+                    "rtss": 40.0,
+                    "duration_h": 1.0,
+                    "distance_km": 8.0,
+                    "distance_eqv_km": 8.0,
+                    "target_tss": 60.0,
+                    "baseline_tss": 60.0,
+                    "baseline_distance_km": 10.0,
+                    "lt_target_tss": 70.0,
+                    "lt_target_distance_km": 11.0,
+                    "capacity_baseline_tss": 77.0,
+                    "recent_load_anchor_tss": 80.0,
+                    "blended_baseline_tss_before_smoothing": 61.5,
+                    "smoothed_baseline_tss": 60.0,
+                    "fitness": 45.0,
+                    "fatigue": 48.0,
+                    "overreach": 10.0,
+                    "injury_risk": 8.0,
+                    "durability": 41.0,
+                    "pounding": 42.0,
+                }
+            ]
+        }
+        fake_weekly_progression = {
+            "points": [
+                {
+                    "period_start": "2026-02-23",
+                    "baseline_tss": 55.0,
+                    "baseline_distance_km": 9.5,
+                    "lt_target_tss": 70.0,
+                    "lt_target_distance_km": 11.0,
+                    "capacity_baseline_tss": 77.0,
+                    "recent_load_anchor_tss": 60.0,
+                    "blended_baseline_tss_before_smoothing": 56.0,
+                    "smoothed_baseline_tss": 55.0,
+                }
+            ]
+        }
+
+        def _fake_progression_builder(**kwargs):
+            if kwargs.get("aggregation") == "weekly":
+                return fake_weekly_progression
+            return fake_daily_progression
+
+        with (
+            patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
+            patch(
+                "backend.app.mcp_server._analytics_helpers",
+                return_value={"_build_athlete_progression_payload": _fake_progression_builder},
+            ),
+            patch("backend.app.mcp_server.datetime", wraps=datetime) as mock_datetime,
+        ):
+            mock_datetime.now.return_value = datetime(2026, 3, 5, 12, 0, tzinfo=timezone.utc)
+            result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
+
+        week_starts = [row["week_start"] for row in result["weekly_baseline"]]
+        self.assertIn("2026-03-02", week_starts)
+        current_week = next(row for row in result["weekly_baseline"] if row["week_start"] == "2026-03-02")
+        self.assertEqual(current_week["baseline_tss"], 60.0)
+        self.assertEqual(current_week["deviation_from_lt_tss"], -10.0)
 
     def test_activity_row_summary_includes_pace_and_extended_metrics(self):
         summary = mcp_server._activity_row_summary(
