@@ -201,6 +201,8 @@ Analytics source-of-truth note:
 - `get_fitness_form.weekly_baseline` is expected to match the canonical Athlete Progression weekly baseline series as closely as rounding allows.
 - For a given Monday-aligned week, the MCP `baseline_tss` should line up with the dashboard `Base` line/value for that same week.
 - If MCP and Athlete Progression disagree materially, treat that as a runtime/version/data-source mismatch or a bug, not as an acceptable alternate interpretation.
+- The current baseline path is: LT-derived weekly capacity -> trailing 21/63/365-day load blend -> 21-day EMA smoothing -> Monday weekly rollup.
+- For the fuller user-facing MCP guide, see [backend/README.md](/Users/matheus/Temperance/backend/README.md).
 
 Run it from the repo root:
 

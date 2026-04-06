@@ -2,18 +2,22 @@
 
 ## MCP Server
 
-Temperance now exposes one canonical stdio MCP server that combines doctrine resources, workout-library context, planning tools, analytics tools, and history judgment on one JSON-RPC surface.
+Temperance exposes one canonical stdio MCP server at `backend/app/mcp_server.py`.
 
-Important analytics contract:
-- MCP weekly baseline values are not a separate MCP interpretation.
-- `get_fitness_form.weekly_baseline` must mirror the canonical weekly baseline used by Athlete Progression.
-- The dashboard is the reference. If the Athlete Progression chart shows `Base = X` for a week, MCP should return approximately the same weekly `baseline_tss` for that same `week_start`.
-- Canonical weekly baseline comes from the Athlete Progression backend model in `backend/app/main.py`: daily baseline fields are built from LT-derived capacity plus trailing load history, smoothed, then rolled up into Monday-aligned weekly values.
+This server gives an MCP client access to:
+- planning tools
+- analytics and status tools
+- doctrine resources and workout-library context
+- write tools for planned/custom activities and admin actions
+
+The MCP server is not a separate analytics engine. It is a thin interface over the backend logic in [`backend/app/main.py`](/Users/matheus/Temperance/backend/app/main.py).
+
+## Quick start
 
 Run it from the repo root:
 
 ```bash
-python3 -m backend.app.mcp_server
+python3 -m backend.app.mcp_server --stdio
 ```
 
 Example MCP client config:
@@ -30,9 +34,25 @@ Example MCP client config:
 }
 ```
 
-The server advertises:
-- `tools: {}`
-- `resources: {}`
+The server exposes standard MCP `tools` and `resources`.
+
+## Baseline rules
+
+The weekly baseline shown by MCP is the same baseline used by Athlete Progression. This is the current contract:
+
+1. Start from LT-derived weekly capacity.
+2. Blend that capacity with trailing load history using the prior 21, 63, and 365 days of TSS.
+3. Smooth the resulting weekly baseline with a 21-day EMA to avoid week-to-week whipsaw.
+4. Convert the daily model into Monday-aligned weekly baseline points.
+5. Expose those weekly points through `get_fitness_form.weekly_baseline`.
+
+Practical interpretation:
+- MCP does not own an alternate baseline formula.
+- If the dashboard shows `Base = X` for a given Monday week, MCP should return approximately the same `baseline_tss` for that same `week_start`.
+- If they diverge materially, treat it as a bug, version mismatch, or data mismatch.
+- Backend and MCP now use the same formatter/helper for weekly baseline rows, including deviation explanation fields.
+
+## Main tools
 
 Available tools:
 - planning:
@@ -51,6 +71,28 @@ Available tools:
   - `judge_training_history`
   - `explain_history_judgment`
 
+Also available:
+- load analysis:
+  - `estimate_workout_tss`
+  - `simulate_plan_week`
+  - `critique_day_plan`
+  - `estimate_xtrain_tss`
+  - `search_workouts`
+- writes/admin:
+  - `save_planned_activities`
+  - `update_planned_activity`
+  - `delete_planned_activities`
+  - `mark_planned_done`
+  - `save_custom_activities`
+  - `delete_custom_activities`
+  - `trigger_sync`
+  - `get_sync_status`
+  - `mark_activity_invalid`
+  - `get_settings`
+  - `update_settings`
+
+## Resources
+
 Static resources:
 - `temperance://guidelines/read-order`
 - `temperance://guidelines/core-bundle`
@@ -64,6 +106,8 @@ Resource templates:
 - `temperance://workouts/template/{template_id}`
 - `temperance://planning/context/{owner}/{target_day_utc}`
 - `temperance://history/snapshot/{owner}/{window_days}`
+
+## Example requests
 
 Example `resources/read` request:
 
@@ -88,7 +132,7 @@ Example `judge_training_history` arguments:
 }
 ```
 
-Useful chat questions once the MCP tool is connected:
+Useful prompts once the MCP tool is connected:
 
 - `Read the active build and tell me which doctrine files matter most before planning tomorrow.`
 - `Why is tomorrow hard?`
