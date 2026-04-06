@@ -49,7 +49,9 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
             patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
             patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=float(weekly_tss_target)),
             patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=float(weekly_distance_target)),
+            patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
         ):
+            mock_datetime.now.return_value = datetime(2026, 2, 15, tzinfo=timezone.utc)
             return _build_athlete_progression_payload(
                 db_path=Path("/tmp/athlete-progression-baseline-test.sqlite"),
                 days=84,
