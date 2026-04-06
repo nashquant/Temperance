@@ -196,6 +196,12 @@ After backend or frontend path changes, reinstall or restart the keepalive servi
 
 Temperance now exposes one canonical stdio MCP server at `backend/app/mcp_server.py`.
 
+Analytics source-of-truth note:
+- MCP does not own an independent weekly baseline formula.
+- `get_fitness_form.weekly_baseline` is expected to match the canonical Athlete Progression weekly baseline series as closely as rounding allows.
+- For a given Monday-aligned week, the MCP `baseline_tss` should line up with the dashboard `Base` line/value for that same week.
+- If MCP and Athlete Progression disagree materially, treat that as a runtime/version/data-source mismatch or a bug, not as an acceptable alternate interpretation.
+
 Run it from the repo root:
 
 ```bash
@@ -228,7 +234,7 @@ The MCP surface is doctrine-aware and resources-first:
 - `get_load_trend` — daily TSS/rTSS with CTL/ATL/TSB/ACWR proxies, plus HR zone distribution and polarization index
 - `get_recovery_trend` — 28-day wellness trend: training readiness, sleep, stress, body battery
 - `get_activity_detail` — full activity detail with time-series records
-- `get_fitness_form` — full CTL/ATL/TSB/ACWR daily time series plus weekly baseline history
+- `get_fitness_form` — full CTL/ATL/TSB/ACWR daily time series plus weekly baseline history mirrored from the canonical Athlete Progression weekly baseline path
 - `get_weekly_volume` — weekly distance, duration, TSS, run count, and modality split for last N weeks
 
 **History judgment:**
