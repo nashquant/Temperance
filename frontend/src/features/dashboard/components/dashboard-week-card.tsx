@@ -131,10 +131,10 @@ function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
             <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
           </summary>
           <div className="mt-2 grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-[11px]">
-            <p className="inline-flex items-center gap-1 text-blue-200/92"><Activity className="h-3 w-3 text-blue-300/90" />TSS | rTSS</p>
-            <p className="text-right font-medium text-blue-100/92">{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
             <p className="inline-flex items-center gap-1 text-blue-200/92"><Activity className="h-3 w-3 text-blue-300/90" />Base</p>
             <p className="text-right font-medium text-blue-100/92">{fmtNumber(summary.baseline_tss)}</p>
+            <p className="inline-flex items-center gap-1 text-blue-200/92"><Activity className="h-3 w-3 text-blue-300/90" />TSS | rTSS</p>
+            <p className="text-right font-medium text-blue-100/92">{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
             <p className="inline-flex items-center gap-1 text-rose-200/92"><HeartPulse className="h-3 w-3 text-rose-300/90" />Fit | Fatg</p>
             <p className="text-right font-medium text-rose-100/92">{fmtNumber(summary.fitness)} | {fmtNumber(summary.fatigue)}</p>
             <p className="inline-flex items-center gap-1 text-orange-200/92"><AlertTriangle className="h-3 w-3 text-orange-300/90" />Ovr | Risk</p>

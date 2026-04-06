@@ -4819,6 +4819,7 @@ def _day_lookup_with_daily_model(
         model_lookup[day] = {
             "fitness": _safe_float(row.get("fitness")),
             "fatigue": _safe_float(row.get("fatigue")),
+            "baseline_tss": _safe_float(row.get("baseline_tss")),
             "overreach": _safe_float(row.get("overreach")),
             "injury_risk": _safe_float(row.get("injury_risk")),
             "raw_overreach_signal": _safe_float(row.get("raw_overreach_signal")),
@@ -6132,6 +6133,23 @@ def _build_activity_dashboard_payload(
                 return model_lookup.get(d)
         return None
 
+    def _week_summary_baseline_tss(
+        *,
+        week_start: pd.Timestamp,
+        week_end: pd.Timestamp,
+        week_daily_model: dict[str, float] | None,
+    ) -> float | None:
+        if week_start in weekly_baseline_lookup:
+            return round(_safe_float(weekly_baseline_lookup.get(week_start)), 1)
+        if week_start <= today_local <= week_end and isinstance(week_daily_model, dict):
+            baseline_tss_daily = pd.to_numeric(
+                pd.Series([week_daily_model.get("baseline_tss")]),
+                errors="coerce",
+            ).iloc[0]
+            if pd.notna(baseline_tss_daily):
+                return round(_safe_float(baseline_tss_daily) * 7.0, 1)
+        return None
+
     weeks_out: list[dict[str, Any]] = []
     for ws in selected_week_starts:
         ws = pd.Timestamp(ws).normalize()
@@ -6330,10 +6348,10 @@ def _build_activity_dashboard_payload(
                     ),
                     "tss": round(week_tss, 1),
                     "rtss": round(week_rtss, 1),
-                    "baseline_tss": (
-                        round(_safe_float(weekly_baseline_lookup.get(ws)), 1)
-                        if ws in weekly_baseline_lookup
-                        else None
+                    "baseline_tss": _week_summary_baseline_tss(
+                        week_start=ws,
+                        week_end=we,
+                        week_daily_model=week_daily_model,
                     ),
                     "fitness": (
                         round(_safe_float(week_daily_model.get("fitness")), 1)
