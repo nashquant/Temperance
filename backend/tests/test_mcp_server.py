@@ -168,6 +168,11 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertTrue(payload["precedence"])
         self.assertIn("interpretation_rules", payload)
         self.assertTrue(payload["interpretation_rules"])
+        self.assertIn("workout_template_behavior", payload)
+        self.assertIn(
+            "do not classify a template as `run-only` just because the prose discusses running-specific load, mechanical run stress, durability, or injury-risk tradeoffs; those are generic doctrine concepts unless the stored session itself requires running",
+            payload["workout_template_behavior"],
+        )
 
     def test_resources_read_prefers_local_override_for_guideline_docs(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -107,6 +107,8 @@ When selecting from the workout-template repository:
 - for double-threshold templates, prefer LT1-oriented work in the morning and LT2-oriented work in the evening unless the template explicitly says otherwise
 - keep mixed-modality templates explicit; do not silently convert them into modality-light generic sessions
 - keep generic templates modality-light unless modality is part of the session identity
+- do not classify a template as `run-only` just because the prose discusses running-specific load, mechanical run stress, durability, or injury-risk tradeoffs; those are generic doctrine concepts unless the stored session itself requires running
+- treat generic statements such as "should not be treated as meaningful mechanical run stress" as modality interpretation guidance, not as evidence that the template identity is running-specific
 
 ## Update behavior
 
