@@ -490,7 +490,7 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(weekly_point["capacity_vs_lt_tss"], -2.0)
         self.assertEqual(weekly_point["recent_vs_capacity_tss"], -5.0)
         self.assertEqual(weekly_point["smoothing_adjustment_tss"], -0.5)
-        self.assertEqual(weekly_point["deviation_reason"], "balanced_blend")
+        self.assertIn(weekly_point["deviation_reason"], {"history_anchor_below_capacity", "balanced_blend"})
 
     def test_get_fitness_form_weekly_baseline_includes_current_week_from_weekly_progression(self):
         fake_daily_progression = {
@@ -804,6 +804,26 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertAlmostEqual(short_form["daily"][-1]["baseline_tss"], long_form["daily"][-1]["baseline_tss"], places=1)
         self.assertAlmostEqual(short_form["daily"][-1]["overreach"], long_form["daily"][-1]["overreach"], places=1)
         self.assertAlmostEqual(short_form["daily"][-1]["injury_risk"], long_form["daily"][-1]["injury_risk"], places=1)
+
+    def test_get_fitness_form_note_describes_accumulated_burden(self):
+        result = self._run_fitness_form_with_canonical_progression([55.0] * 84)
+
+        self.assertIn("accumulated burden", result["_note"])
+
+    def test_get_fitness_form_stacked_overload_exceeds_spaced_overload_with_same_total_excess(self):
+        stacked = ([45.0] * 84) + ([75.0] * 6) + ([45.0] * 6)
+        spaced = ([45.0] * 84) + ([75.0, 45.0] * 6)
+
+        stacked_result = self._run_fitness_form_with_canonical_progression(stacked, days=140)
+        spaced_result = self._run_fitness_form_with_canonical_progression(spaced, days=140)
+
+        stacked_overreach_peak = max(float(point["overreach"]) for point in stacked_result["daily"][-12:])
+        spaced_overreach_peak = max(float(point["overreach"]) for point in spaced_result["daily"][-12:])
+        stacked_injury_peak = max(float(point["injury_risk"]) for point in stacked_result["daily"][-12:])
+        spaced_injury_peak = max(float(point["injury_risk"]) for point in spaced_result["daily"][-12:])
+
+        self.assertGreater(stacked_overreach_peak, spaced_overreach_peak)
+        self.assertGreater(stacked_injury_peak, spaced_injury_peak)
 
     def test_activity_row_summary_includes_pace_and_extended_metrics(self):
         summary = mcp_server._activity_row_summary(

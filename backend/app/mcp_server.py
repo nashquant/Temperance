@@ -518,8 +518,8 @@ def _compute_fitness_metrics(db_path: Any, owner: str) -> dict[str, Any]:
       fatigue    — 7-day TSS EMA (≈ ATL, acute training load)
       form       — fitness − fatigue (≈ TSB, training stress balance)
       acwr       — fatigue / fitness (acute:chronic workload ratio)
-      overreach  — excess 10-day TSS load above daily target (0 when on-plan)
-      injury_risk— excess 10-day rTSS load above daily target (running-specific overreach)
+      overreach  — accumulated burden from excess TSS load above daily target
+      injury_risk— accumulated burden from excess rTSS load above daily target (running-specific)
       durability — 100-day rTSS EMA (long-term running robustness)
       pounding   — 7-day rTSS EMA (acute running mechanical load)
     """
@@ -551,7 +551,7 @@ def _compute_fitness_metrics(db_path: Any, owner: str) -> dict[str, Any]:
         "pounding": round(_safe_float(last.get("pounding")), 1),
         "_note": (
             "fitness\u2248CTL (42-day TSS EMA), fatigue\u2248ATL (7-day TSS EMA); "
-            "overreach and injury_risk measure excess load above daily target"
+            "overreach and injury_risk measure accumulated burden from excess load above daily target"
         ),
     })
 
@@ -2351,8 +2351,8 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
       fatigue    — 7-day TSS EMA (≈ ATL); aliased as atl
       form       — fitness − fatigue (≈ TSB); aliased as tsb
       acwr       — fatigue / fitness
-      overreach  — excess 10-day TSS load above daily target
-      injury_risk— excess 10-day rTSS above daily target (running-specific)
+      overreach  — accumulated burden from excess TSS load above daily target
+      injury_risk— accumulated burden from excess rTSS above daily target (running-specific)
       durability — 100-day rTSS EMA (long-term running robustness)
       pounding   — 7-day rTSS EMA (acute running mechanical load)
     """
@@ -2386,7 +2386,7 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
             "days": days,
             "_note": (
                 "fitness\u2248CTL (42-day TSS EMA), fatigue\u2248ATL (7-day TSS EMA); "
-                "overreach and injury_risk measure excess load above daily target"
+                "overreach and injury_risk measure accumulated burden from excess load above daily target"
             ),
             "summary": {},
             "daily": [],
@@ -2504,7 +2504,7 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
         "days": days,
         "_note": (
             "fitness\u2248CTL (42-day TSS EMA), fatigue\u2248ATL (7-day TSS EMA); "
-            "overreach and injury_risk measure excess load above daily target"
+            "overreach and injury_risk measure accumulated burden from excess load above daily target"
         ),
         "summary": _clean_mapping({
             "current_fitness": round(current_fitness, 1),
@@ -3354,8 +3354,9 @@ TOOLS: dict[str, ToolSpec] = {
         description=(
             "Full daily fitness model time series using the same rTSS/specificity-aware computation "
             "as the Athlete Progression dashboard. Returns per-day: fitness (42-day TSS EMA \u2248CTL), "
-            "fatigue (7-day TSS EMA \u2248ATL), form (\u2248TSB), ACWR, overreach (excess 10-day TSS above "
-            "daily target), injury_risk (excess 10-day rTSS above daily target, running-specific), "
+            "fatigue (7-day TSS EMA \u2248ATL), form (\u2248TSB), ACWR, overreach (accumulated burden from "
+            "excess TSS above daily target), injury_risk (accumulated burden from excess rTSS above daily "
+            "target, running-specific), "
             "durability (100-day rTSS EMA), and pounding (7-day rTSS EMA). Also includes "
             "weekly baseline history (baseline, LT target, and blended baseline components by week). "
             "ctl/atl/tsb fields are included as backward-compat aliases."

@@ -4650,12 +4650,34 @@ def _autoregressive_risk_state(
     activation_floor: float = 0.0,
     upper_bound: float | None = 100.0,
 ) -> pd.Series:
-    """
-    Build a carried risk state from a local-window risk signal.
+    state, _ = _accumulated_burden_risk(
+        raw_signal,
+        decay=decay,
+        impulse_gain=impulse_gain,
+        activation_floor=activation_floor,
+        upper_bound=upper_bound,
+    )
+    return state
 
-    The state follows:
+
+def _accumulated_burden_risk(
+    raw_signal: pd.Series,
+    *,
+    decay: float,
+    impulse_gain: float,
+    activation_floor: float = 0.0,
+    upper_bound: float | None = 100.0,
+) -> tuple[pd.Series, pd.Series]:
+    """
+    Build carried burden from a local-window risk signal.
+
+    The internal state follows:
       state[t] = decay * state[t-1] + impulse[t]
-    where impulse is the activated portion of today's raw signal.
+
+    The exposed burden metric adds today's raw signal to the carried state so
+    repeated moderate overload rises above a one-off overload of the same
+    magnitude:
+      burden[t] = raw_signal[t] + state[t]
 
     A small activation floor prevents low-load noise from accumulating.
     Higher decay preserves memory longer (e.g., injury_risk vs overreach).
@@ -4663,15 +4685,23 @@ def _autoregressive_risk_state(
     signal = pd.to_numeric(raw_signal, errors="coerce").fillna(0.0).clip(lower=0.0)
     prior_state = 0.0
     state_values: list[float] = []
+    burden_values: list[float] = []
     for value in signal.tolist():
+        carried_history = float(decay) * prior_state
         activated = max(float(value) - float(activation_floor), 0.0)
         impulse = activated * float(impulse_gain)
-        next_state = (float(decay) * prior_state) + impulse
+        next_state = carried_history + impulse
+        burden_value = float(value) + carried_history
         if upper_bound is not None:
             next_state = min(next_state, float(upper_bound))
+            burden_value = min(burden_value, float(upper_bound))
         state_values.append(max(next_state, 0.0))
+        burden_values.append(max(burden_value, 0.0))
         prior_state = next_state
-    return pd.Series(state_values, index=signal.index, dtype=float)
+    return (
+        pd.Series(state_values, index=signal.index, dtype=float),
+        pd.Series(burden_values, index=signal.index, dtype=float),
+    )
 
 
 def _day_lookup_with_daily_model(
@@ -4762,22 +4792,20 @@ def _day_lookup_with_daily_model(
     load_scale_rtss = _baseline_load_scale(rtss_emas[10], target)
     model_df["raw_overreach_signal"] = overreach_excess * load_scale_tss
     model_df["raw_injury_signal"] = injury_excess * load_scale_rtss
-    model_df["overreach_state"] = _autoregressive_risk_state(
+    model_df["overreach_state"], model_df["overreach"] = _accumulated_burden_risk(
         model_df["raw_overreach_signal"],
         decay=0.82,
         impulse_gain=0.30,
         activation_floor=1.5,
         upper_bound=None,
     )
-    model_df["injury_risk_state"] = _autoregressive_risk_state(
+    model_df["injury_risk_state"], model_df["injury_risk"] = _accumulated_burden_risk(
         model_df["raw_injury_signal"],
         decay=0.90,
         impulse_gain=0.24,
         activation_floor=1.0,
         upper_bound=None,
     )
-    model_df["overreach"] = np.maximum(model_df["raw_overreach_signal"], model_df["overreach_state"])
-    model_df["injury_risk"] = np.maximum(model_df["raw_injury_signal"], model_df["injury_risk_state"])
     model_df = _apply_athlete_progression_baseline_fields(model_df)
 
     fitfat_lookup: dict[pd.Timestamp, dict[str, float]] = {}
@@ -5540,23 +5568,23 @@ def _build_athlete_progression_payload(
     # Carried-state risk model:
     # - raw_*_signal keeps the local-window ACWR + baseline-load view.
     # - *_state carries short-term strain memory forward with daily decay.
+    # - final overreach / injury_risk add today's raw signal to the carried
+    #   state so repeated moderate overload compounds more clearly.
     # - injury_risk uses slower decay to represent longer tissue-recovery memory.
-    model_df["overreach_state"] = _autoregressive_risk_state(
+    model_df["overreach_state"], model_df["overreach"] = _accumulated_burden_risk(
         model_df["raw_overreach_signal"],
         decay=0.82,
         impulse_gain=0.22,
         activation_floor=5.0,
         upper_bound=100.0,
     )
-    model_df["injury_risk_state"] = _autoregressive_risk_state(
+    model_df["injury_risk_state"], model_df["injury_risk"] = _accumulated_burden_risk(
         model_df["raw_injury_signal"],
         decay=0.90,
         impulse_gain=0.16,
         activation_floor=4.0,
         upper_bound=100.0,
     )
-    model_df["overreach"] = np.maximum(model_df["raw_overreach_signal"], model_df["overreach_state"]).clip(lower=0.0, upper=100.0)
-    model_df["injury_risk"] = np.maximum(model_df["raw_injury_signal"], model_df["injury_risk_state"]).clip(lower=0.0, upper=100.0)
     model_df["durability"] = rtss_emas[42]
     model_df["pounding"] = rtss_emas[7]
 
