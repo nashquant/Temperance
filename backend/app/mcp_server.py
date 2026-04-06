@@ -2494,6 +2494,24 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
         return _clean_mapping(row)
 
     def _expected_eow_point_for_week(week_start_iso: str) -> dict[str, Any] | None:
+        def _scaled_weekly_projection_point(point: dict[str, Any]) -> dict[str, Any]:
+            projected_point = dict(point)
+            weekly_scale_fields = (
+                "baseline_tss",
+                "baseline_distance_km",
+                "lt_target_tss",
+                "lt_target_distance_km",
+                "capacity_baseline_tss",
+                "recent_load_anchor_tss",
+                "blended_baseline_tss_before_smoothing",
+                "smoothed_baseline_tss",
+            )
+            for field in weekly_scale_fields:
+                value = pd.to_numeric(pd.Series([projected_point.get(field)]), errors="coerce").iloc[0]
+                if pd.notna(value):
+                    projected_point[field] = float(value) * 7.0
+            return projected_point
+
         week_start_ts = pd.to_datetime(week_start_iso, errors="coerce")
         if pd.isna(week_start_ts):
             return None
@@ -2520,7 +2538,7 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
 
         days_to_eow = int((week_end_ts - anchor["day_ts"]).days)
         if days_to_eow <= 0:
-            return dict(anchor["point"])
+            return _scaled_weekly_projection_point(anchor["point"])
 
         recent_rows = daily_rows[-7:]
         projected = dict(anchor["point"])
@@ -2549,7 +2567,7 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
             slope_per_day = (field_values[-1] - field_values[0]) / max(len(field_values) - 1, 1)
             projected[field] = latest + (slope_per_day * days_to_eow)
         projected["period_start"] = week_end_ts.date().isoformat()
-        return projected
+        return _scaled_weekly_projection_point(projected)
 
     current_week_start_iso = _week_start_iso(datetime.now().astimezone().date())
     for pt in weekly_points:
