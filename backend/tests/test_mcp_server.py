@@ -462,8 +462,8 @@ class MCPServerHelpersTest(unittest.TestCase):
         week_starts = [row["week_start"] for row in result["weekly_baseline"]]
         self.assertIn("2026-03-02", week_starts)
         current_week = next(row for row in result["weekly_baseline"] if row["week_start"] == "2026-03-02")
-        self.assertEqual(current_week["baseline_tss"], 60.0)
-        self.assertEqual(current_week["deviation_from_lt_tss"], -10.0)
+        self.assertEqual(current_week["baseline_tss"], 420.0)
+        self.assertEqual(current_week["deviation_from_lt_tss"], -70.0)
 
     def test_get_fitness_form_current_week_uses_expected_eow_baseline_projection(self):
         fake_daily_progression = {
@@ -572,9 +572,9 @@ class MCPServerHelpersTest(unittest.TestCase):
             result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
 
         current_week = next(row for row in result["weekly_baseline"] if row["week_start"] == "2026-03-02")
-        # Trend +2/day with 3 days left to Sunday -> 70 expected EOW baseline.
-        self.assertEqual(current_week["baseline_tss"], 70.0)
-        self.assertEqual(current_week["baseline_distance_km"], 11.0)
+        # Trend +2/day with 3 days left to Sunday -> 70/day expected EOW baseline => 490/week.
+        self.assertEqual(current_week["baseline_tss"], 490.0)
+        self.assertEqual(current_week["baseline_distance_km"], 77.0)
 
     def test_activity_row_summary_includes_pace_and_extended_metrics(self):
         summary = mcp_server._activity_row_summary(
