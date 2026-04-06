@@ -3490,7 +3490,7 @@ def _generated_activity_context(
     day_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     if not metrics_df.empty:
-        _, _, model_lookup = _day_lookup_with_daily_model(
+        _, _, model_lookup, _ = _day_lookup_with_daily_model(
             metrics_df=metrics_df,
             daily_tss_target=base_daily_goal_tss,
             db_path=db_path,
@@ -4238,7 +4238,7 @@ def _generated_activity_planning_state(
     recent_activity_rows = _aggregate_actual_days_for_planning(metrics_df=metrics_df, selected_day=selected_day)
     model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     if not metrics_df.empty:
-        _, _, model_lookup = _day_lookup_with_daily_model(
+        _, _, model_lookup, _ = _day_lookup_with_daily_model(
             metrics_df=metrics_df,
             daily_tss_target=anchor_daily_tss,
             db_path=db_path,
@@ -4678,12 +4678,13 @@ def _day_lookup_with_daily_model(
     metrics_df: pd.DataFrame,
     daily_tss_target: float,
     db_path: Path,
-) -> tuple[pd.DataFrame, dict[pd.Timestamp, dict[str, float]], dict[pd.Timestamp, dict[str, float]]]:
+) -> tuple[pd.DataFrame, dict[pd.Timestamp, dict[str, float]], dict[pd.Timestamp, dict[str, float]], pd.DataFrame]:
     if metrics_df.empty:
         return (
             pd.DataFrame(columns=["day", "distance_eqv_km", "calories", "duration_s", "tss", "rtss"]),
             {},
             {},
+            pd.DataFrame(),
         )
 
     daily_df = metrics_df.copy()
@@ -4694,6 +4695,7 @@ def _day_lookup_with_daily_model(
             pd.DataFrame(columns=["day", "distance_eqv_km", "calories", "duration_s", "tss", "rtss"]),
             {},
             {},
+            pd.DataFrame(),
         )
 
     daily_agg = (
@@ -4716,7 +4718,7 @@ def _day_lookup_with_daily_model(
     min_day = pd.to_datetime(daily_agg["day"], errors="coerce").min()
     max_day = pd.to_datetime(daily_agg["day"], errors="coerce").max()
     if pd.isna(min_day) or pd.isna(max_day):
-        return daily_agg, {}, {}
+        return daily_agg, {}, {}, pd.DataFrame()
 
     day_index = pd.date_range(start=min_day, end=max_day, freq="D")
     model_df = pd.DataFrame({"day": day_index})
@@ -4734,6 +4736,23 @@ def _day_lookup_with_daily_model(
     tss_emas = ema_multi(tss_series, [42, 7, 10])
     rtss_emas = ema_multi(rtss_series, [100, 10])
     target = float(max(daily_tss_target, 0.0))
+
+    pace_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LT_PACE_CURVE,
+        value_key="lt_pace_sec",
+        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+    )
+    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    model_df["lt_pace_target_sec_per_km"] = model_df["day"].map(
+        lambda day: float(_curve_value_at(pace_curve, pace_default, pd.Timestamp(day).to_pydatetime()))
+    )
+    model_df["lt_target_tss"] = pd.to_numeric(model_df.get("lt_pace_target_sec_per_km"), errors="coerce").map(
+        lambda pace: float(max(_weekly_tss_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
+    )
+    model_df["lt_target_distance_km"] = pd.to_numeric(model_df.get("lt_pace_target_sec_per_km"), errors="coerce").map(
+        lambda pace: float(max(_weekly_distance_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
+    )
 
     model_df["fitness"] = tss_emas[42]
     model_df["fatigue"] = tss_emas[7]
@@ -4759,6 +4778,7 @@ def _day_lookup_with_daily_model(
     )
     model_df["overreach"] = np.maximum(model_df["raw_overreach_signal"], model_df["overreach_state"])
     model_df["injury_risk"] = np.maximum(model_df["raw_injury_signal"], model_df["injury_risk_state"])
+    model_df = _apply_athlete_progression_baseline_fields(model_df)
 
     fitfat_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
@@ -4780,7 +4800,7 @@ def _day_lookup_with_daily_model(
             "vdot_max": _safe_float(row.get("vdot_max")),
         }
 
-    return daily_agg, fitfat_lookup, model_lookup
+    return daily_agg, fitfat_lookup, model_lookup, model_df
 
 
 def _metrics_for_filters(
@@ -5233,6 +5253,7 @@ def _apply_athlete_progression_baseline_fields(model_df: pd.DataFrame) -> pd.Dat
 
 
 def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.DataFrame:
+    baseline_points_df = _rollup_athlete_progression_weekly_baseline_fields(model_df)
     weekly_df = model_df.copy()
     weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(_week_start_monday)
     points_df = (
@@ -5262,6 +5283,18 @@ def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.Data
             pounding=("pounding", "mean"),
             vdot=("vdot", "max"),
             vdot_max=("vdot_max", "max"),
+        )
+        .sort_values("period_start")
+    )
+    return points_df.merge(baseline_points_df, on="period_start", how="left")
+
+
+def _rollup_athlete_progression_weekly_baseline_fields(model_df: pd.DataFrame) -> pd.DataFrame:
+    weekly_df = model_df.copy()
+    weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(_week_start_monday)
+    points_df = (
+        weekly_df.groupby("period_start", as_index=False)
+        .agg(
             baseline_tss_daily=("baseline_tss", "mean"),
             baseline_distance_km_daily=("baseline_distance_km", "mean"),
             lt_target_tss_daily=("lt_target_tss", "mean"),
@@ -5275,11 +5308,10 @@ def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.Data
     )
     for field in _ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS:
         points_df[field] = pd.to_numeric(points_df.get(f"{field}_daily"), errors="coerce").fillna(0.0) * 7.0
-    points_df = points_df.drop(
+    return points_df.drop(
         columns=[f"{field}_daily" for field in _ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS],
         errors="ignore",
     )
-    return points_df
 
 
 def _build_athlete_progression_payload(
@@ -5874,12 +5906,21 @@ def _build_activity_dashboard_payload(
         day_agg = pd.DataFrame()
         fitfat_lookup = {}
         model_lookup = {}
+        model_df = pd.DataFrame()
     else:
-        day_agg, fitfat_lookup, model_lookup = _day_lookup_with_daily_model(
+        day_agg, fitfat_lookup, model_lookup, model_df = _day_lookup_with_daily_model(
             metrics_df=metrics_df,
             daily_tss_target=daily_tss_target,
             db_path=db_path,
         )
+    weekly_baseline_lookup: dict[pd.Timestamp, float] = {}
+    if not model_df.empty:
+        weekly_progression_df = _rollup_athlete_progression_weekly_baseline_fields(model_df)
+        for _, row in weekly_progression_df.iterrows():
+            period_start = pd.to_datetime(row.get("period_start"), errors="coerce")
+            if pd.isna(period_start):
+                continue
+            weekly_baseline_lookup[pd.Timestamp(period_start).normalize()] = _safe_float(row.get("baseline_tss"))
 
     day_stats_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     for _, row in day_agg.iterrows():
@@ -6261,6 +6302,11 @@ def _build_activity_dashboard_payload(
                     ),
                     "tss": round(week_tss, 1),
                     "rtss": round(week_rtss, 1),
+                    "baseline_tss": (
+                        round(_safe_float(weekly_baseline_lookup.get(ws)), 1)
+                        if ws in weekly_baseline_lookup
+                        else None
+                    ),
                     "fitness": (
                         round(_safe_float(week_daily_model.get("fitness")), 1)
                         if isinstance(week_daily_model, dict)

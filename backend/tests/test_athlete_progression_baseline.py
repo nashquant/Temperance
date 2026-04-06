@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from backend.app.main import _blend_baseline_tss, _build_athlete_progression_payload
+from backend.app.main import _blend_baseline_tss, _build_activity_dashboard_payload, _build_athlete_progression_payload
 
 
 def _metrics_frame(daily_tss_values: list[float], start_day: str = "2026-01-05") -> pd.DataFrame:
@@ -212,6 +212,46 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
         self.assertEqual(short_payload["points"][-1]["period_start"], long_payload["points"][-1]["period_start"])
         self.assertAlmostEqual(short_payload["points"][-1]["baseline_tss"], long_payload["points"][-1]["baseline_tss"], places=3)
         self.assertAlmostEqual(short_payload["points"][-1]["smoothed_baseline_tss"], long_payload["points"][-1]["smoothed_baseline_tss"], places=3)
+
+    def test_dashboard_week_summary_uses_canonical_weekly_baseline_tss(self):
+        metrics_df = _metrics_frame(([45.0] * 42) + ([75.0] * 14))
+        actual_metrics_df = metrics_df.copy()
+        actual_metrics_df["day"] = pd.to_datetime(actual_metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+        with (
+            patch("backend.app.main._dashboard_metrics_frames", return_value=(metrics_df, actual_metrics_df)),
+            patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
+            patch("backend.app.main.get_planned_activities_df", return_value=pd.DataFrame()),
+            patch("backend.app.main.get_wellness_df", return_value=pd.DataFrame()),
+            patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=420.0),
+            patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=70.0),
+            patch("backend.app.main._load_curve_points", return_value=[]),
+            patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
+        ):
+            mock_datetime.now.return_value = datetime(2026, 2, 15, tzinfo=timezone.utc)
+            dashboard_payload = _build_activity_dashboard_payload(
+                db_path=Path("/tmp/athlete-progression-baseline-test.sqlite"),
+                visible_weeks=12,
+                week_offset=0,
+                sport=None,
+            )
+
+        canonical_weekly = self._build_payload(([45.0] * 42) + ([75.0] * 14), days=120, aggregation="weekly")
+        expected_by_week = {
+            str(point["period_start"]): float(point["baseline_tss"])
+            for point in canonical_weekly["points"]
+        }
+
+        self.assertTrue(dashboard_payload["weeks"])
+        for week in dashboard_payload["weeks"]:
+            week_start = str(week["week_start"])
+            if week_start not in expected_by_week:
+                self.assertIsNone(week["summary"]["baseline_tss"])
+                continue
+            self.assertAlmostEqual(
+                float(week["summary"]["baseline_tss"]),
+                expected_by_week[week_start],
+                places=1,
+            )
 
 
 if __name__ == "__main__":

@@ -102,6 +102,8 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
           <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.calories.value}`}>{fmtNumber(summary.calories)}</p>
           <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.stress.label}`}><Activity className={`${summaryRowClassNames.icon} ${summaryToneClassNames.stress.icon}`} />TSS|rTSS</p>
           <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
+          <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.stress.label}`}><Activity className={`${summaryRowClassNames.icon} ${summaryToneClassNames.stress.icon}`} />Base</p>
+          <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.baseline_tss)}</p>
           <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.risk.label}`}><AlertTriangle className={`${summaryRowClassNames.icon} ${summaryToneClassNames.risk.icon}`} />Ovr|Risk</p>
           <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.risk.value}`}>{fmtNumber(summary.overreach)} | {fmtNumber(summary.injury_risk)}</p>
         </div>

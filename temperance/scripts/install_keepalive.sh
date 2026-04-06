@@ -274,29 +274,33 @@ load_jobs() {
 restart_jobs() {
   local gui_domain="gui/$(id -u)"
 
-  if launchctl print "${gui_domain}/${BACKEND_LABEL}" >/dev/null 2>&1; then
-    launchctl kickstart -k "${gui_domain}/${BACKEND_LABEL}"
-  else
-    launchctl bootstrap "${gui_domain}" "${BACKEND_PLIST}"
-  fi
+  restart_job() {
+    local label="$1"
+    local plist="$2"
+    local state
 
-  if launchctl print "${gui_domain}/${FRONTEND_LABEL}" >/dev/null 2>&1; then
-    launchctl kickstart -k "${gui_domain}/${FRONTEND_LABEL}"
-  else
-    launchctl bootstrap "${gui_domain}" "${FRONTEND_PLIST}"
-  fi
+    if ! state="$(launchctl print "${gui_domain}/${label}" 2>/dev/null | awk -F'= ' '/state =/ {print $2; exit}')"; then
+      launchctl bootstrap "${gui_domain}" "${plist}"
+      return
+    fi
 
-  if launchctl print "${gui_domain}/${MCP_LABEL}" >/dev/null 2>&1; then
-    launchctl kickstart -k "${gui_domain}/${MCP_LABEL}"
-  else
-    launchctl bootstrap "${gui_domain}" "${MCP_PLIST}"
-  fi
+    if [[ "${state}" == "running" ]]; then
+      launchctl kickstart -k "${gui_domain}/${label}"
+      return
+    fi
 
-  if launchctl print "${gui_domain}/${CLOUD_LABEL}" >/dev/null 2>&1; then
-    launchctl kickstart -k "${gui_domain}/${CLOUD_LABEL}"
-  else
-    launchctl bootstrap "${gui_domain}" "${CLOUD_PLIST}"
-  fi
+    launchctl bootout "${gui_domain}" "${plist}" >/dev/null 2>&1 || true
+    launchctl bootstrap "${gui_domain}" "${plist}"
+  }
+
+  restart_job "${BACKEND_LABEL}" "${BACKEND_PLIST}"
+  restart_job "${FRONTEND_LABEL}" "${FRONTEND_PLIST}"
+  restart_job "${MCP_LABEL}" "${MCP_PLIST}"
+  restart_job "${CLOUD_LABEL}" "${CLOUD_PLIST}"
+}
+
+ensure_service_scripts_executable() {
+  chmod +x "${BACKEND_SCRIPT}" "${FRONTEND_SCRIPT}" "${MCP_SCRIPT}" "${CLOUD_SCRIPT}"
 }
 
 unload_jobs() {
@@ -348,7 +352,7 @@ logs_jobs() {
 cmd="${1:-}"
 case "${cmd}" in
   install)
-    chmod +x "${BACKEND_SCRIPT}" "${FRONTEND_SCRIPT}" "${MCP_SCRIPT}" "${CLOUD_SCRIPT}"
+    ensure_service_scripts_executable
     write_cloudflared_config
     write_backend_plist
     write_frontend_plist
@@ -365,6 +369,7 @@ case "${cmd}" in
     echo "Uninstalled KeepAlive services."
     ;;
   start)
+    ensure_service_scripts_executable
     write_cloudflared_config
     write_backend_plist
     write_frontend_plist
@@ -378,6 +383,7 @@ case "${cmd}" in
     status_jobs
     ;;
   restart)
+    ensure_service_scripts_executable
     write_cloudflared_config
     write_backend_plist
     write_frontend_plist
