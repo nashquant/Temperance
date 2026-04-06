@@ -132,9 +132,14 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
             abs(points[index]["baseline_tss"] - points[index - 1]["baseline_tss"])
             for index in range(1, len(points))
         ]
+        raw_jumps = [
+            abs(points[index]["blended_baseline_tss_before_smoothing"] - points[index - 1]["blended_baseline_tss_before_smoothing"])
+            for index in range(1, len(points))
+        ]
 
         self.assertTrue(smoothed_jumps)
-        self.assertLess(max(smoothed_jumps), 50.0)
+        self.assertTrue(raw_jumps)
+        self.assertLess(max(smoothed_jumps), max(raw_jumps))
 
     def test_points_include_baseline_history_components(self):
         payload = self._build_payload([55.0] * 42)
@@ -159,6 +164,23 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
         self.assertIn("injury_risk_state", last_point)
         self.assertGreaterEqual(last_point["overreach"], last_point["raw_overreach_signal"])
         self.assertGreaterEqual(last_point["injury_risk"], last_point["raw_injury_signal"])
+
+    def test_repeated_moderate_overload_week_scores_higher_than_single_week(self):
+        single_week_payload = self._build_payload(([45.0] * 77) + ([75.0] * 7), days=140, aggregation="daily")
+        repeated_week_payload = self._build_payload(([45.0] * 70) + ([75.0] * 14), days=140, aggregation="daily")
+
+        self.assertTrue(single_week_payload["points"])
+        self.assertTrue(repeated_week_payload["points"])
+        single_overreach_peak = max(float(point["overreach"]) for point in single_week_payload["points"][-14:])
+        repeated_overreach_peak = max(float(point["overreach"]) for point in repeated_week_payload["points"][-14:])
+        single_injury_peak = max(float(point["injury_risk"]) for point in single_week_payload["points"][-14:])
+        repeated_injury_peak = max(float(point["injury_risk"]) for point in repeated_week_payload["points"][-14:])
+
+        self.assertGreater(repeated_overreach_peak, single_overreach_peak)
+        self.assertGreater(
+            repeated_injury_peak,
+            single_injury_peak,
+        )
 
     def test_sparse_history_keeps_baseline_history_components_populated(self):
         payload = self._build_payload([30.0, 40.0, 35.0])
