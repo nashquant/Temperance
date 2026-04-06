@@ -94,9 +94,10 @@ def is_long_run_candidate(
 ) -> bool:
     profile = stress_profile or StressProfile()
     normalized_modality = str(modality or "").strip().lower()
+    anchor_duration_floor = max(profile.long_run_min_minutes, profile.long_run_anchor_min_minutes)
     return (
         normalized_modality == "running"
-        and float(total_minutes) >= profile.long_run_min_minutes
+        and float(total_minutes) >= anchor_duration_floor
         and float(total_minutes) <= profile.long_run_max_minutes
         and float(avg_if) >= profile.long_run_min_avg_if
         and float(avg_if) <= profile.long_run_max_avg_if

@@ -24,6 +24,7 @@ class StressProfile:
     moderate_max_avg_if: float = 0.82
     moderate_max_max_if: float = 0.86
     long_run_min_minutes: float = 90.0
+    long_run_anchor_min_minutes: float = 100.0
     long_run_max_minutes: float = 150.0
     long_run_min_avg_if: float = 0.68
     long_run_max_avg_if: float = 0.82

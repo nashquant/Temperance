@@ -2648,6 +2648,15 @@ def tool_get_coaching_brief(arguments: dict[str, Any]) -> dict[str, Any]:
 def _modality_from_workout_text(text: str) -> str:
     """Infer primary modality from workout text prefix for stress classification."""
     t = str(text or "").strip().lower()
+    if (
+        t.startswith("xtrain")
+        or t.startswith("cross-train")
+        or t.startswith("cross training")
+        or " xtrain" in t[:30]
+        or " cross-train" in t[:30]
+        or " cross training" in t[:30]
+    ):
+        return "support"
     if t.startswith("elliptical") or " elliptical" in t[:30]:
         return "elliptical"
     if t.startswith("cycl") or t.startswith("bike") or " cycling" in t[:30] or " bike" in t[:30]:
@@ -2708,6 +2717,7 @@ def _day_summaries_from_entries(
     for idx, e in enumerate(entries):
         day_utc = str(e["day_utc"])
         workout_text = str(e["workout_text"])
+        modality = _modality_from_workout_text(workout_text)
         if idx < len(metrics_df):
             row = metrics_df.iloc[idx]
             tss = float(row.get("tss") or 0.0)
@@ -2726,6 +2736,13 @@ def _day_summaries_from_entries(
                 "sum_if_dur": 0.0,
                 "activities": 0,
                 "first_workout_text": workout_text,
+                "run_tss": 0.0,
+                "run_rtss": 0.0,
+                "run_duration_s": 0.0,
+                "support_tss": 0.0,
+                "threshold_like_run_entries": 0,
+                "specific_like_run_entries": 0,
+                "long_duration_run_entries": 0,
             }
         d = day_map[day_utc]
         d["total_tss"] += tss
@@ -2735,6 +2752,29 @@ def _day_summaries_from_entries(
             d["sum_if_dur"] += if_proxy * dur_s
         d["max_if"] = max(d["max_if"], if_proxy)
         d["activities"] += 1
+        if modality in ("running", "treadmill"):
+            dur_min = dur_s / 60.0
+            is_long = is_long_run_candidate(
+                modality=modality,
+                total_minutes=dur_min,
+                avg_if=if_proxy,
+                max_if=if_proxy,
+            )
+            is_threshold_like_run = if_proxy >= 0.88 or ("threshold" in workout_text.lower())
+            is_specific_like_run = (
+                not is_long
+                and not is_threshold_like_run
+                and dur_min >= 60.0
+                and if_proxy >= 0.79
+            )
+            d["run_tss"] += tss
+            d["run_rtss"] += rtss
+            d["run_duration_s"] += dur_s
+            d["threshold_like_run_entries"] += int(is_threshold_like_run)
+            d["specific_like_run_entries"] += int(is_specific_like_run)
+            d["long_duration_run_entries"] += int(is_long)
+        else:
+            d["support_tss"] += tss
 
     summaries = []
     for day_utc in sorted(day_map):
@@ -2758,14 +2798,67 @@ def _day_summaries_from_entries(
             avg_if=avg_if,
             max_if=max_if_val,
         )
+        run_dur_min = d["run_duration_s"] / 60.0
+        run_avg_if = (d["run_rtss"] / max(d["run_tss"], 1.0)) ** 0.5 if d["run_tss"] > 0 and d["run_rtss"] > 0 else 0.0
+        run_stress_class = "easy"
+        if d["run_duration_s"] > 0:
+            run_stress_class_obj, _, _ = classify_session_stress(
+                estimated_tss=d["run_tss"],
+                avg_if=run_avg_if,
+                max_if=run_avg_if,
+                total_minutes=run_dur_min,
+                modality="running",
+                weekly_baseline_tss=weekly_baseline_tss,
+            )
+            run_stress_class = run_stress_class_obj.value
+
+        critique_long_run = bool(
+            d["run_duration_s"] > 0
+            and run_dur_min >= 90.0
+            and run_avg_if >= 0.68
+            and run_avg_if <= 0.86
+            and d["threshold_like_run_entries"] == 0
+        )
+
+        meaningful_run_stress = bool(
+            d["run_duration_s"] > 0
+            and (
+                critique_long_run
+                or d["threshold_like_run_entries"] > 0
+                or d["specific_like_run_entries"] > 0
+                or run_dur_min >= 75.0
+                or d["run_rtss"] >= 45.0
+                or run_stress_class in ("moderate", "hard")
+            )
+        )
+        hard_run_stress = bool(
+            d["run_duration_s"] > 0
+            and (
+                d["threshold_like_run_entries"] > 0
+                or d["specific_like_run_entries"] > 0
+                or critique_long_run
+                or run_stress_class == "hard"
+                or d["run_rtss"] >= 60.0
+            )
+        )
         summaries.append({
             "day_utc": day_utc,
             "total_tss": round(d["total_tss"], 1),
             "total_rtss": round(d["total_rtss"], 1),
             "duration_min": round(dur_min, 1),
             "stress_class": stress_class.value,
-            "is_long_run": is_long,
+            "is_long_run": critique_long_run,
             "activities": d["activities"],
+            "run_tss": round(d["run_tss"], 1),
+            "run_rtss": round(d["run_rtss"], 1),
+            "run_duration_min": round(run_dur_min, 1),
+            "support_tss": round(d["support_tss"], 1),
+            "run_stress_class": run_stress_class,
+            "meaningful_run_stress": meaningful_run_stress,
+            "hard_run_stress": hard_run_stress,
+            "threshold_like_run": d["threshold_like_run_entries"] > 0,
+            "specific_like_run": d["specific_like_run_entries"] > 0,
+            "long_duration_run": d["long_duration_run_entries"] > 0 or is_long,
         })
     return summaries
 
@@ -2781,62 +2874,124 @@ def _scan_density_warnings(
     if n == 0:
         return warnings
 
+    def _append_warning(tag: str, days: list[str], message: str, **extra: Any) -> None:
+        warning = {"tag": tag, "days": days, "message": message}
+        warning.update(extra)
+        if warning not in warnings:
+            warnings.append(warning)
+
     # --- Tier A: stress-class pattern checks ---
-    streak: int = 0
-    streak_days: list[str] = []
+    total_loading_streak: int = 0
+    total_loading_days: list[str] = []
+    run_streak: int = 0
+    run_streak_days: list[str] = []
     for i, day in enumerate(days_sorted):
         sc = day.get("stress_class", "easy")
         is_loading = sc in ("moderate", "hard")
         is_long = day.get("is_long_run", False)
+        meaningful_run_stress = bool(day.get("meaningful_run_stress"))
+        hard_run_stress = bool(day.get("hard_run_stress"))
+        prev_day = days_sorted[i - 1] if i > 0 else None
+        prev_hard_day = bool(prev_day and prev_day.get("stress_class") == "hard")
 
         if is_loading:
-            streak += 1
-            streak_days.append(day["day_utc"])
+            total_loading_streak += 1
+            total_loading_days.append(day["day_utc"])
         else:
-            if streak >= 3:
-                tag = "consecutive_loading_streak_4" if streak >= 4 else "consecutive_loading_streak_3"
-                warnings.append({
-                    "tag": tag,
-                    "days": streak_days[:],
-                    "message": f"{streak} consecutive moderate/hard days with no rest or easy gap",
-                })
-            streak = 0
-            streak_days = []
+            if total_loading_streak >= 3:
+                run_days_in_streak = [d for d in days_sorted if d["day_utc"] in total_loading_days and d.get("meaningful_run_stress")]
+                if len(run_days_in_streak) >= 2:
+                    tag = "consecutive_loading_streak_4" if total_loading_streak >= 4 else "consecutive_loading_streak_3"
+                    _append_warning(
+                        tag,
+                        total_loading_days[:],
+                        f"{total_loading_streak} consecutive loading days with insufficient run-specific recovery",
+                    )
+            total_loading_streak = 0
+            total_loading_days = []
 
-        if sc == "hard" and i > 0 and days_sorted[i - 1].get("stress_class") == "hard":
-            warnings.append({
-                "tag": "back_to_back_hard",
-                "days": [days_sorted[i - 1]["day_utc"], day["day_utc"]],
-                "message": "Two consecutive hard days with no recovery gap",
-            })
+        if meaningful_run_stress:
+            run_streak += 1
+            run_streak_days.append(day["day_utc"])
+        else:
+            if run_streak >= 3:
+                tag = "mechanical_run_streak_4" if run_streak >= 4 else "mechanical_run_streak_3"
+                _append_warning(
+                    tag,
+                    run_streak_days[:],
+                    f"{run_streak} consecutive days with meaningful run stress compress mechanical recovery",
+                )
+            run_streak = 0
+            run_streak_days = []
 
-        if is_long and i > 0 and days_sorted[i - 1].get("stress_class") == "hard":
-            warnings.append({
-                "tag": "pre_long_run_heavy",
-                "days": [days_sorted[i - 1]["day_utc"], day["day_utc"]],
-                "message": "Hard session the day before a long run — insufficient recovery going in",
-            })
+        prev_hard_run_stress = bool(prev_day and prev_day.get("hard_run_stress"))
+
+        if hard_run_stress and prev_day and (prev_hard_run_stress or prev_hard_day):
+            _append_warning(
+                "back_to_back_hard_run",
+                [prev_day["day_utc"], day["day_utc"]],
+                "A hard day followed immediately by hard run stress leaves no recovery gap",
+            )
+
+        if is_long and prev_day and (prev_hard_run_stress or prev_hard_day):
+            _append_warning(
+                "pre_long_run_heavy",
+                [prev_day["day_utc"], day["day_utc"]],
+                "Hard stress the day before a long run — insufficient recovery going in",
+            )
+
+        if is_long:
+            recent = days_sorted[max(0, i - 2):i]
+            recent_touches = [d["day_utc"] for d in recent if d.get("meaningful_run_stress")]
+            if len(recent_touches) >= 2:
+                _append_warning(
+                    "pre_long_run_run_stress_stack",
+                    recent_touches + [day["day_utc"]],
+                    "Too many meaningful run-stress touches land inside the 3-day window before the long run",
+                    touch_count=len(recent_touches),
+                )
+            close_quality = [
+                d["day_utc"]
+                for d in recent
+                if d.get("threshold_like_run") or d.get("specific_like_run") or d.get("long_duration_run")
+            ]
+            if close_quality:
+                _append_warning(
+                    "quality_too_close_to_long_run",
+                    close_quality + [day["day_utc"]],
+                    "Threshold, specific, or long-duration run stress sits too close to the long run",
+                )
 
     # flush trailing streak
-    if streak >= 3:
-        tag = "consecutive_loading_streak_4" if streak >= 4 else "consecutive_loading_streak_3"
-        warnings.append({
-            "tag": tag,
-            "days": streak_days[:],
-            "message": f"{streak} consecutive moderate/hard days with no rest or easy gap",
-        })
+    if run_streak >= 3:
+        tag = "mechanical_run_streak_4" if run_streak >= 4 else "mechanical_run_streak_3"
+        _append_warning(
+            tag,
+            run_streak_days[:],
+            f"{run_streak} consecutive days with meaningful run stress compress mechanical recovery",
+        )
+
+    if total_loading_streak >= 3:
+        run_days_in_streak = [d for d in days_sorted if d["day_utc"] in total_loading_days and d.get("meaningful_run_stress")]
+        if len(run_days_in_streak) >= 2:
+            tag = "consecutive_loading_streak_4" if total_loading_streak >= 4 else "consecutive_loading_streak_3"
+            _append_warning(
+                tag,
+                total_loading_days[:],
+                f"{total_loading_streak} consecutive loading days with insufficient run-specific recovery",
+            )
 
     # long run spacing
     long_run_days = [d["day_utc"] for d in days_sorted if d.get("is_long_run")]
     for i in range(1, len(long_run_days)):
         gap = (date.fromisoformat(long_run_days[i]) - date.fromisoformat(long_run_days[i - 1])).days
         if gap < 6:
-            warnings.append({
-                "tag": "long_run_spacing_tight",
-                "days": [long_run_days[i - 1], long_run_days[i]],
-                "gap_days": gap,
-                "message": f"Long runs only {gap} days apart (minimum 6 recommended)",
-            })
+            _append_warning(
+                "long_run_spacing_tight",
+                [long_run_days[i - 1], long_run_days[i]],
+                f"Long runs only {gap} days apart (minimum 6 recommended)",
+                gap_days=gap,
+            )
 
     # --- Tier B: rolling 3-day TSS cluster density ---
     window_tss_vals: list[float] = []
@@ -2847,13 +3002,13 @@ def _scan_density_warnings(
     for i, w_tss in enumerate(window_tss_vals):
         if w_tss > three_day_threshold:
             pct = round((w_tss / three_day_threshold - 1.0) * 100)
-            warnings.append({
-                "tag": "tss_cluster_spike",
-                "days": [d["day_utc"] for d in days_sorted[i:i + 3]],
-                "window_tss": round(w_tss, 1),
-                "threshold": round(three_day_threshold, 1),
-                "message": f"3-day TSS of {w_tss:.1f} is {pct}% above the {three_day_threshold:.1f} density threshold",
-            })
+            _append_warning(
+                "tss_cluster_spike",
+                [d["day_utc"] for d in days_sorted[i:i + 3]],
+                f"3-day TSS of {w_tss:.1f} is {pct}% above the {three_day_threshold:.1f} density threshold",
+                window_tss=round(w_tss, 1),
+                threshold=round(three_day_threshold, 1),
+            )
 
     # runaway: contiguous runs of 2+ over-threshold windows
     over_flags = [v > three_day_threshold for v in window_tss_vals] + [False]
@@ -2865,15 +3020,44 @@ def _scan_density_warnings(
             run_len = i - run_start
             if run_len >= 2:
                 span_end = min(run_start + run_len + 2, n)
-                warnings.append({
-                    "tag": "tss_cluster_runaway",
-                    "days": [d["day_utc"] for d in days_sorted[run_start:span_end]],
-                    "message": (
+                _append_warning(
+                    "tss_cluster_runaway",
+                    [d["day_utc"] for d in days_sorted[run_start:span_end]],
+                    (
                         f"Sustained overload: {run_len + 1} consecutive 3-day windows "
                         f"all exceed the {three_day_threshold:.1f} density threshold"
                     ),
-                })
+                )
             run_start = None
+
+    def _scan_subtype_density(window_size: int, min_count: int) -> None:
+        if n < window_size:
+            return
+        subtype_map = {
+            "threshold_like_run": "threshold",
+            "specific_like_run": "specific",
+            "long_duration_run": "long-duration",
+        }
+        for start in range(0, n - window_size + 1):
+            window = days_sorted[start:start + window_size]
+            counts = {
+                label: sum(1 for day in window if day.get(field))
+                for field, label in subtype_map.items()
+            }
+            for field, label in subtype_map.items():
+                count = counts[label]
+                if count >= min_count:
+                    _append_warning(
+                        f"{label}_cluster_{window_size}d",
+                        [d["day_utc"] for d in window],
+                        f"{count} {label} run-stress touches land inside a {window_size}-day window",
+                        subtype=label,
+                        count=count,
+                        window_days=window_size,
+                    )
+
+    _scan_subtype_density(window_size=3, min_count=2)
+    _scan_subtype_density(window_size=9, min_count=3)
 
     return warnings
 
