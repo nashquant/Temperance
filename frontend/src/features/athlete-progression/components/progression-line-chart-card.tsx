@@ -98,7 +98,7 @@ function formatProgressionValue(value: unknown, dataKey?: string): string {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return String(value ?? '-');
   if (shouldUseHourFormat(String(dataKey || ''))) return formatHourLikeValue(numeric);
-  return shouldUseIntegerFormat(String(dataKey || '')) ? String(Math.round(numeric)) : numeric.toFixed(2);
+  return String(Math.round(numeric));
 }
 
 function formatTooltipDateLabel(value: string): string {
@@ -118,20 +118,20 @@ function ProgressionTooltip({
   label,
   payload,
   targetKey,
-}: TooltipProps<ValueType, NameType> & { targetKey?: string }): JSX.Element | null {
-  const visiblePayload = (payload ?? []).filter((entry) => String(entry.dataKey || '') !== String(targetKey || ''));
+}: TooltipProps<ValueType, NameType> & { targetKey?: string; targetLabel?: string }): JSX.Element | null {
+  const visiblePayload = (payload ?? []).filter((entry) => entry.value != null);
   if (!active || visiblePayload.length === 0) return null;
   return (
     <div
-      className="pointer-events-none inline-block w-fit max-w-[132px] rounded-lg border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] px-2 py-1.5 shadow-[0_10px_26px_rgba(2,6,23,0.26)] backdrop-blur"
+      className="pointer-events-none inline-block w-fit max-w-[120px] rounded-lg border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] px-2 py-1.5 shadow-[0_10px_26px_rgba(2,6,23,0.26)] backdrop-blur"
       style={{ transform: 'translate(calc(-50% - 20px), calc(-100% - 32px))' }}
     >
-      <p className="mb-1 whitespace-nowrap text-[11px] font-semibold text-slate-100">{formatTooltipDateLabel(String(label || ''))}</p>
+      <p className="mb-1 whitespace-nowrap text-[10px] font-semibold text-slate-100">{formatTooltipDateLabel(String(label || ''))}</p>
       <div className="space-y-1">
         {visiblePayload.map((entry) => (
-          <div key={`${entry.name}-${entry.dataKey}`} className="flex items-center justify-between gap-2 text-[10px] leading-4">
+          <div key={`${entry.name}-${entry.dataKey}`} className="flex items-center justify-between gap-2 text-[9px] leading-3.5">
             <span className="truncate font-medium" style={{ color: String(entry.color || '#cbd5e1') }}>
-              {entry.name}
+              {String(entry.dataKey || '') === String(targetKey || '') ? 'Base' : entry.name}
             </span>
             <span className="shrink-0 font-semibold" style={{ color: String(entry.color || '#e2e8f0') }}>
               {formatProgressionValue(entry.value, String(entry.dataKey || ''))}
@@ -247,7 +247,7 @@ export function ProgressionLineChartCard({
                 />
               ) : null}
               <Tooltip
-                content={<ProgressionTooltip targetKey={targetKey} />}
+                content={<ProgressionTooltip targetKey={targetKey} targetLabel={targetLabel} />}
                 labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
                 cursor={{ stroke: '#38bdf8', strokeOpacity: 0.3 }}
                 allowEscapeViewBox={{ x: true, y: true }}
