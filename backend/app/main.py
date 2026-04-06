@@ -5251,9 +5251,9 @@ def _apply_athlete_progression_baseline_fields(model_df: pd.DataFrame) -> pd.Dat
         index=model_df.index,
         dtype=float,
     )
-    # Smooth the displayed/progression baseline so it tracks capacity plus recent load
-    # without whipsawing from day to day as the trailing 21-day window moves.
-    blended_weekly_baseline = blended_weekly_baseline_raw.ewm(span=21, adjust=False).mean()
+    # `_blend_baseline_tss()` already mixes short, medium, and long history with
+    # capacity plus a chronic floor, so keep that as the single inertia source.
+    blended_weekly_baseline = blended_weekly_baseline_raw
     daily_tss_target_series = (blended_weekly_baseline / 7.0).fillna(0.0)
     capacity_baseline_tss_series = (weekly_capacity_series / 7.0).fillna(0.0)
     recent_load_anchor_tss_series = (
@@ -5321,26 +5321,17 @@ def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.Data
 def _rollup_athlete_progression_weekly_baseline_fields(model_df: pd.DataFrame) -> pd.DataFrame:
     weekly_df = model_df.copy()
     weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(_week_start_monday)
+    weekly_df["day"] = pd.to_datetime(weekly_df["day"], errors="coerce")
     points_df = (
-        weekly_df.groupby("period_start", as_index=False)
-        .agg(
-            baseline_tss_daily=("baseline_tss", "mean"),
-            baseline_distance_km_daily=("baseline_distance_km", "mean"),
-            lt_target_tss_daily=("lt_target_tss", "mean"),
-            lt_target_distance_km_daily=("lt_target_distance_km", "mean"),
-            capacity_baseline_tss_daily=("capacity_baseline_tss", "mean"),
-            recent_load_anchor_tss_daily=("recent_load_anchor_tss", "mean"),
-            blended_baseline_tss_before_smoothing_daily=("blended_baseline_tss_before_smoothing", "mean"),
-            smoothed_baseline_tss_daily=("smoothed_baseline_tss", "mean"),
-        )
+        weekly_df.sort_values(["period_start", "day"])
+        .groupby("period_start", as_index=False)
+        .tail(1)
         .sort_values("period_start")
+        .copy()
     )
     for field in _ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS:
-        points_df[field] = pd.to_numeric(points_df.get(f"{field}_daily"), errors="coerce").fillna(0.0) * 7.0
-    return points_df.drop(
-        columns=[f"{field}_daily" for field in _ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS],
-        errors="ignore",
-    )
+        points_df[field] = pd.to_numeric(points_df.get(field), errors="coerce").fillna(0.0) * 7.0
+    return points_df[["period_start", *_ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS]].reset_index(drop=True)
 
 
 def _athlete_progression_weekly_baseline_deviation_reason(row: dict[str, Any]) -> str:
