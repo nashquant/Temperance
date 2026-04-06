@@ -129,22 +129,65 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
         self.assertGreater(last_point["baseline_tss"], 0.0)
         self.assertAlmostEqual(last_point["baseline_distance_km"], last_point["lt_target_distance_km"], places=3)
 
-    def test_smoothing_dampens_sharp_weekly_baseline_jumps(self):
+    def test_daily_baseline_no_longer_adds_extra_ema_lag(self):
         payload = self._build_payload(([10.0] * 21) + ([90.0] * 21))
         points = payload["points"]
 
-        smoothed_jumps = [
-            abs(points[index]["baseline_tss"] - points[index - 1]["baseline_tss"])
-            for index in range(1, len(points))
-        ]
-        raw_jumps = [
-            abs(points[index]["blended_baseline_tss_before_smoothing"] - points[index - 1]["blended_baseline_tss_before_smoothing"])
-            for index in range(1, len(points))
-        ]
+        self.assertTrue(points)
+        for point in points:
+            self.assertAlmostEqual(
+                float(point["baseline_tss"]),
+                float(point["blended_baseline_tss_before_smoothing"]),
+                places=3,
+            )
+            self.assertAlmostEqual(
+                float(point["smoothed_baseline_tss"]),
+                float(point["blended_baseline_tss_before_smoothing"]),
+                places=3,
+            )
 
-        self.assertTrue(smoothed_jumps)
-        self.assertTrue(raw_jumps)
-        self.assertLess(max(smoothed_jumps), max(raw_jumps))
+    def test_resumed_training_recovers_daily_baseline_without_extra_ema(self):
+        payload = self._build_payload(([10.0] * 42) + ([90.0] * 14), aggregation="daily")
+        points = payload["points"]
+
+        self.assertGreaterEqual(len(points), 56)
+        raw_series = pd.Series(
+            [float(point["blended_baseline_tss_before_smoothing"]) for point in points],
+            dtype=float,
+        )
+        ema_counterfactual = raw_series.ewm(span=21, adjust=False).mean()
+
+        for point in points:
+            self.assertAlmostEqual(
+                float(point["baseline_tss"]),
+                float(point["blended_baseline_tss_before_smoothing"]),
+                places=3,
+            )
+
+        recovery_advantage = (raw_series - ema_counterfactual).iloc[-14:]
+        self.assertGreater(float(recovery_advantage.max()), 0.5)
+
+    def test_weekly_rollup_uses_latest_modeled_point_in_week(self):
+        daily_payload = self._build_payload(([30.0] * 7) + ([80.0] * 7) + ([25.0] * 7) + ([95.0] * 7), aggregation="daily")
+        weekly_payload = self._build_payload(([30.0] * 7) + ([80.0] * 7) + ([25.0] * 7) + ([95.0] * 7), aggregation="weekly")
+
+        expected_by_week: dict[str, dict[str, float]] = {}
+        for point in daily_payload["points"]:
+            day = pd.Timestamp(point["period_start"])
+            week_start = (day - pd.Timedelta(days=int(day.weekday()))).date().isoformat()
+            expected_by_week[week_start] = {
+                "baseline_tss": float(point["baseline_tss"]) * 7.0,
+                "lt_target_tss": float(point["lt_target_tss"]) * 7.0,
+                "capacity_baseline_tss": float(point["capacity_baseline_tss"]) * 7.0,
+                "smoothed_baseline_tss": float(point["smoothed_baseline_tss"]) * 7.0,
+            }
+
+        for row in weekly_payload["points"]:
+            week_expected = expected_by_week[str(row["period_start"])]
+            self.assertAlmostEqual(float(row["baseline_tss"]), week_expected["baseline_tss"], places=2)
+            self.assertAlmostEqual(float(row["lt_target_tss"]), week_expected["lt_target_tss"], places=2)
+            self.assertAlmostEqual(float(row["capacity_baseline_tss"]), week_expected["capacity_baseline_tss"], places=2)
+            self.assertAlmostEqual(float(row["smoothed_baseline_tss"]), week_expected["smoothed_baseline_tss"], places=2)
 
     def test_points_include_baseline_history_components(self):
         payload = self._build_payload([55.0] * 42)
@@ -281,10 +324,9 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
             if week_start not in expected_by_week:
                 self.assertIsNone(week["summary"]["baseline_tss"])
                 continue
-            self.assertAlmostEqual(
-                float(week["summary"]["baseline_tss"]),
-                expected_by_week[week_start],
-                places=1,
+            self.assertEqual(
+                round(float(week["summary"]["baseline_tss"]), 1),
+                round(expected_by_week[week_start], 1),
             )
 
     def test_dashboard_current_week_summary_falls_back_to_latest_daily_baseline(self):

@@ -797,7 +797,7 @@ class MCPServerHelpersTest(unittest.TestCase):
             self.assertAlmostEqual(actual["smoothed_baseline_tss"], round(float(expected["smoothed_baseline_tss"]), 1), places=1)
             self.assertIn("deviation_reason", actual)
 
-    def test_get_fitness_form_weekly_baseline_uses_monday_week_rollup_without_scale_leak(self):
+    def test_get_fitness_form_weekly_baseline_uses_latest_modeled_point_in_week(self):
         daily_tss_values = ([30.0] * 7) + ([80.0] * 7) + ([25.0] * 7) + ([95.0] * 7)
         daily_payload = self._build_canonical_progression_payload(daily_tss_values, aggregation="daily")
         result = self._run_fitness_form_with_canonical_progression(daily_tss_values)
@@ -806,38 +806,19 @@ class MCPServerHelpersTest(unittest.TestCase):
         for point in daily_payload["points"]:
             day = pd.Timestamp(point["period_start"])
             week_start = (day - pd.Timedelta(days=int(day.weekday()))).date().isoformat()
-            bucket = expected_by_week.setdefault(
-                week_start,
-                {
-                    "count": 0.0,
-                    "baseline_tss": 0.0,
-                    "lt_target_tss": 0.0,
-                    "capacity_baseline_tss": 0.0,
-                    "smoothed_baseline_tss": 0.0,
-                },
-            )
-            bucket["count"] += 1.0
-            bucket["baseline_tss"] += float(point["baseline_tss"])
-            bucket["lt_target_tss"] += float(point["lt_target_tss"])
-            bucket["capacity_baseline_tss"] += float(point["capacity_baseline_tss"])
-            bucket["smoothed_baseline_tss"] += float(point["smoothed_baseline_tss"])
+            expected_by_week[week_start] = {
+                "baseline_tss": float(point["baseline_tss"]) * 7.0,
+                "lt_target_tss": float(point["lt_target_tss"]) * 7.0,
+                "capacity_baseline_tss": float(point["capacity_baseline_tss"]) * 7.0,
+                "smoothed_baseline_tss": float(point["smoothed_baseline_tss"]) * 7.0,
+            }
 
         for row in result["weekly_baseline"]:
             week_expected = expected_by_week[row["week_start"]]
-            count = week_expected["count"]
-            self.assertGreater(count, 0.0)
-            self.assertAlmostEqual(row["baseline_tss"], round((week_expected["baseline_tss"] / count) * 7.0, 1), places=1)
-            self.assertAlmostEqual(row["lt_target_tss"], round((week_expected["lt_target_tss"] / count) * 7.0, 1), places=1)
-            self.assertAlmostEqual(
-                row["capacity_baseline_tss"],
-                round((week_expected["capacity_baseline_tss"] / count) * 7.0, 1),
-                places=1,
-            )
-            self.assertAlmostEqual(
-                row["smoothed_baseline_tss"],
-                round((week_expected["smoothed_baseline_tss"] / count) * 7.0, 1),
-                places=1,
-            )
+            self.assertAlmostEqual(row["baseline_tss"], round(week_expected["baseline_tss"], 1), places=1)
+            self.assertAlmostEqual(row["lt_target_tss"], round(week_expected["lt_target_tss"], 1), places=1)
+            self.assertAlmostEqual(row["capacity_baseline_tss"], round(week_expected["capacity_baseline_tss"], 1), places=1)
+            self.assertAlmostEqual(row["smoothed_baseline_tss"], round(week_expected["smoothed_baseline_tss"], 1), places=1)
 
     def test_get_fitness_form_weekly_baseline_current_week_matches_dashboard_and_keeps_explanations(self):
         now_dt = datetime(2026, 2, 15, tzinfo=timezone.utc)

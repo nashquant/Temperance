@@ -42,8 +42,8 @@ The weekly baseline shown by MCP is the same baseline used by Athlete Progressio
 
 1. Start from LT-derived weekly capacity.
 2. Blend that capacity with trailing load history using the prior 21, 63, and 365 days of TSS.
-3. Smooth the resulting weekly baseline with a 21-day EMA to avoid week-to-week whipsaw.
-4. Convert the daily model into Monday-aligned weekly baseline points.
+3. Use that blended model directly as the canonical baseline; there is no extra post-blend EMA layer.
+4. Expose Monday-labeled weekly baseline points using the latest modeled baseline observed within each week.
 5. Expose those weekly points through `get_fitness_form.weekly_baseline`.
 
 Practical interpretation:
