@@ -5148,6 +5148,139 @@ def _build_daily_vdot_series(activity_df: pd.DataFrame, db_path: Path) -> pd.Dat
     return model_df
 
 
+_ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS = (
+    "baseline_tss",
+    "baseline_distance_km",
+    "lt_target_tss",
+    "lt_target_distance_km",
+    "capacity_baseline_tss",
+    "recent_load_anchor_tss",
+    "blended_baseline_tss_before_smoothing",
+    "smoothed_baseline_tss",
+)
+
+
+def _apply_athlete_progression_baseline_fields(model_df: pd.DataFrame) -> pd.DataFrame:
+    tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
+    rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
+    if float(rtss_series.abs().sum()) <= 1e-9:
+        rtss_series = tss_series.copy()
+    lt_daily_tss_target_series = pd.to_numeric(model_df.get("lt_target_tss"), errors="coerce").fillna(0.0)
+    lt_daily_distance_target_series = pd.to_numeric(model_df.get("lt_target_distance_km"), errors="coerce").fillna(0.0)
+    recent_load_21d = tss_series.shift(1, fill_value=0.0).rolling(window=21, min_periods=1).sum()
+    recent_load_63d = tss_series.shift(1, fill_value=0.0).rolling(window=63, min_periods=1).sum()
+    recent_load_365d = tss_series.shift(1, fill_value=0.0).rolling(window=365, min_periods=1).sum()
+    observed_days_series = pd.Series(np.arange(1, len(model_df.index) + 1), index=model_df.index, dtype=float)
+    observed_days_21d = observed_days_series.clip(upper=21).astype(int)
+    observed_days_63d = observed_days_series.clip(upper=63).astype(int)
+    observed_days_365d = observed_days_series.clip(upper=365).astype(int)
+    weekly_capacity_series = lt_daily_tss_target_series * 7.0
+    blended_weekly_baseline_raw = pd.Series(
+        [
+            float(
+                _blend_baseline_tss(
+                    _safe_float(capacity),
+                    _safe_float(load_21d),
+                    _safe_float(load_63d),
+                    _safe_float(load_365d),
+                    observed_days_21d=int(days_21d),
+                    observed_days_63d=int(days_63d),
+                    observed_days_365d=int(days_365d),
+                )
+            )
+            for capacity, load_21d, load_63d, load_365d, days_21d, days_63d, days_365d in zip(
+                weekly_capacity_series.tolist(),
+                recent_load_21d.tolist(),
+                recent_load_63d.tolist(),
+                recent_load_365d.tolist(),
+                observed_days_21d.tolist(),
+                observed_days_63d.tolist(),
+                observed_days_365d.tolist(),
+            )
+        ],
+        index=model_df.index,
+        dtype=float,
+    )
+    # Smooth the displayed/progression baseline so it tracks capacity plus recent load
+    # without whipsawing from day to day as the trailing 21-day window moves.
+    blended_weekly_baseline = blended_weekly_baseline_raw.ewm(span=21, adjust=False).mean()
+    daily_tss_target_series = (blended_weekly_baseline / 7.0).fillna(0.0)
+    capacity_baseline_tss_series = (weekly_capacity_series / 7.0).fillna(0.0)
+    recent_load_anchor_tss_series = (
+        ((recent_load_21d / 3.0) * 0.20)
+        + ((recent_load_63d / 9.0) * 0.35)
+        + ((recent_load_365d / 52.0) * 0.45)
+    ).fillna(0.0)
+    blended_baseline_tss_before_smoothing_series = (blended_weekly_baseline_raw / 7.0).fillna(0.0)
+    smoothed_baseline_tss_series = daily_tss_target_series
+    blend_factor_series = pd.Series(
+        np.where(
+            lt_daily_tss_target_series > 0.0,
+            daily_tss_target_series / lt_daily_tss_target_series,
+            1.0,
+        ),
+        index=model_df.index,
+        dtype=float,
+    ).replace([np.inf, -np.inf], 1.0).fillna(1.0)
+    model_df["baseline_tss"] = daily_tss_target_series
+    model_df["baseline_distance_km"] = (lt_daily_distance_target_series * blend_factor_series).fillna(0.0)
+    model_df["capacity_baseline_tss"] = capacity_baseline_tss_series
+    model_df["recent_load_anchor_tss"] = recent_load_anchor_tss_series
+    model_df["blended_baseline_tss_before_smoothing"] = blended_baseline_tss_before_smoothing_series
+    model_df["smoothed_baseline_tss"] = smoothed_baseline_tss_series
+    return model_df
+
+
+def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.DataFrame:
+    weekly_df = model_df.copy()
+    weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(_week_start_monday)
+    points_df = (
+        weekly_df.groupby("period_start", as_index=False)
+        .agg(
+            activities=("activities", "sum"),
+            distance_km=("distance_km", "sum"),
+            distance_eqv_km=("distance_eqv_km", "sum"),
+            duration_s=("duration_s", "sum"),
+            tss=("tss", "sum"),
+            rtss=("rtss", "sum"),
+            training_load_garmin=("training_load_garmin", "sum"),
+            calories_total=("calories_total", "sum"),
+            zone_low_aerobic_h=("zone_low_aerobic_h", "sum"),
+            zone_moderate_aerobic_h=("zone_moderate_aerobic_h", "sum"),
+            zone_high_aerobic_h=("zone_high_aerobic_h", "sum"),
+            zone_total_h=("zone_total_h", "sum"),
+            fitness=("fitness", "mean"),
+            fatigue=("fatigue", "mean"),
+            overreach=("overreach", "mean"),
+            injury_risk=("injury_risk", "mean"),
+            raw_overreach_signal=("raw_overreach_signal", "mean"),
+            raw_injury_signal=("raw_injury_signal", "mean"),
+            overreach_state=("overreach_state", "mean"),
+            injury_risk_state=("injury_risk_state", "mean"),
+            durability=("durability", "mean"),
+            pounding=("pounding", "mean"),
+            vdot=("vdot", "max"),
+            vdot_max=("vdot_max", "max"),
+            baseline_tss_daily=("baseline_tss", "mean"),
+            baseline_distance_km_daily=("baseline_distance_km", "mean"),
+            lt_target_tss_daily=("lt_target_tss", "mean"),
+            lt_target_distance_km_daily=("lt_target_distance_km", "mean"),
+            capacity_baseline_tss_daily=("capacity_baseline_tss", "mean"),
+            recent_load_anchor_tss_daily=("recent_load_anchor_tss", "mean"),
+            blended_baseline_tss_before_smoothing_daily=("blended_baseline_tss_before_smoothing", "mean"),
+            smoothed_baseline_tss_daily=("smoothed_baseline_tss", "mean"),
+        )
+        .sort_values("period_start")
+    )
+    for field in _ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS:
+        points_df[field] = pd.to_numeric(points_df.get(f"{field}_daily"), errors="coerce").fillna(0.0) * 7.0
+    points_df = points_df.drop(
+        columns=[f"{field}_daily" for field in _ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS],
+        errors="ignore",
+    )
+    return points_df
+
+
 def _build_athlete_progression_payload(
     db_path: Path,
     days: int,
@@ -5364,73 +5497,13 @@ def _build_athlete_progression_payload(
     model_df["lt_target_distance_km"] = pd.to_numeric(model_df["lt_pace_target_sec_per_km"], errors="coerce").map(
         lambda pace: float(max(_weekly_distance_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
     )
+    model_df = _apply_athlete_progression_baseline_fields(model_df)
+
     tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
     rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
     if float(rtss_series.abs().sum()) <= 1e-9:
         rtss_series = tss_series.copy()
-    lt_daily_tss_target_series = pd.to_numeric(model_df.get("lt_target_tss"), errors="coerce").fillna(0.0)
-    lt_daily_distance_target_series = pd.to_numeric(model_df.get("lt_target_distance_km"), errors="coerce").fillna(0.0)
-    recent_load_21d = tss_series.shift(1, fill_value=0.0).rolling(window=21, min_periods=1).sum()
-    recent_load_63d = tss_series.shift(1, fill_value=0.0).rolling(window=63, min_periods=1).sum()
-    recent_load_365d = tss_series.shift(1, fill_value=0.0).rolling(window=365, min_periods=1).sum()
-    observed_days_series = pd.Series(np.arange(1, len(model_df.index) + 1), index=model_df.index, dtype=float)
-    observed_days_21d = observed_days_series.clip(upper=21).astype(int)
-    observed_days_63d = observed_days_series.clip(upper=63).astype(int)
-    observed_days_365d = observed_days_series.clip(upper=365).astype(int)
-    weekly_capacity_series = lt_daily_tss_target_series * 7.0
-    blended_weekly_baseline_raw = pd.Series(
-        [
-            float(
-                _blend_baseline_tss(
-                    _safe_float(capacity),
-                    _safe_float(load_21d),
-                    _safe_float(load_63d),
-                    _safe_float(load_365d),
-                    observed_days_21d=int(days_21d),
-                    observed_days_63d=int(days_63d),
-                    observed_days_365d=int(days_365d),
-                )
-            )
-            for capacity, load_21d, load_63d, load_365d, days_21d, days_63d, days_365d in zip(
-                weekly_capacity_series.tolist(),
-                recent_load_21d.tolist(),
-                recent_load_63d.tolist(),
-                recent_load_365d.tolist(),
-                observed_days_21d.tolist(),
-                observed_days_63d.tolist(),
-                observed_days_365d.tolist(),
-            )
-        ],
-        index=model_df.index,
-        dtype=float,
-    )
-    # Smooth the displayed/progression baseline so it tracks capacity plus recent load
-    # without whipsawing from day to day as the trailing 21-day window moves.
-    blended_weekly_baseline = blended_weekly_baseline_raw.ewm(span=21, adjust=False).mean()
-    daily_tss_target_series = (blended_weekly_baseline / 7.0).fillna(0.0)
-    capacity_baseline_tss_series = (weekly_capacity_series / 7.0).fillna(0.0)
-    recent_load_anchor_tss_series = (
-        ((recent_load_21d / 3.0) * 0.20)
-        + ((recent_load_63d / 9.0) * 0.35)
-        + ((recent_load_365d / 52.0) * 0.45)
-    ).fillna(0.0)
-    blended_baseline_tss_before_smoothing_series = (blended_weekly_baseline_raw / 7.0).fillna(0.0)
-    smoothed_baseline_tss_series = daily_tss_target_series
-    blend_factor_series = pd.Series(
-        np.where(
-            lt_daily_tss_target_series > 0.0,
-            daily_tss_target_series / lt_daily_tss_target_series,
-            1.0,
-        ),
-        index=model_df.index,
-        dtype=float,
-    ).replace([np.inf, -np.inf], 1.0).fillna(1.0)
-    model_df["baseline_tss"] = daily_tss_target_series
-    model_df["baseline_distance_km"] = (lt_daily_distance_target_series * blend_factor_series).fillna(0.0)
-    model_df["capacity_baseline_tss"] = capacity_baseline_tss_series
-    model_df["recent_load_anchor_tss"] = recent_load_anchor_tss_series
-    model_df["blended_baseline_tss_before_smoothing"] = blended_baseline_tss_before_smoothing_series
-    model_df["smoothed_baseline_tss"] = smoothed_baseline_tss_series
+    daily_tss_target_series = pd.to_numeric(model_df.get("baseline_tss"), errors="coerce").fillna(0.0)
 
     tss_emas = ema_multi(tss_series, [42, 28, 7])
     rtss_emas = ema_multi(rtss_series, [42, 28, 7])
@@ -5473,69 +5546,7 @@ def _build_athlete_progression_payload(
     model_df["zone_total_h"] = model_df["duration_s"] / 3600.0
 
     if mode == "weekly":
-        weekly_df = model_df.copy()
-        weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(_week_start_monday)
-        points_df = (
-            weekly_df.groupby("period_start", as_index=False)
-            .agg(
-                activities=("activities", "sum"),
-                distance_km=("distance_km", "sum"),
-                distance_eqv_km=("distance_eqv_km", "sum"),
-                duration_s=("duration_s", "sum"),
-                tss=("tss", "sum"),
-                rtss=("rtss", "sum"),
-                training_load_garmin=("training_load_garmin", "sum"),
-                calories_total=("calories_total", "sum"),
-                zone_low_aerobic_h=("zone_low_aerobic_h", "sum"),
-                zone_moderate_aerobic_h=("zone_moderate_aerobic_h", "sum"),
-                zone_high_aerobic_h=("zone_high_aerobic_h", "sum"),
-                zone_total_h=("zone_total_h", "sum"),
-                fitness=("fitness", "mean"),
-                fatigue=("fatigue", "mean"),
-                overreach=("overreach", "mean"),
-                injury_risk=("injury_risk", "mean"),
-                raw_overreach_signal=("raw_overreach_signal", "mean"),
-                raw_injury_signal=("raw_injury_signal", "mean"),
-                overreach_state=("overreach_state", "mean"),
-                injury_risk_state=("injury_risk_state", "mean"),
-                durability=("durability", "mean"),
-                pounding=("pounding", "mean"),
-                vdot=("vdot", "max"),
-                vdot_max=("vdot_max", "max"),
-                baseline_tss_daily=("baseline_tss", "mean"),
-                baseline_distance_km_daily=("baseline_distance_km", "mean"),
-                lt_target_tss_daily=("lt_target_tss", "mean"),
-                lt_target_distance_km_daily=("lt_target_distance_km", "mean"),
-                capacity_baseline_tss_daily=("capacity_baseline_tss", "mean"),
-                recent_load_anchor_tss_daily=("recent_load_anchor_tss", "mean"),
-                blended_baseline_tss_before_smoothing_daily=("blended_baseline_tss_before_smoothing", "mean"),
-                smoothed_baseline_tss_daily=("smoothed_baseline_tss", "mean"),
-            )
-            .sort_values("period_start")
-        )
-        points_df["baseline_tss"] = pd.to_numeric(points_df.get("baseline_tss_daily"), errors="coerce").fillna(0.0) * 7.0
-        points_df["baseline_distance_km"] = pd.to_numeric(points_df.get("baseline_distance_km_daily"), errors="coerce").fillna(0.0) * 7.0
-        points_df["lt_target_tss"] = pd.to_numeric(points_df.get("lt_target_tss_daily"), errors="coerce").fillna(0.0) * 7.0
-        points_df["lt_target_distance_km"] = pd.to_numeric(points_df.get("lt_target_distance_km_daily"), errors="coerce").fillna(0.0) * 7.0
-        points_df["capacity_baseline_tss"] = pd.to_numeric(points_df.get("capacity_baseline_tss_daily"), errors="coerce").fillna(0.0) * 7.0
-        points_df["recent_load_anchor_tss"] = pd.to_numeric(points_df.get("recent_load_anchor_tss_daily"), errors="coerce").fillna(0.0) * 7.0
-        points_df["blended_baseline_tss_before_smoothing"] = (
-            pd.to_numeric(points_df.get("blended_baseline_tss_before_smoothing_daily"), errors="coerce").fillna(0.0) * 7.0
-        )
-        points_df["smoothed_baseline_tss"] = pd.to_numeric(points_df.get("smoothed_baseline_tss_daily"), errors="coerce").fillna(0.0) * 7.0
-        points_df = points_df.drop(
-            columns=[
-                "baseline_tss_daily",
-                "baseline_distance_km_daily",
-                "lt_target_tss_daily",
-                "lt_target_distance_km_daily",
-                "capacity_baseline_tss_daily",
-                "recent_load_anchor_tss_daily",
-                "blended_baseline_tss_before_smoothing_daily",
-                "smoothed_baseline_tss_daily",
-            ],
-            errors="ignore",
-        )
+        points_df = _rollup_athlete_progression_weekly_points(model_df)
     else:
         points_df = model_df.rename(columns={"day": "period_start"}).copy()
 

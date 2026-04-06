@@ -1,10 +1,40 @@
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 from unittest.mock import patch
 
+import pandas as pd
+
 from backend.app import mcp_server
+
+
+def _metrics_frame(daily_tss_values: list[float], start_day: str = "2026-01-05") -> pd.DataFrame:
+    start = pd.Timestamp(start_day, tz="UTC")
+    rows: list[dict[str, object]] = []
+    for index, tss in enumerate(daily_tss_values, start=1):
+        start_time = start + pd.Timedelta(days=index - 1, hours=12)
+        rows.append(
+            {
+                "activity_id": index,
+                "start_time_utc": start_time.isoformat(),
+                "sport_type": "running",
+                "distance_m": 10_000.0,
+                "distance_proxy_km": 10.0,
+                "duration_s": 3_600.0,
+                "tss": float(tss),
+                "rtss": float(tss),
+                "training_load_garmin": float(tss),
+                "calories_total": 600.0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _empty_vdot_frame(_: pd.DataFrame, __: Path) -> pd.DataFrame:
+    return pd.DataFrame(columns=["day", "vdot", "vdot_max"])
 
 
 class MCPServerHelpersTest(unittest.TestCase):
@@ -316,6 +346,70 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(result["count"], 0)
         self.assertEqual(result["templates"], [])
 
+    def _build_canonical_progression_payload(
+        self,
+        daily_tss_values: list[float],
+        *,
+        aggregation: str,
+        days: int = 84,
+        start_day: str = "2026-01-05",
+        weekly_tss_target: float = 420.0,
+        weekly_distance_target: float = 70.0,
+        now_dt: Optional[datetime] = None,
+    ) -> dict[str, object]:
+        metrics_df = _metrics_frame(daily_tss_values, start_day=start_day)
+        effective_now = now_dt or datetime(2026, 2, 15, tzinfo=timezone.utc)
+        original_backend_main_module = mcp_server._BACKEND_MAIN_MODULE
+        try:
+            with (
+                patch("backend.app.main.get_setting", return_value=None),
+                patch("backend.app.main._metrics_for_filters", return_value=metrics_df),
+                patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
+                patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=float(weekly_tss_target)),
+                patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=float(weekly_distance_target)),
+                patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
+            ):
+                from backend.app.main import _build_athlete_progression_payload
+
+                mock_datetime.now.return_value = effective_now
+                return _build_athlete_progression_payload(
+                    db_path=Path("/tmp/athlete-progression-baseline-test.sqlite"),
+                    days=days,
+                    activity_filter="all",
+                    aggregation=aggregation,
+                    owner="tester",
+                )
+        finally:
+            mcp_server._BACKEND_MAIN_MODULE = original_backend_main_module
+
+    def _run_fitness_form_with_canonical_progression(
+        self,
+        daily_tss_values: list[float],
+        *,
+        days: int = 84,
+        start_day: str = "2026-01-05",
+        weekly_tss_target: float = 420.0,
+        weekly_distance_target: float = 70.0,
+        now_dt: Optional[datetime] = None,
+    ) -> dict[str, object]:
+        metrics_df = _metrics_frame(daily_tss_values, start_day=start_day)
+        effective_now = now_dt or datetime(2026, 2, 15, tzinfo=timezone.utc)
+        original_backend_main_module = mcp_server._BACKEND_MAIN_MODULE
+        try:
+            with (
+                patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/athlete-progression-baseline-test.sqlite")),
+                patch("backend.app.main.get_setting", return_value=None),
+                patch("backend.app.main._metrics_for_filters", return_value=metrics_df),
+                patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
+                patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=float(weekly_tss_target)),
+                patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=float(weekly_distance_target)),
+                patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
+            ):
+                mock_datetime.now.return_value = effective_now
+                return mcp_server.tool_get_fitness_form({"owner": "admin", "days": days})
+        finally:
+            mcp_server._BACKEND_MAIN_MODULE = original_backend_main_module
+
     def test_get_fitness_form_exposes_baseline_history_fields(self):
         fake_daily_progression = {
             "points": [
@@ -580,6 +674,105 @@ class MCPServerHelpersTest(unittest.TestCase):
         current_week = next(row for row in result["weekly_baseline"] if row["week_start"] == "2026-03-02")
         self.assertEqual(current_week["baseline_tss"], 58.0)
         self.assertEqual(current_week["baseline_distance_km"], 9.8)
+
+    def test_get_fitness_form_weekly_baseline_matches_canonical_athlete_progression_output(self):
+        daily_tss_values = ([10.0] * 21) + ([90.0] * 21)
+        expected_weekly = self._build_canonical_progression_payload(daily_tss_values, aggregation="weekly")["points"]
+        result = self._run_fitness_form_with_canonical_progression(daily_tss_values)
+
+        actual_weekly = result["weekly_baseline"]
+        self.assertEqual(
+            [row["week_start"] for row in actual_weekly],
+            [row["period_start"] for row in expected_weekly],
+        )
+        for actual, expected in zip(actual_weekly, expected_weekly):
+            self.assertEqual(actual["week_start"], expected["period_start"])
+            self.assertAlmostEqual(actual["baseline_tss"], round(float(expected["baseline_tss"]), 1), places=1)
+            self.assertAlmostEqual(actual["baseline_distance_km"], round(float(expected["baseline_distance_km"]), 2), places=2)
+            self.assertAlmostEqual(actual["lt_target_tss"], round(float(expected["lt_target_tss"]), 1), places=1)
+            self.assertAlmostEqual(actual["capacity_baseline_tss"], round(float(expected["capacity_baseline_tss"]), 1), places=1)
+            self.assertAlmostEqual(actual["recent_load_anchor_tss"], round(float(expected["recent_load_anchor_tss"]), 1), places=1)
+            self.assertAlmostEqual(
+                actual["blended_baseline_tss_before_smoothing"],
+                round(float(expected["blended_baseline_tss_before_smoothing"]), 1),
+                places=1,
+            )
+            self.assertAlmostEqual(actual["smoothed_baseline_tss"], round(float(expected["smoothed_baseline_tss"]), 1), places=1)
+            self.assertIn("deviation_reason", actual)
+
+    def test_get_fitness_form_weekly_baseline_uses_monday_week_rollup_without_scale_leak(self):
+        daily_tss_values = ([30.0] * 7) + ([80.0] * 7) + ([25.0] * 7) + ([95.0] * 7)
+        daily_payload = self._build_canonical_progression_payload(daily_tss_values, aggregation="daily")
+        result = self._run_fitness_form_with_canonical_progression(daily_tss_values)
+
+        expected_by_week: dict[str, dict[str, float]] = {}
+        for point in daily_payload["points"]:
+            day = pd.Timestamp(point["period_start"])
+            week_start = (day - pd.Timedelta(days=int(day.weekday()))).date().isoformat()
+            bucket = expected_by_week.setdefault(
+                week_start,
+                {
+                    "count": 0.0,
+                    "baseline_tss": 0.0,
+                    "lt_target_tss": 0.0,
+                    "capacity_baseline_tss": 0.0,
+                    "smoothed_baseline_tss": 0.0,
+                },
+            )
+            bucket["count"] += 1.0
+            bucket["baseline_tss"] += float(point["baseline_tss"])
+            bucket["lt_target_tss"] += float(point["lt_target_tss"])
+            bucket["capacity_baseline_tss"] += float(point["capacity_baseline_tss"])
+            bucket["smoothed_baseline_tss"] += float(point["smoothed_baseline_tss"])
+
+        for row in result["weekly_baseline"]:
+            week_expected = expected_by_week[row["week_start"]]
+            count = week_expected["count"]
+            self.assertGreater(count, 0.0)
+            self.assertAlmostEqual(row["baseline_tss"], round((week_expected["baseline_tss"] / count) * 7.0, 1), places=1)
+            self.assertAlmostEqual(row["lt_target_tss"], round((week_expected["lt_target_tss"] / count) * 7.0, 1), places=1)
+            self.assertAlmostEqual(
+                row["capacity_baseline_tss"],
+                round((week_expected["capacity_baseline_tss"] / count) * 7.0, 1),
+                places=1,
+            )
+            self.assertAlmostEqual(
+                row["smoothed_baseline_tss"],
+                round((week_expected["smoothed_baseline_tss"] / count) * 7.0, 1),
+                places=1,
+            )
+
+    def test_get_fitness_form_weekly_baseline_current_week_matches_dashboard_and_keeps_explanations(self):
+        now_dt = datetime(2026, 2, 15, tzinfo=timezone.utc)
+        daily_tss_values = ([45.0] * 35) + ([70.0] * 7)
+        expected_weekly = self._build_canonical_progression_payload(
+            daily_tss_values,
+            aggregation="weekly",
+            days=42,
+            now_dt=now_dt,
+        )["points"]
+        result = self._run_fitness_form_with_canonical_progression(
+            daily_tss_values,
+            days=42,
+            now_dt=now_dt,
+        )
+
+        self.assertTrue(expected_weekly)
+        expected_current_week = expected_weekly[-1]
+        actual_current_week = result["weekly_baseline"][-1]
+        self.assertEqual(actual_current_week["week_start"], expected_current_week["period_start"])
+        self.assertAlmostEqual(actual_current_week["baseline_tss"], round(float(expected_current_week["baseline_tss"]), 1), places=1)
+        self.assertAlmostEqual(
+            actual_current_week["blended_baseline_tss_before_smoothing"],
+            round(float(expected_current_week["blended_baseline_tss_before_smoothing"]), 1),
+            places=1,
+        )
+        self.assertIn("deviation_from_lt_tss", actual_current_week)
+        self.assertIn("deviation_from_lt_pct", actual_current_week)
+        self.assertIn("capacity_vs_lt_tss", actual_current_week)
+        self.assertIn("recent_vs_capacity_tss", actual_current_week)
+        self.assertIn("smoothing_adjustment_tss", actual_current_week)
+        self.assertIn("deviation_reason", actual_current_week)
 
     def test_activity_row_summary_includes_pace_and_extended_metrics(self):
         summary = mcp_server._activity_row_summary(

@@ -1375,27 +1375,24 @@ def _lthr_for_day(db_path: Path, day_utc: str) -> float:
 
 def _weekly_baseline_tss_for_day(db_path: Path, day_utc: str) -> float:
     backend_main = _backend_main_module()
-    pace_for_day = _lt_pace_for_day(db_path, day_utc)
-    capacity_baseline = backend_main._weekly_tss_target_from_lt_pace(pace_for_day) * 1.10 if pace_for_day > 0 else 350.0
-    try:
-        target_day = date.fromisoformat(day_utc)
-        window_start = target_day - timedelta(days=21)
-        metrics_df = backend_main._metrics_for_filters(
-            db_path=db_path,
-            days=22,
-            start_day=window_start.isoformat(),
-            end_day=(target_day - timedelta(days=1)).isoformat(),
-            sport=None,
-            include_invalid=False,
-        )
-        recent_load_21d = 0.0
-        if not metrics_df.empty:
-            recent_load_21d = float(
-                backend_main.pd.to_numeric(metrics_df.get("tss"), errors="coerce").fillna(0.0).sum()
-            )
-    except Exception:
-        recent_load_21d = 0.0
-    return backend_main._blend_baseline_tss(capacity_baseline, recent_load_21d)
+    target_ts = backend_main.pd.to_datetime(day_utc, errors="coerce")
+    if backend_main.pd.isna(target_ts):
+        raise ValueError(f"Invalid target_day_utc: {day_utc}")
+    target_week_start = backend_main._week_start_monday(backend_main.pd.Timestamp(target_ts).normalize()).date().isoformat()
+    payload = backend_main._build_athlete_progression_payload(
+        db_path=db_path,
+        days=400,
+        activity_filter="all",
+        aggregation="weekly",
+        owner="",
+    )
+    points = list(payload.get("points") or [])
+    for point in points:
+        if str(point.get("period_start") or "") == target_week_start:
+            return _safe_float(point.get("baseline_tss"))
+    if points:
+        return _safe_float(points[-1].get("baseline_tss"))
+    return 0.0
 
 
 def _planning_context_parts(
