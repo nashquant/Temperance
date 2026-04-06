@@ -17,14 +17,21 @@ def _metrics_frame(daily_tss_values: list[float], start_day: str = "2026-01-05")
             {
                 "activity_id": index,
                 "start_time_utc": start_time.isoformat(),
+                "start_local": start_time.tz_convert("UTC").strftime("%Y-%m-%d %H:%M:%S"),
                 "sport_type": "running",
                 "distance_m": 10_000.0,
+                "distance_km_running": 10.0,
                 "distance_proxy_km": 10.0,
                 "duration_s": 3_600.0,
                 "tss": float(tss),
                 "rtss": float(tss),
                 "training_load_garmin": float(tss),
                 "calories_total": 600.0,
+                "hr_time_in_zone_1": 0.0,
+                "hr_time_in_zone_2": 0.0,
+                "hr_time_in_zone_3": 0.0,
+                "hr_time_in_zone_4": 0.0,
+                "hr_time_in_zone_5": 0.0,
             }
         )
     return pd.DataFrame(rows)
@@ -215,8 +222,8 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
 
     def test_dashboard_week_summary_uses_canonical_weekly_baseline_tss(self):
         metrics_df = _metrics_frame(([45.0] * 42) + ([75.0] * 14))
+        metrics_df["day"] = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
         actual_metrics_df = metrics_df.copy()
-        actual_metrics_df["day"] = pd.to_datetime(actual_metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
         with (
             patch("backend.app.main._dashboard_metrics_frames", return_value=(metrics_df, actual_metrics_df)),
             patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
