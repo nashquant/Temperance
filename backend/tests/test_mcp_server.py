@@ -465,6 +465,117 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(current_week["baseline_tss"], 60.0)
         self.assertEqual(current_week["deviation_from_lt_tss"], -10.0)
 
+    def test_get_fitness_form_current_week_uses_expected_eow_baseline_projection(self):
+        fake_daily_progression = {
+            "points": [
+                {
+                    "period_start": "2026-03-03",
+                    "baseline_tss": 60.0,
+                    "baseline_distance_km": 10.0,
+                    "lt_target_tss": 70.0,
+                    "lt_target_distance_km": 11.0,
+                    "capacity_baseline_tss": 77.0,
+                    "recent_load_anchor_tss": 66.0,
+                    "blended_baseline_tss_before_smoothing": 60.0,
+                    "smoothed_baseline_tss": 60.0,
+                    "tss": 40.0,
+                    "rtss": 40.0,
+                    "duration_h": 1.0,
+                    "distance_km": 8.0,
+                    "distance_eqv_km": 8.0,
+                    "target_tss": 60.0,
+                    "fitness": 45.0,
+                    "fatigue": 48.0,
+                    "overreach": 10.0,
+                    "injury_risk": 8.0,
+                    "durability": 41.0,
+                    "pounding": 42.0,
+                },
+                {
+                    "period_start": "2026-03-04",
+                    "baseline_tss": 62.0,
+                    "baseline_distance_km": 10.2,
+                    "lt_target_tss": 70.0,
+                    "lt_target_distance_km": 11.0,
+                    "capacity_baseline_tss": 77.0,
+                    "recent_load_anchor_tss": 68.0,
+                    "blended_baseline_tss_before_smoothing": 62.0,
+                    "smoothed_baseline_tss": 62.0,
+                    "tss": 41.0,
+                    "rtss": 41.0,
+                    "duration_h": 1.0,
+                    "distance_km": 8.2,
+                    "distance_eqv_km": 8.2,
+                    "target_tss": 62.0,
+                    "fitness": 45.5,
+                    "fatigue": 48.5,
+                    "overreach": 10.2,
+                    "injury_risk": 8.2,
+                    "durability": 41.0,
+                    "pounding": 42.0,
+                },
+                {
+                    "period_start": "2026-03-05",
+                    "baseline_tss": 64.0,
+                    "baseline_distance_km": 10.4,
+                    "lt_target_tss": 70.0,
+                    "lt_target_distance_km": 11.0,
+                    "capacity_baseline_tss": 77.0,
+                    "recent_load_anchor_tss": 70.0,
+                    "blended_baseline_tss_before_smoothing": 64.0,
+                    "smoothed_baseline_tss": 64.0,
+                    "tss": 42.0,
+                    "rtss": 42.0,
+                    "duration_h": 1.0,
+                    "distance_km": 8.4,
+                    "distance_eqv_km": 8.4,
+                    "target_tss": 64.0,
+                    "fitness": 46.0,
+                    "fatigue": 49.0,
+                    "overreach": 10.5,
+                    "injury_risk": 8.4,
+                    "durability": 41.0,
+                    "pounding": 42.0,
+                },
+            ]
+        }
+        fake_weekly_progression = {
+            "points": [
+                {
+                    "period_start": "2026-03-02",
+                    "baseline_tss": 58.0,
+                    "baseline_distance_km": 9.8,
+                    "lt_target_tss": 70.0,
+                    "lt_target_distance_km": 11.0,
+                    "capacity_baseline_tss": 77.0,
+                    "recent_load_anchor_tss": 67.0,
+                    "blended_baseline_tss_before_smoothing": 58.0,
+                    "smoothed_baseline_tss": 58.0,
+                }
+            ]
+        }
+
+        def _fake_progression_builder(**kwargs):
+            if kwargs.get("aggregation") == "weekly":
+                return fake_weekly_progression
+            return fake_daily_progression
+
+        with (
+            patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
+            patch(
+                "backend.app.mcp_server._analytics_helpers",
+                return_value={"_build_athlete_progression_payload": _fake_progression_builder},
+            ),
+            patch("backend.app.mcp_server.datetime", wraps=datetime) as mock_datetime,
+        ):
+            mock_datetime.now.return_value = datetime(2026, 3, 5, 12, 0, tzinfo=timezone.utc)
+            result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
+
+        current_week = next(row for row in result["weekly_baseline"] if row["week_start"] == "2026-03-02")
+        # Trend +2/day with 3 days left to Sunday -> 70 expected EOW baseline.
+        self.assertEqual(current_week["baseline_tss"], 70.0)
+        self.assertEqual(current_week["baseline_distance_km"], 11.0)
+
     def test_activity_row_summary_includes_pace_and_extended_metrics(self):
         summary = mcp_server._activity_row_summary(
             {
