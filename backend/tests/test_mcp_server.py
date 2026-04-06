@@ -463,7 +463,27 @@ class MCPServerHelpersTest(unittest.TestCase):
             patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
             patch(
                 "backend.app.mcp_server._analytics_helpers",
-                return_value={"_build_athlete_progression_payload": _fake_progression_builder},
+                return_value={
+                    "_build_athlete_progression_payload": _fake_progression_builder,
+                    "_format_athlete_progression_weekly_baseline_point": lambda point: {
+                        "week_start": str(point.get("period_start") or ""),
+                        "baseline_tss": round(float(point.get("baseline_tss") or 0.0), 1),
+                        "baseline_distance_km": round(float(point.get("baseline_distance_km") or 0.0), 2),
+                        "lt_target_tss": round(float(point.get("lt_target_tss") or 0.0), 1),
+                        "capacity_baseline_tss": round(float(point.get("capacity_baseline_tss") or 0.0), 1),
+                        "recent_load_anchor_tss": round(float(point.get("recent_load_anchor_tss") or 0.0), 1),
+                        "blended_baseline_tss_before_smoothing": round(float(point.get("blended_baseline_tss_before_smoothing") or 0.0), 1),
+                        "smoothed_baseline_tss": round(float(point.get("smoothed_baseline_tss") or 0.0), 1),
+                        "deviation_from_lt_tss": round(float(point.get("baseline_tss") or 0.0) - float(point.get("lt_target_tss") or 0.0), 1),
+                        "deviation_from_lt_pct": round((float(point.get("baseline_tss") or 0.0) / float(point.get("lt_target_tss") or 1.0)) - 1.0, 4)
+                        if float(point.get("lt_target_tss") or 0.0) > 0
+                        else None,
+                        "capacity_vs_lt_tss": round(float(point.get("capacity_baseline_tss") or 0.0) - float(point.get("lt_target_tss") or 0.0), 1),
+                        "recent_vs_capacity_tss": round(float(point.get("recent_load_anchor_tss") or 0.0) - float(point.get("capacity_baseline_tss") or 0.0), 1),
+                        "smoothing_adjustment_tss": round(float(point.get("smoothed_baseline_tss") or 0.0) - float(point.get("blended_baseline_tss_before_smoothing") or 0.0), 1),
+                        "deviation_reason": "balanced_blend",
+                    },
+                },
             ),
         ):
             result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
@@ -556,7 +576,14 @@ class MCPServerHelpersTest(unittest.TestCase):
             patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
             patch(
                 "backend.app.mcp_server._analytics_helpers",
-                return_value={"_build_athlete_progression_payload": _fake_progression_builder},
+                return_value={
+                    "_build_athlete_progression_payload": _fake_progression_builder,
+                    "_format_athlete_progression_weekly_baseline_point": lambda point: {
+                        "week_start": str(point.get("period_start") or ""),
+                        "baseline_tss": round(float(point.get("baseline_tss") or 0.0), 1),
+                        "deviation_from_lt_tss": round(float(point.get("baseline_tss") or 0.0) - float(point.get("lt_target_tss") or 0.0), 1),
+                    },
+                },
             ),
         ):
             result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
@@ -666,7 +693,14 @@ class MCPServerHelpersTest(unittest.TestCase):
             patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
             patch(
                 "backend.app.mcp_server._analytics_helpers",
-                return_value={"_build_athlete_progression_payload": _fake_progression_builder},
+                return_value={
+                    "_build_athlete_progression_payload": _fake_progression_builder,
+                    "_format_athlete_progression_weekly_baseline_point": lambda point: {
+                        "week_start": str(point.get("period_start") or ""),
+                        "baseline_tss": round(float(point.get("baseline_tss") or 0.0), 1),
+                        "baseline_distance_km": round(float(point.get("baseline_distance_km") or 0.0), 2),
+                    },
+                },
             ),
         ):
             result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
@@ -674,6 +708,69 @@ class MCPServerHelpersTest(unittest.TestCase):
         current_week = next(row for row in result["weekly_baseline"] if row["week_start"] == "2026-03-02")
         self.assertEqual(current_week["baseline_tss"], 58.0)
         self.assertEqual(current_week["baseline_distance_km"], 9.8)
+
+    def test_get_fitness_form_uses_backend_weekly_baseline_formatter(self):
+        fake_daily_progression = {
+            "points": [
+                {
+                    "period_start": "2026-03-03",
+                    "tss": 40.0,
+                    "rtss": 40.0,
+                    "duration_h": 1.0,
+                    "distance_km": 8.0,
+                    "distance_eqv_km": 8.0,
+                    "target_tss": 60.0,
+                    "baseline_tss": 60.0,
+                    "baseline_distance_km": 10.0,
+                    "lt_target_tss": 70.0,
+                    "lt_target_distance_km": 11.0,
+                    "capacity_baseline_tss": 77.0,
+                    "recent_load_anchor_tss": 66.0,
+                    "blended_baseline_tss_before_smoothing": 60.0,
+                    "smoothed_baseline_tss": 60.0,
+                    "fitness": 45.0,
+                    "fatigue": 48.0,
+                    "overreach": 10.0,
+                    "injury_risk": 8.0,
+                    "durability": 41.0,
+                    "pounding": 42.0,
+                }
+            ]
+        }
+        fake_weekly_progression = {
+            "points": [
+                {
+                    "period_start": "2026-03-02",
+                    "baseline_tss": 58.0,
+                }
+            ]
+        }
+
+        def _fake_progression_builder(**kwargs):
+            if kwargs.get("aggregation") == "weekly":
+                return fake_weekly_progression
+            return fake_daily_progression
+
+        with (
+            patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
+            patch(
+                "backend.app.mcp_server._analytics_helpers",
+                return_value={
+                    "_build_athlete_progression_payload": _fake_progression_builder,
+                    "_format_athlete_progression_weekly_baseline_point": lambda point: {
+                        "week_start": "formatted-by-backend",
+                        "baseline_tss": 999.0,
+                        "deviation_reason": "formatter_override",
+                    },
+                },
+            ),
+        ):
+            result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
+
+        self.assertEqual(
+            result["weekly_baseline"],
+            [{"week_start": "formatted-by-backend", "baseline_tss": 999.0, "deviation_reason": "formatter_override"}],
+        )
 
     def test_get_fitness_form_weekly_baseline_matches_canonical_athlete_progression_output(self):
         daily_tss_values = ([10.0] * 21) + ([90.0] * 21)

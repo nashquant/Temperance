@@ -5343,6 +5343,69 @@ def _rollup_athlete_progression_weekly_baseline_fields(model_df: pd.DataFrame) -
     )
 
 
+def _athlete_progression_weekly_baseline_deviation_reason(row: dict[str, Any]) -> str:
+    lt_target_tss = _safe_float(row.get("lt_target_tss"))
+    if lt_target_tss <= 0:
+        return "lt_unavailable"
+    baseline_tss = _safe_float(row.get("baseline_tss"))
+    capacity_baseline_tss = _safe_float(row.get("capacity_baseline_tss"))
+    recent_load_anchor_tss = _safe_float(row.get("recent_load_anchor_tss"))
+    blended_before_smoothing = _safe_float(row.get("blended_baseline_tss_before_smoothing"))
+    smoothed_baseline_tss = _safe_float(row.get("smoothed_baseline_tss"))
+    if baseline_tss < lt_target_tss and recent_load_anchor_tss < (capacity_baseline_tss * 0.8):
+        return "sparse_history_pull_down"
+    if baseline_tss > lt_target_tss and recent_load_anchor_tss > (capacity_baseline_tss * 1.05):
+        return "recent_load_pull_up"
+    smoothing_adjustment_tss = smoothed_baseline_tss - blended_before_smoothing
+    if abs(smoothing_adjustment_tss) >= max(5.0, abs(blended_before_smoothing) * 0.05):
+        return "smoothing_dampening"
+    if capacity_baseline_tss >= lt_target_tss and baseline_tss >= lt_target_tss:
+        return "capacity_hold_up"
+    return "balanced_blend"
+
+
+def _format_athlete_progression_weekly_baseline_point(
+    point: dict[str, Any],
+    *,
+    decimals_tss: int = 1,
+    decimals_distance: int = 2,
+) -> dict[str, Any]:
+    week_start_ts = pd.to_datetime(point.get("period_start"), errors="coerce")
+    week_start = ""
+    if pd.notna(week_start_ts):
+        week_start = _week_start_monday(pd.Timestamp(week_start_ts).normalize()).date().isoformat()
+    baseline_tss = round(_safe_float(point.get("baseline_tss")), decimals_tss)
+    lt_target_tss = round(_safe_float(point.get("lt_target_tss")), decimals_tss)
+    capacity_baseline_tss = round(_safe_float(point.get("capacity_baseline_tss")), decimals_tss)
+    recent_load_anchor_tss = round(_safe_float(point.get("recent_load_anchor_tss")), decimals_tss)
+    blended_baseline_tss_before_smoothing = round(
+        _safe_float(point.get("blended_baseline_tss_before_smoothing")),
+        decimals_tss,
+    )
+    smoothed_baseline_tss = round(_safe_float(point.get("smoothed_baseline_tss")), decimals_tss)
+    row = {
+        "week_start": week_start,
+        "baseline_tss": baseline_tss,
+        "baseline_distance_km": round(_safe_float(point.get("baseline_distance_km")), decimals_distance),
+        "lt_target_tss": lt_target_tss,
+        "lt_target_distance_km": round(_safe_float(point.get("lt_target_distance_km")), decimals_distance),
+        "capacity_baseline_tss": capacity_baseline_tss,
+        "recent_load_anchor_tss": recent_load_anchor_tss,
+        "blended_baseline_tss_before_smoothing": blended_baseline_tss_before_smoothing,
+        "smoothed_baseline_tss": smoothed_baseline_tss,
+        "deviation_from_lt_tss": round(baseline_tss - lt_target_tss, decimals_tss),
+        "deviation_from_lt_pct": round((baseline_tss / lt_target_tss) - 1.0, 4) if lt_target_tss > 0 else None,
+        "capacity_vs_lt_tss": round(capacity_baseline_tss - lt_target_tss, decimals_tss),
+        "recent_vs_capacity_tss": round(recent_load_anchor_tss - capacity_baseline_tss, decimals_tss),
+        "smoothing_adjustment_tss": round(
+            smoothed_baseline_tss - blended_baseline_tss_before_smoothing,
+            decimals_tss,
+        ),
+    }
+    row["deviation_reason"] = _athlete_progression_weekly_baseline_deviation_reason(row)
+    return row
+
+
 def _build_athlete_progression_payload(
     db_path: Path,
     days: int,

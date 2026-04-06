@@ -343,6 +343,7 @@ def _analytics_helpers() -> dict[str, Any]:
     return {
         "SETTINGS_KEY_USER_TIMEZONE": backend_main.SETTINGS_KEY_USER_TIMEZONE,
         "_build_athlete_progression_payload": backend_main._build_athlete_progression_payload,
+        "_format_athlete_progression_weekly_baseline_point": backend_main._format_athlete_progression_weekly_baseline_point,
         "_build_week_outlook_payload": backend_main._build_week_outlook_payload,
         "_build_wellness_payload": backend_main._build_wellness_payload,
         "_db_path_for_owner": backend_main._db_path_for_owner,
@@ -2394,6 +2395,7 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
         }
 
     daily_out: list[dict[str, Any]] = []
+    weekly_baseline_formatter = helpers["_format_athlete_progression_weekly_baseline_point"]
     weekly_baseline_out: list[dict[str, Any]] = []
     peak_fitness = 0.0
     for pt in points:
@@ -2432,66 +2434,8 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
             "tsb": form,
         }))
 
-    def _weekly_deviation_reason(row: dict[str, Any]) -> str:
-        lt_target_tss = _safe_float(row.get("lt_target_tss"))
-        if lt_target_tss <= 0:
-            return "lt_unavailable"
-        baseline_tss = _safe_float(row.get("baseline_tss"))
-        capacity_baseline_tss = _safe_float(row.get("capacity_baseline_tss"))
-        recent_load_anchor_tss = _safe_float(row.get("recent_load_anchor_tss"))
-        blended_before_smoothing = _safe_float(row.get("blended_baseline_tss_before_smoothing"))
-        smoothed_baseline_tss = _safe_float(row.get("smoothed_baseline_tss"))
-        if baseline_tss < lt_target_tss and recent_load_anchor_tss < (capacity_baseline_tss * 0.8):
-            return "sparse_history_pull_down"
-        if baseline_tss > lt_target_tss and recent_load_anchor_tss > (capacity_baseline_tss * 1.05):
-            return "recent_load_pull_up"
-        smoothing_adjustment_tss = smoothed_baseline_tss - blended_before_smoothing
-        if abs(smoothing_adjustment_tss) >= max(5.0, abs(blended_before_smoothing) * 0.05):
-            return "smoothing_dampening"
-        if capacity_baseline_tss >= lt_target_tss and baseline_tss >= lt_target_tss:
-            return "capacity_hold_up"
-        return "balanced_blend"
-
-    def _week_start_iso(value: Any) -> str:
-        ts = pd.to_datetime(value, errors="coerce")
-        if pd.isna(ts):
-            return ""
-        week_start = pd.Timestamp(ts).normalize() - pd.Timedelta(days=int(pd.Timestamp(ts).weekday()))
-        return week_start.date().isoformat()
-
-    def _weekly_row_from_point(point: dict[str, Any], *, week_start_iso: str | None = None) -> dict[str, Any]:
-        baseline_tss = round(_safe_float(point.get("baseline_tss")), 1)
-        lt_target_tss = round(_safe_float(point.get("lt_target_tss")), 1)
-        capacity_baseline_tss = round(_safe_float(point.get("capacity_baseline_tss")), 1)
-        recent_load_anchor_tss = round(_safe_float(point.get("recent_load_anchor_tss")), 1)
-        blended_baseline_tss_before_smoothing = round(_safe_float(point.get("blended_baseline_tss_before_smoothing")), 1)
-        smoothed_baseline_tss = round(_safe_float(point.get("smoothed_baseline_tss")), 1)
-        deviation_from_lt_tss = round(baseline_tss - lt_target_tss, 1)
-        deviation_from_lt_pct = round((baseline_tss / lt_target_tss) - 1.0, 4) if lt_target_tss > 0 else None
-        capacity_vs_lt_tss = round(capacity_baseline_tss - lt_target_tss, 1)
-        recent_vs_capacity_tss = round(recent_load_anchor_tss - capacity_baseline_tss, 1)
-        smoothing_adjustment_tss = round(smoothed_baseline_tss - blended_baseline_tss_before_smoothing, 1)
-        row = {
-            "week_start": week_start_iso or _week_start_iso(point.get("period_start")),
-            "baseline_tss": baseline_tss,
-            "baseline_distance_km": round(_safe_float(point.get("baseline_distance_km")), 2),
-            "lt_target_tss": lt_target_tss,
-            "lt_target_distance_km": round(_safe_float(point.get("lt_target_distance_km")), 2),
-            "capacity_baseline_tss": capacity_baseline_tss,
-            "recent_load_anchor_tss": recent_load_anchor_tss,
-            "blended_baseline_tss_before_smoothing": blended_baseline_tss_before_smoothing,
-            "smoothed_baseline_tss": smoothed_baseline_tss,
-            "deviation_from_lt_tss": deviation_from_lt_tss,
-            "deviation_from_lt_pct": deviation_from_lt_pct,
-            "capacity_vs_lt_tss": capacity_vs_lt_tss,
-            "recent_vs_capacity_tss": recent_vs_capacity_tss,
-            "smoothing_adjustment_tss": smoothing_adjustment_tss,
-        }
-        row["deviation_reason"] = _weekly_deviation_reason(row)
-        return _clean_mapping(row)
-
     for pt in weekly_points:
-        weekly_baseline_out.append(_weekly_row_from_point(pt))
+        weekly_baseline_out.append(_clean_mapping(weekly_baseline_formatter(pt)))
 
     weekly_baseline_out.sort(key=lambda row: str(row.get("week_start") or ""))
 
