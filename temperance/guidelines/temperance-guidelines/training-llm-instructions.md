@@ -68,6 +68,8 @@ Never let a lower-precedence layer silently override a higher-precedence constra
 - Do not infer the current build from history if `training-runtime-active.md` already declares it.
 - Use the history memo as evidence, not as the active state.
 - Use the active anchor mapping before reasoning about metrics.
+- Treat Athlete Progression as the canonical analytics view when interpreting fitness-form baseline history exposed through MCP.
+- Do not invent an MCP-only meaning for weekly baseline or `Base`; if MCP weekly baseline and Athlete Progression disagree, assume a mismatch/bug/stale runtime rather than treating both as equally valid.
 - Distinguish clearly between invariant doctrine, active build facts, evidence from history, and your own inference.
 - If an event overlay and philosophy overlay pull in different directions, keep the event demands but bias execution using the philosophy overlay.
 - If a current-state constraint conflicts with the preferred philosophy, current-state safety wins.

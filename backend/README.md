@@ -4,6 +4,12 @@
 
 Temperance now exposes one canonical stdio MCP server that combines doctrine resources, workout-library context, planning tools, analytics tools, and history judgment on one JSON-RPC surface.
 
+Important analytics contract:
+- MCP weekly baseline values are not a separate MCP interpretation.
+- `get_fitness_form.weekly_baseline` must mirror the canonical weekly baseline used by Athlete Progression.
+- The dashboard is the reference. If the Athlete Progression chart shows `Base = X` for a week, MCP should return approximately the same weekly `baseline_tss` for that same `week_start`.
+- Canonical weekly baseline comes from the Athlete Progression backend model in `backend/app/main.py`: daily baseline fields are built from LT-derived capacity plus trailing load history, smoothed, then rolled up into Monday-aligned weekly values.
+
 Run it from the repo root:
 
 ```bash
@@ -90,3 +96,4 @@ Useful chat questions once the MCP tool is connected:
 - `If I swap this run for elliptical, how does the next 3-day cycle change?`
 - `Show me how the long run is progressing from the last 4 long runs.`
 - `Judge the last 6 weeks of actual training against the active build and point out the main gaps.`
+- `For week 2026-03-30, confirm that MCP weekly baseline matches Athlete Progression Base and explain any residual difference.`
