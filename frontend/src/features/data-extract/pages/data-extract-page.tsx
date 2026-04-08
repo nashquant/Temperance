@@ -356,28 +356,32 @@ export function DataExtractPage(): JSX.Element {
       <SecondaryPageSectionCard contentClassName="space-y-3 sm:space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Garmin Sync</h2>
 
-          <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:grid-cols-[minmax(0,220px)_minmax(0,1fr)] md:items-start md:gap-3 sm:p-3 lg:flex lg:flex-wrap lg:items-center lg:gap-2">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 md:min-w-0 lg:contents">
-            <div className="min-w-0 md:max-w-[220px] lg:min-w-[180px] lg:flex-1 lg:max-w-[220px]">
+          <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-3 lg:flex lg:flex-wrap lg:items-center lg:gap-2">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2 lg:contents">
+            <div className="min-w-0 max-w-[220px] lg:min-w-[180px] lg:flex-1 lg:max-w-[220px]">
               <CompactDateInput
                 value={extractStartDay}
                 onChange={setExtractStartDay}
+                useTabletCompactVariant
+                desktopBreakpoint="xl"
                 mobileInputClassName="h-9 rounded-xl border-white/10 bg-black/10 px-3 text-[13px]"
+                tabletInputClassName="sm:border-sky-300/18 sm:bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(10,18,34,0.96))] sm:shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_0_0_1px_rgba(56,189,248,0.06)]"
                 desktopInputClassName="h-10 rounded-xl"
                 buttonClassName="h-9 w-9 rounded-xl"
+                tabletButtonClassName="sm:border-sky-300/18 sm:bg-[linear-gradient(180deg,rgba(20,34,54,0.98),rgba(12,22,40,0.98))] sm:text-sky-100"
               />
             </div>
             <Button
               type="button"
               variant="surface"
-              className="relative z-10 w-full md:w-auto"
+              className="relative z-10 w-full sm:w-auto"
               onClick={() => comprehensiveMutation.mutate()}
               disabled={comprehensiveMutation.isPending || extractRunning || oauthBlocksExtract}
             >
               {extractRunning || comprehensiveMutation.isPending ? 'Running...' : 'Run extract'}
             </Button>
             </div>
-            <div className="grid grid-cols-3 gap-2 md:min-w-0 md:content-start lg:flex lg:flex-wrap lg:items-center lg:gap-2">
+            <div className="grid min-w-0 grid-cols-3 content-start gap-2 lg:flex lg:flex-wrap lg:items-center lg:gap-2">
             <label className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2.5 text-[11px] font-semibold transition sm:h-10 sm:px-3.5 sm:text-xs ${
               includeDetails
                 ? 'bg-[linear-gradient(180deg,rgba(56,189,248,0.22),rgba(14,165,233,0.08))] text-sky-100 ring-1 ring-sky-300/26 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
@@ -530,23 +534,23 @@ export function DataExtractPage(): JSX.Element {
                   ? `When viewing ${profile?.owner ?? 'another owner'}, provide that user's Garmin credentials here. Running extract will ingest into ${profile?.owner ?? 'that'} database, and these credentials stay in memory only.`
                   : 'Credentials are kept in backend memory only for this user session. They are not saved to the database and will be cleared on backend restart.'}
               </p>
-              <div className="grid gap-2 sm:gap-3 md:grid-cols-2">
-                <div className="space-y-1">
+              <div className="grid gap-2 sm:gap-3 lg:grid-cols-2">
+                <div className="min-w-0 space-y-1">
                   <FieldLabel htmlFor="garmin-email">Garmin email</FieldLabel>
                   <Input
                     id="garmin-email"
-                    className={secondaryPageInputClassName}
+                    className={`${secondaryPageInputClassName} min-w-0`}
                     value={garminEmail}
                     onChange={(event) => setGarminEmail(event.target.value)}
                     placeholder="you@example.com"
                     autoComplete="username"
                   />
                 </div>
-                <div className="space-y-1">
+                <div className="min-w-0 space-y-1">
                   <FieldLabel htmlFor="garmin-password">Garmin password</FieldLabel>
                   <Input
                     id="garmin-password"
-                    className={secondaryPageInputClassName}
+                    className={`${secondaryPageInputClassName} min-w-0`}
                     type="password"
                     value={garminPassword}
                     onChange={(event) => setGarminPassword(event.target.value)}
