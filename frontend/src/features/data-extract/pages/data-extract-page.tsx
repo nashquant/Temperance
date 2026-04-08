@@ -356,9 +356,9 @@ export function DataExtractPage(): JSX.Element {
       <SecondaryPageSectionCard contentClassName="space-y-3 sm:space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Garmin Sync</h2>
 
-          <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:p-3">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:contents">
-            <div className="min-w-[180px] flex-1 sm:max-w-[220px]">
+          <div className="grid gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:grid-cols-[minmax(0,220px)_minmax(0,1fr)] md:items-start md:gap-3 sm:p-3 lg:flex lg:flex-wrap lg:items-center lg:gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 md:min-w-0 lg:contents">
+            <div className="min-w-0 md:max-w-[220px] lg:min-w-[180px] lg:flex-1 lg:max-w-[220px]">
               <CompactDateInput
                 value={extractStartDay}
                 onChange={setExtractStartDay}
@@ -369,14 +369,15 @@ export function DataExtractPage(): JSX.Element {
             </div>
             <Button
               type="button"
-              variant="surface" className="relative z-10 w-full sm:w-auto"
+              variant="surface"
+              className="relative z-10 w-full md:w-auto"
               onClick={() => comprehensiveMutation.mutate()}
               disabled={comprehensiveMutation.isPending || extractRunning || oauthBlocksExtract}
             >
               {extractRunning || comprehensiveMutation.isPending ? 'Running...' : 'Run extract'}
             </Button>
             </div>
-            <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+            <div className="grid grid-cols-3 gap-2 md:min-w-0 md:content-start lg:flex lg:flex-wrap lg:items-center lg:gap-2">
             <label className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2.5 text-[11px] font-semibold transition sm:h-10 sm:px-3.5 sm:text-xs ${
               includeDetails
                 ? 'bg-[linear-gradient(180deg,rgba(56,189,248,0.22),rgba(14,165,233,0.08))] text-sky-100 ring-1 ring-sky-300/26 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
