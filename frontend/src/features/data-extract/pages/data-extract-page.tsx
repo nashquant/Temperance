@@ -11,7 +11,6 @@ import { QueryShell } from '@/components/ui/query-shell';
 import {
   FieldLabel,
   InsetBox,
-  SecondaryPageHeader,
   SecondaryPageSectionCard,
   SurfaceCard,
   secondaryPageInputClassName,
@@ -354,11 +353,6 @@ export function DataExtractPage(): JSX.Element {
   return (
     <QueryShell isLoading={statusQuery.isLoading} isError={statusQuery.isError} error={statusQuery.error} errorTitle="Unable to load data extract status" skeleton="compact">
     <section className="space-y-4 sm:space-y-6">
-      <SecondaryPageHeader
-        title="Data Extract"
-        description={`Sync Garmin data, manage credentials, and review the current import status for ${profile?.owner ?? '-'}.`}
-      />
-
       <SecondaryPageSectionCard contentClassName="space-y-3 sm:space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Garmin Sync</h2>
 

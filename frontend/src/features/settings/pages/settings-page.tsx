@@ -9,7 +9,6 @@ import { Label } from '@/components/ui/label';
 import { QueryShell } from '@/components/ui/query-shell';
 import {
   FieldLabel,
-  SecondaryPageHeader,
   SurfaceCard,
   secondaryPageInputClassName,
 } from '@/components/ui/secondary-page';
@@ -235,11 +234,6 @@ export function SettingsPage(): JSX.Element {
   return (
     <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load settings">
     <section className="space-y-4 sm:space-y-6">
-      <SecondaryPageHeader
-        title="Settings"
-        description="Configure thresholds, specificity, and pace curves so the rest of the app reads your training consistently."
-      />
-
       {saveMsg ? <p className="text-sm text-muted-foreground">{saveMsg}</p> : null}
 
       <SurfaceCard contentClassName="space-y-2.5 p-3 sm:space-y-3 sm:p-4">

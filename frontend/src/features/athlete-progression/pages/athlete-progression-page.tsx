@@ -4,7 +4,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { AnalyticsToolbar } from '@/components/ui/analytics-toolbar';
 import { QueryShell } from '@/components/ui/query-shell';
-import { SecondaryPageHeader } from '@/components/ui/secondary-page';
 import { ProgressionLineChartCard } from '@/features/athlete-progression/components/progression-line-chart-card';
 import { useAthleteProgressionQuery } from '@/features/athlete-progression/hooks/use-athlete-progression-query';
 import type { ProgressionAggregation } from '@/features/athlete-progression/types/athlete-progression';
@@ -85,27 +84,23 @@ export function AthleteProgressionPage(): JSX.Element {
 
   return (
     <section className="space-y-6">
-      <SecondaryPageHeader
-        title="Athlete Progression"
-        description="Review long-term training load, fitness, and durability using the same page shell as the rest of the analytics tabs."
-        actions={(
-          <AnalyticsToolbar
-            days={days}
-            onDaysChange={setDays}
-            aggregation={aggregation}
-            onAggregationChange={setAggregation}
-            compactLabels={false}
-            currentPeriodControl={{
-              value: includeCurrentPeriod,
-              onValueChange: setIncludeCurrentPeriod,
-              includeLabel: 'T',
-              excludeLabel: 'T-1',
-              includeAriaLabel: 'Include current period',
-              excludeAriaLabel: 'Show completed periods only',
-            }}
-          />
-        )}
-      />
+      <div className="flex justify-start">
+        <AnalyticsToolbar
+          days={days}
+          onDaysChange={setDays}
+          aggregation={aggregation}
+          onAggregationChange={setAggregation}
+          compactLabels={false}
+          currentPeriodControl={{
+            value: includeCurrentPeriod,
+            onValueChange: setIncludeCurrentPeriod,
+            includeLabel: 'T',
+            excludeLabel: 'T-1',
+            includeAriaLabel: 'Include current period',
+            excludeAriaLabel: 'Show completed periods only',
+          }}
+        />
+      </div>
 
       <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load athlete progression">
       {query.data ? (
