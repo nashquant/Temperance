@@ -95,6 +95,15 @@ class WorkoutTemplateDoc:
     body_markdown: str
 
 
+@dataclass
+class PlanningContextParts:
+    db_path: Path
+    methodology: Any
+    planning_state: Any
+    horizon: tuple[Any, ...]
+    preview_meta: dict[str, Any]
+
+
 class OwnerArgs(BaseModel):
     owner: str = DEFAULT_OWNER
 
@@ -1404,7 +1413,7 @@ def _planning_context_parts(
     seed: Optional[int] = None,
     horizon_days: Optional[int] = None,
     schedule_constraints: list[dict[str, Any]] | None = None,
-) -> tuple[Path, Any, Any, tuple[Any, ...], dict[str, Any]]:
+) -> PlanningContextParts:
     backend_main = _backend_main_module()
     db_path = backend_main._db_path_for_owner(owner)
     planning_state = backend_main._generated_activity_planning_state(
@@ -1423,7 +1432,13 @@ def _planning_context_parts(
         seed=seed,
         horizon_days=horizon_days,
     )
-    return db_path, methodology, planning_state, horizon, preview_meta
+    return PlanningContextParts(
+        db_path=db_path,
+        methodology=methodology,
+        planning_state=planning_state,
+        horizon=horizon,
+        preview_meta=preview_meta,
+    )
 
 
 def _preview_intents_payload(horizon: tuple[Any, ...]) -> list[dict[str, Any]]:
@@ -1481,7 +1496,7 @@ def _planning_state_summary(planning_state: Any) -> dict[str, Any]:
 
 def _build_planning_context_payload(owner: str, target_day_utc: str) -> dict[str, Any]:
     normalized_day = _coerce_day_utc(target_day_utc)
-    db_path, methodology, planning_state, horizon, preview_meta = _planning_context_parts(
+    context = _planning_context_parts(
         owner=owner,
         target_day_utc=normalized_day,
         methodology_id=DEFAULT_METHODOLOGY_ID,
@@ -1490,12 +1505,12 @@ def _build_planning_context_payload(owner: str, target_day_utc: str) -> dict[str
     return {
         "owner": owner,
         "target_day_utc": normalized_day,
-        "db_path": str(db_path),
+        "db_path": str(context.db_path),
         "active_build": active_build,
-        "planning_state_summary": _planning_state_summary(planning_state),
+        "planning_state_summary": _planning_state_summary(context.planning_state),
         "today_status": tool_get_today_status({"owner": owner}),
-        "preview_horizon": _preview_intents_payload(horizon),
-        "preview_meta": preview_meta,
+        "preview_horizon": _preview_intents_payload(context.horizon),
+        "preview_meta": context.preview_meta,
         "recent_long_run_summary": [
             {
                 "day_utc": item.day_utc,
@@ -1504,7 +1519,7 @@ def _build_planning_context_payload(owner: str, target_day_utc: str) -> dict[str
                 "tss": item.tss,
                 "source": item.source,
             }
-            for item in planning_state.recent_long_runs
+            for item in context.planning_state.recent_long_runs
         ],
         "schedule_constraints": [
             {
@@ -1727,24 +1742,28 @@ def _coverage_summary(owner: str, db_path: Path, start_day_utc: str, end_day_utc
 def _history_snapshot_components(owner: str, window_days: int, end_day_utc: Optional[str] = None) -> dict[str, Any]:
     start_day_utc, normalized_end_day_utc = _window_bounds(window_days, end_day_utc)
     reference_day_utc = (date.fromisoformat(normalized_end_day_utc) + timedelta(days=1)).isoformat()
-    db_path, methodology, planning_state, _, _ = _planning_context_parts(
+    context = _planning_context_parts(
         owner=owner,
         target_day_utc=reference_day_utc,
         methodology_id=DEFAULT_METHODOLOGY_ID,
     )
     actual_db_path, actual_rows = _aggregate_actual_day_rows(owner, start_day_utc, normalized_end_day_utc)
-    classified_actuals = _classify_history_rows(actual_rows, planning_state.weekly_baseline_tss, methodology.stress_profile)
+    classified_actuals = _classify_history_rows(
+        actual_rows,
+        context.planning_state.weekly_baseline_tss,
+        context.methodology.stress_profile,
+    )
     return {
         "owner": owner,
         "window_days": max(1, min(int(window_days), 365)),
         "start_day_utc": start_day_utc,
         "end_day_utc": normalized_end_day_utc,
-        "db_path": str(db_path),
-        "planning_state": planning_state,
-        "methodology": methodology,
+        "db_path": str(context.db_path),
+        "planning_state": context.planning_state,
+        "methodology": context.methodology,
         "coverage": _coverage_summary(owner, actual_db_path, start_day_utc, normalized_end_day_utc, classified_actuals),
         "actual_rows": classified_actuals,
-        "planned_rows": _aggregate_planned_day_rows(db_path, start_day_utc, normalized_end_day_utc),
+        "planned_rows": _aggregate_planned_day_rows(context.db_path, start_day_utc, normalized_end_day_utc),
     }
 
 
@@ -1983,7 +2002,7 @@ def _build_preview_payload(args: dict[str, Any]) -> dict[str, Any]:
     methodology_id = str(args.get("methodology_id") or "").strip() or None
     seed = int(args["seed"]) if args.get("seed") is not None else None
     horizon_days = int(args["horizon_days"]) if args.get("horizon_days") is not None else None
-    db_path, methodology, planning_state, horizon, preview_meta = _planning_context_parts(
+    context = _planning_context_parts(
         owner=owner,
         target_day_utc=day_utc,
         methodology_id=methodology_id,
@@ -1993,10 +2012,10 @@ def _build_preview_payload(args: dict[str, Any]) -> dict[str, Any]:
     )
     return {
         "owner": owner,
-        "db_path": str(db_path),
-        "methodology_id": methodology.methodology_id,
+        "db_path": str(context.db_path),
+        "methodology_id": context.methodology.methodology_id,
         "target_day_utc": day_utc,
-        "preview": _preview_intents_payload(horizon),
+        "preview": _preview_intents_payload(context.horizon),
         "recent_long_runs": [
             {
                 "day_utc": item.day_utc,
@@ -2005,9 +2024,9 @@ def _build_preview_payload(args: dict[str, Any]) -> dict[str, Any]:
                 "tss": item.tss,
                 "source": item.source,
             }
-            for item in planning_state.recent_long_runs
+            for item in context.planning_state.recent_long_runs
         ],
-        "preview_meta": preview_meta,
+        "preview_meta": context.preview_meta,
     }
 
 
