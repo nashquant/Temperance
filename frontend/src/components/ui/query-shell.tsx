@@ -3,10 +3,6 @@ import type * as React from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 
-/* ------------------------------------------------------------------ */
-/*  Skeleton presets                                                   */
-/* ------------------------------------------------------------------ */
-
 /** Page with a header bar and one or two content blocks. */
 function PageSkeleton(): JSX.Element {
   return (
@@ -35,10 +31,6 @@ const skeletonPresets = {
 
 export type SkeletonPreset = keyof typeof skeletonPresets;
 
-/* ------------------------------------------------------------------ */
-/*  Error alert                                                        */
-/* ------------------------------------------------------------------ */
-
 function QueryError({ title, error }: { title: string; error: unknown }): JSX.Element {
   const message = error instanceof Error ? error.message : 'Unexpected error.';
   return (
@@ -49,35 +41,16 @@ function QueryError({ title, error }: { title: string; error: unknown }): JSX.El
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  QueryShell                                                         */
-/* ------------------------------------------------------------------ */
-
 interface QueryShellProps {
-  /** React Query result fields. */
   isLoading: boolean;
   isError: boolean;
   error?: unknown;
-  /** Human-readable label for the error alert, e.g. "Unable to load dashboard". */
   errorTitle: string;
-  /** Skeleton preset name or a custom ReactNode. Default: "page". */
   skeleton?: SkeletonPreset | React.ReactNode;
   children: React.ReactNode;
 }
 
-/**
- * Standardised loading / error / content shell for pages backed by a
- * React Query hook.  Replaces the per-page copy-pasted skeleton + alert
- * blocks with one declarative wrapper.
- *
- * Usage:
- * ```tsx
- * <QueryShell isLoading={query.isLoading} isError={query.isError}
- *   error={query.error} errorTitle="Unable to load wellness">
- *   {query.data ? <Content data={query.data} /> : null}
- * </QueryShell>
- * ```
- */
+/** Shared loading / error / content shell for React Query-backed pages. */
 export function QueryShell({
   isLoading,
   isError,

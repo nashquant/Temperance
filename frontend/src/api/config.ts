@@ -29,6 +29,3 @@ export const API_CONFIG = {
     plannedWorkoutUpdate: '/planned-activities/workout',
   },
 } as const;
-
-// TODO: If your backend path changes (e.g., another gateway prefix), update API_CONFIG.basePath.
-// TODO: If auth token type changes from Bearer token, update header logic in src/api/http-client.ts.

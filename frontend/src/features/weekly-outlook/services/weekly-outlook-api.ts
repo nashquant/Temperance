@@ -40,5 +40,3 @@ export async function getWeeklyOutlook({
     token,
   });
 }
-
-// TODO: If backend requires additional filters (e.g. week_start, sport, days), add them here.
