@@ -540,6 +540,47 @@ def _owner_timezone_info(db_path: Path) -> tuple[str, str]:
     return _normalize_timezone_name(APP_TIMEZONE_NAME), "app_default"
 
 
+def _activity_start_local_series(activity_df: pd.DataFrame, db_path: Path) -> pd.Series:
+    if activity_df.empty:
+        return pd.Series(dtype="datetime64[ns]")
+
+    timezone_name = _normalize_timezone_name(APP_TIMEZONE_NAME)
+    if db_path.exists():
+        try:
+            timezone_name, _ = _owner_timezone_info(db_path)
+        except Exception:
+            timezone_name = _normalize_timezone_name(APP_TIMEZONE_NAME)
+    zone = ZoneInfo(timezone_name)
+    start_local = pd.Series(pd.NaT, index=activity_df.index, dtype="datetime64[ns]")
+
+    if "start_local" in activity_df.columns:
+        parsed_local = pd.to_datetime(activity_df.get("start_local"), errors="coerce")
+        if getattr(parsed_local.dt, "tz", None) is not None:
+            parsed_local = parsed_local.dt.tz_convert(zone).dt.tz_localize(None)
+        start_local = parsed_local
+
+    if "activity_id" in activity_df.columns:
+        activity_ids = activity_df.get("activity_id", pd.Series(index=activity_df.index, dtype=object)).astype(str).tolist()
+        local_start_map = {}
+        if db_path.exists():
+            try:
+                local_start_map = get_activity_local_start_map(db_path=db_path, activity_ids=activity_ids)
+            except Exception:
+                local_start_map = {}
+        if local_start_map:
+            mapped_local = pd.to_datetime(
+                activity_df.get("activity_id", pd.Series(index=activity_df.index, dtype=object)).astype(str).map(local_start_map),
+                errors="coerce",
+            )
+            if getattr(mapped_local.dt, "tz", None) is not None:
+                mapped_local = mapped_local.dt.tz_convert(zone).dt.tz_localize(None)
+            start_local = start_local.fillna(mapped_local)
+
+    fallback_local = pd.to_datetime(activity_df.get("start_time_utc"), utc=True, errors="coerce")
+    fallback_local = fallback_local.dt.tz_convert(zone).dt.tz_localize(None)
+    return start_local.fillna(fallback_local)
+
+
 def _auto_sync_window_labels() -> list[str]:
     return [f"{start:02d}:00-{end:02d}:00" for start, end in AUTO_SYNC_LOCAL_WINDOWS]
 
@@ -1771,7 +1812,7 @@ def _blended_weekly_targets_for_day(
     observed_days_365d = 0
     if metrics_df is not None and not metrics_df.empty:
         working = metrics_df.copy()
-        working["day"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+        working["day"] = _activity_start_local_series(working, db_path).dt.normalize()
         working = working.dropna(subset=["day"])
         if not working.empty:
             earliest_day = pd.to_datetime(working["day"], errors="coerce").min()
@@ -3496,7 +3537,7 @@ def _generated_activity_context(
             db_path=db_path,
         )
         day_agg = metrics_df.copy()
-        day_agg["day"] = pd.to_datetime(day_agg.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+        day_agg["day"] = _activity_start_local_series(day_agg, db_path).dt.normalize()
         day_agg = day_agg.dropna(subset=["day"]).copy()
         if not day_agg.empty:
             daily = (
@@ -4068,7 +4109,7 @@ def _aggregate_actual_days_for_planning(
     if metrics_df.empty:
         return []
     working = metrics_df.copy()
-    working["day"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+    working["day"] = _activity_start_local_series(working, db_path).dt.normalize()
     working = working.dropna(subset=["day"]).copy()
     working = working[working["day"] < selected_day].copy()
     if working.empty:
@@ -4266,7 +4307,7 @@ def _generated_activity_planning_state(
         working = metrics_df.copy()
         if working.empty:
             return 0.0
-        working["day"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+        working["day"] = _activity_start_local_series(working, db_path).dt.normalize()
         working = working.dropna(subset=["day"])
         working = working[(working["day"] >= start) & (working["day"] < selected_day)]
         return float(pd.to_numeric(working.get(key), errors="coerce").fillna(0.0).sum())
@@ -4275,7 +4316,7 @@ def _generated_activity_planning_state(
         working = metrics_df.copy()
         if working.empty:
             return 0
-        working["day"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+        working["day"] = _activity_start_local_series(working, db_path).dt.normalize()
         working = working.dropna(subset=["day"])
         if working.empty:
             return 0
@@ -4718,7 +4759,7 @@ def _day_lookup_with_daily_model(
         )
 
     daily_df = metrics_df.copy()
-    daily_df["day"] = pd.to_datetime(daily_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+    daily_df["day"] = _activity_start_local_series(daily_df, db_path).dt.normalize()
     daily_df = daily_df.dropna(subset=["day"]).copy()
     if daily_df.empty:
         return (
@@ -5070,18 +5111,7 @@ def _dashboard_metrics_frames(
         return pd.DataFrame(), pd.DataFrame()
 
     actual_metrics_df = actual_metrics_df.copy()
-    local_start_map = get_activity_local_start_map(
-        db_path=db_path,
-        activity_ids=actual_metrics_df.get("activity_id", pd.Series(dtype=object)).astype(str).tolist(),
-    )
-    actual_metrics_df["start_local"] = (
-        actual_metrics_df.get("activity_id", pd.Series(index=actual_metrics_df.index, dtype=object))
-        .astype(str)
-        .map(local_start_map)
-    )
-    actual_metrics_df["start_local"] = pd.to_datetime(actual_metrics_df["start_local"], errors="coerce").fillna(
-        pd.to_datetime(actual_metrics_df.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
-    )
+    actual_metrics_df["start_local"] = _activity_start_local_series(actual_metrics_df, db_path)
     actual_metrics_df = actual_metrics_df.dropna(subset=["start_local"]).copy()
     if actual_metrics_df.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -6570,7 +6600,7 @@ def _build_week_outlook_payload(
         }
 
     daily = metrics_df.copy()
-    daily["day"] = pd.to_datetime(daily["start_time_utc"], utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+    daily["day"] = _activity_start_local_series(daily, db_path).dt.normalize()
     daily = daily.dropna(subset=["day"])
     if daily.empty:
         return {

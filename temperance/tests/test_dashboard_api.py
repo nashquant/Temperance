@@ -60,6 +60,37 @@ def test_dashboard_metrics_frames_filter_invalid_rows_without_second_metrics_pas
     assert actual_metrics_df.loc[actual_metrics_df["activity_id"] == "run-1", "day"].iloc[0].date().isoformat() == "2026-03-31"
 
 
+def test_dashboard_metrics_frames_uses_owner_timezone_for_late_evening_activities(monkeypatch) -> None:
+    source_df = pd.DataFrame(
+        [
+            {
+                "activity_id": "run-1",
+                "sport_type": "running",
+                "start_time_utc": "2026-04-06T00:00:00Z",
+                "distance_m": 5000.0,
+                "distance_proxy_km": 5.0,
+                "duration_s": 1800.0,
+                "tss": 50.0,
+                "rtss": 50.0,
+                "training_load_garmin": 50.0,
+                "calories_total": 400.0,
+            }
+        ]
+    )
+
+    monkeypatch.setattr(backend_main, "_metrics_for_filters", lambda **kwargs: source_df.copy())
+    monkeypatch.setattr(backend_main, "get_activity_local_start_map", lambda **kwargs: {})
+    monkeypatch.setattr(backend_main, "get_setting", lambda db_path, key: "America/Sao_Paulo")
+
+    metrics_df, actual_metrics_df = backend_main._dashboard_metrics_frames(
+        db_path=Path("ignored.db"),
+        sport=None,
+    )
+
+    assert metrics_df.loc[metrics_df["activity_id"] == "run-1", "day"].iloc[0].date().isoformat() == "2026-04-05"
+    assert actual_metrics_df.loc[actual_metrics_df["activity_id"] == "run-1", "day"].iloc[0].date().isoformat() == "2026-04-05"
+
+
 def test_week_outlook_uses_yesterday_planned_cutoff_when_today_has_no_activity(monkeypatch) -> None:
     class FixedDateTime(datetime):
         @classmethod
