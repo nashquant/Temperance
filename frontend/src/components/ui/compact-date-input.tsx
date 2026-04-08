@@ -10,8 +10,12 @@ interface CompactDateInputProps {
   onChange: (next: string) => void;
   placeholder?: string;
   mobileInputClassName?: string;
+  tabletInputClassName?: string;
   desktopInputClassName?: string;
   buttonClassName?: string;
+  tabletButtonClassName?: string;
+  useTabletCompactVariant?: boolean;
+  desktopBreakpoint?: 'sm' | 'lg' | 'xl';
 }
 
 export function CompactDateInput({
@@ -19,8 +23,12 @@ export function CompactDateInput({
   onChange,
   placeholder = 'YYYY-MM-DD',
   mobileInputClassName,
+  tabletInputClassName,
   desktopInputClassName,
   buttonClassName,
+  tabletButtonClassName,
+  useTabletCompactVariant = false,
+  desktopBreakpoint = 'sm',
 }: CompactDateInputProps): JSX.Element {
   const [draftValue, setDraftValue] = useState(value);
 
@@ -45,9 +53,20 @@ export function CompactDateInput({
     }
   };
 
+  const compactVisibilityClassName = useTabletCompactVariant
+    ? desktopBreakpoint === 'xl'
+      ? 'xl:hidden'
+      : 'lg:hidden'
+    : 'sm:hidden';
+  const desktopVisibilityClassName = useTabletCompactVariant
+    ? desktopBreakpoint === 'xl'
+      ? 'xl:block'
+      : 'lg:block'
+    : 'sm:block';
+
   return (
     <>
-      <div className="flex items-center gap-1.5 sm:hidden">
+      <div className={cn('flex items-center gap-1.5', compactVisibilityClassName)}>
         <Input
           type="text"
           inputMode="text"
@@ -58,12 +77,19 @@ export function CompactDateInput({
           onChange={(event) => setDraftValue(event.target.value)}
           onBlur={normalizeAndCommit}
           placeholder={placeholder}
-          className={cn('h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px]', mobileInputClassName)}
+          className={cn(
+            'h-8 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px]',
+            useTabletCompactVariant ? 'sm:h-10 sm:rounded-xl sm:px-3.5 sm:text-sm' : null,
+            mobileInputClassName,
+            useTabletCompactVariant ? tabletInputClassName : null,
+          )}
         />
         <label
           className={cn(
             'relative inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-input bg-background text-foreground shadow-sm',
             buttonClassName,
+            useTabletCompactVariant ? 'sm:h-10 sm:w-10 sm:rounded-xl' : null,
+            useTabletCompactVariant ? tabletButtonClassName : null,
           )}
           aria-label="Open date picker"
         >
@@ -84,7 +110,7 @@ export function CompactDateInput({
         type="date"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className={cn('hidden h-10 sm:block', desktopInputClassName)}
+        className={cn('hidden h-10', desktopVisibilityClassName, desktopInputClassName)}
       />
     </>
   );
