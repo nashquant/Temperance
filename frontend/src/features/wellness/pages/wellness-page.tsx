@@ -2,11 +2,7 @@ import { useDeferredValue, useMemo, useState } from 'react';
 
 import { AnalyticsToolbar } from '@/components/ui/analytics-toolbar';
 import { QueryShell } from '@/components/ui/query-shell';
-import {
-  SecondaryPageHeader,
-  SecondaryStatCard,
-  SurfaceCard,
-} from '@/components/ui/secondary-page';
+import { SecondaryStatCard, SurfaceCard } from '@/components/ui/secondary-page';
 import { ProgressionLineChartCard } from '@/features/athlete-progression/components/progression-line-chart-card';
 import { useWellnessQuery } from '@/features/wellness/hooks/use-wellness-query';
 import type { WellnessAggregation } from '@/features/wellness/types';
@@ -69,19 +65,15 @@ export function WellnessPage(): JSX.Element {
 
   return (
     <section className="space-y-6">
-      <SecondaryPageHeader
-        title="Wellness"
-        description="Track recovery signals alongside training so the readiness context matches the rest of the app."
-        actions={(
-          <AnalyticsToolbar
-            days={days}
-            onDaysChange={setDays}
-            aggregation={aggregation}
-            onAggregationChange={setAggregation}
-            compactLabels={false}
-          />
-        )}
-      />
+      <div className="flex justify-start">
+        <AnalyticsToolbar
+          days={days}
+          onDaysChange={setDays}
+          aggregation={aggregation}
+          onAggregationChange={setAggregation}
+          compactLabels={false}
+        />
+      </div>
 
       <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load wellness">
       {query.data ? (

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-import { SecondaryPageHeader, SecondaryPageSectionCard } from '@/components/ui/secondary-page';
+import { SecondaryPageSectionCard } from '@/components/ui/secondary-page';
 import { cn } from '@/lib/utils';
 
 type AboutBodyItem =
@@ -241,11 +241,6 @@ export function AboutTemperancePage(): JSX.Element {
 
   return (
     <section className="space-y-6">
-      <SecondaryPageHeader
-        title="About Temperance"
-        description="Context for the training model, the workflow behind each tab, and the syntax used throughout the app."
-      />
-
       <SecondaryPageSectionCard contentClassName="p-0">
           <div className="divide-y divide-white/8">
             {aboutBlocks.map((block, index) => {

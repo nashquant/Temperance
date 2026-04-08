@@ -57,15 +57,6 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
 
         {showEmbeddedHeaderRow ? (
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            {embedded ? null : (
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">Weekly Outlook</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Compare current week performance against plan or historical benchmark.
-                </p>
-              </div>
-            )}
-
             {!displayedData ? (
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
                 <CompareSelector value={compare} onValueChange={setCompare} />

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 
 import { Separator } from '@/components/ui/separator';
-import { SecondaryPageHeader } from '@/components/ui/secondary-page';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { PlanActivitiesSection } from '@/features/plan-activities/pages/plan-activities-page';
 import { WeeklyOutlookSection } from '@/features/weekly-outlook/pages/weekly-outlook-page';
@@ -11,11 +10,6 @@ export function WeekPlannerPage(): JSX.Element {
 
   return (
     <section className="space-y-6">
-      <SecondaryPageHeader
-        title="Week Planner"
-        description="Plan the week ahead, then compare how the structure is tracking against the target."
-      />
-
       <div className="lg:hidden">
         <ToggleGroup
           type="single"

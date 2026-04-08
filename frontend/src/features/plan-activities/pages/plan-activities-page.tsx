@@ -924,14 +924,6 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
 
   return (
     <section className="space-y-6">
-      <div>
-        {embedded ? (
-          <h2 className="text-xl font-semibold tracking-tight">Plan Activities</h2>
-        ) : (
-          <h1 className="text-2xl font-semibold tracking-tight">Plan Activities</h1>
-        )}
-      </div>
-
       {!query.isLoading && !query.isError && query.data ? (
         <>
           <SecondaryPageSectionCard className="sm:hidden" contentClassName="grid gap-2 p-4">
