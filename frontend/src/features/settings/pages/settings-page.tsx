@@ -90,15 +90,10 @@ function formatSpecificityLabel(key: keyof SpecificityProfile): string {
 }
 
 function formatBlendLabel(key: keyof BaselineBlendProfile): string {
-  if (key === 'history_weight_cap') return 'History Cap';
-  if (key === 'history_weight_scale') return 'History Scale';
-  if (key === 'richness_21d_threshold') return '21d Richness';
-  if (key === 'richness_63d_threshold') return '63d Richness';
-  if (key === 'richness_365d_threshold') return '365d Richness';
-  if (key === 'chronic_floor_capacity_multiplier') return 'Cap Floor';
-  if (key === 'chronic_floor_63d_multiplier') return '63d Floor';
-  if (key === 'chronic_floor_365d_multiplier') return '365d Floor';
-  return key.replace('window_', '').replace('_weight', '').toUpperCase();
+  if (key === 'history_influence_pct') return 'History Influence';
+  if (key === 'short_history_pct') return 'Short History';
+  if (key === 'medium_history_pct') return 'Medium History';
+  return 'Long History';
 }
 
 const mobileCurveFieldLabelClassName = 'text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-300/58 sm:hidden';
@@ -116,17 +111,10 @@ export function SettingsPage(): JSX.Element {
   const [vdotLookbackDays, setVdotLookbackDays] = useState(200);
   const [specificity, setSpecificity] = useState<SpecificityProfile>({ non_running: 0.8, treadmill: 1.0, elliptical: 0.8, cycling: 0.8 });
   const [baselineBlend, setBaselineBlend] = useState<BaselineBlendProfile>({
-    history_weight_cap: 0.78,
-    history_weight_scale: 1.3,
-    window_21d_weight: 0.2,
-    window_63d_weight: 0.35,
-    window_365d_weight: 0.45,
-    richness_21d_threshold: 0.5,
-    richness_63d_threshold: 0.45,
-    richness_365d_threshold: 0.35,
-    chronic_floor_capacity_multiplier: 0.3,
-    chronic_floor_63d_multiplier: 0.6,
-    chronic_floor_365d_multiplier: 0.75,
+    history_influence_pct: 65,
+    short_history_pct: 20,
+    medium_history_pct: 35,
+    long_history_pct: 45,
   });
   const [lthrRows, setLthrRows] = useState<LthrDraftRow[]>([]);
   const [paceRows, setPaceRows] = useState<LtPaceDraftRow[]>([]);
@@ -261,6 +249,13 @@ export function SettingsPage(): JSX.Element {
       thresholdsText: `Z1 <${pct(z1)}%, Z2 <${pct(z2)}%, Z3 <${pct(z3)}%, Z4 <${pct(z4)}%, Z5 >=${pct(z4)}%`,
     };
   }, [ifZones.z1_max, ifZones.z2_max, ifZones.z3_max, ifZones.z4_max, lthrRows, paceRows]);
+
+  const baselineBlendSplitTotal =
+    (Number(baselineBlend.short_history_pct) || 0)
+    + (Number(baselineBlend.medium_history_pct) || 0)
+    + (Number(baselineBlend.long_history_pct) || 0);
+  const baselineBlendError =
+    baselineBlendSplitTotal !== 100 ? 'Short, medium, and long history must sum to exactly 100%.' : null;
 
   return (
     <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load settings">
@@ -472,20 +467,18 @@ export function SettingsPage(): JSX.Element {
         </SurfaceCard>
 
         <SurfaceCard contentClassName="space-y-3 p-3 sm:space-y-4 sm:p-4">
-            <p className="text-sm font-medium">Baseline Blend</p>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Baseline Blend</p>
+              <p className="text-xs text-slate-300/68">
+                Floor policy is fixed internally. History influence is disabled until at least 100 observed days are available.
+              </p>
+            </div>
             <div className="grid gap-2 sm:gap-3 md:grid-cols-2 xl:grid-cols-4">
               {([
-                'history_weight_cap',
-                'history_weight_scale',
-                'window_21d_weight',
-                'window_63d_weight',
-                'window_365d_weight',
-                'richness_21d_threshold',
-                'richness_63d_threshold',
-                'richness_365d_threshold',
-                'chronic_floor_capacity_multiplier',
-                'chronic_floor_63d_multiplier',
-                'chronic_floor_365d_multiplier',
+                'history_influence_pct',
+                'short_history_pct',
+                'medium_history_pct',
+                'long_history_pct',
               ] as const).map((key) => (
                 <div key={key} className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
                   <FieldLabel htmlFor={`baseline-blend-${key}`}>{formatBlendLabel(key)}</FieldLabel>
@@ -494,28 +487,36 @@ export function SettingsPage(): JSX.Element {
                       id={`baseline-blend-${key}`}
                       type="number"
                       min="0"
-                      step={key === 'history_weight_scale' ? '0.05' : '1'}
-                      className={`h-9 ${secondaryPageInputClassName} ${key === 'history_weight_scale' ? 'pr-12' : 'pr-14'}`}
-                      value={key === 'history_weight_scale'
-                        ? Number(baselineBlend[key]) || 0
-                        : Math.round((Number(baselineBlend[key]) || 0) * 100)}
+                      max="100"
+                      step="1"
+                      className={`h-9 pr-14 ${secondaryPageInputClassName}`}
+                      value={Math.round(Number(baselineBlend[key]) || 0)}
                       onChange={(event) =>
                         setBaselineBlend((previous) => ({
                           ...previous,
-                          [key]: key === 'history_weight_scale'
-                            ? Number(event.target.value) || 0
-                            : (Number(event.target.value) || 0) / 100,
+                          [key]: Math.max(0, Math.round(Number(event.target.value) || 0)),
                         }))
                       }
                     />
                     <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300/62">
-                      {key === 'history_weight_scale' ? 'x' : '%'}
+                      %
                     </span>
                   </div>
                 </div>
               ))}
             </div>
-            <Button variant="surface" className="w-full sm:w-auto" onClick={() => saveMutation.mutate({ baseline_blend: baselineBlend })} disabled={saveMutation.isPending}>Save</Button>
+            <div className="space-y-2">
+              <p className="text-xs text-slate-300/68">Current split total: {baselineBlendSplitTotal}%</p>
+              {baselineBlendError ? <p className="text-xs text-rose-200">{baselineBlendError}</p> : null}
+              <Button
+                variant="surface"
+                className="w-full sm:w-auto"
+                onClick={() => saveMutation.mutate({ baseline_blend: baselineBlend })}
+                disabled={saveMutation.isPending || Boolean(baselineBlendError)}
+              >
+                Save
+              </Button>
+            </div>
         </SurfaceCard>
       </div>
 

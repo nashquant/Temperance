@@ -122,7 +122,7 @@ DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 SETTINGS_KEY_LTHR_CURVE = "lthr_curve_v1"
 SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
-SETTINGS_KEY_BASELINE_BLEND = "baseline_blend_v1"
+SETTINGS_KEY_BASELINE_BLEND = "baseline_blend_v2"
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_USER_TIMEZONE = "user_timezone_v1"
@@ -224,7 +224,7 @@ class UpdateSettingsRequest(BaseModel):
     if_zone_thresholds: dict[str, float] | None = None
     vdot_lookback_days: int | None = None
     specificity_profile: dict[str, float] | None = None
-    baseline_blend: dict[str, float] | None = None
+    baseline_blend: dict[str, Any] | None = None
     lthr_curve: list[dict[str, Any]] | None = None
     lt_pace_curve: list[dict[str, Any]] | None = None
     injury_windows: list[dict[str, Any]] | None = None
@@ -1720,93 +1720,16 @@ def _blend_baseline_tss(
     observed_days_365d: int | None = None,
     blend_profile: dict[str, float] | None = None,
 ) -> float:
-    """Blend LT-based capacity with short, medium, and long-horizon training history.
-
-    21d should influence the baseline, but not dominate it. 63d and 365d provide
-    inertia so the baseline moves smoothly around athlete potential rather than
-    chasing short-term spikes or troughs.
-
-    Backward compatibility: when only 21d is supplied, preserve the previous
-    21d/capacity blend behavior so older callers and tests keep their intent.
-    """
-    profile = _default_baseline_blend_profile()
-    if isinstance(blend_profile, dict):
-        profile = _normalize_baseline_blend_profile(blend_profile)
-    weights_raw = [
-        _safe_float(profile["window_21d_weight"]),
-        _safe_float(profile["window_63d_weight"]),
-        _safe_float(profile["window_365d_weight"]),
-    ]
-    weights_sum = sum(weight for weight in weights_raw if np.isfinite(weight) and weight > 0.0)
-    if weights_sum <= 0.0:
-        profile = _default_baseline_blend_profile()
-        weights_raw = [
-            _safe_float(profile["window_21d_weight"]),
-            _safe_float(profile["window_63d_weight"]),
-            _safe_float(profile["window_365d_weight"]),
-        ]
-        weights_sum = sum(weights_raw)
-    window_weights = [weight / weights_sum for weight in weights_raw]
-    history_weight_cap = max(0.0, min(1.0, _safe_float(profile["history_weight_cap"])))
-    history_weight_scale = max(0.0, _safe_float(profile["history_weight_scale"]))
-    richness_21d_threshold = max(0.0, _safe_float(profile.get("richness_21d_threshold")))
-    richness_63d_threshold = max(0.0, _safe_float(profile.get("richness_63d_threshold")))
-    richness_365d_threshold = max(0.0, _safe_float(profile.get("richness_365d_threshold")))
-    chronic_floor_capacity_multiplier = max(0.0, _safe_float(profile.get("chronic_floor_capacity_multiplier")))
-    chronic_floor_63d_multiplier = max(0.0, _safe_float(profile.get("chronic_floor_63d_multiplier")))
-    chronic_floor_365d_multiplier = max(0.0, _safe_float(profile.get("chronic_floor_365d_multiplier")))
-
-    def _weekly_avg(load: float, window_days: int, observed_days: int | None) -> float:
-        effective_days = max(1, min(window_days, int(observed_days) if observed_days is not None else window_days))
-        return float(load) / (effective_days / 7.0)
-
-    if capacity_baseline <= 0:
-        if recent_load_63d is None and recent_load_365d is None:
-            return max(_weekly_avg(recent_load_21d, 21, observed_days_21d), 1.0)
-        avg21 = _weekly_avg(recent_load_21d, 21, observed_days_21d)
-        avg63 = _weekly_avg(recent_load_63d, 63, observed_days_63d) if recent_load_63d is not None else avg21
-        avg365 = _weekly_avg(recent_load_365d, 365, observed_days_365d) if recent_load_365d is not None else avg63
-        blended_history = window_weights[0] * avg21 + window_weights[1] * avg63 + window_weights[2] * avg365
-        return max(blended_history, 1.0)
-
-    if recent_load_63d is None and recent_load_365d is None:
-        recent_weekly_avg = _weekly_avg(recent_load_21d, 21, observed_days_21d)
-        history_weight = min(history_weight_cap, (recent_load_21d / max(capacity_baseline * 3.0, 1.0)) * history_weight_scale)
-        blended = history_weight * recent_weekly_avg + (1.0 - history_weight) * capacity_baseline
-        return max(blended, capacity_baseline * 0.30)
-
-    avg21 = _weekly_avg(recent_load_21d, 21, observed_days_21d)
-    avg63 = _weekly_avg(recent_load_63d, 63, observed_days_63d) if recent_load_63d is not None else avg21
-    avg365 = _weekly_avg(recent_load_365d, 365, observed_days_365d) if recent_load_365d is not None else avg63
-
-    effective_weeks_21d = max(1e-6, min(21, int(observed_days_21d) if observed_days_21d is not None else 21) / 7.0)
-    effective_weeks_63d = max(1e-6, min(63, int(observed_days_63d) if observed_days_63d is not None else 63) / 7.0)
-    effective_weeks_365d = max(1e-6, min(365, int(observed_days_365d) if observed_days_365d is not None else 365) / 7.0)
-
-    richness21 = min(1.0, recent_load_21d / max(capacity_baseline * effective_weeks_21d * richness_21d_threshold, 1.0))
-    richness63 = (
-        min(1.0, recent_load_63d / max(capacity_baseline * effective_weeks_63d * richness_63d_threshold, 1.0))
-        if recent_load_63d is not None
-        else richness21
+    components = _baseline_history_components(
+        recent_load_21d=recent_load_21d,
+        recent_load_63d=recent_load_63d,
+        recent_load_365d=recent_load_365d,
+        observed_days_21d=observed_days_21d,
+        observed_days_63d=observed_days_63d,
+        observed_days_365d=observed_days_365d,
+        blend_profile=blend_profile,
     )
-    richness365 = (
-        min(1.0, recent_load_365d / max(capacity_baseline * effective_weeks_365d * richness_365d_threshold, 1.0))
-        if recent_load_365d is not None
-        else richness63
-    )
-
-    history_anchor = window_weights[0] * avg21 + window_weights[1] * avg63 + window_weights[2] * avg365
-    history_weight = min(
-        history_weight_cap,
-        history_weight_scale * (window_weights[0] * richness21 + window_weights[1] * richness63 + window_weights[2] * richness365),
-    )
-    blended = history_weight * history_anchor + (1.0 - history_weight) * capacity_baseline
-    chronic_floor = max(
-        capacity_baseline * chronic_floor_capacity_multiplier,
-        avg63 * chronic_floor_63d_multiplier,
-        avg365 * chronic_floor_365d_multiplier,
-    )
-    return max(blended, chronic_floor)
+    return _baseline_tss_from_components(capacity_baseline=capacity_baseline, components=components)
 
 
 def _blended_weekly_targets_for_day(
@@ -2078,36 +2001,58 @@ def _load_specificity_profile(db_path: Path, fallback_default: float = 0.8) -> d
     return _normalize_specificity_profile(payload, fallback_default=fallback_default)
 
 
-def _default_baseline_blend_profile() -> dict[str, float]:
+def _default_baseline_blend_profile() -> dict[str, int]:
     return {
-        "history_weight_cap": 0.78,
-        "history_weight_scale": 1.30,
-        "window_21d_weight": 0.20,
-        "window_63d_weight": 0.35,
-        "window_365d_weight": 0.45,
-        "richness_21d_threshold": 0.50,
-        "richness_63d_threshold": 0.45,
-        "richness_365d_threshold": 0.35,
-        "chronic_floor_capacity_multiplier": 0.30,
-        "chronic_floor_63d_multiplier": 0.60,
-        "chronic_floor_365d_multiplier": 0.75,
+        "history_influence_pct": 65,
+        "short_history_pct": 20,
+        "medium_history_pct": 35,
+        "long_history_pct": 45,
     }
 
 
-def _normalize_baseline_blend_profile(payload: dict[str, object] | None) -> dict[str, float]:
+def _normalize_baseline_blend_profile(
+    payload: dict[str, object] | None,
+    *,
+    strict: bool = False,
+) -> dict[str, int]:
     base = _default_baseline_blend_profile()
     if not isinstance(payload, dict):
+        if strict:
+            raise HTTPException(status_code=400, detail="baseline_blend must be an object.")
         return base
-    out = dict(base)
-    for key, default in base.items():
+
+    expected_keys = tuple(base.keys())
+    if not any(key in payload for key in expected_keys):
+        if strict:
+            raise HTTPException(
+                status_code=400,
+                detail="baseline_blend must include history_influence_pct, short_history_pct, medium_history_pct, and long_history_pct.",
+            )
+        return base
+
+    out: dict[str, int] = {}
+    for key in expected_keys:
+        raw_value = payload.get(key)
         try:
-            value = _safe_float(payload.get(key))
-            if np.isfinite(value) and value >= 0.0:
-                out[key] = float(value)
-            else:
-                out[key] = float(default)
+            value = float(raw_value)
         except Exception:
-            out[key] = float(default)
+            if strict:
+                raise HTTPException(status_code=400, detail=f"baseline_blend.{key} must be an integer percentage.")
+            return base
+        if not np.isfinite(value) or value < 0.0 or value > 100.0 or not float(value).is_integer():
+            if strict:
+                raise HTTPException(status_code=400, detail=f"baseline_blend.{key} must be an integer percentage between 0 and 100.")
+            return base
+        out[key] = int(value)
+
+    split_total = out["short_history_pct"] + out["medium_history_pct"] + out["long_history_pct"]
+    if split_total != 100:
+        if strict:
+            raise HTTPException(
+                status_code=400,
+                detail="baseline_blend short_history_pct + medium_history_pct + long_history_pct must equal 100.",
+            )
+        return base
     return out
 
 
@@ -2120,6 +2065,75 @@ def _load_baseline_blend_profile(db_path: Path) -> dict[str, float]:
     except Exception:
         return _default_baseline_blend_profile()
     return _normalize_baseline_blend_profile(payload)
+
+
+def _baseline_history_components(
+    *,
+    recent_load_21d: float,
+    recent_load_63d: float | None = None,
+    recent_load_365d: float | None = None,
+    observed_days_21d: int | None = None,
+    observed_days_63d: int | None = None,
+    observed_days_365d: int | None = None,
+    blend_profile: dict[str, float] | None = None,
+) -> dict[str, float]:
+    profile = _default_baseline_blend_profile()
+    if isinstance(blend_profile, dict):
+        profile = _normalize_baseline_blend_profile(blend_profile)
+
+    def _weekly_avg(load: float, window_days: int, observed_days: int | None) -> float:
+        effective_days = max(1, min(window_days, int(observed_days) if observed_days is not None else window_days))
+        return float(load) / (effective_days / 7.0)
+
+    avg21 = _weekly_avg(recent_load_21d, 21, observed_days_21d)
+    avg63 = _weekly_avg(recent_load_63d, 63, observed_days_63d) if recent_load_63d is not None else 0.0
+    avg365 = _weekly_avg(recent_load_365d, 365, observed_days_365d) if recent_load_365d is not None else 0.0
+
+    coverage_candidates = [observed_days_365d, observed_days_63d, observed_days_21d]
+    observed_history_days = max((int(days) for days in coverage_candidates if days is not None), default=0)
+
+    history_anchor = 0.0
+    if observed_history_days >= 100:
+        available_horizons: list[tuple[float, float]] = []
+        if observed_days_21d is None or int(observed_days_21d) >= 21:
+            available_horizons.append((float(profile["short_history_pct"]), avg21))
+        if recent_load_63d is not None and (observed_days_63d is None or int(observed_days_63d) >= 63):
+            available_horizons.append((float(profile["medium_history_pct"]), avg63))
+        if recent_load_365d is not None and (observed_days_365d is None or int(observed_days_365d) >= 365):
+            available_horizons.append((float(profile["long_history_pct"]), avg365))
+        available_weight = sum(weight for weight, _ in available_horizons if weight > 0.0)
+        if available_weight > 0.0:
+            history_anchor = sum((weight / available_weight) * avg for weight, avg in available_horizons)
+
+    return {
+        "history_influence": float(profile["history_influence_pct"]) / 100.0,
+        "history_anchor": history_anchor,
+        "avg21": avg21,
+        "avg63": avg63,
+        "avg365": avg365,
+        "observed_history_days": float(observed_history_days),
+    }
+
+
+def _baseline_tss_from_components(
+    *,
+    capacity_baseline: float,
+    components: dict[str, float],
+) -> float:
+    history_anchor = max(0.0, _safe_float(components.get("history_anchor")))
+    history_influence = min(max(_safe_float(components.get("history_influence")), 0.0), 1.0)
+    avg21 = max(0.0, _safe_float(components.get("avg21")))
+    avg63 = max(0.0, _safe_float(components.get("avg63")))
+    avg365 = max(0.0, _safe_float(components.get("avg365")))
+    chronic_floor = max(
+        max(capacity_baseline, 0.0) * 0.30,
+        avg63 * 0.60,
+        avg365 * 0.75,
+    )
+    if capacity_baseline <= 0:
+        return max(history_anchor if history_anchor > 0.0 else avg21, chronic_floor, 1.0)
+    baseline_pre_floor = history_influence * history_anchor + (1.0 - history_influence) * capacity_baseline
+    return max(baseline_pre_floor, chronic_floor)
 
 
 def _specificity_factor_for_plan_kind(kind: str | None, profile: dict[str, float]) -> float:
@@ -5347,43 +5361,42 @@ def _apply_athlete_progression_baseline_fields(
     observed_days_63d = observed_days_series.clip(upper=63).astype(int)
     observed_days_365d = observed_days_series.clip(upper=365).astype(int)
     weekly_capacity_series = lt_daily_tss_target_series * 7.0
-    blended_weekly_baseline_raw = pd.Series(
-        [
+    blended_values: list[float] = []
+    history_anchor_values: list[float] = []
+    for capacity, load_21d, load_63d, load_365d, days_21d, days_63d, days_365d in zip(
+        weekly_capacity_series.tolist(),
+        recent_load_21d.tolist(),
+        recent_load_63d.tolist(),
+        recent_load_365d.tolist(),
+        observed_days_21d.tolist(),
+        observed_days_63d.tolist(),
+        observed_days_365d.tolist(),
+    ):
+        components = _baseline_history_components(
+            recent_load_21d=_safe_float(load_21d),
+            recent_load_63d=_safe_float(load_63d),
+            recent_load_365d=_safe_float(load_365d),
+            observed_days_21d=int(days_21d),
+            observed_days_63d=int(days_63d),
+            observed_days_365d=int(days_365d),
+            blend_profile=blend_profile,
+        )
+        history_anchor_values.append(float(components["history_anchor"]))
+        blended_values.append(
             float(
-                _blend_baseline_tss(
-                    _safe_float(capacity),
-                    _safe_float(load_21d),
-                    _safe_float(load_63d),
-                    _safe_float(load_365d),
-                    observed_days_21d=int(days_21d),
-                    observed_days_63d=int(days_63d),
-                    observed_days_365d=int(days_365d),
-                    blend_profile=blend_profile,
+                _baseline_tss_from_components(
+                    capacity_baseline=_safe_float(capacity),
+                    components=components,
                 )
             )
-            for capacity, load_21d, load_63d, load_365d, days_21d, days_63d, days_365d in zip(
-                weekly_capacity_series.tolist(),
-                recent_load_21d.tolist(),
-                recent_load_63d.tolist(),
-                recent_load_365d.tolist(),
-                observed_days_21d.tolist(),
-                observed_days_63d.tolist(),
-                observed_days_365d.tolist(),
-            )
-        ],
-        index=model_df.index,
-        dtype=float,
-    )
+        )
+    blended_weekly_baseline_raw = pd.Series(blended_values, index=model_df.index, dtype=float)
     # `_blend_baseline_tss()` already mixes short, medium, and long history with
     # capacity plus a chronic floor, so keep that as the single inertia source.
     blended_weekly_baseline = blended_weekly_baseline_raw
     daily_tss_target_series = (blended_weekly_baseline / 7.0).fillna(0.0)
     capacity_baseline_tss_series = (weekly_capacity_series / 7.0).fillna(0.0)
-    recent_load_anchor_tss_series = (
-        ((recent_load_21d / 3.0) * 0.20)
-        + ((recent_load_63d / 9.0) * 0.35)
-        + ((recent_load_365d / 52.0) * 0.45)
-    ).fillna(0.0)
+    recent_load_anchor_tss_series = pd.Series(history_anchor_values, index=model_df.index, dtype=float).div(7.0).fillna(0.0)
     blended_baseline_tss_before_smoothing_series = (blended_weekly_baseline_raw / 7.0).fillna(0.0)
     smoothed_baseline_tss_series = daily_tss_target_series
     blend_factor_series = pd.Series(
@@ -7317,7 +7330,7 @@ def _settings_update_core(db_path: Path, settings: dict[str, Any]) -> dict[str, 
         updated.append("specificity_profile")
 
     if settings.get("baseline_blend") is not None:
-        normalized = _normalize_baseline_blend_profile(settings["baseline_blend"])
+        normalized = _normalize_baseline_blend_profile(settings["baseline_blend"], strict=True)
         save_setting(db_path, SETTINGS_KEY_BASELINE_BLEND, _settings_json(normalized))
         updated.append("baseline_blend")
 
@@ -7359,6 +7372,7 @@ def settings_update(
         "if_zone_thresholds": payload.if_zone_thresholds,
         "vdot_lookback_days": payload.vdot_lookback_days,
         "specificity_profile": payload.specificity_profile,
+        "baseline_blend": payload.baseline_blend,
         "lthr_curve": payload.lthr_curve,
         "lt_pace_curve": payload.lt_pace_curve,
         "injury_windows": payload.injury_windows,

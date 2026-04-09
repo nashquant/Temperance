@@ -13,17 +13,10 @@ export interface SpecificityProfile {
 }
 
 export interface BaselineBlendProfile {
-  history_weight_cap: number;
-  history_weight_scale: number;
-  window_21d_weight: number;
-  window_63d_weight: number;
-  window_365d_weight: number;
-  richness_21d_threshold: number;
-  richness_63d_threshold: number;
-  richness_365d_threshold: number;
-  chronic_floor_capacity_multiplier: number;
-  chronic_floor_63d_multiplier: number;
-  chronic_floor_365d_multiplier: number;
+  history_influence_pct: number;
+  short_history_pct: number;
+  medium_history_pct: number;
+  long_history_pct: number;
 }
 
 export interface LthrCurvePoint {
