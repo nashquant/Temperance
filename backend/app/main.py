@@ -5542,7 +5542,7 @@ def _build_athlete_progression_payload(
 ) -> dict[str, Any]:
     requested_days = max(30, int(days))
     mode = "weekly" if str(aggregation).strip().lower() == "weekly" else "daily"
-    history_days = max(requested_days, _ATHLETE_PROGRESSION_HISTORY_WARMUP_DAYS)
+    history_days = requested_days + _ATHLETE_PROGRESSION_HISTORY_WARMUP_DAYS
     empty_vdot_eligibility = {
         "running_like_activities": 0,
         "running_like_with_distance_duration": 0,
