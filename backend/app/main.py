@@ -122,6 +122,7 @@ DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 SETTINGS_KEY_LTHR_CURVE = "lthr_curve_v1"
 SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
+SETTINGS_KEY_BASELINE_BLEND = "baseline_blend_v1"
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_USER_TIMEZONE = "user_timezone_v1"
@@ -223,6 +224,7 @@ class UpdateSettingsRequest(BaseModel):
     if_zone_thresholds: dict[str, float] | None = None
     vdot_lookback_days: int | None = None
     specificity_profile: dict[str, float] | None = None
+    baseline_blend: dict[str, float] | None = None
     lthr_curve: list[dict[str, Any]] | None = None
     lt_pace_curve: list[dict[str, Any]] | None = None
     injury_windows: list[dict[str, Any]] | None = None
@@ -1716,6 +1718,7 @@ def _blend_baseline_tss(
     observed_days_21d: int | None = None,
     observed_days_63d: int | None = None,
     observed_days_365d: int | None = None,
+    blend_profile: dict[str, float] | None = None,
 ) -> float:
     """Blend LT-based capacity with short, medium, and long-horizon training history.
 
@@ -1726,6 +1729,33 @@ def _blend_baseline_tss(
     Backward compatibility: when only 21d is supplied, preserve the previous
     21d/capacity blend behavior so older callers and tests keep their intent.
     """
+    profile = _default_baseline_blend_profile()
+    if isinstance(blend_profile, dict):
+        profile = _normalize_baseline_blend_profile(blend_profile)
+    weights_raw = [
+        _safe_float(profile["window_21d_weight"]),
+        _safe_float(profile["window_63d_weight"]),
+        _safe_float(profile["window_365d_weight"]),
+    ]
+    weights_sum = sum(weight for weight in weights_raw if np.isfinite(weight) and weight > 0.0)
+    if weights_sum <= 0.0:
+        profile = _default_baseline_blend_profile()
+        weights_raw = [
+            _safe_float(profile["window_21d_weight"]),
+            _safe_float(profile["window_63d_weight"]),
+            _safe_float(profile["window_365d_weight"]),
+        ]
+        weights_sum = sum(weights_raw)
+    window_weights = [weight / weights_sum for weight in weights_raw]
+    history_weight_cap = max(0.0, min(1.0, _safe_float(profile["history_weight_cap"])))
+    history_weight_scale = max(0.0, _safe_float(profile["history_weight_scale"]))
+    richness_21d_threshold = max(0.0, _safe_float(profile.get("richness_21d_threshold")))
+    richness_63d_threshold = max(0.0, _safe_float(profile.get("richness_63d_threshold")))
+    richness_365d_threshold = max(0.0, _safe_float(profile.get("richness_365d_threshold")))
+    chronic_floor_capacity_multiplier = max(0.0, _safe_float(profile.get("chronic_floor_capacity_multiplier")))
+    chronic_floor_63d_multiplier = max(0.0, _safe_float(profile.get("chronic_floor_63d_multiplier")))
+    chronic_floor_365d_multiplier = max(0.0, _safe_float(profile.get("chronic_floor_365d_multiplier")))
+
     def _weekly_avg(load: float, window_days: int, observed_days: int | None) -> float:
         effective_days = max(1, min(window_days, int(observed_days) if observed_days is not None else window_days))
         return float(load) / (effective_days / 7.0)
@@ -1736,12 +1766,12 @@ def _blend_baseline_tss(
         avg21 = _weekly_avg(recent_load_21d, 21, observed_days_21d)
         avg63 = _weekly_avg(recent_load_63d, 63, observed_days_63d) if recent_load_63d is not None else avg21
         avg365 = _weekly_avg(recent_load_365d, 365, observed_days_365d) if recent_load_365d is not None else avg63
-        blended_history = 0.20 * avg21 + 0.35 * avg63 + 0.45 * avg365
+        blended_history = window_weights[0] * avg21 + window_weights[1] * avg63 + window_weights[2] * avg365
         return max(blended_history, 1.0)
 
     if recent_load_63d is None and recent_load_365d is None:
         recent_weekly_avg = _weekly_avg(recent_load_21d, 21, observed_days_21d)
-        history_weight = min(0.65, (recent_load_21d / max(capacity_baseline * 3.0, 1.0)) * 1.30)
+        history_weight = min(history_weight_cap, (recent_load_21d / max(capacity_baseline * 3.0, 1.0)) * history_weight_scale)
         blended = history_weight * recent_weekly_avg + (1.0 - history_weight) * capacity_baseline
         return max(blended, capacity_baseline * 0.30)
 
@@ -1753,22 +1783,29 @@ def _blend_baseline_tss(
     effective_weeks_63d = max(1e-6, min(63, int(observed_days_63d) if observed_days_63d is not None else 63) / 7.0)
     effective_weeks_365d = max(1e-6, min(365, int(observed_days_365d) if observed_days_365d is not None else 365) / 7.0)
 
-    richness21 = min(1.0, recent_load_21d / max(capacity_baseline * effective_weeks_21d * 0.50, 1.0))
+    richness21 = min(1.0, recent_load_21d / max(capacity_baseline * effective_weeks_21d * richness_21d_threshold, 1.0))
     richness63 = (
-        min(1.0, recent_load_63d / max(capacity_baseline * effective_weeks_63d * 0.45, 1.0))
+        min(1.0, recent_load_63d / max(capacity_baseline * effective_weeks_63d * richness_63d_threshold, 1.0))
         if recent_load_63d is not None
         else richness21
     )
     richness365 = (
-        min(1.0, recent_load_365d / max(capacity_baseline * effective_weeks_365d * 0.35, 1.0))
+        min(1.0, recent_load_365d / max(capacity_baseline * effective_weeks_365d * richness_365d_threshold, 1.0))
         if recent_load_365d is not None
         else richness63
     )
 
-    history_anchor = 0.20 * avg21 + 0.35 * avg63 + 0.45 * avg365
-    history_weight = min(0.78, 0.18 * richness21 + 0.27 * richness63 + 0.33 * richness365)
+    history_anchor = window_weights[0] * avg21 + window_weights[1] * avg63 + window_weights[2] * avg365
+    history_weight = min(
+        history_weight_cap,
+        history_weight_scale * (window_weights[0] * richness21 + window_weights[1] * richness63 + window_weights[2] * richness365),
+    )
     blended = history_weight * history_anchor + (1.0 - history_weight) * capacity_baseline
-    chronic_floor = max(capacity_baseline * 0.30, avg63 * 0.60, avg365 * 0.75)
+    chronic_floor = max(
+        capacity_baseline * chronic_floor_capacity_multiplier,
+        avg63 * chronic_floor_63d_multiplier,
+        avg365 * chronic_floor_365d_multiplier,
+    )
     return max(blended, chronic_floor)
 
 
@@ -1793,6 +1830,7 @@ def _blended_weekly_targets_for_day(
     lt_weekly_tss = float(max(_weekly_tss_target_from_lt_pace(pace_for_day) * 1.10, 0.0)) if pace_for_day > 0 else 0.0
     lt_weekly_rtss = float(max(_weekly_tss_target_from_lt_pace(pace_for_day) * 0.90, 0.0)) if pace_for_day > 0 else 0.0
     lt_weekly_distance = float(max(_weekly_distance_target_from_lt_pace(pace_for_day), 0.0)) if pace_for_day > 0 else 0.0
+    baseline_blend_profile = _load_baseline_blend_profile(db_path)
 
     metrics_df = actual_metrics_df
     if metrics_df is None:
@@ -1845,6 +1883,7 @@ def _blended_weekly_targets_for_day(
             observed_days_21d=observed_days_21d,
             observed_days_63d=observed_days_63d,
             observed_days_365d=observed_days_365d,
+            blend_profile=baseline_blend_profile,
         )
     )
     blend_factor = (blended_weekly_tss / lt_weekly_tss) if lt_weekly_tss > 0 else 1.0
@@ -2037,6 +2076,50 @@ def _load_specificity_profile(db_path: Path, fallback_default: float = 0.8) -> d
     except Exception:
         return _default_specificity_profile(fallback_default)
     return _normalize_specificity_profile(payload, fallback_default=fallback_default)
+
+
+def _default_baseline_blend_profile() -> dict[str, float]:
+    return {
+        "history_weight_cap": 0.78,
+        "history_weight_scale": 1.30,
+        "window_21d_weight": 0.20,
+        "window_63d_weight": 0.35,
+        "window_365d_weight": 0.45,
+        "richness_21d_threshold": 0.50,
+        "richness_63d_threshold": 0.45,
+        "richness_365d_threshold": 0.35,
+        "chronic_floor_capacity_multiplier": 0.30,
+        "chronic_floor_63d_multiplier": 0.60,
+        "chronic_floor_365d_multiplier": 0.75,
+    }
+
+
+def _normalize_baseline_blend_profile(payload: dict[str, object] | None) -> dict[str, float]:
+    base = _default_baseline_blend_profile()
+    if not isinstance(payload, dict):
+        return base
+    out = dict(base)
+    for key, default in base.items():
+        try:
+            value = _safe_float(payload.get(key))
+            if np.isfinite(value) and value >= 0.0:
+                out[key] = float(value)
+            else:
+                out[key] = float(default)
+        except Exception:
+            out[key] = float(default)
+    return out
+
+
+def _load_baseline_blend_profile(db_path: Path) -> dict[str, float]:
+    raw = get_setting(db_path, SETTINGS_KEY_BASELINE_BLEND)
+    if not raw:
+        return _default_baseline_blend_profile()
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return _default_baseline_blend_profile()
+    return _normalize_baseline_blend_profile(payload)
 
 
 def _specificity_factor_for_plan_kind(kind: str | None, profile: dict[str, float]) -> float:
@@ -3628,6 +3711,7 @@ def _generated_activity_context(
         effective_start = max(pd.Timestamp(earliest_actual_day).normalize(), start)
         return max(int((selected_day - effective_start).days), 0)
 
+    baseline_blend_profile = _load_baseline_blend_profile(db_path)
     base_weekly_goal_tss = _blend_baseline_tss(
         base_weekly_goal_tss,
         _sum_actual(21, "tss"),
@@ -3636,6 +3720,7 @@ def _generated_activity_context(
         observed_days_21d=_observed_actual_days(21),
         observed_days_63d=_observed_actual_days(63),
         observed_days_365d=_observed_actual_days(365),
+        blend_profile=baseline_blend_profile,
     )
     base_daily_goal_tss = max(float(base_weekly_goal_tss) / 7.0, 0.0)
 
@@ -4349,6 +4434,7 @@ def _generated_activity_planning_state(
     recent_load_63d = _sum_actual(63, "tss")
     recent_load_365d = _sum_actual(365, "tss")
     recent_load_ratio = ((recent_load_7d / 7.0) / (recent_load_28d / 28.0)) if recent_load_28d > 0 else 1.0
+    baseline_blend_profile = _load_baseline_blend_profile(db_path)
     weekly_baseline_tss = _blend_baseline_tss(
         capacity_baseline,
         recent_load_21d,
@@ -4357,6 +4443,7 @@ def _generated_activity_planning_state(
         observed_days_21d=_observed_actual_days(21),
         observed_days_63d=_observed_actual_days(63),
         observed_days_365d=_observed_actual_days(365),
+        blend_profile=baseline_blend_profile,
     )
     methodology = get_methodology(methodology_id)
 
@@ -4847,7 +4934,8 @@ def _day_lookup_with_daily_model(
         activation_floor=1.0,
         upper_bound=None,
     )
-    model_df = _apply_athlete_progression_baseline_fields(model_df)
+    baseline_blend_profile = _load_baseline_blend_profile(db_path)
+    model_df = _apply_athlete_progression_baseline_fields(model_df, blend_profile=baseline_blend_profile)
 
     fitfat_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
@@ -5240,7 +5328,11 @@ _ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS = (
 _ATHLETE_PROGRESSION_HISTORY_WARMUP_DAYS = 400
 
 
-def _apply_athlete_progression_baseline_fields(model_df: pd.DataFrame) -> pd.DataFrame:
+def _apply_athlete_progression_baseline_fields(
+    model_df: pd.DataFrame,
+    *,
+    blend_profile: dict[str, float] | None = None,
+) -> pd.DataFrame:
     tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
     rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
     if float(rtss_series.abs().sum()) <= 1e-9:
@@ -5266,6 +5358,7 @@ def _apply_athlete_progression_baseline_fields(model_df: pd.DataFrame) -> pd.Dat
                     observed_days_21d=int(days_21d),
                     observed_days_63d=int(days_63d),
                     observed_days_365d=int(days_365d),
+                    blend_profile=blend_profile,
                 )
             )
             for capacity, load_21d, load_63d, load_365d, days_21d, days_63d, days_365d in zip(
@@ -5630,7 +5723,8 @@ def _build_athlete_progression_payload(
     model_df["lt_target_distance_km"] = pd.to_numeric(model_df["lt_pace_target_sec_per_km"], errors="coerce").map(
         lambda pace: float(max(_weekly_distance_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
     )
-    model_df = _apply_athlete_progression_baseline_fields(model_df)
+    baseline_blend_profile = _load_baseline_blend_profile(db_path)
+    model_df = _apply_athlete_progression_baseline_fields(model_df, blend_profile=baseline_blend_profile)
 
     tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
     rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
@@ -6220,18 +6314,9 @@ def _build_activity_dashboard_payload(
     def _week_summary_baseline_tss(
         *,
         week_start: pd.Timestamp,
-        week_end: pd.Timestamp,
-        week_daily_model: dict[str, float] | None,
     ) -> float | None:
         if week_start in weekly_baseline_lookup:
             return round(_safe_float(weekly_baseline_lookup.get(week_start)), 1)
-        if week_start <= today_local <= week_end and isinstance(week_daily_model, dict):
-            baseline_tss_daily = pd.to_numeric(
-                pd.Series([week_daily_model.get("baseline_tss")]),
-                errors="coerce",
-            ).iloc[0]
-            if pd.notna(baseline_tss_daily):
-                return round(_safe_float(baseline_tss_daily) * 7.0, 1)
         return None
 
     weeks_out: list[dict[str, Any]] = []
@@ -6434,8 +6519,6 @@ def _build_activity_dashboard_payload(
                     "rtss": round(week_rtss, 1),
                     "baseline_tss": _week_summary_baseline_tss(
                         week_start=ws,
-                        week_end=we,
-                        week_daily_model=week_daily_model,
                     ),
                     "fitness": (
                         round(_safe_float(week_daily_model.get("fitness")), 1)
@@ -7152,6 +7235,7 @@ def _settings_view_core(db_path: Path) -> dict[str, Any]:
     vdot_lookback_days = _load_vdot_lookback_days(db_path)
 
     spec_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    baseline_blend = _load_baseline_blend_profile(db_path)
 
     lthr_curve = _load_curve_points(
         db_path=db_path,
@@ -7189,6 +7273,7 @@ def _settings_view_core(db_path: Path) -> dict[str, Any]:
         "if_zone_thresholds": if_thresholds,
         "vdot_lookback_days": vdot_lookback_days,
         "specificity_profile": spec_profile,
+        "baseline_blend": baseline_blend,
         "lthr_curve": lthr_rows,
         "lt_pace_curve": pace_rows,
         "injury_windows": injury_rows,
@@ -7230,6 +7315,11 @@ def _settings_update_core(db_path: Path, settings: dict[str, Any]) -> dict[str, 
         save_setting(db_path, SETTINGS_KEY_ACTIVITY_SPECIFICITY, _settings_json(normalized))
         save_setting(db_path, SETTINGS_KEY_NON_RUNNING_FACTOR, f"{float(normalized['non_running']):.4f}")
         updated.append("specificity_profile")
+
+    if settings.get("baseline_blend") is not None:
+        normalized = _normalize_baseline_blend_profile(settings["baseline_blend"])
+        save_setting(db_path, SETTINGS_KEY_BASELINE_BLEND, _settings_json(normalized))
+        updated.append("baseline_blend")
 
     if settings.get("lthr_curve") is not None:
         normalized = _normalize_lthr_curve(settings["lthr_curve"])

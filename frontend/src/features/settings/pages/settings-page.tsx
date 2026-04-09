@@ -17,7 +17,12 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useSettingsQuery } from '@/features/settings/hooks/use-settings-query';
 import { useVdotQuery } from '@/features/settings/hooks/use-vdot-query';
 import { updateSettings } from '@/features/settings/services/settings-api';
-import type { LthrCurvePoint, LtPaceCurvePoint, SpecificityProfile } from '@/features/settings/types/settings';
+import type {
+  BaselineBlendProfile,
+  LthrCurvePoint,
+  LtPaceCurvePoint,
+  SpecificityProfile,
+} from '@/features/settings/types/settings';
 import { queryClient } from '@/lib/query-client';
 
 interface LthrDraftRow {
@@ -84,6 +89,18 @@ function formatSpecificityLabel(key: keyof SpecificityProfile): string {
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
+function formatBlendLabel(key: keyof BaselineBlendProfile): string {
+  if (key === 'history_weight_cap') return 'History Cap';
+  if (key === 'history_weight_scale') return 'History Scale';
+  if (key === 'richness_21d_threshold') return '21d Richness';
+  if (key === 'richness_63d_threshold') return '63d Richness';
+  if (key === 'richness_365d_threshold') return '365d Richness';
+  if (key === 'chronic_floor_capacity_multiplier') return 'Cap Floor';
+  if (key === 'chronic_floor_63d_multiplier') return '63d Floor';
+  if (key === 'chronic_floor_365d_multiplier') return '365d Floor';
+  return key.replace('window_', '').replace('_weight', '').toUpperCase();
+}
+
 const mobileCurveFieldLabelClassName = 'text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-300/58 sm:hidden';
 
 export function SettingsPage(): JSX.Element {
@@ -98,6 +115,19 @@ export function SettingsPage(): JSX.Element {
   const [ifZones, setIfZones] = useState({ z1_max: 0.7, z2_max: 0.8, z3_max: 0.9, z4_max: 1.0 });
   const [vdotLookbackDays, setVdotLookbackDays] = useState(200);
   const [specificity, setSpecificity] = useState<SpecificityProfile>({ non_running: 0.8, treadmill: 1.0, elliptical: 0.8, cycling: 0.8 });
+  const [baselineBlend, setBaselineBlend] = useState<BaselineBlendProfile>({
+    history_weight_cap: 0.78,
+    history_weight_scale: 1.3,
+    window_21d_weight: 0.2,
+    window_63d_weight: 0.35,
+    window_365d_weight: 0.45,
+    richness_21d_threshold: 0.5,
+    richness_63d_threshold: 0.45,
+    richness_365d_threshold: 0.35,
+    chronic_floor_capacity_multiplier: 0.3,
+    chronic_floor_63d_multiplier: 0.6,
+    chronic_floor_365d_multiplier: 0.75,
+  });
   const [lthrRows, setLthrRows] = useState<LthrDraftRow[]>([]);
   const [paceRows, setPaceRows] = useState<LtPaceDraftRow[]>([]);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -108,6 +138,7 @@ export function SettingsPage(): JSX.Element {
     setIfZones(query.data.if_zone_thresholds);
     setVdotLookbackDays(Number(query.data.vdot_lookback_days) || 200);
     setSpecificity(query.data.specificity_profile);
+    setBaselineBlend(query.data.baseline_blend);
     setLthrRows(
       query.data.lthr_curve.map((row) => ({ id: rowId(), date: row.date, lthr_bpm: Number(row.lthr_bpm) || 0 })),
     );
@@ -438,6 +469,53 @@ export function SettingsPage(): JSX.Element {
               ))}
             </div>
             <Button variant="surface" className="w-full sm:w-auto" onClick={() => saveMutation.mutate({ specificity_profile: specificity })} disabled={saveMutation.isPending}>Save</Button>
+        </SurfaceCard>
+
+        <SurfaceCard contentClassName="space-y-3 p-3 sm:space-y-4 sm:p-4">
+            <p className="text-sm font-medium">Baseline Blend</p>
+            <div className="grid gap-2 sm:gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {([
+                'history_weight_cap',
+                'history_weight_scale',
+                'window_21d_weight',
+                'window_63d_weight',
+                'window_365d_weight',
+                'richness_21d_threshold',
+                'richness_63d_threshold',
+                'richness_365d_threshold',
+                'chronic_floor_capacity_multiplier',
+                'chronic_floor_63d_multiplier',
+                'chronic_floor_365d_multiplier',
+              ] as const).map((key) => (
+                <div key={key} className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
+                  <FieldLabel htmlFor={`baseline-blend-${key}`}>{formatBlendLabel(key)}</FieldLabel>
+                  <div className="relative">
+                    <Input
+                      id={`baseline-blend-${key}`}
+                      type="number"
+                      min="0"
+                      step={key === 'history_weight_scale' ? '0.05' : '1'}
+                      className={`h-9 ${secondaryPageInputClassName} ${key === 'history_weight_scale' ? 'pr-12' : 'pr-14'}`}
+                      value={key === 'history_weight_scale'
+                        ? Number(baselineBlend[key]) || 0
+                        : Math.round((Number(baselineBlend[key]) || 0) * 100)}
+                      onChange={(event) =>
+                        setBaselineBlend((previous) => ({
+                          ...previous,
+                          [key]: key === 'history_weight_scale'
+                            ? Number(event.target.value) || 0
+                            : (Number(event.target.value) || 0) / 100,
+                        }))
+                      }
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300/62">
+                      {key === 'history_weight_scale' ? 'x' : '%'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Button variant="surface" className="w-full sm:w-auto" onClick={() => saveMutation.mutate({ baseline_blend: baselineBlend })} disabled={saveMutation.isPending}>Save</Button>
         </SurfaceCard>
       </div>
 

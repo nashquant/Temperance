@@ -12,6 +12,20 @@ export interface SpecificityProfile {
   cycling: number;
 }
 
+export interface BaselineBlendProfile {
+  history_weight_cap: number;
+  history_weight_scale: number;
+  window_21d_weight: number;
+  window_63d_weight: number;
+  window_365d_weight: number;
+  richness_21d_threshold: number;
+  richness_63d_threshold: number;
+  richness_365d_threshold: number;
+  chronic_floor_capacity_multiplier: number;
+  chronic_floor_63d_multiplier: number;
+  chronic_floor_365d_multiplier: number;
+}
+
 export interface LthrCurvePoint {
   date: string;
   lthr_bpm: number;
@@ -71,6 +85,7 @@ export interface SettingsResponse {
   if_zone_thresholds: IfZoneThresholds;
   vdot_lookback_days: number;
   specificity_profile: SpecificityProfile;
+  baseline_blend: BaselineBlendProfile;
   lthr_curve: LthrCurvePoint[];
   lt_pace_curve: LtPaceCurvePoint[];
   injury_windows: InjuryWindow[];
@@ -80,6 +95,7 @@ export interface UpdateSettingsRequest {
   if_zone_thresholds?: IfZoneThresholds;
   vdot_lookback_days?: number;
   specificity_profile?: SpecificityProfile;
+  baseline_blend?: BaselineBlendProfile;
   lthr_curve?: LthrCurvePoint[];
   lt_pace_curve?: LtPaceCurvePoint[];
   injury_windows?: InjuryWindow[];

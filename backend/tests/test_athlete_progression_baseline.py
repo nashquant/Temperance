@@ -329,7 +329,7 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
                 round(expected_by_week[week_start], 1),
             )
 
-    def test_dashboard_current_week_summary_falls_back_to_latest_daily_baseline(self):
+    def test_dashboard_current_week_summary_leaves_baseline_blank_until_week_has_a_modeled_point(self):
         metrics_df = _metrics_frame([45.0] * 91, start_day="2026-01-05")
         metrics_df["day"] = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
         actual_metrics_df = metrics_df.copy()
@@ -339,14 +339,13 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
             patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=420.0),
             patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=70.0),
         ):
-            expected_day_agg, _, expected_model_lookup, _ = _day_lookup_with_daily_model(
+            expected_day_agg, _, _, _ = _day_lookup_with_daily_model(
                 metrics_df=metrics_df,
                 daily_tss_target=60.0,
                 db_path=Path("/tmp/athlete-progression-baseline-test.sqlite"),
             )
         self.assertFalse(expected_day_agg.empty)
         expected_week_start = "2026-04-06"
-        expected_baseline = round(float(expected_model_lookup[pd.Timestamp("2026-04-05")]["baseline_tss"]) * 7.0, 1)
 
         with (
             patch("backend.app.main._dashboard_metrics_frames", return_value=(metrics_df, actual_metrics_df)),
@@ -367,7 +366,7 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
             )
 
         current_week = next(week for week in dashboard_payload["weeks"] if week["week_start"] == expected_week_start)
-        self.assertEqual(current_week["summary"]["baseline_tss"], expected_baseline)
+        self.assertIsNone(current_week["summary"]["baseline_tss"])
 
 
 if __name__ == "__main__":
