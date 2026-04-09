@@ -51,6 +51,7 @@ Practical interpretation:
 - If the dashboard shows `Base = X` for a given Monday week, MCP should return approximately the same `baseline_tss` for that same `week_start`.
 - If they diverge materially, treat it as a bug, version mismatch, or data mismatch.
 - Backend and MCP now use the same formatter/helper for weekly baseline rows, including deviation explanation fields.
+- If a Monday-labeled week has no modeled point yet, the dashboard leaves `baseline_tss` blank rather than fabricating a carry-forward weekly value.
 
 ## Main tools
 
