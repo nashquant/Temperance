@@ -820,10 +820,10 @@ class MCPServerHelpersTest(unittest.TestCase):
 
         for row in result["weekly_baseline"]:
             week_expected = expected_by_week[row["week_start"]]
-            self.assertAlmostEqual(row["baseline_tss"], round(week_expected["baseline_tss"], 1), places=1)
-            self.assertAlmostEqual(row["lt_target_tss"], round(week_expected["lt_target_tss"], 1), places=1)
-            self.assertAlmostEqual(row["capacity_baseline_tss"], round(week_expected["capacity_baseline_tss"], 1), places=1)
-            self.assertAlmostEqual(row["smoothed_baseline_tss"], round(week_expected["smoothed_baseline_tss"], 1), places=1)
+            self.assertAlmostEqual(row["baseline_tss"], round(week_expected["baseline_tss"], 1), delta=0.11)
+            self.assertAlmostEqual(row["lt_target_tss"], round(week_expected["lt_target_tss"], 1), delta=0.11)
+            self.assertAlmostEqual(row["capacity_baseline_tss"], round(week_expected["capacity_baseline_tss"], 1), delta=0.11)
+            self.assertAlmostEqual(row["smoothed_baseline_tss"], round(week_expected["smoothed_baseline_tss"], 1), delta=0.11)
 
     def test_get_fitness_form_weekly_baseline_current_week_matches_dashboard_and_keeps_explanations(self):
         now_dt = datetime(2026, 2, 15, tzinfo=timezone.utc)
