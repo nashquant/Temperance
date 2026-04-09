@@ -290,6 +290,51 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
         self.assertAlmostEqual(short_payload["points"][-1]["baseline_tss"], long_payload["points"][-1]["baseline_tss"], places=3)
         self.assertAlmostEqual(short_payload["points"][-1]["smoothed_baseline_tss"], long_payload["points"][-1]["smoothed_baseline_tss"], places=3)
 
+    def test_long_weekly_request_keeps_first_visible_baseline_from_hidden_warmup_history(self):
+        metrics_df = _metrics_frame(([55.0] * 500) + ([95.0] * 300), start_day="2024-01-01")
+        metrics_df["day"] = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
+        today = pd.Timestamp("2026-02-15")
+
+        def _metrics_for_days(*, db_path: Path, days: int, start_day=None, end_day=None, sport=None) -> pd.DataFrame:
+            cutoff = today - pd.Timedelta(days=int(days) - 1)
+            return metrics_df[metrics_df["day"] >= cutoff].copy()
+
+        with (
+            patch("backend.app.main.get_setting", return_value=None),
+            patch("backend.app.main._metrics_for_filters", side_effect=_metrics_for_days),
+            patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
+            patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=420.0),
+            patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=70.0),
+            patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
+        ):
+            mock_datetime.now.return_value = datetime(2026, 2, 15, tzinfo=timezone.utc)
+            one_year_payload = _build_athlete_progression_payload(
+                db_path=Path("/tmp/athlete-progression-baseline-test.sqlite"),
+                days=365,
+                activity_filter="all",
+                aggregation="weekly",
+                owner="tester",
+            )
+            two_year_payload = _build_athlete_progression_payload(
+                db_path=Path("/tmp/athlete-progression-baseline-test.sqlite"),
+                days=730,
+                activity_filter="all",
+                aggregation="weekly",
+                owner="tester",
+            )
+
+        self.assertTrue(one_year_payload["points"])
+        self.assertTrue(two_year_payload["points"])
+        first_visible_week = one_year_payload["points"][0]["period_start"]
+        matching_long_week = next(point for point in two_year_payload["points"] if point["period_start"] == first_visible_week)
+
+        self.assertAlmostEqual(one_year_payload["points"][0]["baseline_tss"], matching_long_week["baseline_tss"], places=3)
+        self.assertAlmostEqual(
+            one_year_payload["points"][0]["recent_load_anchor_tss"],
+            matching_long_week["recent_load_anchor_tss"],
+            places=3,
+        )
+
     def test_dashboard_week_summary_uses_canonical_weekly_baseline_tss(self):
         metrics_df = _metrics_frame(([45.0] * 42) + ([75.0] * 14))
         metrics_df["day"] = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce").dt.tz_convert(None).dt.normalize()
