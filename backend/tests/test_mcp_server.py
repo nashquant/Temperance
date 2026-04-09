@@ -123,6 +123,31 @@ class MCPServerHelpersTest(unittest.TestCase):
             },
         )
 
+    def test_tools_call_reports_unknown_tool(self):
+        response = mcp_server.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "method": "tools/call",
+                "params": {"name": "does_not_exist", "arguments": {}},
+            }
+        )
+        self.assertEqual(
+            response,
+            {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "error": {"code": -32602, "message": "Unknown tool: does_not_exist"},
+            },
+        )
+
+    def test_main_defaults_to_stdio(self):
+        with patch("backend.app.mcp_server.serve_stdio", return_value=7) as mock_serve_stdio:
+            result = mcp_server.main([])
+
+        self.assertEqual(result, 7)
+        mock_serve_stdio.assert_called_once_with()
+
     def test_resources_list_exposes_static_resources(self):
         response = mcp_server.handle_message({"jsonrpc": "2.0", "id": 10, "method": "resources/list"})
         uris = [resource["uri"] for resource in response["result"]["resources"]]
