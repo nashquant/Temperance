@@ -3334,11 +3334,16 @@ def tool_estimate_xtrain_tss(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
+def _tool_spec(name: str) -> ToolSpec:
     tool_name = str(name or "").strip()
     spec = TOOLS.get(tool_name)
     if spec is None:
         raise ValueError(f"Unknown tool: {tool_name}")
+    return spec
+
+
+def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    spec = _tool_spec(name)
     return spec.handler(args if isinstance(args, dict) else {})
 
 
@@ -3661,6 +3666,32 @@ def _error_response(msg_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": JSONRPC_VERSION, "id": msg_id, "error": {"code": code, "message": message}}
 
 
+def _tool_listing(spec: ToolSpec) -> dict[str, Any]:
+    return {
+        "name": spec.name,
+        "description": spec.description,
+        "inputSchema": spec.input_schema,
+    }
+
+
+def _resource_listing(spec: ResourceSpec) -> dict[str, Any]:
+    return {
+        "uri": spec.uri,
+        "name": spec.name,
+        "description": spec.description,
+        "mimeType": spec.mime_type,
+    }
+
+
+def _resource_template_listing(spec: ResourceTemplateSpec) -> dict[str, Any]:
+    return {
+        "uriTemplate": spec.uri_template,
+        "name": spec.name,
+        "description": spec.description,
+        "mimeType": spec.mime_type,
+    }
+
+
 def _handle_initialize(msg_id: Any) -> dict[str, Any]:
     return _success_response(
         msg_id,
@@ -3676,14 +3707,7 @@ def _handle_initialize(msg_id: Any) -> dict[str, Any]:
 
 
 def _handle_tools_list(msg_id: Any) -> dict[str, Any]:
-    tools = [
-        {
-            "name": spec.name,
-            "description": spec.description,
-            "inputSchema": spec.input_schema,
-        }
-        for spec in TOOLS.values()
-    ]
+    tools = [_tool_listing(spec) for spec in TOOLS.values()]
     return _success_response(msg_id, {"tools": tools})
 
 
@@ -3704,9 +3728,10 @@ def _resource_result_content(uri: str, payload: Any) -> list[dict[str, Any]]:
 def _handle_tools_call(msg_id: Any, params: dict[str, Any]) -> dict[str, Any]:
     name = str((params or {}).get("name") or "").strip()
     arguments = (params or {}).get("arguments") or {}
-    spec = TOOLS.get(name)
-    if spec is None:
-        return _error_response(msg_id, -32602, f"Unknown tool: {name}")
+    try:
+        spec = _tool_spec(name)
+    except ValueError as exc:
+        return _error_response(msg_id, -32602, str(exc))
     try:
         payload = spec.handler(arguments if isinstance(arguments, dict) else {})
     except Exception as exc:
@@ -3732,15 +3757,7 @@ def _handle_resources_list(msg_id: Any) -> dict[str, Any]:
     return _success_response(
         msg_id,
         {
-            "resources": [
-                {
-                    "uri": spec.uri,
-                    "name": spec.name,
-                    "description": spec.description,
-                    "mimeType": spec.mime_type,
-                }
-                for spec in RESOURCES.values()
-            ]
+            "resources": [_resource_listing(spec) for spec in RESOURCES.values()]
         },
     )
 
@@ -3749,15 +3766,7 @@ def _handle_resource_templates_list(msg_id: Any) -> dict[str, Any]:
     return _success_response(
         msg_id,
         {
-            "resourceTemplates": [
-                {
-                    "uriTemplate": spec.uri_template,
-                    "name": spec.name,
-                    "description": spec.description,
-                    "mimeType": spec.mime_type,
-                }
-                for spec in RESOURCE_TEMPLATES
-            ]
+            "resourceTemplates": [_resource_template_listing(spec) for spec in RESOURCE_TEMPLATES]
         },
     )
 
@@ -3769,30 +3778,52 @@ def _uri_path(uri: str) -> str:
     return unquote("/".join(part for part in [parsed.netloc, parsed.path.lstrip("/")] if part))
 
 
+def _build_guideline_doc_resource(path: str) -> dict[str, Any]:
+    return _build_guideline_doc_payload(path.split("/", 2)[2])
+
+
+def _build_workout_family_resource(path: str) -> dict[str, Any]:
+    return _build_workout_family_payload(path.split("/", 2)[2])
+
+
+def _build_workout_template_resource(path: str) -> dict[str, Any]:
+    return _build_workout_template_payload(path.split("/", 2)[2])
+
+
+def _build_planning_context_resource(path: str) -> dict[str, Any]:
+    parts = path.split("/")
+    if len(parts) != 4:
+        raise ValueError(f"Unknown resource: {path}")
+    _, _, owner, target_day_utc = parts
+    return _build_planning_context_payload(owner, target_day_utc)
+
+
+def _build_history_snapshot_resource(path: str) -> dict[str, Any]:
+    parts = path.split("/")
+    if len(parts) != 4:
+        raise ValueError(f"Unknown resource: {path}")
+    _, _, owner, window_days = parts
+    return _build_history_snapshot_payload(owner, int(window_days))
+
+
+RESOURCE_BUILDERS: tuple[tuple[str, Callable[[str], dict[str, Any]]], ...] = (
+    ("guidelines/doc/", _build_guideline_doc_resource),
+    ("workouts/family/", _build_workout_family_resource),
+    ("workouts/template/", _build_workout_template_resource),
+    ("planning/context/", _build_planning_context_resource),
+    ("history/snapshot/", _build_history_snapshot_resource),
+)
+
+
 def _resource_payload_for_uri(uri: str) -> dict[str, Any]:
     normalized_uri = str(uri or "").strip()
     static_resource = RESOURCES.get(normalized_uri)
     if static_resource is not None:
         return static_resource.handler()
     path = _uri_path(normalized_uri)
-    if path.startswith("guidelines/doc/"):
-        return _build_guideline_doc_payload(path.split("/", 2)[2])
-    if path.startswith("workouts/family/"):
-        return _build_workout_family_payload(path.split("/", 2)[2])
-    if path.startswith("workouts/template/"):
-        return _build_workout_template_payload(path.split("/", 2)[2])
-    if path.startswith("planning/context/"):
-        parts = path.split("/")
-        if len(parts) != 4:
-            raise ValueError(f"Unknown resource: {uri}")
-        _, _, owner, target_day_utc = parts
-        return _build_planning_context_payload(owner, target_day_utc)
-    if path.startswith("history/snapshot/"):
-        parts = path.split("/")
-        if len(parts) != 4:
-            raise ValueError(f"Unknown resource: {uri}")
-        _, _, owner, window_days = parts
-        return _build_history_snapshot_payload(owner, int(window_days))
+    for prefix, builder in RESOURCE_BUILDERS:
+        if path.startswith(prefix):
+            return builder(path)
     raise ValueError(f"Unknown resource: {uri}")
 
 
@@ -3871,10 +3902,8 @@ def serve_stdio() -> int:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Temperance MCP server")
     parser.add_argument("--stdio", action="store_true", help="Run the server over stdio (default).")
-    args = parser.parse_args(argv)
-    if args.stdio or True:
-        return serve_stdio()
-    return 0
+    parser.parse_args(argv)
+    return serve_stdio()
 
 
 if __name__ == "__main__":
