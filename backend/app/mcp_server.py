@@ -241,12 +241,6 @@ class SyncStatusArgs(BaseModel):
     owner: str = DEFAULT_OWNER
 
 
-class MarkActivityInvalidArgs(BaseModel):
-    owner: str = DEFAULT_OWNER
-    activity_id: str
-    is_invalid: bool = True
-
-
 # --- Phase 3: Settings, workout search, fitness form models ---
 
 
@@ -2114,6 +2108,8 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
                     "ctl": round(fitness, 1),
                     "atl": round(fatigue, 1),
                     "tsb": form,
+                    "vdot": pt.get("vdot"),
+                    "vdot_max": pt.get("vdot_max"),
                 }
             )
         )
@@ -2156,6 +2152,7 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
         ),
         "daily": daily_out,
         "weekly_baseline": weekly_baseline_out,
+        "vdot_eligibility": progression.get("vdot_eligibility") or {},
     }
 
 
