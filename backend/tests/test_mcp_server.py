@@ -11,7 +11,9 @@ import pandas as pd
 from backend.app import mcp_server
 
 
-def _metrics_frame(daily_tss_values: list[float], start_day: str = "2026-01-05") -> pd.DataFrame:
+def _metrics_frame(
+    daily_tss_values: list[float], start_day: str = "2026-01-05"
+) -> pd.DataFrame:
     start = pd.Timestamp(start_day, tz="UTC")
     rows: list[dict[str, object]] = []
     for index, tss in enumerate(daily_tss_values, start=1):
@@ -67,18 +69,27 @@ class MCPServerHelpersTest(unittest.TestCase):
         ]:
             self.assertIn(tool_name, mcp_server.TOOLS, f"Missing tool: {tool_name}")
 
+    def test_planning_history_tool_registered(self):
+        self.assertIn("get_planning_history", mcp_server.TOOLS)
+
     def test_tools_list_returns_all_registered_tools(self):
-        response = mcp_server.handle_message({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        response = mcp_server.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+        )
         tool_names = {t["name"] for t in response["result"]["tools"]}
         self.assertEqual(len(tool_names), len(mcp_server.TOOLS))
         for name in mcp_server.TOOLS:
             self.assertIn(name, tool_names)
 
     def test_initialize_advertises_tools_and_resources(self):
-        response = mcp_server.handle_message({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+        response = mcp_server.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+        )
         self.assertEqual(response["result"]["protocolVersion"], "2025-03-26")
         self.assertEqual(response["result"]["serverInfo"]["name"], "temperance-mcp")
-        self.assertEqual(response["result"]["capabilities"], {"tools": {}, "resources": {}})
+        self.assertEqual(
+            response["result"]["capabilities"], {"tools": {}, "resources": {}}
+        )
 
     def test_activity_row_summary_is_stable_for_pure_formatting(self):
         summary = mcp_server._activity_row_summary(
@@ -113,7 +124,9 @@ class MCPServerHelpersTest(unittest.TestCase):
         )
 
     def test_handle_message_reports_unknown_method(self):
-        response = mcp_server.handle_message({"jsonrpc": "2.0", "id": 9, "method": "bogus"})
+        response = mcp_server.handle_message(
+            {"jsonrpc": "2.0", "id": 9, "method": "bogus"}
+        )
         self.assertEqual(
             response,
             {
@@ -142,14 +155,18 @@ class MCPServerHelpersTest(unittest.TestCase):
         )
 
     def test_main_defaults_to_stdio(self):
-        with patch("backend.app.mcp_server.serve_stdio", return_value=7) as mock_serve_stdio:
+        with patch(
+            "backend.app.mcp_server.serve_stdio", return_value=7
+        ) as mock_serve_stdio:
             result = mcp_server.main([])
 
         self.assertEqual(result, 7)
         mock_serve_stdio.assert_called_once_with()
 
     def test_resources_list_exposes_static_resources(self):
-        response = mcp_server.handle_message({"jsonrpc": "2.0", "id": 10, "method": "resources/list"})
+        response = mcp_server.handle_message(
+            {"jsonrpc": "2.0", "id": 10, "method": "resources/list"}
+        )
         uris = [resource["uri"] for resource in response["result"]["resources"]]
         self.assertEqual(
             uris,
@@ -163,8 +180,12 @@ class MCPServerHelpersTest(unittest.TestCase):
         )
 
     def test_resource_templates_list_exposes_dynamic_templates(self):
-        response = mcp_server.handle_message({"jsonrpc": "2.0", "id": 11, "method": "resources/templates/list"})
-        templates = [item["uriTemplate"] for item in response["result"]["resourceTemplates"]]
+        response = mcp_server.handle_message(
+            {"jsonrpc": "2.0", "id": 11, "method": "resources/templates/list"}
+        )
+        templates = [
+            item["uriTemplate"] for item in response["result"]["resourceTemplates"]
+        ]
         self.assertEqual(
             templates,
             [
@@ -202,8 +223,12 @@ class MCPServerHelpersTest(unittest.TestCase):
     def test_resources_read_prefers_local_override_for_guideline_docs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             guidelines_dir = Path(temp_dir)
-            (guidelines_dir / "example.md").write_text("# Example\n\nStatus: tracked.\n", encoding="utf-8")
-            (guidelines_dir / "example.local.md").write_text("# Example Local\n\nStatus: local.\n", encoding="utf-8")
+            (guidelines_dir / "example.md").write_text(
+                "# Example\n\nStatus: tracked.\n", encoding="utf-8"
+            )
+            (guidelines_dir / "example.local.md").write_text(
+                "# Example Local\n\nStatus: local.\n", encoding="utf-8"
+            )
             original = mcp_server.GUIDELINES_DIR
             try:
                 mcp_server.GUIDELINES_DIR = guidelines_dir
@@ -238,7 +263,9 @@ class MCPServerHelpersTest(unittest.TestCase):
                 "jsonrpc": "2.0",
                 "id": 15,
                 "method": "resources/read",
-                "params": {"uri": "temperance://workouts/template/threshold_15min_72_3x10_90_2rec"},
+                "params": {
+                    "uri": "temperance://workouts/template/threshold_15min_72_3x10_90_2rec"
+                },
             }
         )
         payload = json.loads(response["result"]["contents"][0]["text"])
@@ -307,8 +334,13 @@ class MCPServerHelpersTest(unittest.TestCase):
         original_active_build = mcp_server._build_active_build_payload
         original_today_status = mcp_server.tool_get_today_status
         try:
-            mcp_server._build_active_build_payload = lambda: {"active_build_doc": {"markdown": "phase"}}
-            mcp_server.tool_get_today_status = lambda arguments: {"owner": arguments["owner"], "status": "ok"}
+            mcp_server._build_active_build_payload = lambda: {
+                "active_build_doc": {"markdown": "phase"}
+            }
+            mcp_server.tool_get_today_status = lambda arguments: {
+                "owner": arguments["owner"],
+                "status": "ok",
+            }
             mcp_server._backend_main_module = lambda: type(
                 "BackendMain",
                 (),
@@ -342,23 +374,32 @@ class MCPServerHelpersTest(unittest.TestCase):
         original = mcp_server._backend_main_module
         original_active_build = mcp_server._build_active_build_payload
         try:
-            mcp_server._build_active_build_payload = lambda: {"active_build_doc": {"markdown": "threshold"}}
+            mcp_server._build_active_build_payload = lambda: {
+                "active_build_doc": {"markdown": "threshold"}
+            }
             mcp_server._backend_main_module = lambda: type(
                 "BackendMain",
                 (),
                 {
                     "_mcp_build_history_judgment_payload": staticmethod(
                         lambda **kwargs: {
-                            "window": {"owner": kwargs["owner"], "window_days": kwargs["window_days"]},
+                            "window": {
+                                "owner": kwargs["owner"],
+                                "window_days": kwargs["window_days"],
+                            },
                             "active_build": kwargs["active_build"],
-                            "doctrine_assessment": {"evidence_refs": kwargs["evidence_refs"]},
+                            "doctrine_assessment": {
+                                "evidence_refs": kwargs["evidence_refs"]
+                            },
                             "judgment": {"status": "mixed"},
                         }
                     )
                 },
             )()
 
-            payload = mcp_server._build_history_judgment_payload({"owner": "admin", "window_days": 42})
+            payload = mcp_server._build_history_judgment_payload(
+                {"owner": "admin", "window_days": 42}
+            )
         finally:
             mcp_server._backend_main_module = original
             mcp_server._build_active_build_payload = original_active_build
@@ -371,7 +412,9 @@ class MCPServerHelpersTest(unittest.TestCase):
     def test_tool_get_activity_detail_delegates_to_backend_handler(self):
         captured = {}
 
-        def fake_handler(*, activity_id, owner, include_records, records_limit, authorization):
+        def fake_handler(
+            *, activity_id, owner, include_records, records_limit, authorization
+        ):
             captured.update(
                 {
                     "activity_id": activity_id,
@@ -438,7 +481,9 @@ class MCPServerHelpersTest(unittest.TestCase):
             self.assertLessEqual(tss, 80)
 
     def test_search_workouts_empty_result_for_impossible_filter(self):
-        result = mcp_server.tool_search_workouts({"category": "nonexistent-category-xyz"})
+        result = mcp_server.tool_search_workouts(
+            {"category": "nonexistent-category-xyz"}
+        )
         self.assertEqual(result["count"], 0)
         self.assertEqual(result["templates"], [])
 
@@ -460,9 +505,18 @@ class MCPServerHelpersTest(unittest.TestCase):
             with (
                 patch("backend.app.main.get_setting", return_value=None),
                 patch("backend.app.main._metrics_for_filters", return_value=metrics_df),
-                patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
-                patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=float(weekly_tss_target)),
-                patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=float(weekly_distance_target)),
+                patch(
+                    "backend.app.main._build_daily_vdot_series",
+                    side_effect=_empty_vdot_frame,
+                ),
+                patch(
+                    "backend.app.main._weekly_tss_target_from_lt_pace",
+                    return_value=float(weekly_tss_target),
+                ),
+                patch(
+                    "backend.app.main._weekly_distance_target_from_lt_pace",
+                    return_value=float(weekly_distance_target),
+                ),
                 patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
             ):
                 from backend.app.main import _build_athlete_progression_payload
@@ -493,16 +547,30 @@ class MCPServerHelpersTest(unittest.TestCase):
         original_backend_main_module = mcp_server._BACKEND_MAIN_MODULE
         try:
             with (
-                patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/athlete-progression-baseline-test.sqlite")),
+                patch(
+                    "backend.app.mcp_server._resolve_db_path",
+                    return_value=Path("/tmp/athlete-progression-baseline-test.sqlite"),
+                ),
                 patch("backend.app.main.get_setting", return_value=None),
                 patch("backend.app.main._metrics_for_filters", return_value=metrics_df),
-                patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
-                patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=float(weekly_tss_target)),
-                patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=float(weekly_distance_target)),
+                patch(
+                    "backend.app.main._build_daily_vdot_series",
+                    side_effect=_empty_vdot_frame,
+                ),
+                patch(
+                    "backend.app.main._weekly_tss_target_from_lt_pace",
+                    return_value=float(weekly_tss_target),
+                ),
+                patch(
+                    "backend.app.main._weekly_distance_target_from_lt_pace",
+                    return_value=float(weekly_distance_target),
+                ),
                 patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
             ):
                 mock_datetime.now.return_value = effective_now
-                return mcp_server.tool_get_fitness_form({"owner": "admin", "days": days})
+                return mcp_server.tool_get_fitness_form(
+                    {"owner": "admin", "days": days}
+                )
         finally:
             mcp_server._BACKEND_MAIN_MODULE = original_backend_main_module
 
@@ -556,27 +624,74 @@ class MCPServerHelpersTest(unittest.TestCase):
             return fake_daily_progression
 
         with (
-            patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
+            patch(
+                "backend.app.mcp_server._resolve_db_path",
+                return_value=Path("/tmp/fake.sqlite"),
+            ),
             patch(
                 "backend.app.mcp_server._analytics_helpers",
                 return_value={
                     "_build_athlete_progression_payload": _fake_progression_builder,
                     "_format_athlete_progression_weekly_baseline_point": lambda point: {
                         "week_start": str(point.get("period_start") or ""),
-                        "baseline_tss": round(float(point.get("baseline_tss") or 0.0), 1),
-                        "baseline_distance_km": round(float(point.get("baseline_distance_km") or 0.0), 2),
-                        "lt_target_tss": round(float(point.get("lt_target_tss") or 0.0), 1),
-                        "capacity_baseline_tss": round(float(point.get("capacity_baseline_tss") or 0.0), 1),
-                        "recent_load_anchor_tss": round(float(point.get("recent_load_anchor_tss") or 0.0), 1),
-                        "blended_baseline_tss_before_smoothing": round(float(point.get("blended_baseline_tss_before_smoothing") or 0.0), 1),
-                        "smoothed_baseline_tss": round(float(point.get("smoothed_baseline_tss") or 0.0), 1),
-                        "deviation_from_lt_tss": round(float(point.get("baseline_tss") or 0.0) - float(point.get("lt_target_tss") or 0.0), 1),
-                        "deviation_from_lt_pct": round((float(point.get("baseline_tss") or 0.0) / float(point.get("lt_target_tss") or 1.0)) - 1.0, 4)
+                        "baseline_tss": round(
+                            float(point.get("baseline_tss") or 0.0), 1
+                        ),
+                        "baseline_distance_km": round(
+                            float(point.get("baseline_distance_km") or 0.0), 2
+                        ),
+                        "lt_target_tss": round(
+                            float(point.get("lt_target_tss") or 0.0), 1
+                        ),
+                        "capacity_baseline_tss": round(
+                            float(point.get("capacity_baseline_tss") or 0.0), 1
+                        ),
+                        "recent_load_anchor_tss": round(
+                            float(point.get("recent_load_anchor_tss") or 0.0), 1
+                        ),
+                        "blended_baseline_tss_before_smoothing": round(
+                            float(
+                                point.get("blended_baseline_tss_before_smoothing")
+                                or 0.0
+                            ),
+                            1,
+                        ),
+                        "smoothed_baseline_tss": round(
+                            float(point.get("smoothed_baseline_tss") or 0.0), 1
+                        ),
+                        "deviation_from_lt_tss": round(
+                            float(point.get("baseline_tss") or 0.0)
+                            - float(point.get("lt_target_tss") or 0.0),
+                            1,
+                        ),
+                        "deviation_from_lt_pct": round(
+                            (
+                                float(point.get("baseline_tss") or 0.0)
+                                / float(point.get("lt_target_tss") or 1.0)
+                            )
+                            - 1.0,
+                            4,
+                        )
                         if float(point.get("lt_target_tss") or 0.0) > 0
                         else None,
-                        "capacity_vs_lt_tss": round(float(point.get("capacity_baseline_tss") or 0.0) - float(point.get("lt_target_tss") or 0.0), 1),
-                        "recent_vs_capacity_tss": round(float(point.get("recent_load_anchor_tss") or 0.0) - float(point.get("capacity_baseline_tss") or 0.0), 1),
-                        "smoothing_adjustment_tss": round(float(point.get("smoothed_baseline_tss") or 0.0) - float(point.get("blended_baseline_tss_before_smoothing") or 0.0), 1),
+                        "capacity_vs_lt_tss": round(
+                            float(point.get("capacity_baseline_tss") or 0.0)
+                            - float(point.get("lt_target_tss") or 0.0),
+                            1,
+                        ),
+                        "recent_vs_capacity_tss": round(
+                            float(point.get("recent_load_anchor_tss") or 0.0)
+                            - float(point.get("capacity_baseline_tss") or 0.0),
+                            1,
+                        ),
+                        "smoothing_adjustment_tss": round(
+                            float(point.get("smoothed_baseline_tss") or 0.0)
+                            - float(
+                                point.get("blended_baseline_tss_before_smoothing")
+                                or 0.0
+                            ),
+                            1,
+                        ),
                         "deviation_reason": "balanced_blend",
                     },
                 },
@@ -606,9 +721,14 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(weekly_point["capacity_vs_lt_tss"], -2.0)
         self.assertEqual(weekly_point["recent_vs_capacity_tss"], -5.0)
         self.assertEqual(weekly_point["smoothing_adjustment_tss"], -0.5)
-        self.assertIn(weekly_point["deviation_reason"], {"history_anchor_below_capacity", "balanced_blend"})
+        self.assertIn(
+            weekly_point["deviation_reason"],
+            {"history_anchor_below_capacity", "balanced_blend"},
+        )
 
-    def test_get_fitness_form_weekly_baseline_includes_current_week_from_weekly_progression(self):
+    def test_get_fitness_form_weekly_baseline_includes_current_week_from_weekly_progression(
+        self,
+    ):
         fake_daily_progression = {
             "points": [
                 {
@@ -669,15 +789,24 @@ class MCPServerHelpersTest(unittest.TestCase):
             return fake_daily_progression
 
         with (
-            patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
+            patch(
+                "backend.app.mcp_server._resolve_db_path",
+                return_value=Path("/tmp/fake.sqlite"),
+            ),
             patch(
                 "backend.app.mcp_server._analytics_helpers",
                 return_value={
                     "_build_athlete_progression_payload": _fake_progression_builder,
                     "_format_athlete_progression_weekly_baseline_point": lambda point: {
                         "week_start": str(point.get("period_start") or ""),
-                        "baseline_tss": round(float(point.get("baseline_tss") or 0.0), 1),
-                        "deviation_from_lt_tss": round(float(point.get("baseline_tss") or 0.0) - float(point.get("lt_target_tss") or 0.0), 1),
+                        "baseline_tss": round(
+                            float(point.get("baseline_tss") or 0.0), 1
+                        ),
+                        "deviation_from_lt_tss": round(
+                            float(point.get("baseline_tss") or 0.0)
+                            - float(point.get("lt_target_tss") or 0.0),
+                            1,
+                        ),
                     },
                 },
             ),
@@ -686,11 +815,17 @@ class MCPServerHelpersTest(unittest.TestCase):
 
         week_starts = [row["week_start"] for row in result["weekly_baseline"]]
         self.assertIn("2026-03-02", week_starts)
-        current_week = next(row for row in result["weekly_baseline"] if row["week_start"] == "2026-03-02")
+        current_week = next(
+            row
+            for row in result["weekly_baseline"]
+            if row["week_start"] == "2026-03-02"
+        )
         self.assertEqual(current_week["baseline_tss"], 60.0)
         self.assertEqual(current_week["deviation_from_lt_tss"], -10.0)
 
-    def test_get_fitness_form_weekly_baseline_uses_weekly_progression_values_without_projection(self):
+    def test_get_fitness_form_weekly_baseline_uses_weekly_progression_values_without_projection(
+        self,
+    ):
         fake_daily_progression = {
             "points": [
                 {
@@ -786,22 +921,33 @@ class MCPServerHelpersTest(unittest.TestCase):
             return fake_daily_progression
 
         with (
-            patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
+            patch(
+                "backend.app.mcp_server._resolve_db_path",
+                return_value=Path("/tmp/fake.sqlite"),
+            ),
             patch(
                 "backend.app.mcp_server._analytics_helpers",
                 return_value={
                     "_build_athlete_progression_payload": _fake_progression_builder,
                     "_format_athlete_progression_weekly_baseline_point": lambda point: {
                         "week_start": str(point.get("period_start") or ""),
-                        "baseline_tss": round(float(point.get("baseline_tss") or 0.0), 1),
-                        "baseline_distance_km": round(float(point.get("baseline_distance_km") or 0.0), 2),
+                        "baseline_tss": round(
+                            float(point.get("baseline_tss") or 0.0), 1
+                        ),
+                        "baseline_distance_km": round(
+                            float(point.get("baseline_distance_km") or 0.0), 2
+                        ),
                     },
                 },
             ),
         ):
             result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
 
-        current_week = next(row for row in result["weekly_baseline"] if row["week_start"] == "2026-03-02")
+        current_week = next(
+            row
+            for row in result["weekly_baseline"]
+            if row["week_start"] == "2026-03-02"
+        )
         self.assertEqual(current_week["baseline_tss"], 58.0)
         self.assertEqual(current_week["baseline_distance_km"], 9.8)
 
@@ -848,7 +994,10 @@ class MCPServerHelpersTest(unittest.TestCase):
             return fake_daily_progression
 
         with (
-            patch("backend.app.mcp_server._resolve_db_path", return_value=Path("/tmp/fake.sqlite")),
+            patch(
+                "backend.app.mcp_server._resolve_db_path",
+                return_value=Path("/tmp/fake.sqlite"),
+            ),
             patch(
                 "backend.app.mcp_server._analytics_helpers",
                 return_value={
@@ -865,12 +1014,22 @@ class MCPServerHelpersTest(unittest.TestCase):
 
         self.assertEqual(
             result["weekly_baseline"],
-            [{"week_start": "formatted-by-backend", "baseline_tss": 999.0, "deviation_reason": "formatter_override"}],
+            [
+                {
+                    "week_start": "formatted-by-backend",
+                    "baseline_tss": 999.0,
+                    "deviation_reason": "formatter_override",
+                }
+            ],
         )
 
-    def test_get_fitness_form_weekly_baseline_matches_canonical_athlete_progression_output(self):
+    def test_get_fitness_form_weekly_baseline_matches_canonical_athlete_progression_output(
+        self,
+    ):
         daily_tss_values = ([10.0] * 21) + ([90.0] * 21)
-        expected_weekly = self._build_canonical_progression_payload(daily_tss_values, aggregation="weekly")["points"]
+        expected_weekly = self._build_canonical_progression_payload(
+            daily_tss_values, aggregation="weekly"
+        )["points"]
         result = self._run_fitness_form_with_canonical_progression(daily_tss_values)
 
         actual_weekly = result["weekly_baseline"]
@@ -880,28 +1039,56 @@ class MCPServerHelpersTest(unittest.TestCase):
         )
         for actual, expected in zip(actual_weekly, expected_weekly):
             self.assertEqual(actual["week_start"], expected["period_start"])
-            self.assertAlmostEqual(actual["baseline_tss"], round(float(expected["baseline_tss"]), 1), places=1)
-            self.assertAlmostEqual(actual["baseline_distance_km"], round(float(expected["baseline_distance_km"]), 2), places=2)
-            self.assertAlmostEqual(actual["lt_target_tss"], round(float(expected["lt_target_tss"]), 1), places=1)
-            self.assertAlmostEqual(actual["capacity_baseline_tss"], round(float(expected["capacity_baseline_tss"]), 1), places=1)
-            self.assertAlmostEqual(actual["recent_load_anchor_tss"], round(float(expected["recent_load_anchor_tss"]), 1), places=1)
+            self.assertAlmostEqual(
+                actual["baseline_tss"],
+                round(float(expected["baseline_tss"]), 1),
+                places=1,
+            )
+            self.assertAlmostEqual(
+                actual["baseline_distance_km"],
+                round(float(expected["baseline_distance_km"]), 2),
+                places=2,
+            )
+            self.assertAlmostEqual(
+                actual["lt_target_tss"],
+                round(float(expected["lt_target_tss"]), 1),
+                places=1,
+            )
+            self.assertAlmostEqual(
+                actual["capacity_baseline_tss"],
+                round(float(expected["capacity_baseline_tss"]), 1),
+                places=1,
+            )
+            self.assertAlmostEqual(
+                actual["recent_load_anchor_tss"],
+                round(float(expected["recent_load_anchor_tss"]), 1),
+                places=1,
+            )
             self.assertAlmostEqual(
                 actual["blended_baseline_tss_before_smoothing"],
                 round(float(expected["blended_baseline_tss_before_smoothing"]), 1),
                 places=1,
             )
-            self.assertAlmostEqual(actual["smoothed_baseline_tss"], round(float(expected["smoothed_baseline_tss"]), 1), places=1)
+            self.assertAlmostEqual(
+                actual["smoothed_baseline_tss"],
+                round(float(expected["smoothed_baseline_tss"]), 1),
+                places=1,
+            )
             self.assertIn("deviation_reason", actual)
 
     def test_get_fitness_form_weekly_baseline_uses_latest_modeled_point_in_week(self):
         daily_tss_values = ([30.0] * 7) + ([80.0] * 7) + ([25.0] * 7) + ([95.0] * 7)
-        daily_payload = self._build_canonical_progression_payload(daily_tss_values, aggregation="daily")
+        daily_payload = self._build_canonical_progression_payload(
+            daily_tss_values, aggregation="daily"
+        )
         result = self._run_fitness_form_with_canonical_progression(daily_tss_values)
 
         expected_by_week: dict[str, dict[str, float]] = {}
         for point in daily_payload["points"]:
             day = pd.Timestamp(point["period_start"])
-            week_start = (day - pd.Timedelta(days=int(day.weekday()))).date().isoformat()
+            week_start = (
+                (day - pd.Timedelta(days=int(day.weekday()))).date().isoformat()
+            )
             expected_by_week[week_start] = {
                 "baseline_tss": float(point["baseline_tss"]) * 7.0,
                 "lt_target_tss": float(point["lt_target_tss"]) * 7.0,
@@ -911,12 +1098,28 @@ class MCPServerHelpersTest(unittest.TestCase):
 
         for row in result["weekly_baseline"]:
             week_expected = expected_by_week[row["week_start"]]
-            self.assertAlmostEqual(row["baseline_tss"], round(week_expected["baseline_tss"], 1), delta=0.11)
-            self.assertAlmostEqual(row["lt_target_tss"], round(week_expected["lt_target_tss"], 1), delta=0.11)
-            self.assertAlmostEqual(row["capacity_baseline_tss"], round(week_expected["capacity_baseline_tss"], 1), delta=0.11)
-            self.assertAlmostEqual(row["smoothed_baseline_tss"], round(week_expected["smoothed_baseline_tss"], 1), delta=0.11)
+            self.assertAlmostEqual(
+                row["baseline_tss"], round(week_expected["baseline_tss"], 1), delta=0.11
+            )
+            self.assertAlmostEqual(
+                row["lt_target_tss"],
+                round(week_expected["lt_target_tss"], 1),
+                delta=0.11,
+            )
+            self.assertAlmostEqual(
+                row["capacity_baseline_tss"],
+                round(week_expected["capacity_baseline_tss"], 1),
+                delta=0.11,
+            )
+            self.assertAlmostEqual(
+                row["smoothed_baseline_tss"],
+                round(week_expected["smoothed_baseline_tss"], 1),
+                delta=0.11,
+            )
 
-    def test_get_fitness_form_weekly_baseline_current_week_matches_dashboard_and_keeps_explanations(self):
+    def test_get_fitness_form_weekly_baseline_current_week_matches_dashboard_and_keeps_explanations(
+        self,
+    ):
         now_dt = datetime(2026, 2, 15, tzinfo=timezone.utc)
         daily_tss_values = ([45.0] * 35) + ([70.0] * 7)
         expected_weekly = self._build_canonical_progression_payload(
@@ -934,11 +1137,19 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertTrue(expected_weekly)
         expected_current_week = expected_weekly[-1]
         actual_current_week = result["weekly_baseline"][-1]
-        self.assertEqual(actual_current_week["week_start"], expected_current_week["period_start"])
-        self.assertAlmostEqual(actual_current_week["baseline_tss"], round(float(expected_current_week["baseline_tss"]), 1), places=1)
+        self.assertEqual(
+            actual_current_week["week_start"], expected_current_week["period_start"]
+        )
+        self.assertAlmostEqual(
+            actual_current_week["baseline_tss"],
+            round(float(expected_current_week["baseline_tss"]), 1),
+            places=1,
+        )
         self.assertAlmostEqual(
             actual_current_week["blended_baseline_tss_before_smoothing"],
-            round(float(expected_current_week["blended_baseline_tss_before_smoothing"]), 1),
+            round(
+                float(expected_current_week["blended_baseline_tss_before_smoothing"]), 1
+            ),
             places=1,
         )
         self.assertIn("deviation_from_lt_tss", actual_current_week)
@@ -948,14 +1159,23 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertIn("smoothing_adjustment_tss", actual_current_week)
         self.assertIn("deviation_reason", actual_current_week)
 
-    def test_get_fitness_form_short_window_keeps_latest_weekly_baseline_from_long_history(self):
+    def test_get_fitness_form_short_window_keeps_latest_weekly_baseline_from_long_history(
+        self,
+    ):
         daily_tss_values = ([50.0] * 70) + ([95.0] * 30)
-        short_result = self._run_fitness_form_with_canonical_progression(daily_tss_values, days=14)
-        long_result = self._run_fitness_form_with_canonical_progression(daily_tss_values, days=365)
+        short_result = self._run_fitness_form_with_canonical_progression(
+            daily_tss_values, days=14
+        )
+        long_result = self._run_fitness_form_with_canonical_progression(
+            daily_tss_values, days=365
+        )
 
         self.assertTrue(short_result["weekly_baseline"])
         self.assertTrue(long_result["weekly_baseline"])
-        self.assertEqual(short_result["weekly_baseline"][-1]["week_start"], long_result["weekly_baseline"][-1]["week_start"])
+        self.assertEqual(
+            short_result["weekly_baseline"][-1]["week_start"],
+            long_result["weekly_baseline"][-1]["week_start"],
+        )
         self.assertAlmostEqual(
             short_result["weekly_baseline"][-1]["baseline_tss"],
             long_result["weekly_baseline"][-1]["baseline_tss"],
@@ -967,34 +1187,66 @@ class MCPServerHelpersTest(unittest.TestCase):
             places=1,
         )
 
-    def test_compute_fitness_metrics_short_window_path_keeps_latest_baseline_driven_metrics(self):
+    def test_compute_fitness_metrics_short_window_path_keeps_latest_baseline_driven_metrics(
+        self,
+    ):
         daily_tss_values = ([45.0] * 90) + ([85.0] * 20)
-        short_form = self._run_fitness_form_with_canonical_progression(daily_tss_values, days=30)
-        long_form = self._run_fitness_form_with_canonical_progression(daily_tss_values, days=365)
+        short_form = self._run_fitness_form_with_canonical_progression(
+            daily_tss_values, days=30
+        )
+        long_form = self._run_fitness_form_with_canonical_progression(
+            daily_tss_values, days=365
+        )
 
         self.assertTrue(short_form["daily"])
         self.assertTrue(long_form["daily"])
         self.assertEqual(short_form["daily"][-1]["day"], long_form["daily"][-1]["day"])
-        self.assertAlmostEqual(short_form["daily"][-1]["baseline_tss"], long_form["daily"][-1]["baseline_tss"], places=1)
-        self.assertAlmostEqual(short_form["daily"][-1]["overreach"], long_form["daily"][-1]["overreach"], places=1)
-        self.assertAlmostEqual(short_form["daily"][-1]["injury_risk"], long_form["daily"][-1]["injury_risk"], places=1)
+        self.assertAlmostEqual(
+            short_form["daily"][-1]["baseline_tss"],
+            long_form["daily"][-1]["baseline_tss"],
+            places=1,
+        )
+        self.assertAlmostEqual(
+            short_form["daily"][-1]["overreach"],
+            long_form["daily"][-1]["overreach"],
+            places=1,
+        )
+        self.assertAlmostEqual(
+            short_form["daily"][-1]["injury_risk"],
+            long_form["daily"][-1]["injury_risk"],
+            places=1,
+        )
 
     def test_get_fitness_form_note_describes_accumulated_burden(self):
         result = self._run_fitness_form_with_canonical_progression([55.0] * 84)
 
         self.assertIn("accumulated burden", result["_note"])
 
-    def test_get_fitness_form_stacked_overload_exceeds_spaced_overload_with_same_total_excess(self):
+    def test_get_fitness_form_stacked_overload_exceeds_spaced_overload_with_same_total_excess(
+        self,
+    ):
         stacked = ([45.0] * 84) + ([75.0] * 6) + ([45.0] * 6)
         spaced = ([45.0] * 84) + ([75.0, 45.0] * 6)
 
-        stacked_result = self._run_fitness_form_with_canonical_progression(stacked, days=140)
-        spaced_result = self._run_fitness_form_with_canonical_progression(spaced, days=140)
+        stacked_result = self._run_fitness_form_with_canonical_progression(
+            stacked, days=140
+        )
+        spaced_result = self._run_fitness_form_with_canonical_progression(
+            spaced, days=140
+        )
 
-        stacked_overreach_peak = max(float(point["overreach"]) for point in stacked_result["daily"][-12:])
-        spaced_overreach_peak = max(float(point["overreach"]) for point in spaced_result["daily"][-12:])
-        stacked_injury_peak = max(float(point["injury_risk"]) for point in stacked_result["daily"][-12:])
-        spaced_injury_peak = max(float(point["injury_risk"]) for point in spaced_result["daily"][-12:])
+        stacked_overreach_peak = max(
+            float(point["overreach"]) for point in stacked_result["daily"][-12:]
+        )
+        spaced_overreach_peak = max(
+            float(point["overreach"]) for point in spaced_result["daily"][-12:]
+        )
+        stacked_injury_peak = max(
+            float(point["injury_risk"]) for point in stacked_result["daily"][-12:]
+        )
+        spaced_injury_peak = max(
+            float(point["injury_risk"]) for point in spaced_result["daily"][-12:]
+        )
 
         self.assertGreater(stacked_overreach_peak, spaced_overreach_peak)
         self.assertGreater(stacked_injury_peak, spaced_injury_peak)
@@ -1042,23 +1294,27 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertIsNone(mcp_server._format_pace(None))
 
     def test_hr_zone_dict_returns_none_for_zero_zones(self):
-        result = mcp_server._hr_zone_dict({
-            "hr_zone_1_pct": 0,
-            "hr_zone_2_pct": 0,
-            "hr_zone_3_pct": 0,
-            "hr_zone_4_pct": 0,
-            "hr_zone_5_pct": 0,
-        })
+        result = mcp_server._hr_zone_dict(
+            {
+                "hr_zone_1_pct": 0,
+                "hr_zone_2_pct": 0,
+                "hr_zone_3_pct": 0,
+                "hr_zone_4_pct": 0,
+                "hr_zone_5_pct": 0,
+            }
+        )
         self.assertIsNone(result)
 
     def test_hr_zone_dict_returns_dict_for_valid_zones(self):
-        result = mcp_server._hr_zone_dict({
-            "hr_zone_1_pct": 50.0,
-            "hr_zone_2_pct": 30.0,
-            "hr_zone_3_pct": 10.0,
-            "hr_zone_4_pct": 7.0,
-            "hr_zone_5_pct": 3.0,
-        })
+        result = mcp_server._hr_zone_dict(
+            {
+                "hr_zone_1_pct": 50.0,
+                "hr_zone_2_pct": 30.0,
+                "hr_zone_3_pct": 10.0,
+                "hr_zone_4_pct": 7.0,
+                "hr_zone_5_pct": 3.0,
+            }
+        )
         self.assertIsNotNone(result)
         self.assertEqual(result["z1"], 50.0)
 
@@ -1088,7 +1344,9 @@ class MCPServerHelpersTest(unittest.TestCase):
         for name, spec in mcp_server.TOOLS.items():
             schema = spec.input_schema
             self.assertIn("type", schema, f"Tool {name} schema missing 'type'")
-            self.assertIn("properties", schema, f"Tool {name} schema missing 'properties'")
+            self.assertIn(
+                "properties", schema, f"Tool {name} schema missing 'properties'"
+            )
 
 
 if __name__ == "__main__":
