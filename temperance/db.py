@@ -11,8 +11,12 @@ from typing import Any, Callable
 import pandas as pd
 
 UTC_NOW = lambda: datetime.now(timezone.utc).isoformat()
-DB_FILE_MAX_BYTES = int(os.getenv("TEMPERANCE_DB_MAX_BYTES", str(1 * 1024 * 1024 * 1024)))
-DB_EXECUTEMANY_CHUNK_SIZE = max(int(os.getenv("TEMPERANCE_DB_EXECUTEMANY_CHUNK_SIZE", "10")), 1)
+DB_FILE_MAX_BYTES = int(
+    os.getenv("TEMPERANCE_DB_MAX_BYTES", str(1 * 1024 * 1024 * 1024))
+)
+DB_EXECUTEMANY_CHUNK_SIZE = max(
+    int(os.getenv("TEMPERANCE_DB_EXECUTEMANY_CHUNK_SIZE", "10")), 1
+)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS activities (
@@ -224,7 +228,9 @@ def get_conn(db_path: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     try:
         page_size_row = conn.execute("PRAGMA page_size").fetchone()
-        page_size = int(page_size_row[0]) if page_size_row and page_size_row[0] else 4096
+        page_size = (
+            int(page_size_row[0]) if page_size_row and page_size_row[0] else 4096
+        )
         page_size = max(page_size, 1024)
         max_pages = max(int(DB_FILE_MAX_BYTES) // page_size, 1)
         conn.execute(f"PRAGMA max_page_count = {int(max_pages)}")
@@ -410,7 +416,9 @@ def upsert_activities(
             "is_pr": row.get("is_pr"),
             "split_summaries_json": row.get("split_summaries_json"),
             "training_load_garmin": row.get("training_load_garmin"),
-            "training_load_garmin_field_name": row.get("training_load_garmin_field_name"),
+            "training_load_garmin_field_name": row.get(
+                "training_load_garmin_field_name"
+            ),
             "training_load_garmin_units": row.get("training_load_garmin_units"),
             "calories_active": row.get("calories_active"),
             "calories_total": row.get("calories_total"),
@@ -941,15 +949,23 @@ def get_activity_splits_raw(db_path: Path, activity_id: str) -> dict[str, Any] |
         return None
     out: dict[str, Any] = {
         "lap_count": float(row["lap_count"]) if row["lap_count"] is not None else None,
-        "total_duration_s": float(row["total_duration_s"]) if row["total_duration_s"] is not None else None,
-        "total_distance_m": float(row["total_distance_m"]) if row["total_distance_m"] is not None else None,
+        "total_duration_s": float(row["total_duration_s"])
+        if row["total_duration_s"] is not None
+        else None,
+        "total_distance_m": float(row["total_distance_m"])
+        if row["total_distance_m"] is not None
+        else None,
     }
     try:
         out["split"] = json.loads(row["split_json"]) if row["split_json"] else {}
     except Exception:
         out["split"] = {}
     try:
-        out["split_summaries"] = json.loads(row["split_summaries_json"]) if row["split_summaries_json"] else {}
+        out["split_summaries"] = (
+            json.loads(row["split_summaries_json"])
+            if row["split_summaries_json"]
+            else {}
+        )
     except Exception:
         out["split_summaries"] = {}
     return out
@@ -966,8 +982,14 @@ def get_activity_raw(db_path: Path, activity_id: str) -> dict[str, Any] | None:
     return json.loads(row["raw_json"]) if row["raw_json"] else {}
 
 
-def get_activity_local_start_map(db_path: Path, activity_ids: list[str]) -> dict[str, str]:
-    ids = [str(activity_id or "").strip() for activity_id in activity_ids if str(activity_id or "").strip()]
+def get_activity_local_start_map(
+    db_path: Path, activity_ids: list[str]
+) -> dict[str, str]:
+    ids = [
+        str(activity_id or "").strip()
+        for activity_id in activity_ids
+        if str(activity_id or "").strip()
+    ]
     if not ids:
         return {}
 
@@ -1031,8 +1053,12 @@ def get_latest_recovery_day(db_path: Path) -> datetime | None:
     Returned as UTC midnight datetime for anchor calculations.
     """
     with closing(get_conn(db_path)) as conn:
-        sleep_row = conn.execute("SELECT MAX(day_utc) AS latest FROM sleep_daily").fetchone()
-        wellness_row = conn.execute("SELECT MAX(day_utc) AS latest FROM wellness_daily").fetchone()
+        sleep_row = conn.execute(
+            "SELECT MAX(day_utc) AS latest FROM sleep_daily"
+        ).fetchone()
+        wellness_row = conn.execute(
+            "SELECT MAX(day_utc) AS latest FROM wellness_daily"
+        ).fetchone()
 
     latest_day: str | None = None
     for row in (sleep_row, wellness_row):
@@ -1215,7 +1241,9 @@ def save_setting_if_changed(db_path: Path, key: str, value: str) -> bool:
 
 def get_setting(db_path: Path, key: str) -> str | None:
     with closing(get_conn(db_path)) as conn:
-        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ).fetchone()
     return row["value"] if row else None
 
 
@@ -1279,7 +1307,9 @@ def get_oauth_connection(db_path: Path, provider: str) -> dict[str, Any] | None:
 
 def delete_oauth_connection(db_path: Path, provider: str) -> bool:
     with closing(get_conn(db_path)) as conn:
-        cursor = conn.execute("DELETE FROM oauth_connections WHERE provider = ?", (provider,))
+        cursor = conn.execute(
+            "DELETE FROM oauth_connections WHERE provider = ?", (provider,)
+        )
         conn.commit()
     return cursor.rowcount > 0
 
@@ -1378,13 +1408,16 @@ def replace_planned_activities_for_range(
                         str(r.get("day_utc") or ""),
                         int(r.get("line_no") or 0),
                         str(r.get("workout_text") or "").strip(),
-                        json.dumps(r.get("parsed_json")) if r.get("parsed_json") is not None else None,
+                        json.dumps(r.get("parsed_json"))
+                        if r.get("parsed_json") is not None
+                        else None,
                         int(bool(r.get("manual_done", False))),
                         now,
                         now,
                     )
                     for r in rows
-                    if str(r.get("day_utc") or "").strip() and str(r.get("workout_text") or "").strip()
+                    if str(r.get("day_utc") or "").strip()
+                    and str(r.get("workout_text") or "").strip()
                 ],
             )
         conn.commit()
@@ -1457,13 +1490,16 @@ def upsert_planned_activities_rows(
                     str(r.get("day_utc") or ""),
                     int(r.get("line_no") or 0),
                     str(r.get("workout_text") or "").strip(),
-                    json.dumps(r.get("parsed_json")) if r.get("parsed_json") is not None else None,
+                    json.dumps(r.get("parsed_json"))
+                    if r.get("parsed_json") is not None
+                    else None,
                     int(bool(r.get("manual_done", False))),
                     now,
                     now,
                 )
                 for r in rows
-                if str(r.get("day_utc") or "").strip() and str(r.get("workout_text") or "").strip()
+                if str(r.get("day_utc") or "").strip()
+                and str(r.get("workout_text") or "").strip()
             ],
         )
         conn.commit()
@@ -1530,11 +1566,14 @@ def upsert_custom_activities_rows(
             str(r.get("day_utc") or "").strip(),
             int(r.get("line_no") or 0),
             str(r.get("activity_text") or "").strip(),
-            json.dumps(r.get("parsed_json")) if r.get("parsed_json") is not None else None,
+            json.dumps(r.get("parsed_json"))
+            if r.get("parsed_json") is not None
+            else None,
             str(r.get("source") or "manual"),
         )
         for r in rows
-        if str(r.get("day_utc") or "").strip() and str(r.get("activity_text") or "").strip()
+        if str(r.get("day_utc") or "").strip()
+        and str(r.get("activity_text") or "").strip()
     ]
     if not valid_rows:
         return 0
@@ -1543,7 +1582,10 @@ def upsert_custom_activities_rows(
     with closing(get_conn(db_path)) as conn:
         if max_rows is not None and int(max_rows) > 0:
             current_count = int(
-                conn.execute("SELECT COUNT(*) AS n FROM custom_activities").fetchone()["n"] or 0
+                conn.execute("SELECT COUNT(*) AS n FROM custom_activities").fetchone()[
+                    "n"
+                ]
+                or 0
             )
             incoming_keys = {(day_utc, line_no) for day_utc, line_no, *_ in valid_rows}
             existing_keys = 0
