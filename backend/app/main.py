@@ -49,7 +49,13 @@ from backend.app.planning_parsing import (
     split_dated_activity_entries as _shared_split_dated_activity_entries,
     strip_meridiem_tokens as _shared_strip_meridiem_tokens,
 )
-from temperance.analytics import build_daily_summary, compute_metrics, display_table, ema_multi, weekly_summary
+from temperance.analytics import (
+    build_daily_summary,
+    compute_metrics,
+    display_table,
+    ema_multi,
+    weekly_summary,
+)
 from temperance.planning import (
     build_session_candidates,
     build_user_planning_state,
@@ -79,6 +85,7 @@ from temperance.db import (
     get_latest_recovery_day,
     get_oauth_connection,
     get_planned_activities_df,
+    get_planning_decisions,
     get_recovery_days,
     get_runs_df,
     get_setting,
@@ -97,6 +104,7 @@ from temperance.db import (
     upsert_activity_splits,
     upsert_custom_activities_rows,
     upsert_planned_activities_rows,
+    upsert_planning_decision,
     upsert_sleep_daily,
     upsert_wellness_daily,
 )
@@ -111,6 +119,11 @@ from temperance.garmin_client import (
 )
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+
+
+class AuthConfigurationError(RuntimeError):
+    pass
+
 
 def _default_db_path() -> Path:
     try:
@@ -132,16 +145,41 @@ SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_USER_TIMEZONE = "user_timezone_v1"
 SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL = "garmin_rate_limit_until_v1"
 GARMIN_OAUTH_PROVIDER = "garmin"
-APP_TIMEZONE_NAME = str(os.getenv("TEMPERANCE_TIMEZONE") or os.getenv("TZ") or "America/Sao_Paulo").strip() or "America/Sao_Paulo"
-AUTO_SYNC_ENABLED = str(os.getenv("TEMPERANCE_AUTO_SYNC_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
-AUTO_SYNC_INTERVAL_SECONDS = max(60, int(str(os.getenv("TEMPERANCE_AUTO_SYNC_INTERVAL_SECONDS", "1800") or "1800")))
-AUTO_SYNC_OWNER = str(os.getenv("TEMPERANCE_AUTO_SYNC_OWNER", "admin") or "admin").strip() or "admin"
-AUTO_SYNC_DAYS_BACK = max(1, min(int(str(os.getenv("TEMPERANCE_AUTO_SYNC_DAYS_BACK", "2") or "2")), 7))
+APP_TIMEZONE_NAME = (
+    str(
+        os.getenv("TEMPERANCE_TIMEZONE") or os.getenv("TZ") or "America/Sao_Paulo"
+    ).strip()
+    or "America/Sao_Paulo"
+)
+AUTO_SYNC_ENABLED = str(
+    os.getenv("TEMPERANCE_AUTO_SYNC_ENABLED", "0")
+).strip().lower() in {"1", "true", "yes", "on"}
+AUTO_SYNC_INTERVAL_SECONDS = max(
+    60, int(str(os.getenv("TEMPERANCE_AUTO_SYNC_INTERVAL_SECONDS", "1800") or "1800"))
+)
+AUTO_SYNC_OWNER = (
+    str(os.getenv("TEMPERANCE_AUTO_SYNC_OWNER", "admin") or "admin").strip() or "admin"
+)
+AUTO_SYNC_DAYS_BACK = max(
+    1, min(int(str(os.getenv("TEMPERANCE_AUTO_SYNC_DAYS_BACK", "2") or "2")), 7)
+)
 AUTO_SYNC_MIN_INTERVAL_SECONDS = 30 * 60
-GARMIN_RATE_LIMIT_COOLDOWN_SECONDS = max(30 * 60, int(str(os.getenv("TEMPERANCE_GARMIN_RATE_LIMIT_COOLDOWN_SECONDS", str(12 * 60 * 60))) or (12 * 60 * 60)))
+GARMIN_RATE_LIMIT_COOLDOWN_SECONDS = max(
+    30 * 60,
+    int(
+        str(
+            os.getenv(
+                "TEMPERANCE_GARMIN_RATE_LIMIT_COOLDOWN_SECONDS", str(12 * 60 * 60)
+            )
+        )
+        or (12 * 60 * 60)
+    ),
+)
 AUTO_SYNC_LOCAL_WINDOWS = ((8, 10), (20, 22))
 AUTO_SYNC_TEMPORARILY_DISABLED = True
-AUTO_SYNC_DISABLED_REASON = "Temporarily disabled to stop background Garmin sync attempts."
+AUTO_SYNC_DISABLED_REASON = (
+    "Temporarily disabled to stop background Garmin sync attempts."
+)
 
 
 def _now_app_local() -> pd.Timestamp:
@@ -149,10 +187,16 @@ def _now_app_local() -> pd.Timestamp:
         return pd.Timestamp(datetime.now(ZoneInfo(APP_TIMEZONE_NAME))).tz_localize(None)
     except Exception:
         now_local = pd.Timestamp(datetime.now().astimezone())
-        return now_local.tz_localize(None) if now_local.tzinfo is not None else now_local
+        return (
+            now_local.tz_localize(None) if now_local.tzinfo is not None else now_local
+        )
+
+
 SETTINGS_KEY_IF_ZONE_THRESHOLDS = "if_zone_thresholds_v1"
 SETTINGS_KEY_VDOT_LOOKBACK_DAYS = "vdot_lookback_days_v1"
-TOKEN_TTL_S = int(os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60))
+TOKEN_TTL_S = int(
+    os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60)
+)
 MAX_PLANNED_ENTRY_CHARS = 4000
 MAX_PLANNED_ENTRIES_PER_SAVE = 40
 CUSTOM_ACTIVITIES_LIMIT = 5000
@@ -286,7 +330,12 @@ def _shutdown_auto_sync() -> None:
 
 
 def _auth_enabled() -> bool:
-    return str(os.getenv("TEMPERANCE_AUTH_ENABLED", "1")).strip().lower() not in {"0", "false", "no", "off"}
+    return str(os.getenv("TEMPERANCE_AUTH_ENABLED", "1")).strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
 
 
 def _auth_users() -> dict[str, dict[str, str]]:
@@ -303,15 +352,36 @@ def _auth_users() -> dict[str, dict[str, str]]:
 
 
 def _auth_is_enforced() -> bool:
-    return _auth_enabled() and bool(_auth_users())
+    return _auth_enabled()
+
+
+def _auth_configuration_error() -> str | None:
+    if not _auth_enabled():
+        return None
+    if not _auth_users():
+        return "Authentication is enabled but no users are configured."
+    if not (
+        str(os.getenv("TEMPERANCE_AUTH_COOKIE_SECRET") or "").strip()
+        or str(os.getenv("TEMPERANCE_AUTH_SECRET") or "").strip()
+    ):
+        return "Authentication is enabled but no signing secret is configured."
+    return None
+
+
+def _require_auth_ready() -> None:
+    error = _auth_configuration_error()
+    if error:
+        raise HTTPException(status_code=503, detail=error)
 
 
 def _auth_secret() -> str:
-    return (
+    secret = (
         str(os.getenv("TEMPERANCE_AUTH_COOKIE_SECRET") or "").strip()
         or str(os.getenv("TEMPERANCE_AUTH_SECRET") or "").strip()
-        or "temperance-dev-secret"
     )
+    if not secret:
+        raise AuthConfigurationError("Authentication signing secret is not configured.")
+    return secret
 
 
 def _auth_sign(payload_b64: str) -> str:
@@ -322,7 +392,9 @@ def _auth_sign(payload_b64: str) -> str:
 def _build_token(user: str, role: str, ttl_s: int = TOKEN_TTL_S) -> str:
     exp = int(datetime.now(timezone.utc).timestamp()) + max(60, int(ttl_s))
     payload = {"u": user, "r": role, "exp": exp}
-    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
     payload_b64 = base64.urlsafe_b64encode(payload_json).decode("utf-8").rstrip("=")
     return f"{payload_b64}.{_auth_sign(payload_b64)}"
 
@@ -336,7 +408,9 @@ def _parse_token(token: str) -> tuple[str, str] | None:
         return None
     try:
         padded = payload_b64 + "=" * ((4 - len(payload_b64) % 4) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8"))
+        payload = json.loads(
+            base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8")
+        )
     except Exception:
         return None
     user = str(payload.get("u") or "").strip()
@@ -386,8 +460,9 @@ def _db_path_for_owner(owner: str) -> Path:
 
 
 def _auth_context(authorization: str | None) -> dict[str, str]:
-    if not _auth_is_enforced():
+    if not _auth_enabled():
         return {"user": "default", "role": "admin"}
+    _require_auth_ready()
 
     users = _auth_users()
     token = _bearer_token(authorization)
@@ -522,7 +597,9 @@ def _settings_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
-def _normalize_timezone_name(value: str | None, fallback: str = "America/Sao_Paulo") -> str:
+def _normalize_timezone_name(
+    value: str | None, fallback: str = "America/Sao_Paulo"
+) -> str:
     for candidate in (value, APP_TIMEZONE_NAME, fallback, "UTC"):
         name = str(candidate or "").strip()
         if not name:
@@ -566,23 +643,37 @@ def _activity_start_local_series(activity_df: pd.DataFrame, db_path: Path) -> pd
         start_local = parsed_local
 
     if "activity_id" in activity_df.columns:
-        activity_ids = activity_df.get("activity_id", pd.Series(index=activity_df.index, dtype=object)).astype(str).tolist()
+        activity_ids = (
+            activity_df.get(
+                "activity_id", pd.Series(index=activity_df.index, dtype=object)
+            )
+            .astype(str)
+            .tolist()
+        )
         local_start_map = {}
         if db_path.exists():
             try:
-                local_start_map = get_activity_local_start_map(db_path=db_path, activity_ids=activity_ids)
+                local_start_map = get_activity_local_start_map(
+                    db_path=db_path, activity_ids=activity_ids
+                )
             except Exception:
                 local_start_map = {}
         if local_start_map:
             mapped_local = pd.to_datetime(
-                activity_df.get("activity_id", pd.Series(index=activity_df.index, dtype=object)).astype(str).map(local_start_map),
+                activity_df.get(
+                    "activity_id", pd.Series(index=activity_df.index, dtype=object)
+                )
+                .astype(str)
+                .map(local_start_map),
                 errors="coerce",
             )
             if getattr(mapped_local.dt, "tz", None) is not None:
                 mapped_local = mapped_local.dt.tz_convert(zone).dt.tz_localize(None)
             start_local = start_local.fillna(mapped_local)
 
-    fallback_local = pd.to_datetime(activity_df.get("start_time_utc"), utc=True, errors="coerce")
+    fallback_local = pd.to_datetime(
+        activity_df.get("start_time_utc"), utc=True, errors="coerce"
+    )
     fallback_local = fallback_local.dt.tz_convert(zone).dt.tz_localize(None)
     return start_local.fillna(fallback_local)
 
@@ -592,7 +683,9 @@ def _auto_sync_window_labels() -> list[str]:
 
 
 def _is_auto_sync_local_time_allowed(now_local: datetime) -> bool:
-    hour_value = now_local.hour + (now_local.minute / 60.0) + (now_local.second / 3600.0)
+    hour_value = (
+        now_local.hour + (now_local.minute / 60.0) + (now_local.second / 3600.0)
+    )
     return any(start <= hour_value < end for start, end in AUTO_SYNC_LOCAL_WINDOWS)
 
 
@@ -609,9 +702,17 @@ def _parse_sync_time_utc(value: str | None) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _garmin_rate_limit_state(db_path: Path, now_utc: datetime | None = None) -> dict[str, Any]:
-    current_utc = now_utc.astimezone(timezone.utc) if now_utc is not None else datetime.now(timezone.utc)
-    until_utc = _parse_sync_time_utc(get_setting(db_path, SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL))
+def _garmin_rate_limit_state(
+    db_path: Path, now_utc: datetime | None = None
+) -> dict[str, Any]:
+    current_utc = (
+        now_utc.astimezone(timezone.utc)
+        if now_utc is not None
+        else datetime.now(timezone.utc)
+    )
+    until_utc = _parse_sync_time_utc(
+        get_setting(db_path, SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL)
+    )
     if until_utc is None:
         return {"active": False, "until_utc": None, "remaining_seconds": 0}
     remaining_seconds = int(max(0, (until_utc - current_utc).total_seconds()))
@@ -622,8 +723,14 @@ def _garmin_rate_limit_state(db_path: Path, now_utc: datetime | None = None) -> 
     }
 
 
-def _set_garmin_rate_limit(db_path: Path, error_message: str, now_utc: datetime | None = None) -> dict[str, Any]:
-    current_utc = now_utc.astimezone(timezone.utc) if now_utc is not None else datetime.now(timezone.utc)
+def _set_garmin_rate_limit(
+    db_path: Path, error_message: str, now_utc: datetime | None = None
+) -> dict[str, Any]:
+    current_utc = (
+        now_utc.astimezone(timezone.utc)
+        if now_utc is not None
+        else datetime.now(timezone.utc)
+    )
     until_utc = current_utc + timedelta(seconds=GARMIN_RATE_LIMIT_COOLDOWN_SECONDS)
     save_setting(db_path, SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL, until_utc.isoformat())
     return {
@@ -653,10 +760,16 @@ def _ensure_garmin_available(db_path: Path, now_utc: datetime | None = None) -> 
     )
 
 
-def _auto_sync_gate(owner: str, db_path: Path, now_utc: datetime | None = None) -> dict[str, Any]:
+def _auto_sync_gate(
+    owner: str, db_path: Path, now_utc: datetime | None = None
+) -> dict[str, Any]:
     tz_name, tz_source = _owner_timezone_info(db_path)
     zone = ZoneInfo(tz_name)
-    current_utc = now_utc.astimezone(timezone.utc) if now_utc is not None else datetime.now(timezone.utc)
+    current_utc = (
+        now_utc.astimezone(timezone.utc)
+        if now_utc is not None
+        else datetime.now(timezone.utc)
+    )
     now_local = current_utc.astimezone(zone)
     if AUTO_SYNC_TEMPORARILY_DISABLED:
         return {
@@ -707,7 +820,9 @@ def _auto_sync_gate(owner: str, db_path: Path, now_utc: datetime | None = None) 
                 "windows_local": _auto_sync_window_labels(),
                 "now_local": now_local.isoformat(),
                 "last_sync": last_garmin_sync,
-                "cooldown_remaining_seconds": max(0, int(AUTO_SYNC_MIN_INTERVAL_SECONDS - elapsed_seconds)),
+                "cooldown_remaining_seconds": max(
+                    0, int(AUTO_SYNC_MIN_INTERVAL_SECONDS - elapsed_seconds)
+                ),
             }
 
     return {
@@ -760,8 +875,12 @@ def _extract_progress_get(owner: str) -> dict[str, Any]:
             "updated_at": state.get("updated_at"),
             "logs": list(state.get("logs") or []),
             "log_count": int(state.get("log_count") or 0),
-            "activities": dict(state.get("activities") or {"processed": 0, "total": 0, "day": None}),
-            "wellness": dict(state.get("wellness") or {"current": 0, "total": 0, "day": None}),
+            "activities": dict(
+                state.get("activities") or {"processed": 0, "total": 0, "day": None}
+            ),
+            "wellness": dict(
+                state.get("wellness") or {"current": 0, "total": 0, "day": None}
+            ),
         }
 
 
@@ -872,7 +991,9 @@ def _extract_progress_finish(owner: str, summary: str, errors: list[str]) -> Non
         if len(logs) > 300:
             logs = logs[-300:]
         state["logs"] = logs
-        state["log_count"] = int(state.get("log_count") or 0) + 1 + min(len(errors or []), 20)
+        state["log_count"] = (
+            int(state.get("log_count") or 0) + 1 + min(len(errors or []), 20)
+        )
 
 
 def _extract_progress_fail(owner: str, message: str) -> None:
@@ -937,10 +1058,18 @@ def _run_comprehensive_extract_background(
                     f"records={len(chunk.activity_records)} splits={len(chunk.activity_splits)}"
                 ),
             )
-            streamed_counts["activities"] += upsert_activities(db_path, chunk.activities)
-            streamed_counts["details"] += upsert_activity_details(db_path, chunk.activity_details)
-            streamed_counts["records"] += upsert_activity_records(db_path, chunk.activity_records)
-            streamed_counts["splits"] += upsert_activity_splits(db_path, chunk.activity_splits)
+            streamed_counts["activities"] += upsert_activities(
+                db_path, chunk.activities
+            )
+            streamed_counts["details"] += upsert_activity_details(
+                db_path, chunk.activity_details
+            )
+            streamed_counts["records"] += upsert_activity_records(
+                db_path, chunk.activity_records
+            )
+            streamed_counts["splits"] += upsert_activity_splits(
+                db_path, chunk.activity_splits
+            )
 
         def _stream_wellness_chunk(chunk: GarminWellnessChunk) -> None:
             _extract_progress_append(
@@ -948,7 +1077,9 @@ def _run_comprehensive_extract_background(
                 f"[db:stream] sleep={len(chunk.sleep_daily)} wellness={len(chunk.wellness_daily)}",
             )
             streamed_counts["sleep"] += upsert_sleep_daily(db_path, chunk.sleep_daily)
-            streamed_counts["wellness"] += upsert_wellness_daily(db_path, chunk.wellness_daily)
+            streamed_counts["wellness"] += upsert_wellness_daily(
+                db_path, chunk.wellness_daily
+            )
 
         extract = fetch_garmin_comprehensive(
             email=garmin_email,
@@ -1001,7 +1132,9 @@ def _run_comprehensive_extract_background(
         log_sync(db_path, source="garmin_comprehensive", success=False, message=message)
     except Exception as exc:
         _extract_progress_fail(owner, str(exc))
-        log_sync(db_path, source="garmin_comprehensive", success=False, message=str(exc))
+        log_sync(
+            db_path, source="garmin_comprehensive", success=False, message=str(exc)
+        )
 
 
 def _run_oauth_comprehensive_extract_background(
@@ -1015,13 +1148,18 @@ def _run_oauth_comprehensive_extract_background(
     try:
         token_payload, _connection = _garmin_oauth_token_payload(db_path)
         access_token = str(token_payload.get("access_token") or "")
-        _extract_progress_append(owner, f"[oauth] fetching activities from {start_day.isoformat()} to {end_day.isoformat()}")
+        _extract_progress_append(
+            owner,
+            f"[oauth] fetching activities from {start_day.isoformat()} to {end_day.isoformat()}",
+        )
         activity_payload = fetch_garmin_oauth_normalized_activities(
             access_token,
             start_day=start_day.isoformat(),
             end_day=end_day.isoformat(),
         )
-        activity_persisted = _persist_normalized_garmin_payload(db_path, activity_payload=activity_payload)
+        activity_persisted = _persist_normalized_garmin_payload(
+            db_path, activity_payload=activity_payload
+        )
         activities = activity_persisted["activities"]
         details_rows = activity_persisted["activity_details"]
         records_rows = activity_persisted["activity_records"]
@@ -1042,13 +1180,18 @@ def _run_oauth_comprehensive_extract_background(
         sleep_rows: list[dict[str, Any]] = []
         wellness_rows: list[dict[str, Any]] = []
         if include_wellness:
-            _extract_progress_append(owner, f"[oauth] fetching wellness from {start_day.isoformat()} to {end_day.isoformat()}")
+            _extract_progress_append(
+                owner,
+                f"[oauth] fetching wellness from {start_day.isoformat()} to {end_day.isoformat()}",
+            )
             wellness_payload = fetch_garmin_oauth_normalized_wellness(
                 access_token,
                 start_day=start_day.isoformat(),
                 end_day=end_day.isoformat(),
             )
-            wellness_persisted = _persist_normalized_garmin_payload(db_path, wellness_payload=wellness_payload)
+            wellness_persisted = _persist_normalized_garmin_payload(
+                db_path, wellness_payload=wellness_payload
+            )
             sleep_rows = wellness_persisted["sleep_daily"]
             wellness_rows = wellness_persisted["wellness_daily"]
             _extract_progress_append(
@@ -1061,20 +1204,42 @@ def _run_oauth_comprehensive_extract_background(
             f"records={len(records_rows)}({activity_persisted['db_changes']['records']}), splits={len(split_rows)}({activity_persisted['db_changes']['splits']}), "
             f"sleep={len(sleep_rows)}({wellness_persisted['db_changes']['sleep']}), wellness={len(wellness_rows)}({wellness_persisted['db_changes']['wellness']}), errors=0"
         )
-        log_sync(db_path, source="garmin_oauth_comprehensive", success=True, message=msg)
+        log_sync(
+            db_path, source="garmin_oauth_comprehensive", success=True, message=msg
+        )
         _extract_progress_finish(owner, msg, [])
     except GarminOAuthConfigurationError as exc:
         _extract_progress_fail(owner, str(exc))
-        log_sync(db_path, source="garmin_oauth_comprehensive", success=False, message=str(exc))
+        log_sync(
+            db_path,
+            source="garmin_oauth_comprehensive",
+            success=False,
+            message=str(exc),
+        )
     except GarminOAuthError as exc:
         _extract_progress_fail(owner, str(exc))
-        log_sync(db_path, source="garmin_oauth_comprehensive", success=False, message=str(exc))
+        log_sync(
+            db_path,
+            source="garmin_oauth_comprehensive",
+            success=False,
+            message=str(exc),
+        )
     except HTTPException as exc:
         _extract_progress_fail(owner, str(exc.detail))
-        log_sync(db_path, source="garmin_oauth_comprehensive", success=False, message=str(exc.detail))
+        log_sync(
+            db_path,
+            source="garmin_oauth_comprehensive",
+            success=False,
+            message=str(exc.detail),
+        )
     except Exception as exc:
         _extract_progress_fail(owner, str(exc))
-        log_sync(db_path, source="garmin_oauth_comprehensive", success=False, message=str(exc))
+        log_sync(
+            db_path,
+            source="garmin_oauth_comprehensive",
+            success=False,
+            message=str(exc),
+        )
 
 
 def _iter_date_range(start_day: date, end_day: date) -> list[date]:
@@ -1109,24 +1274,34 @@ def _plan_comprehensive_extract_dates(
 
     if incremental_only:
         existing_activity_days = get_activity_days(db_path)
-        activity_target_days = (requested_days - existing_activity_days) | latest_window_days
+        activity_target_days = (
+            requested_days - existing_activity_days
+        ) | latest_window_days
         logs.append(
             f"[config] incremental activities: requested_days={len(requested_days)} existing_activity_days={len(existing_activity_days)} always_refresh_days={len(latest_window_days)} target_activity_days={len(activity_target_days)}"
         )
         if include_wellness:
             existing_recovery_days = get_recovery_days(db_path)
-            wellness_target_days = (requested_days - existing_recovery_days) | latest_window_days
+            wellness_target_days = (
+                requested_days - existing_recovery_days
+            ) | latest_window_days
             logs.append(
                 f"[config] incremental wellness: requested_days={len(requested_days)} existing_recovery_days={len(existing_recovery_days)} always_refresh_days={len(latest_window_days)} target_wellness_days={len(wellness_target_days)}"
             )
     else:
         logs.append(
             f"[config] full fetch: requested_days={len(requested_days)} activity_days={len(activity_target_days)}"
-            + (f" wellness_days={len(wellness_target_days)}" if include_wellness else "")
+            + (
+                f" wellness_days={len(wellness_target_days)}"
+                if include_wellness
+                else ""
+            )
         )
 
     combined_target_days = set(activity_target_days) | set(wellness_target_days)
-    fetch_start_day = min(combined_target_days) if combined_target_days else effective_start_day
+    fetch_start_day = (
+        min(combined_target_days) if combined_target_days else effective_start_day
+    )
     logs.append(
         f"[config] computed_start_day={fetch_start_day.isoformat()} target_activity_days={len(activity_target_days)} target_wellness_days={len(wellness_target_days)}"
     )
@@ -1138,14 +1313,18 @@ def _default_lthr_curve() -> list[dict[str, object]]:
 
 
 def _default_lt_pace_curve() -> list[dict[str, object]]:
-    return [{"date": "2025-01-01", "lt_pace_sec_per_km": DEFAULT_THRESHOLD_PACE_SEC_PER_KM}]
+    return [
+        {"date": "2025-01-01", "lt_pace_sec_per_km": DEFAULT_THRESHOLD_PACE_SEC_PER_KM}
+    ]
 
 
 def _default_if_zone_thresholds() -> dict[str, float]:
     return {"z1_max": 0.70, "z2_max": 0.80, "z3_max": 0.90, "z4_max": 1.00}
 
 
-def _normalize_if_zone_thresholds(payload: dict[str, object] | None) -> dict[str, float]:
+def _normalize_if_zone_thresholds(
+    payload: dict[str, object] | None
+) -> dict[str, float]:
     defaults = _default_if_zone_thresholds()
     if not isinstance(payload, dict):
         return defaults
@@ -1275,10 +1454,15 @@ def _clear_runtime_garmin_credentials(owner: str) -> None:
 def _runtime_garmin_credentials(owner: str) -> tuple[str, str]:
     with _GARMIN_RUNTIME_CREDENTIALS_LOCK:
         payload = _GARMIN_RUNTIME_CREDENTIALS_BY_OWNER.get(owner) or {}
-    return str(payload.get("email") or "").strip(), str(payload.get("password") or "").strip()
+    return (
+        str(payload.get("email") or "").strip(),
+        str(payload.get("password") or "").strip(),
+    )
 
 
-def _resolve_garmin_credentials(ctx: dict[str, str], owner: str) -> tuple[str, str, str]:
+def _resolve_garmin_credentials(
+    ctx: dict[str, str], owner: str
+) -> tuple[str, str, str]:
     role = str(ctx.get("role") or "viewer").strip().lower()
     current_user = str(ctx.get("user") or "").strip()
     if role == "admin" and owner == current_user:
@@ -1316,9 +1500,21 @@ def _save_garmin_oauth_connection(
     existing_connection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     metadata = garmin_oauth_connection_metadata(token_payload, userinfo_payload)
-    account_subject = str(metadata.get("account_subject") or "").strip() or str((existing_connection or {}).get("account_subject") or "").strip() or None
-    account_email = str(metadata.get("account_email") or "").strip() or str((existing_connection or {}).get("account_email") or "").strip() or None
-    scopes = [str(scope).strip() for scope in (metadata.get("scopes") or []) if str(scope).strip()]
+    account_subject = (
+        str(metadata.get("account_subject") or "").strip()
+        or str((existing_connection or {}).get("account_subject") or "").strip()
+        or None
+    )
+    account_email = (
+        str(metadata.get("account_email") or "").strip()
+        or str((existing_connection or {}).get("account_email") or "").strip()
+        or None
+    )
+    scopes = [
+        str(scope).strip()
+        for scope in (metadata.get("scopes") or [])
+        if str(scope).strip()
+    ]
     upsert_oauth_connection(
         db_path,
         provider=GARMIN_OAUTH_PROVIDER,
@@ -1377,23 +1573,37 @@ def _missing_capabilities(reason: str) -> dict[str, Any]:
     }
 
 
-def _garmin_connection_state(ctx: dict[str, str], owner: str, db_path: Path) -> dict[str, Any]:
+def _garmin_connection_state(
+    ctx: dict[str, str], owner: str, db_path: Path
+) -> dict[str, Any]:
     role = str(ctx.get("role") or "viewer").strip().lower()
     oauth_connection = _load_garmin_oauth_connection(db_path)
-    garmin_email, garmin_password, legacy_source = _resolve_garmin_credentials(ctx, owner)
+    garmin_email, garmin_password, legacy_source = _resolve_garmin_credentials(
+        ctx, owner
+    )
     legacy_available = bool(garmin_email and garmin_password)
 
     if role == "admin":
         mode = legacy_source if legacy_source in {"env", "session"} else "missing"
-        capabilities = _legacy_capabilities() if legacy_available else _missing_capabilities("Garmin legacy credentials are not configured.")
+        capabilities = (
+            _legacy_capabilities()
+            if legacy_available
+            else _missing_capabilities("Garmin legacy credentials are not configured.")
+        )
     else:
-        mode = "oauth" if oauth_connection is not None else (legacy_source if legacy_source == "session" else "missing")
+        mode = (
+            "oauth"
+            if oauth_connection is not None
+            else (legacy_source if legacy_source == "session" else "missing")
+        )
         if oauth_connection is not None:
             capabilities = garmin_oauth_capabilities()
         elif legacy_available:
             capabilities = _legacy_capabilities()
         else:
-            capabilities = _missing_capabilities("Connect Garmin OAuth or provide session credentials to sync Garmin data.")
+            capabilities = _missing_capabilities(
+                "Connect Garmin OAuth or provide session credentials to sync Garmin data."
+            )
 
     return {
         "mode": mode,
@@ -1444,7 +1654,10 @@ def _resolve_garmin_sync_source(
         return {
             "mode": "oauth",
             "state": state,
-            "unsupported_reason": str(capabilities.get("reason") or "Garmin OAuth sync is not configured for this deployment."),
+            "unsupported_reason": str(
+                capabilities.get("reason")
+                or "Garmin OAuth sync is not configured for this deployment."
+            ),
         }
 
     return {"mode": "missing", "state": state}
@@ -1453,13 +1666,19 @@ def _resolve_garmin_sync_source(
 def _garmin_oauth_token_payload(db_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     connection = _load_garmin_oauth_connection(db_path)
     if connection is None:
-        raise HTTPException(status_code=400, detail="Garmin OAuth is not connected for this owner.")
+        raise HTTPException(
+            status_code=400, detail="Garmin OAuth is not connected for this owner."
+        )
     ciphertext = str(connection.get("token_ciphertext") or "").strip()
     if not ciphertext:
-        raise HTTPException(status_code=400, detail="Stored Garmin OAuth token is missing.")
+        raise HTTPException(
+            status_code=400, detail="Stored Garmin OAuth token is missing."
+        )
     try:
         token_payload = decrypt_garmin_oauth_token_payload(ciphertext)
-        refreshed_payload, refreshed = maybe_refresh_garmin_oauth_token_payload(token_payload)
+        refreshed_payload, refreshed = maybe_refresh_garmin_oauth_token_payload(
+            token_payload
+        )
     except GarminOAuthConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except GarminOAuthError as exc:
@@ -1473,7 +1692,9 @@ def _garmin_oauth_token_payload(db_path: Path) -> tuple[dict[str, Any], dict[str
         token_payload = refreshed_payload
     access_token = str(token_payload.get("access_token") or "").strip()
     if not access_token:
-        raise HTTPException(status_code=400, detail="Garmin OAuth access token is missing.")
+        raise HTTPException(
+            status_code=400, detail="Garmin OAuth access token is missing."
+        )
     return token_payload, connection
 
 
@@ -1623,7 +1844,9 @@ def _run_auto_sync_once() -> None:
         if not bool(gate.get("allowed")):
             return
         ctx = {"user": owner, "role": "admin"}
-        garmin_email, garmin_password, credentials_source = _resolve_garmin_credentials(ctx, owner)
+        garmin_email, garmin_password, credentials_source = _resolve_garmin_credentials(
+            ctx, owner
+        )
         if not (garmin_email and garmin_password):
             log_sync(
                 db_path,
@@ -1674,7 +1897,11 @@ def _auto_sync_loop() -> None:
 
 def _start_auto_sync_thread() -> None:
     global _AUTO_SYNC_THREAD
-    if AUTO_SYNC_TEMPORARILY_DISABLED or not AUTO_SYNC_ENABLED or _AUTO_SYNC_THREAD is not None:
+    if (
+        AUTO_SYNC_TEMPORARILY_DISABLED
+        or not AUTO_SYNC_ENABLED
+        or _AUTO_SYNC_THREAD is not None
+    ):
         return
     _AUTO_SYNC_STOP_EVENT.clear()
     _AUTO_SYNC_THREAD = threading.Thread(
@@ -1733,7 +1960,9 @@ def _blend_baseline_tss(
         observed_days_365d=observed_days_365d,
         blend_profile=blend_profile,
     )
-    return _baseline_tss_from_components(capacity_baseline=capacity_baseline, components=components)
+    return _baseline_tss_from_components(
+        capacity_baseline=capacity_baseline, components=components
+    )
 
 
 def _blended_weekly_targets_for_day(
@@ -1751,12 +1980,26 @@ def _blended_weekly_targets_for_day(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_default = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
     pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
 
-    lt_weekly_tss = float(max(_weekly_tss_target_from_lt_pace(pace_for_day) * 1.10, 0.0)) if pace_for_day > 0 else 0.0
-    lt_weekly_rtss = float(max(_weekly_tss_target_from_lt_pace(pace_for_day) * 0.90, 0.0)) if pace_for_day > 0 else 0.0
-    lt_weekly_distance = float(max(_weekly_distance_target_from_lt_pace(pace_for_day), 0.0)) if pace_for_day > 0 else 0.0
+    lt_weekly_tss = (
+        float(max(_weekly_tss_target_from_lt_pace(pace_for_day) * 1.10, 0.0))
+        if pace_for_day > 0
+        else 0.0
+    )
+    lt_weekly_rtss = (
+        float(max(_weekly_tss_target_from_lt_pace(pace_for_day) * 0.90, 0.0))
+        if pace_for_day > 0
+        else 0.0
+    )
+    lt_weekly_distance = (
+        float(max(_weekly_distance_target_from_lt_pace(pace_for_day), 0.0))
+        if pace_for_day > 0
+        else 0.0
+    )
     baseline_blend_profile = _load_baseline_blend_profile(db_path)
 
     metrics_df = actual_metrics_df
@@ -1784,8 +2027,14 @@ def _blended_weekly_targets_for_day(
 
             def _sum_window(days_back: int) -> float:
                 start = day_ts - pd.Timedelta(days=days_back)
-                recent_rows = working[(working["day"] >= start) & (working["day"] < day_ts)]
-                return float(pd.to_numeric(recent_rows.get("tss"), errors="coerce").fillna(0.0).sum())
+                recent_rows = working[
+                    (working["day"] >= start) & (working["day"] < day_ts)
+                ]
+                return float(
+                    pd.to_numeric(recent_rows.get("tss"), errors="coerce")
+                    .fillna(0.0)
+                    .sum()
+                )
 
             def _observed_window_days(days_back: int) -> int:
                 if pd.isna(earliest_day):
@@ -1831,7 +2080,11 @@ def _daniels_velocity_vo2(velocity_m_per_min: float) -> float:
 
 def _daniels_fraction_of_vo2max(race_time_min: float) -> float:
     time_min = max(float(race_time_min), 1e-6)
-    return 0.8 + 0.1894393 * math.exp(-0.012778 * time_min) + 0.2989558 * math.exp(-0.1932605 * time_min)
+    return (
+        0.8
+        + 0.1894393 * math.exp(-0.012778 * time_min)
+        + 0.2989558 * math.exp(-0.1932605 * time_min)
+    )
 
 
 def _vdot_from_race(distance_m: float, race_time_min: float) -> float:
@@ -1925,7 +2178,9 @@ def _vdot_payload_from_lt_pace(lt_pace_sec_per_km: float) -> dict[str, Any]:
     }
 
 
-def _pace_sec_per_km_from_named_vdot_token(token: str, lt_pace_sec_per_km: float) -> float | None:
+def _pace_sec_per_km_from_named_vdot_token(
+    token: str, lt_pace_sec_per_km: float
+) -> float | None:
     alias = str(token or "").strip().lower()
     equivalent_key = {
         "mp": "marathon",
@@ -1994,7 +2249,9 @@ def _normalize_specificity_profile(
     return out
 
 
-def _load_specificity_profile(db_path: Path, fallback_default: float = 0.8) -> dict[str, float]:
+def _load_specificity_profile(
+    db_path: Path, fallback_default: float = 0.8
+) -> dict[str, float]:
     raw = get_setting(db_path, SETTINGS_KEY_ACTIVITY_SPECIFICITY)
     if not raw:
         return _default_specificity_profile(fallback_default)
@@ -2022,7 +2279,9 @@ def _normalize_baseline_blend_profile(
     base = _default_baseline_blend_profile()
     if not isinstance(payload, dict):
         if strict:
-            raise HTTPException(status_code=400, detail="baseline_blend must be an object.")
+            raise HTTPException(
+                status_code=400, detail="baseline_blend must be an object."
+            )
         return base
 
     expected_keys = tuple(base.keys())
@@ -2041,15 +2300,28 @@ def _normalize_baseline_blend_profile(
             value = float(raw_value)
         except Exception:
             if strict:
-                raise HTTPException(status_code=400, detail=f"baseline_blend.{key} must be an integer percentage.")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"baseline_blend.{key} must be an integer percentage.",
+                )
             return base
-        if not np.isfinite(value) or value < 0.0 or value > 100.0 or not float(value).is_integer():
+        if (
+            not np.isfinite(value)
+            or value < 0.0
+            or value > 100.0
+            or not float(value).is_integer()
+        ):
             if strict:
-                raise HTTPException(status_code=400, detail=f"baseline_blend.{key} must be an integer percentage between 0 and 100.")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"baseline_blend.{key} must be an integer percentage between 0 and 100.",
+                )
             return base
         out[key] = int(value)
 
-    split_total = out["short_history_pct"] + out["medium_history_pct"] + out["long_history_pct"]
+    split_total = (
+        out["short_history_pct"] + out["medium_history_pct"] + out["long_history_pct"]
+    )
     if split_total != 100:
         if strict:
             raise HTTPException(
@@ -2086,28 +2358,52 @@ def _baseline_history_components(
         profile = _normalize_baseline_blend_profile(blend_profile)
 
     def _weekly_avg(load: float, window_days: int, observed_days: int | None) -> float:
-        effective_days = max(1, min(window_days, int(observed_days) if observed_days is not None else window_days))
+        effective_days = max(
+            1,
+            min(
+                window_days,
+                int(observed_days) if observed_days is not None else window_days,
+            ),
+        )
         return float(load) / (effective_days / 7.0)
 
     avg21 = _weekly_avg(recent_load_21d, 21, observed_days_21d)
-    avg63 = _weekly_avg(recent_load_63d, 63, observed_days_63d) if recent_load_63d is not None else 0.0
-    avg365 = _weekly_avg(recent_load_365d, 365, observed_days_365d) if recent_load_365d is not None else 0.0
+    avg63 = (
+        _weekly_avg(recent_load_63d, 63, observed_days_63d)
+        if recent_load_63d is not None
+        else 0.0
+    )
+    avg365 = (
+        _weekly_avg(recent_load_365d, 365, observed_days_365d)
+        if recent_load_365d is not None
+        else 0.0
+    )
 
     coverage_candidates = [observed_days_365d, observed_days_63d, observed_days_21d]
-    observed_history_days = max((int(days) for days in coverage_candidates if days is not None), default=0)
+    observed_history_days = max(
+        (int(days) for days in coverage_candidates if days is not None), default=0
+    )
 
     history_anchor = 0.0
     if observed_history_days >= 100:
         available_horizons: list[tuple[float, float]] = []
         if observed_days_21d is None or int(observed_days_21d) >= 21:
             available_horizons.append((float(profile["short_history_pct"]), avg21))
-        if recent_load_63d is not None and (observed_days_63d is None or int(observed_days_63d) >= 63):
+        if recent_load_63d is not None and (
+            observed_days_63d is None or int(observed_days_63d) >= 63
+        ):
             available_horizons.append((float(profile["medium_history_pct"]), avg63))
-        if recent_load_365d is not None and (observed_days_365d is None or int(observed_days_365d) >= 365):
+        if recent_load_365d is not None and (
+            observed_days_365d is None or int(observed_days_365d) >= 365
+        ):
             available_horizons.append((float(profile["long_history_pct"]), avg365))
-        available_weight = sum(weight for weight, _ in available_horizons if weight > 0.0)
+        available_weight = sum(
+            weight for weight, _ in available_horizons if weight > 0.0
+        )
         if available_weight > 0.0:
-            history_anchor = sum((weight / available_weight) * avg for weight, avg in available_horizons)
+            history_anchor = sum(
+                (weight / available_weight) * avg for weight, avg in available_horizons
+            )
 
     return {
         "history_influence": float(profile["history_influence_pct"]) / 100.0,
@@ -2125,7 +2421,9 @@ def _baseline_tss_from_components(
     components: dict[str, float],
 ) -> float:
     history_anchor = max(0.0, _safe_float(components.get("history_anchor")))
-    history_influence = min(max(_safe_float(components.get("history_influence")), 0.0), 1.0)
+    history_influence = min(
+        max(_safe_float(components.get("history_influence")), 0.0), 1.0
+    )
     avg21 = max(0.0, _safe_float(components.get("avg21")))
     avg63 = max(0.0, _safe_float(components.get("avg63")))
     avg365 = max(0.0, _safe_float(components.get("avg365")))
@@ -2135,12 +2433,19 @@ def _baseline_tss_from_components(
         avg365 * 0.75,
     )
     if capacity_baseline <= 0:
-        return max(history_anchor if history_anchor > 0.0 else avg21, chronic_floor, 1.0)
-    baseline_pre_floor = history_influence * history_anchor + (1.0 - history_influence) * capacity_baseline
+        return max(
+            history_anchor if history_anchor > 0.0 else avg21, chronic_floor, 1.0
+        )
+    baseline_pre_floor = (
+        history_influence * history_anchor
+        + (1.0 - history_influence) * capacity_baseline
+    )
     return max(baseline_pre_floor, chronic_floor)
 
 
-def _specificity_factor_for_plan_kind(kind: str | None, profile: dict[str, float]) -> float:
+def _specificity_factor_for_plan_kind(
+    kind: str | None, profile: dict[str, float]
+) -> float:
     k = str(kind or "").strip().lower()
     if k == "run":
         return 1.0
@@ -2153,7 +2458,9 @@ def _specificity_factor_for_plan_kind(kind: str | None, profile: dict[str, float
     return float(profile.get("non_running", 0.8))
 
 
-def _specificity_factor_for_sport(sport_type: str | None, profile: dict[str, float]) -> float:
+def _specificity_factor_for_sport(
+    sport_type: str | None, profile: dict[str, float]
+) -> float:
     sport = str(sport_type or "").strip().lower()
     if ("run" in sport) and ("treadmill" not in sport):
         return 1.0
@@ -2166,7 +2473,9 @@ def _specificity_factor_for_sport(sport_type: str | None, profile: dict[str, flo
     return float(profile.get("non_running", 0.8))
 
 
-def _apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, float]) -> pd.DataFrame:
+def _apply_specificity_factor(
+    df: pd.DataFrame, specificity_profile: dict[str, float]
+) -> pd.DataFrame:
     if df.empty:
         return df
 
@@ -2181,19 +2490,33 @@ def _apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, f
         base_proxy_factor = 0.8
         proxy_mask = ~is_running_like
         if "distance_proxy_method" in out.columns:
-            proxy_mask = proxy_mask & out["distance_proxy_method"].fillna("").astype(str).eq("tss_parity_root_solve")
+            proxy_mask = proxy_mask & out["distance_proxy_method"].fillna("").astype(
+                str
+            ).eq("tss_parity_root_solve")
         if proxy_mask.any():
-            proxy_factor = pd.to_numeric(out.loc[proxy_mask, "specificity_factor"], errors="coerce").fillna(0.0)
-            ratio = proxy_factor / float(base_proxy_factor) if base_proxy_factor > 0 else 1.0
+            proxy_factor = pd.to_numeric(
+                out.loc[proxy_mask, "specificity_factor"], errors="coerce"
+            ).fillna(0.0)
+            ratio = (
+                proxy_factor / float(base_proxy_factor)
+                if base_proxy_factor > 0
+                else 1.0
+            )
             proxy_scale = ratio.pow(0.5)
             out.loc[proxy_mask, "distance_proxy_km"] = (
-                pd.to_numeric(out.loc[proxy_mask, "distance_proxy_km"], errors="coerce").fillna(0.0).values
+                pd.to_numeric(out.loc[proxy_mask, "distance_proxy_km"], errors="coerce")
+                .fillna(0.0)
+                .values
                 * proxy_scale.values
             )
             if "pace_proxy_sec_per_km" in out.columns:
                 pace_scale = 1.0 / proxy_scale.replace(0.0, pd.NA)
                 out.loc[proxy_mask, "pace_proxy_sec_per_km"] = (
-                    pd.to_numeric(out.loc[proxy_mask, "pace_proxy_sec_per_km"], errors="coerce").fillna(0.0).values
+                    pd.to_numeric(
+                        out.loc[proxy_mask, "pace_proxy_sec_per_km"], errors="coerce"
+                    )
+                    .fillna(0.0)
+                    .values
                     * pd.to_numeric(pace_scale, errors="coerce").fillna(0.0).values
                 )
 
@@ -2213,7 +2536,10 @@ def _apply_specificity_factor(df: pd.DataFrame, specificity_profile: dict[str, f
     ]
     for col in factor_cols:
         if col in out.columns:
-            out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0.0) * out["specificity_factor"]
+            out[col] = (
+                pd.to_numeric(out[col], errors="coerce").fillna(0.0)
+                * out["specificity_factor"]
+            )
     return out
 
 
@@ -2229,7 +2555,11 @@ def _curve_value_at(
         ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
     chosen = float(default_value)
     for d, v in points:
-        d_cmp = d.astimezone(timezone.utc).replace(tzinfo=None) if d.tzinfo is not None else d
+        d_cmp = (
+            d.astimezone(timezone.utc).replace(tzinfo=None)
+            if d.tzinfo is not None
+            else d
+        )
         if d_cmp <= ts:
             chosen = float(v)
         else:
@@ -2237,7 +2567,9 @@ def _curve_value_at(
     return float(chosen)
 
 
-def _target_hr_bpm(avg_hr_bpm: Any, if_proxy: float | int | None, lthr_bpm: float | int | None) -> float:
+def _target_hr_bpm(
+    avg_hr_bpm: Any, if_proxy: float | int | None, lthr_bpm: float | int | None
+) -> float:
     explicit_hr = _safe_float(avg_hr_bpm)
     if explicit_hr > 0:
         return explicit_hr
@@ -2267,7 +2599,13 @@ def _plan_activity_kind(text: str) -> str:
         return "treadmill"
     if "run" in t:
         return "run"
-    if "ellipt" in t or "xtrain" in t or "x-train" in t or "cross train" in t or "cross-train" in t:
+    if (
+        "ellipt" in t
+        or "xtrain" in t
+        or "x-train" in t
+        or "cross train" in t
+        or "cross-train" in t
+    ):
         return "elliptical"
     if "cycl" in t or "bike" in t:
         return "cycling"
@@ -2443,9 +2781,19 @@ def _parse_tss_token(text: str) -> float | None:
 
 def _normalize_plan_text(text: str) -> str:
     t = " ".join(str(text or "").strip().split())
-    t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:min|mins|minute|minutes)\b", r"\1min", t, flags=re.IGNORECASE)
+    t = re.sub(
+        r"(\d+(?:\.\d+)?)\s*(?:min|mins|minute|minutes)\b",
+        r"\1min",
+        t,
+        flags=re.IGNORECASE,
+    )
     t = re.sub(r"(\d+(?:\.\d+)?)\s*[\'’](?=\D|$)", r"\1min", t, flags=re.IGNORECASE)
-    t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", r"\1s", t, flags=re.IGNORECASE)
+    t = re.sub(
+        r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b",
+        r"\1s",
+        t,
+        flags=re.IGNORECASE,
+    )
     t = re.sub(r"(\d+(?:\.\d+)?)\s*h\b", r"\1h", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*km\b", r"\1km", t, flags=re.IGNORECASE)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*m\b", r"\1m", t, flags=re.IGNORECASE)
@@ -2457,14 +2805,20 @@ def _normalize_plan_text(text: str) -> str:
 
 def _strip_meridiem_tokens(text: str) -> tuple[str, str | None]:
     raw = str(text or "")
-    token_matches = re.findall(r"(?<![A-Za-z0-9_])(AM|PM)(?![A-Za-z0-9_])", raw, flags=re.IGNORECASE)
+    token_matches = re.findall(
+        r"(?<![A-Za-z0-9_])(AM|PM)(?![A-Za-z0-9_])", raw, flags=re.IGNORECASE
+    )
     hint = str(token_matches[-1]).upper() if token_matches else None
-    cleaned = re.sub(r"(?<![A-Za-z0-9_])(AM|PM)(?![A-Za-z0-9_])", " ", raw, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"(?<![A-Za-z0-9_])(AM|PM)(?![A-Za-z0-9_])", " ", raw, flags=re.IGNORECASE
+    )
     cleaned = " ".join(cleaned.strip().split())
     return cleaned, hint
 
 
-def _parse_dated_activity_entry(text: str) -> tuple[pd.Timestamp | None, str, str | None]:
+def _parse_dated_activity_entry(
+    text: str,
+) -> tuple[pd.Timestamp | None, str, str | None]:
     raw = str(text or "").strip()
     if not raw:
         return None, "", "Input is empty. Use `[date]:[activity]`."
@@ -2515,9 +2869,13 @@ def _parse_dated_activity_entry(text: str) -> tuple[pd.Timestamp | None, str, st
         if parsed_day is not None:
             date_value = pd.Timestamp(parsed_day)
     if date_value is None:
-        return None, activity_text, (
-            "Invalid date format. Use one of: `today`, `tomorrow`, `yesterday`, `T`, `T+1`, `T-1`, "
-            "`3Mar26`, `2026-03-26`, `26/03/2026`."
+        return (
+            None,
+            activity_text,
+            (
+                "Invalid date format. Use one of: `today`, `tomorrow`, `yesterday`, `T`, `T+1`, `T-1`, "
+                "`3Mar26`, `2026-03-26`, `26/03/2026`."
+            ),
         )
     return date_value, activity_text, None
 
@@ -2569,7 +2927,9 @@ def _expand_planned_segments(
         if kind == "other" and last_kind is not None:
             kind = last_kind
         if kind == "other":
-            warnings.append(f"Missing/unknown activity in: `{chunk}` (include run/treadmill/elliptical/cycling)")
+            warnings.append(
+                f"Missing/unknown activity in: `{chunk}` (include run/treadmill/elliptical/cycling)"
+            )
             continue
         is_running_like = kind in {"run", "treadmill"}
         if named_pace is not None:
@@ -2579,12 +2939,18 @@ def _expand_planned_segments(
                 )
                 continue
             if not has_vdot_basis:
-                warnings.append(f"Named pace token requires configured LT pace/VDOT in Settings for: `{chunk}`.")
+                warnings.append(
+                    f"Named pace token requires configured LT pace/VDOT in Settings for: `{chunk}`."
+                )
                 continue
             if pace is None:
-                pace = _pace_sec_per_km_from_named_vdot_token(named_pace, threshold_pace_value)
+                pace = _pace_sec_per_km_from_named_vdot_token(
+                    named_pace, threshold_pace_value
+                )
             if pace is None or pace <= 0:
-                warnings.append(f"Could not derive `{named_pace.upper()}` pace from VDOT for: `{chunk}`.")
+                warnings.append(
+                    f"Could not derive `{named_pace.upper()}` pace from VDOT for: `{chunk}`."
+                )
                 continue
         if (not is_running_like) and (pace is not None):
             warnings.append(
@@ -2592,17 +2958,33 @@ def _expand_planned_segments(
             )
             continue
         if bpm is None and pace is None and if_input is None and tss_input is None:
-            warnings.append(f"Missing intensity in: `{chunk}` (add `@140bpm`, `@70%`, `@4:50/km`, `@MP`, `@HMP`, `@10k`, or `@40TSS`)")
+            warnings.append(
+                f"Missing intensity in: `{chunk}` (add `@140bpm`, `@70%`, `@4:50/km`, `@MP`, `@HMP`, `@10k`, or `@40TSS`)"
+            )
             continue
 
-        recovery_minutes = _parse_minutes_token(recovery_chunk) if recovery_chunk else None
-        recovery_distance_km = _parse_distance_km_token(recovery_chunk) if recovery_chunk else None
+        recovery_minutes = (
+            _parse_minutes_token(recovery_chunk) if recovery_chunk else None
+        )
+        recovery_distance_km = (
+            _parse_distance_km_token(recovery_chunk) if recovery_chunk else None
+        )
         recovery_bpm = _parse_bpm_token(recovery_chunk) if recovery_chunk else None
         recovery_pace = _parse_pace_token(recovery_chunk) if recovery_chunk else None
         recovery_if_input = _parse_if_token(recovery_chunk) if recovery_chunk else None
-        recovery_if_source: str | None = "explicit" if recovery_if_input is not None else None
-        recovery_tss_input = _parse_tss_token(recovery_chunk) if recovery_chunk else None
-        if recovery_chunk and recovery_bpm is None and recovery_pace is None and recovery_if_input is None and recovery_tss_input is None:
+        recovery_if_source: str | None = (
+            "explicit" if recovery_if_input is not None else None
+        )
+        recovery_tss_input = (
+            _parse_tss_token(recovery_chunk) if recovery_chunk else None
+        )
+        if (
+            recovery_chunk
+            and recovery_bpm is None
+            and recovery_pace is None
+            and recovery_if_input is None
+            and recovery_tss_input is None
+        ):
             warnings.append(f"Missing recovery intensity in: `{chunk}`")
             continue
 
@@ -2614,20 +2996,40 @@ def _expand_planned_segments(
             reps = int(rep_match.group(1))
             rep_value = float(rep_match.group(2))
             rep_unit = rep_match.group(3)
-            rep_minutes = rep_value * 60.0 if rep_unit.startswith("h") else (rep_value / 60.0 if rep_unit.startswith("s") else rep_value)
+            rep_minutes = (
+                rep_value * 60.0
+                if rep_unit.startswith("h")
+                else (rep_value / 60.0 if rep_unit.startswith("s") else rep_value)
+            )
             if reps <= 0 or rep_minutes <= 0:
                 warnings.append(f"Invalid interval block in: `{chunk}`")
                 continue
-            if tss_input is not None and tss_input > 0 and bpm is None and pace is None and if_input is None:
+            if (
+                tss_input is not None
+                and tss_input > 0
+                and bpm is None
+                and pace is None
+                and if_input is None
+            ):
                 seg_duration_h = rep_minutes / 60.0
                 per_rep_tss = float(tss_input) / float(max(reps, 1))
                 if seg_duration_h > 0:
                     derived_if = (per_rep_tss / (seg_duration_h * 100.0)) ** 0.5
                     if_input = max(float(derived_if), 0.0)
                     if_input_source = "tss_derived"
-                    if is_running_like and pace is None and threshold_pace_value > 0 and if_input > 0:
+                    if (
+                        is_running_like
+                        and pace is None
+                        and threshold_pace_value > 0
+                        and if_input > 0
+                    ):
                         pace = threshold_pace_value / if_input
-                    elif (not is_running_like) and bpm is None and lthr_value > 0 and if_input > 0:
+                    elif (
+                        (not is_running_like)
+                        and bpm is None
+                        and lthr_value > 0
+                        and if_input > 0
+                    ):
                         bpm = lthr_value * if_input
             recovery_duration_min = recovery_minutes
             if recovery_duration_min is None and recovery_distance_km is not None:
@@ -2637,29 +3039,47 @@ def _expand_planned_segments(
                     )
                     continue
                 if recovery_pace is None or recovery_pace <= 0:
-                    warnings.append(f"Distance-based recovery requires pace in: `{chunk}`")
+                    warnings.append(
+                        f"Distance-based recovery requires pace in: `{chunk}`"
+                    )
                     continue
                 recovery_duration_min = (recovery_distance_km * recovery_pace) / 60.0
-            if recovery_chunk and (recovery_duration_min is None or recovery_duration_min <= 0):
+            if recovery_chunk and (
+                recovery_duration_min is None or recovery_duration_min <= 0
+            ):
                 warnings.append(f"Could not parse recovery duration from: `{chunk}`")
                 continue
-            if recovery_tss_input is not None and recovery_tss_input > 0 and recovery_bpm is None and recovery_pace is None and recovery_if_input is None:
+            if (
+                recovery_tss_input is not None
+                and recovery_tss_input > 0
+                and recovery_bpm is None
+                and recovery_pace is None
+                and recovery_if_input is None
+            ):
                 rec_duration_h = float(recovery_duration_min or 0.0) / 60.0
                 if rec_duration_h <= 0:
-                    warnings.append(f"TSS-based recovery requires positive duration in: `{chunk}`")
+                    warnings.append(
+                        f"TSS-based recovery requires positive duration in: `{chunk}`"
+                    )
                     continue
-                rec_derived_if = (float(recovery_tss_input) / (rec_duration_h * 100.0)) ** 0.5
+                rec_derived_if = (
+                    float(recovery_tss_input) / (rec_duration_h * 100.0)
+                ) ** 0.5
                 recovery_if_input = max(float(rec_derived_if), 0.0)
                 recovery_if_source = "tss_derived"
                 if is_running_like:
                     if threshold_pace_value <= 0:
-                        warnings.append(f"Missing LT pace to convert recovery TSS to pace in: `{chunk}`")
+                        warnings.append(
+                            f"Missing LT pace to convert recovery TSS to pace in: `{chunk}`"
+                        )
                         continue
                     if recovery_if_input > 0:
                         recovery_pace = threshold_pace_value / recovery_if_input
                 else:
                     if lthr_value <= 0:
-                        warnings.append(f"Missing LTHR to convert recovery TSS to HR in: `{chunk}`")
+                        warnings.append(
+                            f"Missing LTHR to convert recovery TSS to HR in: `{chunk}`"
+                        )
                         continue
                     recovery_bpm = lthr_value * recovery_if_input
             for rep_idx in range(max(reps, 0)):
@@ -2671,7 +3091,9 @@ def _expand_planned_segments(
                         "pace_s_per_km": pace,
                         "if_input": if_input,
                         "if_input_source": if_input_source,
-                        "tss_target": (float(tss_input) / float(max(reps, 1))) if tss_input else None,
+                        "tss_target": (float(tss_input) / float(max(reps, 1)))
+                        if tss_input
+                        else None,
                         "time_hint": line_time_hint,
                         "source": chunk,
                     }
@@ -2685,7 +3107,9 @@ def _expand_planned_segments(
                             "pace_s_per_km": recovery_pace,
                             "if_input": recovery_if_input,
                             "if_input_source": recovery_if_source,
-                            "tss_target": float(recovery_tss_input) if recovery_tss_input else None,
+                            "tss_target": float(recovery_tss_input)
+                            if recovery_tss_input
+                            else None,
                             "time_hint": line_time_hint,
                             "source": chunk,
                         }
@@ -2701,45 +3125,79 @@ def _expand_planned_segments(
                     f"Distance-only reps require running/treadmill with pace in: `{chunk}` (non-running should use time + bpm/%IF)."
                 )
                 continue
-            if pace is None and if_input is not None and if_input > 0 and threshold_pace_value > 0:
+            if (
+                pace is None
+                and if_input is not None
+                and if_input > 0
+                and threshold_pace_value > 0
+            ):
                 pace = threshold_pace_value / float(if_input)
                 if_input_source = if_input_source or "if_input"
-            if pace is None and tss_input is not None and tss_input > 0 and threshold_pace_value > 0:
+            if (
+                pace is None
+                and tss_input is not None
+                and tss_input > 0
+                and threshold_pace_value > 0
+            ):
                 total_distance_km = rep_distance_km * float(max(reps, 1))
-                pace = (total_distance_km * (threshold_pace_value**2) * 100.0) / (3600.0 * float(tss_input))
+                pace = (total_distance_km * (threshold_pace_value**2) * 100.0) / (
+                    3600.0 * float(tss_input)
+                )
                 if pace > 0:
                     if_input = threshold_pace_value / pace
                     if_input_source = "tss_derived"
             if pace is None or pace <= 0:
-                warnings.append(f"Distance-based reps require pace in: `{chunk}` (add `@4:50/km`)")
+                warnings.append(
+                    f"Distance-based reps require pace in: `{chunk}` (add `@4:50/km`)"
+                )
                 continue
             rep_minutes = (rep_distance_km * pace) / 60.0
             if rep_minutes <= 0:
-                warnings.append(f"Could not derive duration from repeated distance in: `{chunk}`")
+                warnings.append(
+                    f"Could not derive duration from repeated distance in: `{chunk}`"
+                )
                 continue
             recovery_duration_min = recovery_minutes
             if recovery_duration_min is None and recovery_distance_km is not None:
                 if recovery_pace is None or recovery_pace <= 0:
-                    warnings.append(f"Distance-based recovery requires pace in: `{chunk}`")
+                    warnings.append(
+                        f"Distance-based recovery requires pace in: `{chunk}`"
+                    )
                     continue
                 recovery_duration_min = (recovery_distance_km * recovery_pace) / 60.0
-            if recovery_chunk and (recovery_duration_min is None or recovery_duration_min <= 0):
+            if recovery_chunk and (
+                recovery_duration_min is None or recovery_duration_min <= 0
+            ):
                 warnings.append(f"Could not parse recovery duration from: `{chunk}`")
                 continue
-            if recovery_tss_input is not None and recovery_tss_input > 0 and recovery_bpm is None and recovery_pace is None and recovery_if_input is None:
+            if (
+                recovery_tss_input is not None
+                and recovery_tss_input > 0
+                and recovery_bpm is None
+                and recovery_pace is None
+                and recovery_if_input is None
+            ):
                 rec_duration_h = float(recovery_duration_min or 0.0) / 60.0
                 if rec_duration_h <= 0:
-                    warnings.append(f"TSS-based recovery requires positive duration in: `{chunk}`")
+                    warnings.append(
+                        f"TSS-based recovery requires positive duration in: `{chunk}`"
+                    )
                     continue
-                rec_derived_if = (float(recovery_tss_input) / (rec_duration_h * 100.0)) ** 0.5
+                rec_derived_if = (
+                    float(recovery_tss_input) / (rec_duration_h * 100.0)
+                ) ** 0.5
                 recovery_if_input = max(float(rec_derived_if), 0.0)
                 recovery_if_source = "tss_derived"
                 if threshold_pace_value <= 0:
-                    warnings.append(f"Missing LT pace to convert recovery TSS to pace in: `{chunk}`")
+                    warnings.append(
+                        f"Missing LT pace to convert recovery TSS to pace in: `{chunk}`"
+                    )
                     continue
                 if recovery_if_input > 0:
                     recovery_pace = threshold_pace_value / recovery_if_input
-            per_rep_tss = (float(tss_input) / float(max(reps, 1))) if tss_input else None
+            per_rep_tss = (
+                (float(tss_input) / float(max(reps, 1))) if tss_input else None
+            )
             for rep_idx in range(max(reps, 0)):
                 segments.append(
                     {
@@ -2763,7 +3221,9 @@ def _expand_planned_segments(
                             "pace_s_per_km": recovery_pace,
                             "if_input": recovery_if_input,
                             "if_input_source": recovery_if_source,
-                            "tss_target": float(recovery_tss_input) if recovery_tss_input else None,
+                            "tss_target": float(recovery_tss_input)
+                            if recovery_tss_input
+                            else None,
                             "time_hint": line_time_hint,
                             "source": chunk,
                         }
@@ -2780,15 +3240,29 @@ def _expand_planned_segments(
                         f"Distance-only segment requires running/treadmill with pace in: `{chunk}` (non-running should use minutes + bpm/%IF)."
                     )
                     continue
-                if pace is None and if_input is not None and if_input > 0 and threshold_pace_value > 0:
+                if (
+                    pace is None
+                    and if_input is not None
+                    and if_input > 0
+                    and threshold_pace_value > 0
+                ):
                     pace = threshold_pace_value / float(if_input)
                     if_input_source = if_input_source or "if_input"
-                if pace is None and tss_input is not None and tss_input > 0 and threshold_pace_value > 0:
-                    pace = (distance_km * (threshold_pace_value**2) * 100.0) / (3600.0 * float(tss_input))
+                if (
+                    pace is None
+                    and tss_input is not None
+                    and tss_input > 0
+                    and threshold_pace_value > 0
+                ):
+                    pace = (distance_km * (threshold_pace_value**2) * 100.0) / (
+                        3600.0 * float(tss_input)
+                    )
                     if pace > 0:
                         if_input = threshold_pace_value / pace
                 if pace is None or pace <= 0:
-                    warnings.append(f"Distance-based segment requires pace in: `{chunk}` (add `@4:50/km`)")
+                    warnings.append(
+                        f"Distance-based segment requires pace in: `{chunk}` (add `@4:50/km`)"
+                    )
                     continue
                 minutes = (distance_km * pace) / 60.0
         if minutes is None:
@@ -2797,17 +3271,27 @@ def _expand_planned_segments(
         if minutes <= 0:
             warnings.append(f"Duration must be > 0 in: `{chunk}`")
             continue
-        if tss_input is not None and tss_input > 0 and bpm is None and pace is None and if_input is None:
+        if (
+            tss_input is not None
+            and tss_input > 0
+            and bpm is None
+            and pace is None
+            and if_input is None
+        ):
             duration_h = float(minutes) / 60.0
             if duration_h <= 0:
-                warnings.append(f"TSS-based intensity requires positive duration in: `{chunk}`")
+                warnings.append(
+                    f"TSS-based intensity requires positive duration in: `{chunk}`"
+                )
                 continue
             derived_if = (float(tss_input) / (duration_h * 100.0)) ** 0.5
             if_input = max(float(derived_if), 0.0)
             if_input_source = "tss_derived"
             if is_running_like:
                 if threshold_pace_value <= 0:
-                    warnings.append(f"Missing LT pace to convert TSS to pace in: `{chunk}`")
+                    warnings.append(
+                        f"Missing LT pace to convert TSS to pace in: `{chunk}`"
+                    )
                     continue
                 if if_input > 0:
                     pace = threshold_pace_value / if_input
@@ -2899,7 +3383,9 @@ def _segments_from_stored_or_source(
         try:
             parsed = json.loads(parsed_json)
             if isinstance(parsed, list):
-                stored_segments = [_normalize_segment(s) for s in parsed if isinstance(s, dict)]
+                stored_segments = [
+                    _normalize_segment(s) for s in parsed if isinstance(s, dict)
+                ]
         except Exception:
             stored_segments = []
     return [_normalize_segment(s) for s in stored_segments]
@@ -3032,8 +3518,16 @@ def _segment_with_effective_intensity_for_metrics(
         has_pace = bool(re.search(r"@\s*\d{1,2}:\d{2}\s*/?\s*km\b", source_text))
         if not (has_tss and (not has_bpm) and (not has_if_pct) and (not has_pace)):
             return seg_for_metrics
-    tss_target = pd.to_numeric(pd.Series([seg_for_metrics.get("tss_target")]), errors="coerce").fillna(0.0).iloc[0]
-    duration_min = pd.to_numeric(pd.Series([seg_for_metrics.get("duration_min")]), errors="coerce").fillna(0.0).iloc[0]
+    tss_target = (
+        pd.to_numeric(pd.Series([seg_for_metrics.get("tss_target")]), errors="coerce")
+        .fillna(0.0)
+        .iloc[0]
+    )
+    duration_min = (
+        pd.to_numeric(pd.Series([seg_for_metrics.get("duration_min")]), errors="coerce")
+        .fillna(0.0)
+        .iloc[0]
+    )
     spec = float(max(seg_spec, 0.0))
     duration_h = float(max(duration_min, 0.0)) / 60.0
     if spec <= 0 or duration_h <= 0 or float(tss_target) <= 0:
@@ -3056,7 +3550,17 @@ def _compute_planned_rows_metrics_df(
     specificity_profile: dict[str, float],
 ) -> pd.DataFrame:
     if planned_rows.empty:
-        return pd.DataFrame(columns=["day_utc", "tss", "rtss", "distance_proxy_km", "duration_s", "if_proxy", "avg_hr_bpm"])
+        return pd.DataFrame(
+            columns=[
+                "day_utc",
+                "tss",
+                "rtss",
+                "distance_proxy_km",
+                "duration_s",
+                "if_proxy",
+                "avg_hr_bpm",
+            ]
+        )
 
     out = planned_rows.copy()
     tss_vals: list[float] = []
@@ -3069,8 +3573,14 @@ def _compute_planned_rows_metrics_df(
     has_vdot_basis = bool(lt_pace_curve_points)
     for _, row in out.iterrows():
         day_for_curve = pd.to_datetime(row.get("day_utc"), utc=True, errors="coerce")
-        lthr_for_day = float(_curve_value_at(lthr_curve_points, float(lthr_default_bpm), day_for_curve))
-        lt_pace_for_day = float(_curve_value_at(lt_pace_curve_points, float(lt_pace_default_sec), day_for_curve))
+        lthr_for_day = float(
+            _curve_value_at(lthr_curve_points, float(lthr_default_bpm), day_for_curve)
+        )
+        lt_pace_for_day = float(
+            _curve_value_at(
+                lt_pace_curve_points, float(lt_pace_default_sec), day_for_curve
+            )
+        )
         segments = _segments_from_stored_or_source(
             parsed_json=row.get("parsed_json"),
             source_text=str(row.get("workout_text") or ""),
@@ -3089,7 +3599,9 @@ def _compute_planned_rows_metrics_df(
         for seg in segments:
             seg_kind = str(seg.get("kind") or "").strip().lower()
             seg_spec = _specificity_factor_for_plan_kind(seg_kind, specificity_profile)
-            seg_for_metrics = _segment_with_effective_intensity_for_metrics(seg, seg_kind=seg_kind, seg_spec=seg_spec)
+            seg_for_metrics = _segment_with_effective_intensity_for_metrics(
+                seg, seg_kind=seg_kind, seg_spec=seg_spec
+            )
             m = _planned_segment_metrics(
                 seg_for_metrics,
                 lthr_bpm=lthr_for_day,
@@ -3098,7 +3610,9 @@ def _compute_planned_rows_metrics_df(
             )
             seg_duration = float(m.get("duration_s") or 0.0)
             seg_if = float(m.get("if_proxy") or 0.0)
-            seg_hr = _target_hr_bpm(seg_for_metrics.get("avg_hr_bpm"), seg_if, lthr_for_day)
+            seg_hr = _target_hr_bpm(
+                seg_for_metrics.get("avg_hr_bpm"), seg_if, lthr_for_day
+            )
             total_tss += float(m.get("tss") or 0.0) * float(seg_spec)
             total_rtss += float(m.get("rtss") or 0.0) * float(seg_spec)
             total_dist_eqv += float(m.get("distance_eqv_km") or 0.0)
@@ -3115,7 +3629,9 @@ def _compute_planned_rows_metrics_df(
         dur_vals.append(if_weight_seconds)
         row_if = if_weighted_sum / if_weight_seconds if if_weight_seconds > 0 else 0.0
         if_vals.append(row_if)
-        hr_vals.append((hr_weighted_sum / hr_weight_seconds) if hr_weight_seconds > 0 else 0.0)
+        hr_vals.append(
+            (hr_weighted_sum / hr_weight_seconds) if hr_weight_seconds > 0 else 0.0
+        )
         if row_if > 0 and lt_pace_for_day > 0:
             pace_proxy_vals.append(float(lt_pace_for_day / row_if))
         else:
@@ -3154,7 +3670,9 @@ def _planned_row_time_hint(row: pd.Series) -> str | None:
     return hint if hint in {"AM", "PM"} else None
 
 
-def _planned_row_expiry_local(day_local: pd.Timestamp, time_hint: str | None) -> pd.Timestamp:
+def _planned_row_expiry_local(
+    day_local: pd.Timestamp, time_hint: str | None
+) -> pd.Timestamp:
     day_norm = pd.Timestamp(day_local).normalize()
     hint = str(time_hint or "").strip().upper()
     if hint == "AM":
@@ -3174,8 +3692,12 @@ def _filter_effective_planned_rows(
 
     out = planned_df.copy()
     day_col = pd.to_datetime(out.get("day_utc"), errors="coerce").dt.normalize()
-    manual_done_col = pd.to_numeric(out.get("manual_done"), errors="coerce").fillna(0.0) > 0
-    now_local = pd.Timestamp(now_local_ts) if now_local_ts is not None else _now_app_local()
+    manual_done_col = (
+        pd.to_numeric(out.get("manual_done"), errors="coerce").fillna(0.0) > 0
+    )
+    now_local = (
+        pd.Timestamp(now_local_ts) if now_local_ts is not None else _now_app_local()
+    )
     if now_local.tzinfo is not None:
         now_local = now_local.tz_localize(None)
 
@@ -3226,13 +3748,17 @@ def _planned_daily_metric_map(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    specificity_profile = _load_specificity_profile(
+        db_path=db_path, fallback_default=0.8
+    )
     metrics_rows = _compute_planned_rows_metrics_df(
         planned_rows=planned_rows,
         lthr_curve_points=lthr_curve,
         lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
         lt_pace_curve_points=pace_curve,
-        lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        lt_pace_default_sec=float(pace_curve[-1][1])
+        if pace_curve
+        else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
         specificity_profile=specificity_profile,
     )
     if metrics_rows.empty:
@@ -3241,10 +3767,19 @@ def _planned_daily_metric_map(
     if sport_filter:
         sf = str(sport_filter).strip().lower()
         if sf:
-            activity_text = metrics_rows.get("workout_text", pd.Series(index=metrics_rows.index, dtype=object)).fillna("").astype(str).str.lower()
+            activity_text = (
+                metrics_rows.get(
+                    "workout_text", pd.Series(index=metrics_rows.index, dtype=object)
+                )
+                .fillna("")
+                .astype(str)
+                .str.lower()
+            )
             metrics_rows = metrics_rows[activity_text.str.contains(sf)]
 
-    metrics_rows["day"] = pd.to_datetime(metrics_rows["day_utc"], errors="coerce").dt.normalize()
+    metrics_rows["day"] = pd.to_datetime(
+        metrics_rows["day_utc"], errors="coerce"
+    ).dt.normalize()
     metrics_rows = metrics_rows.dropna(subset=["day"])
     if metrics_rows.empty:
         return {}, {}, 0.0
@@ -3267,25 +3802,36 @@ def _planned_daily_metric_map(
         .to_dict()
     )
 
-    today_local = pd.Timestamp(today_local_day if today_local_day is not None else datetime.now().astimezone().date()).normalize()
+    today_local = pd.Timestamp(
+        today_local_day
+        if today_local_day is not None
+        else datetime.now().astimezone().date()
+    ).normalize()
     remaining_start_day = max(today_local, pd.Timestamp(week_start).normalize())
     # Remaining-to-go should ignore AM/PM expiry and only honor explicit manual done.
     metrics_remaining = metrics_rows.copy()
-    metrics_remaining["manual_done"] = pd.to_numeric(
-        metrics_remaining.get("manual_done"),
-        errors="coerce",
-    ).fillna(0.0) > 0
+    metrics_remaining["manual_done"] = (
+        pd.to_numeric(
+            metrics_remaining.get("manual_done"),
+            errors="coerce",
+        ).fillna(0.0)
+        > 0
+    )
     metrics_remaining = metrics_remaining.loc[~metrics_remaining["manual_done"]].copy()
     remaining_metric_total = 0.0
     if not metrics_remaining.empty:
-        metrics_remaining["day"] = pd.to_datetime(metrics_remaining.get("day"), errors="coerce").dt.normalize()
+        metrics_remaining["day"] = pd.to_datetime(
+            metrics_remaining.get("day"), errors="coerce"
+        ).dt.normalize()
         metrics_remaining = metrics_remaining.dropna(subset=["day"])
         metrics_remaining = metrics_remaining[
             (metrics_remaining["day"] >= remaining_start_day)
             & (metrics_remaining["day"] <= week_end)
         ].copy()
         remaining_metric_total = float(
-            pd.to_numeric(metrics_remaining.get(metric_col), errors="coerce").fillna(0.0).sum()
+            pd.to_numeric(metrics_remaining.get(metric_col), errors="coerce")
+            .fillna(0.0)
+            .sum()
         )
 
     return (
@@ -3350,7 +3896,9 @@ def _activity_kind_display_name(kind: str) -> str:
     return (normalized or "activity").capitalize()
 
 
-def _activity_type_matches_filter(segments: list[dict[str, Any]], activity_type: str | None) -> bool:
+def _activity_type_matches_filter(
+    segments: list[dict[str, Any]], activity_type: str | None
+) -> bool:
     target = str(activity_type or "").strip().lower()
     if not target:
         return True
@@ -3398,7 +3946,12 @@ def _generated_activity_primary_modality(
         dominant_kind = max(duration_by_kind.items(), key=lambda item: item[1])[0]
         return _normalized_generated_activity_modality(dominant_kind)
     text = str(source_text or "").strip().lower()
-    if "ellipt" in text or "xtrain" in text or "x-train" in text or "cross-train" in text:
+    if (
+        "ellipt" in text
+        or "xtrain" in text
+        or "x-train" in text
+        or "cross-train" in text
+    ):
         return "elliptical"
     if "cycl" in text or "bike" in text:
         return "bike"
@@ -3460,7 +4013,11 @@ def _generated_activity_text_from_segments(
     activity_name = _activity_kind_display_name(dominant_kind)
     duration_label = _format_duration_for_generated_activity(total_minutes)
     if dominant_kind in {"run", "treadmill"}:
-        pace_value = weighted_pace_sum / weighted_pace_minutes if weighted_pace_minutes > 0 else 0.0
+        pace_value = (
+            weighted_pace_sum / weighted_pace_minutes
+            if weighted_pace_minutes > 0
+            else 0.0
+        )
         pace_label = _format_pace_short(pace_value if pace_value > 0 else None)
         if pace_label != "-":
             return f"{activity_name} {duration_label} @{pace_label}"
@@ -3496,7 +4053,17 @@ def _generated_activity_priority(
         total_distance_km += _safe_float(seg.get("distance_km"))
 
     avg_if = (if_weighted_sum / if_weight_minutes) if if_weight_minutes > 0 else 0.0
-    race_tokens = (" race", "mp", "hmp", "10k", "5k", "time trial", "tt", "42.2", "21.1")
+    race_tokens = (
+        " race",
+        "mp",
+        "hmp",
+        "10k",
+        "5k",
+        "time trial",
+        "tt",
+        "42.2",
+        "21.1",
+    )
     has_race_token = any(token in raw for token in race_tokens)
     is_race_like = (
         has_race_token
@@ -3538,7 +4105,11 @@ def _generated_activity_stats(
         else:
             pace_value = _safe_float(seg.get("pace_s_per_km"))
             kind = str(seg.get("kind") or "").strip().lower()
-            if kind in {"run", "treadmill"} and pace_value > 0 and threshold_pace_sec_per_km > 0:
+            if (
+                kind in {"run", "treadmill"}
+                and pace_value > 0
+                and threshold_pace_sec_per_km > 0
+            ):
                 if_proxy = threshold_pace_sec_per_km / pace_value
             else:
                 avg_hr_bpm = _safe_float(seg.get("avg_hr_bpm"))
@@ -3617,8 +4188,16 @@ def _generated_activity_context(
     week_start = _week_start_monday(selected_day)
     week_end = week_start + pd.Timedelta(days=6)
     recent_start = selected_day - pd.Timedelta(days=84)
-    base_weekly_goal_tss = _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10 if threshold_pace_sec_per_km > 0 else 350.0
-    base_weekly_goal_rtss = _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 0.90 if threshold_pace_sec_per_km > 0 else 280.0
+    base_weekly_goal_tss = (
+        _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10
+        if threshold_pace_sec_per_km > 0
+        else 350.0
+    )
+    base_weekly_goal_rtss = (
+        _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 0.90
+        if threshold_pace_sec_per_km > 0
+        else 280.0
+    )
     base_daily_goal_tss = max(float(base_weekly_goal_tss) / 7.0, 0.0)
 
     metrics_df = _metrics_for_filters(
@@ -3677,30 +4256,33 @@ def _generated_activity_context(
             value_key="lt_pace_sec",
             fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
         )
-        specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+        specificity_profile = _load_specificity_profile(
+            db_path=db_path, fallback_default=0.8
+        )
         planned_metrics = _compute_planned_rows_metrics_df(
             planned_rows=planned_rows,
             lthr_curve_points=lthr_curve,
             lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
             lt_pace_curve_points=pace_curve,
-            lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+            lt_pace_default_sec=float(pace_curve[-1][1])
+            if pace_curve
+            else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
             specificity_profile=specificity_profile,
         )
         if not planned_metrics.empty:
-            planned_metrics["day"] = pd.to_datetime(planned_metrics.get("day_utc"), errors="coerce").dt.normalize()
+            planned_metrics["day"] = pd.to_datetime(
+                planned_metrics.get("day_utc"), errors="coerce"
+            ).dt.normalize()
             planned_metrics = planned_metrics.dropna(subset=["day"]).copy()
             planned_metrics = _filter_effective_planned_rows(
                 planned_df=planned_metrics,
                 today_local_day=_now_app_local().normalize(),
             )
             if not planned_metrics.empty:
-                daily_planned = (
-                    planned_metrics.groupby("day", as_index=False)
-                    .agg(
-                        tss=("tss", "sum"),
-                        rtss=("rtss", "sum"),
-                        duration_s=("duration_s", "sum"),
-                    )
+                daily_planned = planned_metrics.groupby("day", as_index=False).agg(
+                    tss=("tss", "sum"),
+                    rtss=("rtss", "sum"),
+                    duration_s=("duration_s", "sum"),
                 )
                 for _, row in daily_planned.iterrows():
                     day_key = pd.Timestamp(row.get("day")).normalize()
@@ -3771,24 +4353,38 @@ def _generated_activity_context(
         )
     )
     days_remaining_in_week = max(int((week_end - selected_day).days) + 1, 1)
-    week_gap_tss = float(base_weekly_goal_tss - actual_week_tss_to_date - planned_other_tss)
-    week_gap_rtss = float(base_weekly_goal_rtss - actual_week_rtss_to_date - planned_other_rtss)
+    week_gap_tss = float(
+        base_weekly_goal_tss - actual_week_tss_to_date - planned_other_tss
+    )
+    week_gap_rtss = float(
+        base_weekly_goal_rtss - actual_week_rtss_to_date - planned_other_rtss
+    )
     week_balanced_daily_tss = max(week_gap_tss / days_remaining_in_week, 0.0)
 
     previous_day = selected_day - pd.Timedelta(days=1)
     next_day = selected_day + pd.Timedelta(days=1)
     second_next_day = selected_day + pd.Timedelta(days=2)
-    prev_day_load = _safe_float(day_lookup.get(previous_day, {}).get("tss")) + _safe_float(planned_by_day.get(previous_day, {}).get("tss"))
+    prev_day_load = _safe_float(
+        day_lookup.get(previous_day, {}).get("tss")
+    ) + _safe_float(planned_by_day.get(previous_day, {}).get("tss"))
     next_day_load = _safe_float(planned_by_day.get(next_day, {}).get("tss"))
-    next_two_day_load = next_day_load + _safe_float(planned_by_day.get(second_next_day, {}).get("tss"))
+    next_two_day_load = next_day_load + _safe_float(
+        planned_by_day.get(second_next_day, {}).get("tss")
+    )
 
-    latest_model_day = max((day for day in model_lookup.keys() if day <= selected_day), default=None)
-    latest_model = model_lookup.get(latest_model_day, {}) if latest_model_day is not None else {}
+    latest_model_day = max(
+        (day for day in model_lookup.keys() if day <= selected_day), default=None
+    )
+    latest_model = (
+        model_lookup.get(latest_model_day, {}) if latest_model_day is not None else {}
+    )
     latest_wellness: dict[str, float] = {}
     wellness_df = get_wellness_df(db_path=db_path)
     if not wellness_df.empty:
         wellness_df = wellness_df.copy()
-        wellness_df["day"] = pd.to_datetime(wellness_df.get("day_utc"), errors="coerce").dt.normalize()
+        wellness_df["day"] = pd.to_datetime(
+            wellness_df.get("day_utc"), errors="coerce"
+        ).dt.normalize()
         wellness_df = wellness_df.dropna(subset=["day"])
         wellness_df = wellness_df[wellness_df["day"] <= selected_day].sort_values("day")
         if not wellness_df.empty:
@@ -3807,9 +4403,7 @@ def _generated_activity_context(
     recent_rtss_14 = _sum_actual(14, "rtss")
     recent_rtss_28 = _sum_actual(28, "rtss")
     recent_load_ratio = (
-        ((recent_tss_14 / 14.0) / (recent_tss_28 / 28.0))
-        if recent_tss_28 > 0
-        else 1.0
+        ((recent_tss_14 / 14.0) / (recent_tss_28 / 28.0)) if recent_tss_28 > 0 else 1.0
     )
 
     fatigue = _safe_float(latest_model.get("fatigue"))
@@ -3847,7 +4441,10 @@ def _generated_activity_context(
         and injury_risk < base_daily_goal_tss * 0.35
         and recent_load_ratio <= 1.12
     )
-    easy_bias = bool((recovery_alert or adjacent_hard_days or mild_easy_bias) and not progression_green)
+    easy_bias = bool(
+        (recovery_alert or adjacent_hard_days or mild_easy_bias)
+        and not progression_green
+    )
 
     return {
         "activity_type": str(activity_type or "").strip().lower(),
@@ -3887,7 +4484,9 @@ def _generated_activity_context(
     }
 
 
-def _generated_activity_preferred_buckets(day_utc: str, context: dict[str, Any] | None = None) -> list[str]:
+def _generated_activity_preferred_buckets(
+    day_utc: str, context: dict[str, Any] | None = None
+) -> list[str]:
     day_ts = pd.to_datetime(day_utc, errors="coerce")
     if pd.isna(day_ts):
         return []
@@ -3922,7 +4521,11 @@ def _generated_activity_day_goal_tss(
     threshold_pace_sec_per_km: float,
     context: dict[str, Any] | None = None,
 ) -> float:
-    base_daily_goal = (_weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10) / 7.0 if threshold_pace_sec_per_km > 0 else 50.0
+    base_daily_goal = (
+        (_weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10) / 7.0
+        if threshold_pace_sec_per_km > 0
+        else 50.0
+    )
     day_ts = pd.to_datetime(day_utc, errors="coerce")
     if pd.isna(day_ts):
         return float(base_daily_goal)
@@ -3948,15 +4551,27 @@ def _generated_activity_day_goal_tss(
     if bool(context.get("easy_bias")):
         target = min(target, max(base_goal * 0.95, week_balanced_target or 0.0))
     if bool(context.get("recovery_alert")):
-        target = min(target, max(base_goal * 0.80, week_balanced_target * 0.85 if week_balanced_target > 0 else 0.0))
-    if bool(context.get("progression_green")) and bool(context.get("week_behind")) and week_balanced_target > 0:
+        target = min(
+            target,
+            max(
+                base_goal * 0.80,
+                week_balanced_target * 0.85 if week_balanced_target > 0 else 0.0,
+            ),
+        )
+    if (
+        bool(context.get("progression_green"))
+        and bool(context.get("week_behind"))
+        and week_balanced_target > 0
+    ):
         target = max(target, min(week_balanced_target * 1.05, base_goal * 1.18))
     if bool(context.get("adjacent_hard_days")):
         target = min(target, max(base_goal * 0.92, week_balanced_target or 0.0))
     return float(max(target, 15.0))
 
 
-def _generated_activity_selection_penalty(item: dict[str, Any], context: dict[str, Any] | None) -> float:
+def _generated_activity_selection_penalty(
+    item: dict[str, Any], context: dict[str, Any] | None
+) -> float:
     if not context:
         return 0.0
     penalty = 0.0
@@ -3975,13 +4590,19 @@ def _generated_activity_selection_penalty(item: dict[str, Any], context: dict[st
             penalty += 10.0
     if bool(context.get("adjacent_hard_days")) and priority >= 2:
         penalty += 14.0
-    if str(context.get("activity_type") or "") == "running" and float(context.get("week_gap_rtss") or 0.0) <= 0:
+    if (
+        str(context.get("activity_type") or "") == "running"
+        and float(context.get("week_gap_rtss") or 0.0) <= 0
+    ):
         if bucket in {"intervals", "tempo", "fartlek", "long"}:
             penalty += 12.0
     if bool(context.get("progression_green")) and bool(context.get("week_behind")):
         if bucket == "recovery":
             penalty += 10.0
-        if priority == 0 and estimated_tss < float(context.get("base_daily_goal_tss") or 0.0) * 0.85:
+        if (
+            priority == 0
+            and estimated_tss < float(context.get("base_daily_goal_tss") or 0.0) * 0.85
+        ):
             penalty += 12.0
     return penalty
 
@@ -4000,7 +4621,11 @@ def _generated_activity_preference_penalty(
             penalty += 18.0
 
     priority = int(item.get("priority") or 0)
-    if context and bool(context.get("progression_green")) and bool(context.get("week_behind")):
+    if (
+        context
+        and bool(context.get("progression_green"))
+        and bool(context.get("week_behind"))
+    ):
         priority_penalties = {0: 3.0, 1: 0.0, 2: 2.0, 3: 12.0}
     elif context and bool(context.get("recovery_alert")):
         priority_penalties = {0: 0.0, 1: 4.0, 2: 16.0, 3: 28.0}
@@ -4074,25 +4699,37 @@ def _generated_activity_candidates(
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
     lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_default = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
     lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
     pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
     has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
 
     source_frames: list[tuple[pd.DataFrame, str]] = []
     if mode_normalized == "custom":
-        source_frames.append((get_custom_activities_df(db_path=db_path), "activity_text"))
-        source_frames.append((get_planned_activities_df(db_path=db_path), "workout_text"))
+        source_frames.append(
+            (get_custom_activities_df(db_path=db_path), "activity_text")
+        )
+        source_frames.append(
+            (get_planned_activities_df(db_path=db_path), "workout_text")
+        )
     else:
-        source_frames.append((get_planned_activities_df(db_path=db_path), "workout_text"))
-        source_frames.append((get_custom_activities_df(db_path=db_path), "activity_text"))
+        source_frames.append(
+            (get_planned_activities_df(db_path=db_path), "workout_text")
+        )
+        source_frames.append(
+            (get_custom_activities_df(db_path=db_path), "activity_text")
+        )
 
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for frame, text_column in source_frames:
         if frame.empty:
             continue
-        for _, row in frame.sort_values(["day_utc", "line_no"], ascending=[False, False]).iterrows():
+        for _, row in frame.sort_values(
+            ["day_utc", "line_no"], ascending=[False, False]
+        ).iterrows():
             source_text = str(row.get(text_column) or "")
             segments = _segments_from_stored_or_source(
                 parsed_json=row.get("parsed_json"),
@@ -4122,7 +4759,9 @@ def _generated_activity_candidates(
             out.append(
                 {
                     "activity_text": suggestion,
-                    "priority": _generated_activity_priority(segments=segments, source_text=source_text),
+                    "priority": _generated_activity_priority(
+                        segments=segments, source_text=source_text
+                    ),
                     "bucket": _generated_activity_bucket(
                         segments=segments,
                         source_text=source_text,
@@ -4133,7 +4772,9 @@ def _generated_activity_candidates(
                     "total_minutes": float(stats.get("total_minutes") or 0.0),
                     "avg_if": float(stats.get("avg_if") or 0.0),
                     "max_if": float(stats.get("max_if") or 0.0),
-                    "modality": _generated_activity_primary_modality(segments=segments, source_text=source_text),
+                    "modality": _generated_activity_primary_modality(
+                        segments=segments, source_text=source_text
+                    ),
                     "source": mode_normalized,
                 }
             )
@@ -4186,7 +4827,9 @@ def _fallback_activity_total_minutes(text: str) -> float:
     return 0.0
 
 
-def _planning_modality_from_row(workout_text: str, parsed_json: Any = None, sport_type: str | None = None) -> str:
+def _planning_modality_from_row(
+    workout_text: str, parsed_json: Any = None, sport_type: str | None = None
+) -> str:
     sport = _normalized_generated_activity_modality(sport_type)
     if sport != "unknown":
         return sport
@@ -4200,7 +4843,9 @@ def _planning_modality_from_row(workout_text: str, parsed_json: Any = None, spor
                 segments = [item for item in parsed if isinstance(item, dict)]
         except Exception:
             segments = []
-    modality = _generated_activity_primary_modality(segments=segments, source_text=workout_text)
+    modality = _generated_activity_primary_modality(
+        segments=segments, source_text=workout_text
+    )
     return modality
 
 
@@ -4220,16 +4865,37 @@ def _aggregate_actual_days_for_planning(
 
     out: list[dict[str, Any]] = []
     for day, group in working.groupby("day", sort=True):
-        duration_total = float(pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0).sum())
+        duration_total = float(
+            pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0).sum()
+        )
         if duration_total <= 0:
             duration_total = 1.0
-        sport_lower = group.get("sport_type", pd.Series(index=group.index, dtype=object)).fillna("").astype(str).str.lower()
-        running_mask = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
+        sport_lower = (
+            group.get("sport_type", pd.Series(index=group.index, dtype=object))
+            .fillna("")
+            .astype(str)
+            .str.lower()
+        )
+        running_mask = sport_lower.str.contains("run") | sport_lower.str.contains(
+            "treadmill"
+        )
         elliptical_mask = sport_lower.str.contains("ellipt")
         bike_mask = sport_lower.str.contains("bike") | sport_lower.str.contains("cycl")
-        running_duration = float(pd.to_numeric(group.loc[running_mask, "duration_s"], errors="coerce").fillna(0.0).sum())
-        elliptical_duration = float(pd.to_numeric(group.loc[elliptical_mask, "duration_s"], errors="coerce").fillna(0.0).sum())
-        bike_duration = float(pd.to_numeric(group.loc[bike_mask, "duration_s"], errors="coerce").fillna(0.0).sum())
+        running_duration = float(
+            pd.to_numeric(group.loc[running_mask, "duration_s"], errors="coerce")
+            .fillna(0.0)
+            .sum()
+        )
+        elliptical_duration = float(
+            pd.to_numeric(group.loc[elliptical_mask, "duration_s"], errors="coerce")
+            .fillna(0.0)
+            .sum()
+        )
+        bike_duration = float(
+            pd.to_numeric(group.loc[bike_mask, "duration_s"], errors="coerce")
+            .fillna(0.0)
+            .sum()
+        )
         modality_duration = {
             "running": running_duration,
             "elliptical": elliptical_duration,
@@ -4239,13 +4905,23 @@ def _aggregate_actual_days_for_planning(
         if_values = pd.to_numeric(group.get("if_proxy"), errors="coerce").fillna(0.0)
         durations = pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0)
         if_weighted_seconds = float((if_values * durations).sum())
-        avg_if = (if_weighted_seconds / float(durations.sum())) if float(durations.sum()) > 0 else 0.0
+        avg_if = (
+            (if_weighted_seconds / float(durations.sum()))
+            if float(durations.sum()) > 0
+            else 0.0
+        )
         max_if = float(if_values.max()) if not if_values.empty else 0.0
         out.append(
             {
                 "day_utc": pd.Timestamp(day).date().isoformat(),
-                "tss": float(pd.to_numeric(group.get("tss"), errors="coerce").fillna(0.0).sum()),
-                "duration_s": float(pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0).sum()),
+                "tss": float(
+                    pd.to_numeric(group.get("tss"), errors="coerce").fillna(0.0).sum()
+                ),
+                "duration_s": float(
+                    pd.to_numeric(group.get("duration_s"), errors="coerce")
+                    .fillna(0.0)
+                    .sum()
+                ),
                 "modality": modality,
                 "avg_if": float(avg_if),
                 "max_if": float(max_if),
@@ -4283,26 +4959,36 @@ def _aggregate_planned_days_for_planning(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    specificity_profile = _load_specificity_profile(
+        db_path=db_path, fallback_default=0.8
+    )
     planned_metrics = _compute_planned_rows_metrics_df(
         planned_rows=planned_rows,
         lthr_curve_points=lthr_curve,
         lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
         lt_pace_curve_points=pace_curve,
-        lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        lt_pace_default_sec=float(pace_curve[-1][1])
+        if pace_curve
+        else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
         specificity_profile=specificity_profile,
     )
     if planned_metrics.empty:
         return []
-    planned_metrics["day"] = pd.to_datetime(planned_metrics.get("day_utc"), errors="coerce").dt.normalize()
+    planned_metrics["day"] = pd.to_datetime(
+        planned_metrics.get("day_utc"), errors="coerce"
+    ).dt.normalize()
     planned_metrics = planned_metrics.dropna(subset=["day"]).copy()
-    planned_metrics = _filter_effective_planned_rows(planned_df=planned_metrics, today_local_day=_now_app_local().normalize())
+    planned_metrics = _filter_effective_planned_rows(
+        planned_df=planned_metrics, today_local_day=_now_app_local().normalize()
+    )
     if planned_metrics.empty:
         return []
 
     out: list[dict[str, Any]] = []
     for day, group in planned_metrics.groupby("day", sort=True):
-        duration_total = float(pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0).sum())
+        duration_total = float(
+            pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0).sum()
+        )
         if duration_total <= 0:
             duration_total = 1.0
         modality_durations = {"running": 0.0, "elliptical": 0.0, "bike": 0.0}
@@ -4315,7 +5001,9 @@ def _aggregate_planned_days_for_planning(
                 parsed_json=row.get("parsed_json"),
             )
             row_duration = float(_safe_float(row.get("duration_s")))
-            modality_durations[modality if modality in modality_durations else "running"] += row_duration
+            modality_durations[
+                modality if modality in modality_durations else "running"
+            ] += row_duration
             workout_text = str(row.get("workout_text") or "").strip()
             if workout_text:
                 workout_text_parts.append(workout_text)
@@ -4323,8 +5011,14 @@ def _aggregate_planned_days_for_planning(
         out.append(
             {
                 "day_utc": pd.Timestamp(day).date().isoformat(),
-                "tss": float(pd.to_numeric(group.get("tss"), errors="coerce").fillna(0.0).sum()),
-                "duration_s": float(pd.to_numeric(group.get("duration_s"), errors="coerce").fillna(0.0).sum()),
+                "tss": float(
+                    pd.to_numeric(group.get("tss"), errors="coerce").fillna(0.0).sum()
+                ),
+                "duration_s": float(
+                    pd.to_numeric(group.get("duration_s"), errors="coerce")
+                    .fillna(0.0)
+                    .sum()
+                ),
                 "modality": modality,
                 "avg_if": (
                     float((if_values * durations).sum() / float(durations.sum()))
@@ -4368,7 +5062,11 @@ def _generated_activity_planning_state(
     selected_day = pd.Timestamp(selected_day).normalize()
     recent_start = selected_day - pd.Timedelta(days=84)
     horizon_end = selected_day + pd.Timedelta(days=14)
-    capacity_baseline = _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10 if threshold_pace_sec_per_km > 0 else 350.0
+    capacity_baseline = (
+        _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 1.10
+        if threshold_pace_sec_per_km > 0
+        else 350.0
+    )
     anchor_daily_tss = max(float(capacity_baseline) * 0.14, 15.0)
 
     metrics_df = _metrics_for_filters(
@@ -4379,7 +5077,9 @@ def _generated_activity_planning_state(
         sport=None,
         include_invalid=False,
     )
-    recent_activity_rows = _aggregate_actual_days_for_planning(metrics_df=metrics_df, selected_day=selected_day)
+    recent_activity_rows = _aggregate_actual_days_for_planning(
+        metrics_df=metrics_df, selected_day=selected_day
+    )
     model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     if not metrics_df.empty:
         _, _, model_lookup, _ = _day_lookup_with_daily_model(
@@ -4387,14 +5087,20 @@ def _generated_activity_planning_state(
             daily_tss_target=anchor_daily_tss,
             db_path=db_path,
         )
-    latest_model_day = max((day for day in model_lookup.keys() if day <= selected_day), default=None)
-    latest_model = model_lookup.get(latest_model_day, {}) if latest_model_day is not None else {}
+    latest_model_day = max(
+        (day for day in model_lookup.keys() if day <= selected_day), default=None
+    )
+    latest_model = (
+        model_lookup.get(latest_model_day, {}) if latest_model_day is not None else {}
+    )
 
     latest_wellness: dict[str, float] = {}
     wellness_df = get_wellness_df(db_path=db_path)
     if not wellness_df.empty:
         wellness_df = wellness_df.copy()
-        wellness_df["day"] = pd.to_datetime(wellness_df.get("day_utc"), errors="coerce").dt.normalize()
+        wellness_df["day"] = pd.to_datetime(
+            wellness_df.get("day_utc"), errors="coerce"
+        ).dt.normalize()
         wellness_df = wellness_df.dropna(subset=["day"])
         wellness_df = wellness_df[wellness_df["day"] <= selected_day].sort_values("day")
         if not wellness_df.empty:
@@ -4439,8 +5145,14 @@ def _generated_activity_planning_state(
         "sleep_score": _safe_float(latest_wellness.get("sleep_score")),
         "stress_avg": _safe_float(latest_wellness.get("stress_avg")),
         "recovery_alert": bool(
-            (_safe_float(latest_wellness.get("training_readiness")) > 0 and _safe_float(latest_wellness.get("training_readiness")) <= 35.0)
-            or (_safe_float(latest_wellness.get("sleep_score")) > 0 and _safe_float(latest_wellness.get("sleep_score")) <= 62.0)
+            (
+                _safe_float(latest_wellness.get("training_readiness")) > 0
+                and _safe_float(latest_wellness.get("training_readiness")) <= 35.0
+            )
+            or (
+                _safe_float(latest_wellness.get("sleep_score")) > 0
+                and _safe_float(latest_wellness.get("sleep_score")) <= 62.0
+            )
             or (_safe_float(latest_wellness.get("stress_avg")) >= 65.0)
             or (_safe_float(latest_model.get("overreach")) >= anchor_daily_tss * 0.70)
             or (_safe_float(latest_model.get("injury_risk")) >= anchor_daily_tss * 0.70)
@@ -4451,7 +5163,11 @@ def _generated_activity_planning_state(
     recent_load_21d = _sum_actual(21, "tss")
     recent_load_63d = _sum_actual(63, "tss")
     recent_load_365d = _sum_actual(365, "tss")
-    recent_load_ratio = ((recent_load_7d / 7.0) / (recent_load_28d / 28.0)) if recent_load_28d > 0 else 1.0
+    recent_load_ratio = (
+        ((recent_load_7d / 7.0) / (recent_load_28d / 28.0))
+        if recent_load_28d > 0
+        else 1.0
+    )
     baseline_blend_profile = _load_baseline_blend_profile(db_path)
     weekly_baseline_tss = _blend_baseline_tss(
         capacity_baseline,
@@ -4512,7 +5228,9 @@ def _planning_decision_payload(decision: Any) -> dict[str, Any]:
                 "cycle_step_id": str(intent.cycle_step_id),
                 "cycle_step_index": int(intent.cycle_step_index),
                 "day_type": str(intent.day_type.value),
-                "hard_subtype": str(intent.hard_subtype.value) if intent.hard_subtype is not None else None,
+                "hard_subtype": str(intent.hard_subtype.value)
+                if intent.hard_subtype is not None
+                else None,
                 "target_tss": float(intent.target_tss),
                 "sampled_tss_share": float(intent.sampled_tss_share),
                 "target_duration_min": float(intent.target_duration_min),
@@ -4531,7 +5249,9 @@ def _planning_decision_payload(decision: Any) -> dict[str, Any]:
                 "max_if": float(decision.selected_candidate.max_if),
                 "toughness_score": float(decision.selected_candidate.toughness_score),
                 "is_long_run": bool(decision.selected_candidate.is_long_run),
-                "long_run_duration_min": float(decision.selected_candidate.long_run_duration_min),
+                "long_run_duration_min": float(
+                    decision.selected_candidate.long_run_duration_min
+                ),
                 "source": str(decision.selected_candidate.source),
             }
             if decision.selected_candidate is not None
@@ -4574,7 +5294,9 @@ def _planning_decision_for_owner(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_default = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
     pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
     suggestions = _generated_activity_candidates(
         db_path=db_path,
@@ -4583,7 +5305,9 @@ def _planning_decision_for_owner(
         activity_type=activity_type,
     )
     if not suggestions:
-        fallback_suggestions = _generated_activity_fallbacks(activity_type=activity_type, mode=mode)
+        fallback_suggestions = _generated_activity_fallbacks(
+            activity_type=activity_type, mode=mode
+        )
         suggestions = _generated_activity_candidates(
             db_path=db_path,
             mode="custom",
@@ -4633,6 +5357,10 @@ def _planning_decision_for_owner(
         "total_candidates": len(suggestions),
         "planning": _planning_decision_payload(decision),
     }
+    try:
+        upsert_planning_decision(db_path, response["planning"])
+    except Exception:
+        pass  # non-fatal: don't break planning if persistence fails
     return response, decision
 
 
@@ -4652,9 +5380,13 @@ def _mcp_coerce_day_utc(value: str | None, *, default: Optional[date] = None) ->
         raise ValueError(f"Invalid day_utc: {value}") from exc
 
 
-def _mcp_window_bounds(window_days: int, end_day_utc: Optional[str] = None) -> tuple[str, str]:
+def _mcp_window_bounds(
+    window_days: int, end_day_utc: Optional[str] = None
+) -> tuple[str, str]:
     safe_window = max(1, min(int(window_days), 365))
-    end_day = date.fromisoformat(_mcp_coerce_day_utc(end_day_utc, default=_utc_now().date()))
+    end_day = date.fromisoformat(
+        _mcp_coerce_day_utc(end_day_utc, default=_utc_now().date())
+    )
     start_day = end_day - timedelta(days=safe_window - 1)
     return start_day.isoformat(), end_day.isoformat()
 
@@ -4666,7 +5398,9 @@ def _lt_pace_for_day(db_path: Path, day_utc: str) -> float:
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_default = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
     day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
     if pd.isna(day_ts):
         raise ValueError(f"Invalid target_day_utc: {day_utc}")
@@ -4691,7 +5425,9 @@ def _weekly_baseline_tss_for_day(db_path: Path, day_utc: str, owner: str = "") -
     target_ts = pd.to_datetime(day_utc, errors="coerce")
     if pd.isna(target_ts):
         raise ValueError(f"Invalid target_day_utc: {day_utc}")
-    target_week_start = _week_start_monday(pd.Timestamp(target_ts).normalize()).date().isoformat()
+    target_week_start = (
+        _week_start_monday(pd.Timestamp(target_ts).normalize()).date().isoformat()
+    )
     payload = _build_athlete_progression_payload(
         db_path=db_path,
         days=400,
@@ -4714,7 +5450,9 @@ def _mcp_preview_intents_payload(horizon: tuple[Any, ...]) -> list[dict[str, Any
             "day_utc": intent.day_utc,
             "cycle_step_id": intent.cycle_step_id,
             "day_type": intent.day_type.value,
-            "hard_subtype": intent.hard_subtype.value if intent.hard_subtype is not None else None,
+            "hard_subtype": intent.hard_subtype.value
+            if intent.hard_subtype is not None
+            else None,
             "target_tss": intent.target_tss,
             "sampled_tss_share": intent.sampled_tss_share,
             "target_duration_min": intent.target_duration_min,
@@ -4863,7 +5601,9 @@ def _mcp_planning_context_payload(
     }
 
 
-def _mcp_hard_flavor_from_row(row: dict[str, Any], stress_profile: Any, hard_subtype: Any) -> Optional[str]:
+def _mcp_hard_flavor_from_row(
+    row: dict[str, Any], stress_profile: Any, hard_subtype: Any
+) -> Optional[str]:
     modality = str(row.get("modality") or "").strip().lower()
     total_minutes = _mcp_format_duration_minutes(row.get("duration_s"))
     avg_if = _safe_float(row.get("avg_if"))
@@ -4885,7 +5625,9 @@ def _mcp_hard_flavor_from_row(row: dict[str, Any], stress_profile: Any, hard_sub
     return "threshold-hard"
 
 
-def _mcp_classify_history_rows(rows: list[dict[str, Any]], weekly_baseline_tss: float, stress_profile: Any) -> list[dict[str, Any]]:
+def _mcp_classify_history_rows(
+    rows: list[dict[str, Any]], weekly_baseline_tss: float, stress_profile: Any
+) -> list[dict[str, Any]]:
     classified: list[dict[str, Any]] = []
     for row in rows:
         modality = str(row.get("modality") or "").strip().lower()
@@ -4922,11 +5664,15 @@ def _mcp_classify_history_rows(rows: list[dict[str, Any]], weekly_baseline_tss: 
             {
                 **row,
                 "stress_class": stress_class.value,
-                "hard_subtype": hard_subtype.value if hard_subtype is not None else None,
+                "hard_subtype": hard_subtype.value
+                if hard_subtype is not None
+                else None,
                 "toughness_score": toughness_score,
                 "stress_override_reason": override_reason,
                 "is_long_run": is_long,
-                "hard_flavor": _mcp_hard_flavor_from_row(row, stress_profile, hard_subtype),
+                "hard_flavor": _mcp_hard_flavor_from_row(
+                    row, stress_profile, hard_subtype
+                ),
             }
         )
     return classified
@@ -4934,7 +5680,9 @@ def _mcp_classify_history_rows(rows: list[dict[str, Any]], weekly_baseline_tss: 
 
 def _mcp_load_summary(rows: list[dict[str, Any]], window_days: int) -> dict[str, Any]:
     total_tss = sum(_safe_float(row.get("tss")) for row in rows)
-    total_duration_min = sum(_mcp_format_duration_minutes(row.get("duration_s")) for row in rows)
+    total_duration_min = sum(
+        _mcp_format_duration_minutes(row.get("duration_s")) for row in rows
+    )
     return {
         "total_tss": round(total_tss, 1),
         "avg_daily_tss": round(total_tss / max(window_days, 1), 1),
@@ -4945,8 +5693,12 @@ def _mcp_load_summary(rows: list[dict[str, Any]], window_days: int) -> dict[str,
 
 def _mcp_hard_session_mix(rows: list[dict[str, Any]]) -> dict[str, Any]:
     hard_rows = [row for row in rows if row.get("stress_class") == "hard"]
-    subtype_counts = Counter(str(row.get("hard_subtype") or "unknown") for row in hard_rows)
-    flavor_counts = Counter(str(row.get("hard_flavor") or "unclassified") for row in hard_rows)
+    subtype_counts = Counter(
+        str(row.get("hard_subtype") or "unknown") for row in hard_rows
+    )
+    flavor_counts = Counter(
+        str(row.get("hard_flavor") or "unclassified") for row in hard_rows
+    )
     return {
         "hard_day_count": len(hard_rows),
         "hard_subtype_counts": dict(subtype_counts),
@@ -4965,14 +5717,24 @@ def _mcp_hard_session_mix(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _mcp_spacing_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    hard_days = sorted(date.fromisoformat(str(row.get("day_utc"))) for row in rows if row.get("stress_class") == "hard")
-    gaps = [(current - previous).days for previous, current in zip(hard_days, hard_days[1:])]
+    hard_days = sorted(
+        date.fromisoformat(str(row.get("day_utc")))
+        for row in rows
+        if row.get("stress_class") == "hard"
+    )
+    gaps = [
+        (current - previous).days for previous, current in zip(hard_days, hard_days[1:])
+    ]
     return {
         "hard_day_count": len(hard_days),
         "min_gap_days": min(gaps) if gaps else None,
         "avg_gap_days": round(sum(gaps) / len(gaps), 1) if gaps else None,
         "tight_spacings": [
-            {"gap_days": gap, "from_day_utc": previous.isoformat(), "to_day_utc": current.isoformat()}
+            {
+                "gap_days": gap,
+                "from_day_utc": previous.isoformat(),
+                "to_day_utc": current.isoformat(),
+            }
             for previous, current, gap in zip(hard_days, hard_days[1:], gaps)
             if gap < 2
         ],
@@ -4981,11 +5743,17 @@ def _mcp_spacing_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _mcp_long_run_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     long_runs = [row for row in rows if bool(row.get("is_long_run"))]
-    durations = [_mcp_format_duration_minutes(row.get("duration_s")) for row in long_runs]
+    durations = [
+        _mcp_format_duration_minutes(row.get("duration_s")) for row in long_runs
+    ]
     latest = long_runs[-1] if long_runs else None
     previous = long_runs[-2] if len(long_runs) >= 2 else None
-    latest_duration = _mcp_format_duration_minutes(latest.get("duration_s")) if latest else None
-    previous_duration = _mcp_format_duration_minutes(previous.get("duration_s")) if previous else None
+    latest_duration = (
+        _mcp_format_duration_minutes(latest.get("duration_s")) if latest else None
+    )
+    previous_duration = (
+        _mcp_format_duration_minutes(previous.get("duration_s")) if previous else None
+    )
     return {
         "count": len(long_runs),
         "latest": (
@@ -5014,7 +5782,9 @@ def _mcp_modality_mix_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         duration_by_modality[modality] += duration_min
         total_duration += duration_min
     return {
-        "duration_min_by_modality": {key: round(value, 1) for key, value in duration_by_modality.items()},
+        "duration_min_by_modality": {
+            key: round(value, 1) for key, value in duration_by_modality.items()
+        },
         "share_by_modality": {
             key: round((value / total_duration), 3) if total_duration > 0 else 0.0
             for key, value in duration_by_modality.items()
@@ -5022,10 +5792,20 @@ def _mcp_modality_mix_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _mcp_history_coverage_summary(owner: str, db_path: Path, start_day_utc: str, end_day_utc: str, actual_rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _mcp_history_coverage_summary(
+    owner: str,
+    db_path: Path,
+    start_day_utc: str,
+    end_day_utc: str,
+    actual_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
     wellness_payload = _build_wellness_payload(
         db_path=db_path,
-        days=max((date.fromisoformat(end_day_utc) - date.fromisoformat(start_day_utc)).days + 1, 1),
+        days=max(
+            (date.fromisoformat(end_day_utc) - date.fromisoformat(start_day_utc)).days
+            + 1,
+            1,
+        ),
         aggregation="daily",
         owner=owner,
     )
@@ -5050,7 +5830,9 @@ def _mcp_history_snapshot_components(
     methodology_id: Optional[str] = None,
 ) -> dict[str, Any]:
     start_day_utc, normalized_end_day_utc = _mcp_window_bounds(window_days, end_day_utc)
-    reference_day_utc = (date.fromisoformat(normalized_end_day_utc) + timedelta(days=1)).isoformat()
+    reference_day_utc = (
+        date.fromisoformat(normalized_end_day_utc) + timedelta(days=1)
+    ).isoformat()
     db_path = _db_path_for_owner(owner)
     planning_state = _generated_activity_planning_state(
         db_path=db_path,
@@ -5064,15 +5846,26 @@ def _mcp_history_snapshot_components(
     methodology = get_methodology(methodology_id)
     metrics_df = _metrics_for_filters(
         db_path=db_path,
-        days=max((date.fromisoformat(normalized_end_day_utc) - date.fromisoformat(start_day_utc)).days + 1, 1),
+        days=max(
+            (
+                date.fromisoformat(normalized_end_day_utc)
+                - date.fromisoformat(start_day_utc)
+            ).days
+            + 1,
+            1,
+        ),
         start_day=start_day_utc,
         end_day=normalized_end_day_utc,
         sport=None,
         include_invalid=False,
         include_mechanical_load=True,
     )
-    selected_day = pd.Timestamp(date.fromisoformat(normalized_end_day_utc) + timedelta(days=1))
-    actual_rows = _aggregate_actual_days_for_planning(metrics_df=metrics_df, selected_day=selected_day)
+    selected_day = pd.Timestamp(
+        date.fromisoformat(normalized_end_day_utc) + timedelta(days=1)
+    )
+    actual_rows = _aggregate_actual_days_for_planning(
+        metrics_df=metrics_df, selected_day=selected_day
+    )
     classified_actuals = _mcp_classify_history_rows(
         actual_rows,
         planning_state.weekly_baseline_tss,
@@ -5086,7 +5879,9 @@ def _mcp_history_snapshot_components(
         "db_path": str(db_path),
         "planning_state": planning_state,
         "methodology": methodology,
-        "coverage": _mcp_history_coverage_summary(owner, db_path, start_day_utc, normalized_end_day_utc, classified_actuals),
+        "coverage": _mcp_history_coverage_summary(
+            owner, db_path, start_day_utc, normalized_end_day_utc, classified_actuals
+        ),
         "actual_rows": classified_actuals,
         "planned_rows": _aggregate_planned_days_for_planning(
             db_path=db_path,
@@ -5157,48 +5952,117 @@ def _mcp_assess_history_against_doctrine(
     spacing = _mcp_spacing_summary(actual_rows)
     long_run = _mcp_long_run_summary(actual_rows)
     modality_mix = _mcp_modality_mix_summary(actual_rows)
-    active_markdown = str(active_build.get("active_build_doc", {}).get("markdown") or "").lower()
+    active_markdown = str(
+        active_build.get("active_build_doc", {}).get("markdown") or ""
+    ).lower()
     concerns: list[str] = []
     imbalances: list[str] = []
     aligned: list[str] = []
     alerts: list[dict[str, Any]] = []
 
     if not snapshot["coverage"].get("has_actual_data"):
-        alerts.append({"severity": "hard", "type": "coverage", "message": "No actual activity data is available in the requested window."})
-        concerns.append("Actual-history coverage is missing, so the judgment is necessarily partial.")
+        alerts.append(
+            {
+                "severity": "hard",
+                "type": "coverage",
+                "message": "No actual activity data is available in the requested window.",
+            }
+        )
+        concerns.append(
+            "Actual-history coverage is missing, so the judgment is necessarily partial."
+        )
     else:
-        aligned.append(f"Window includes {snapshot['coverage']['actual_days_with_activities']} actual training days.")
+        aligned.append(
+            f"Window includes {snapshot['coverage']['actual_days_with_activities']} actual training days."
+        )
 
-    if spacing.get("min_gap_days") is not None and spacing["min_gap_days"] < 2 and hard_mix.get("hard_day_count", 0) >= 3:
-        alerts.append({"severity": "hard", "type": "spacing", "message": "Hard sessions are stacked with less than two days between them."})
-        concerns.append("Hard-session spacing is tighter than the default control logic usually wants.")
+    if (
+        spacing.get("min_gap_days") is not None
+        and spacing["min_gap_days"] < 2
+        and hard_mix.get("hard_day_count", 0) >= 3
+    ):
+        alerts.append(
+            {
+                "severity": "hard",
+                "type": "spacing",
+                "message": "Hard sessions are stacked with less than two days between them.",
+            }
+        )
+        concerns.append(
+            "Hard-session spacing is tighter than the default control logic usually wants."
+        )
     elif hard_mix.get("hard_day_count", 0) > 0:
-        aligned.append("Hard-session spacing stays within a usable range for the requested window.")
+        aligned.append(
+            "Hard-session spacing stays within a usable range for the requested window."
+        )
 
     sharp_count = int(hard_mix.get("hard_flavor_counts", {}).get("sharp-hard", 0))
-    threshold_count = int(hard_mix.get("hard_flavor_counts", {}).get("threshold-hard", 0))
+    threshold_count = int(
+        hard_mix.get("hard_flavor_counts", {}).get("threshold-hard", 0)
+    )
     if sharp_count > threshold_count and "threshold" in active_markdown:
-        alerts.append({"severity": "soft", "type": "mix", "message": "Sharp work is outnumbering threshold-oriented hard work."})
-        imbalances.append("The hard-session mix is skewing sharper than the active philosophy suggests.")
+        alerts.append(
+            {
+                "severity": "soft",
+                "type": "mix",
+                "message": "Sharp work is outnumbering threshold-oriented hard work.",
+            }
+        )
+        imbalances.append(
+            "The hard-session mix is skewing sharper than the active philosophy suggests."
+        )
     elif threshold_count > 0:
         aligned.append("Threshold-oriented hard work is represented in the window.")
 
-    if long_run.get("count", 0) == 0 and snapshot["window_days"] >= 14 and ("long-run" in active_markdown or "marathon" in active_markdown):
-        alerts.append({"severity": "soft", "type": "long_run", "message": "No qualifying long run appears in a window where the active build still values long-run continuity."})
+    if (
+        long_run.get("count", 0) == 0
+        and snapshot["window_days"] >= 14
+        and ("long-run" in active_markdown or "marathon" in active_markdown)
+    ):
+        alerts.append(
+            {
+                "severity": "soft",
+                "type": "long_run",
+                "message": "No qualifying long run appears in a window where the active build still values long-run continuity.",
+            }
+        )
         concerns.append("Long-run continuity is missing for the active build.")
     elif long_run.get("count", 0) > 0:
         aligned.append("The window contains long-run contact.")
 
-    running_share = _safe_float(modality_mix.get("share_by_modality", {}).get("running"))
+    running_share = _safe_float(
+        modality_mix.get("share_by_modality", {}).get("running")
+    )
     if planning_state.mechanical_risk.prefer_low_impact and running_share >= 0.75:
-        alerts.append({"severity": "hard", "type": "durability", "message": "Running is dominating the window despite a low-impact preference in the current state."})
-        concerns.append("The modality mix may be too run-heavy for the current durability context.")
+        alerts.append(
+            {
+                "severity": "hard",
+                "type": "durability",
+                "message": "Running is dominating the window despite a low-impact preference in the current state.",
+            }
+        )
+        concerns.append(
+            "The modality mix may be too run-heavy for the current durability context."
+        )
     elif running_share > 0:
-        aligned.append("The modality mix is explicit enough to judge against current constraints.")
+        aligned.append(
+            "The modality mix is explicit enough to judge against current constraints."
+        )
 
-    if planning_state.recent_load_ratio >= 1.25 and planning_state.fatigue.recovery_alert:
-        alerts.append({"severity": "hard", "type": "load_shape", "message": "Recent load is elevated while recovery alerts are already active."})
-        concerns.append("Recent load shape and recovery status are both flashing caution.")
+    if (
+        planning_state.recent_load_ratio >= 1.25
+        and planning_state.fatigue.recovery_alert
+    ):
+        alerts.append(
+            {
+                "severity": "hard",
+                "type": "load_shape",
+                "message": "Recent load is elevated while recovery alerts are already active.",
+            }
+        )
+        concerns.append(
+            "Recent load shape and recovery status are both flashing caution."
+        )
 
     status = "aligned"
     if any(alert["severity"] == "hard" for alert in alerts):
@@ -5259,7 +6123,9 @@ def _mcp_build_history_judgment_payload(
     active_build_payload = active_build or {}
     actual_summary = {
         "coverage": snapshot["coverage"],
-        "load_summary": _mcp_load_summary(snapshot["actual_rows"], snapshot["window_days"]),
+        "load_summary": _mcp_load_summary(
+            snapshot["actual_rows"], snapshot["window_days"]
+        ),
     }
     structure_summary = {
         "hard_session_mix": _mcp_hard_session_mix(snapshot["actual_rows"]),
@@ -5267,7 +6133,12 @@ def _mcp_build_history_judgment_payload(
         "long_run_summary": _mcp_long_run_summary(snapshot["actual_rows"]),
         "modality_mix": _mcp_modality_mix_summary(snapshot["actual_rows"]),
     }
-    doctrine_assessment, alerts, judgment, narrative = _mcp_assess_history_against_doctrine(
+    (
+        doctrine_assessment,
+        alerts,
+        judgment,
+        narrative,
+    ) = _mcp_assess_history_against_doctrine(
         snapshot,
         active_build_payload,
         evidence_refs=evidence_refs,
@@ -5292,7 +6163,9 @@ def _mcp_build_history_judgment_payload(
     return payload
 
 
-def _mcp_answer_history_question(payload: dict[str, Any], question: Optional[str]) -> str:
+def _mcp_answer_history_question(
+    payload: dict[str, Any], question: Optional[str]
+) -> str:
     q = str(question or "").strip().lower()
     structure = dict(payload.get("structure_summary") or {})
     judgment = dict(payload.get("judgment") or {})
@@ -5328,7 +6201,9 @@ def _load_if_zone_thresholds(db_path: Path) -> dict[str, float]:
     return _normalize_if_zone_thresholds(payload if isinstance(payload, dict) else None)
 
 
-def _split_description_from_if_proxy(if_proxy: float | int | None, thresholds: dict[str, float]) -> str:
+def _split_description_from_if_proxy(
+    if_proxy: float | int | None, thresholds: dict[str, float]
+) -> str:
     v = _safe_float(if_proxy)
     if v <= 0:
         return "Recovery"
@@ -5347,7 +6222,9 @@ def _split_description_from_if_proxy(if_proxy: float | int | None, thresholds: d
     return "VO2max"
 
 
-def _zone_key_from_if_proxy(if_proxy: float | int | None, thresholds: dict[str, float]) -> str:
+def _zone_key_from_if_proxy(
+    if_proxy: float | int | None, thresholds: dict[str, float]
+) -> str:
     v = _safe_float(if_proxy)
     if v <= 0:
         return "Z1"
@@ -5366,9 +6243,13 @@ def _zone_key_from_if_proxy(if_proxy: float | int | None, thresholds: dict[str, 
     return "Z5"
 
 
-def _zone_summary_rows(zone_seconds: dict[str, float | int | None]) -> list[dict[str, float | str]]:
+def _zone_summary_rows(
+    zone_seconds: dict[str, float | int | None]
+) -> list[dict[str, float | str]]:
     ordered = ["Z1", "Z2", "Z3", "Z4", "Z5"]
-    total = float(sum(max(_safe_float(zone_seconds.get(zone)), 0.0) for zone in ordered))
+    total = float(
+        sum(max(_safe_float(zone_seconds.get(zone)), 0.0) for zone in ordered)
+    )
     rows: list[dict[str, float | str]] = []
     for zone in ordered:
         seconds = float(max(_safe_float(zone_seconds.get(zone)), 0.0))
@@ -5409,7 +6290,9 @@ def _activity_palette_token(
     if_token = _activity_intensity_token(_safe_float(if_proxy), _safe_float(tss_value))
     sport_lower = str(sport_type or "").lower()
     is_running_like = ("run" in sport_lower) or ("treadmill" in sport_lower)
-    override_load = _safe_float(rtss_value) if is_running_like else _safe_float(tss_value)
+    override_load = (
+        _safe_float(rtss_value) if is_running_like else _safe_float(tss_value)
+    )
     daily_cap = float(max(_safe_float(daily_tss_upper_bound), 0.0))
     if daily_cap > 0:
         if override_load > (daily_cap * 1.5):
@@ -5417,8 +6300,6 @@ def _activity_palette_token(
         if override_load > daily_cap and if_token not in {"red", "purple"}:
             return "orange"
     return if_token
-
-
 
 
 def _acwr_with_baseline_floor(
@@ -5429,7 +6310,9 @@ def _acwr_with_baseline_floor(
     acute_series = pd.to_numeric(acute_ema, errors="coerce").fillna(0.0)
     chronic_series = pd.to_numeric(chronic_ema, errors="coerce").fillna(0.0)
     if isinstance(baseline_daily_target, pd.Series):
-        baseline_series = pd.to_numeric(baseline_daily_target, errors="coerce").fillna(0.0)
+        baseline_series = pd.to_numeric(baseline_daily_target, errors="coerce").fillna(
+            0.0
+        )
     else:
         baseline_series = pd.Series(
             [float(_safe_float(baseline_daily_target))] * len(acute_series),
@@ -5439,6 +6322,7 @@ def _acwr_with_baseline_floor(
     denominator = pd.concat([chronic_series, baseline_series], axis=1).max(axis=1)
     denominator = denominator.where(denominator > 0.0, np.nan)
     return (acute_series / denominator).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
 
 def _baseline_load_scale(
     load_ema: pd.Series,
@@ -5454,7 +6338,9 @@ def _baseline_load_scale(
     """
     load_series = pd.to_numeric(load_ema, errors="coerce").fillna(0.0)
     if isinstance(baseline_daily_target, pd.Series):
-        baseline_series = pd.to_numeric(baseline_daily_target, errors="coerce").fillna(0.0)
+        baseline_series = pd.to_numeric(baseline_daily_target, errors="coerce").fillna(
+            0.0
+        )
     else:
         baseline_series = pd.Series(
             [float(_safe_float(baseline_daily_target))] * len(load_series),
@@ -5462,11 +6348,17 @@ def _baseline_load_scale(
             dtype=float,
         )
     baseline_series = baseline_series.where(baseline_series > 0.0, np.nan)
-    ratio = (load_series / baseline_series).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    ratio = (
+        (load_series / baseline_series).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    )
 
     low_band_scale = ((ratio / 0.7).clip(lower=0.0, upper=1.0)) ** 2.0
     high_band_scale = 1.0 + 0.35 * ((ratio - 0.7).clip(lower=0.0, upper=1.0))
-    return pd.Series(np.where(ratio < 0.7, low_band_scale, high_band_scale), index=load_series.index, dtype=float)
+    return pd.Series(
+        np.where(ratio < 0.7, low_band_scale, high_band_scale),
+        index=load_series.index,
+        dtype=float,
+    )
 
 
 def _autoregressive_risk_state(
@@ -5535,10 +6427,24 @@ def _day_lookup_with_daily_model(
     metrics_df: pd.DataFrame,
     daily_tss_target: float,
     db_path: Path,
-) -> tuple[pd.DataFrame, dict[pd.Timestamp, dict[str, float]], dict[pd.Timestamp, dict[str, float]], pd.DataFrame]:
+) -> tuple[
+    pd.DataFrame,
+    dict[pd.Timestamp, dict[str, float]],
+    dict[pd.Timestamp, dict[str, float]],
+    pd.DataFrame,
+]:
     if metrics_df.empty:
         return (
-            pd.DataFrame(columns=["day", "distance_eqv_km", "calories", "duration_s", "tss", "rtss"]),
+            pd.DataFrame(
+                columns=[
+                    "day",
+                    "distance_eqv_km",
+                    "calories",
+                    "duration_s",
+                    "tss",
+                    "rtss",
+                ]
+            ),
             {},
             {},
             pd.DataFrame(),
@@ -5549,7 +6455,16 @@ def _day_lookup_with_daily_model(
     daily_df = daily_df.dropna(subset=["day"]).copy()
     if daily_df.empty:
         return (
-            pd.DataFrame(columns=["day", "distance_eqv_km", "calories", "duration_s", "tss", "rtss"]),
+            pd.DataFrame(
+                columns=[
+                    "day",
+                    "distance_eqv_km",
+                    "calories",
+                    "duration_s",
+                    "tss",
+                    "rtss",
+                ]
+            ),
             {},
             {},
             pd.DataFrame(),
@@ -5566,9 +6481,15 @@ def _day_lookup_with_daily_model(
         )
         .sort_values("day")
     )
-    daily_agg["distance_eqv_km"] = pd.to_numeric(daily_agg["distance_eqv_km"], errors="coerce").fillna(0.0)
-    daily_agg["calories"] = pd.to_numeric(daily_agg["calories"], errors="coerce").fillna(0.0)
-    daily_agg["duration_s"] = pd.to_numeric(daily_agg["duration_s"], errors="coerce").fillna(0.0)
+    daily_agg["distance_eqv_km"] = pd.to_numeric(
+        daily_agg["distance_eqv_km"], errors="coerce"
+    ).fillna(0.0)
+    daily_agg["calories"] = pd.to_numeric(
+        daily_agg["calories"], errors="coerce"
+    ).fillna(0.0)
+    daily_agg["duration_s"] = pd.to_numeric(
+        daily_agg["duration_s"], errors="coerce"
+    ).fillna(0.0)
     daily_agg["tss"] = pd.to_numeric(daily_agg["tss"], errors="coerce").fillna(0.0)
     daily_agg["rtss"] = pd.to_numeric(daily_agg["rtss"], errors="coerce").fillna(0.0)
 
@@ -5583,7 +6504,9 @@ def _day_lookup_with_daily_model(
     for col in ["distance_eqv_km", "calories", "duration_s", "tss", "rtss"]:
         model_df[col] = pd.to_numeric(model_df.get(col), errors="coerce").fillna(0.0)
 
-    model_df = model_df.merge(_build_daily_vdot_series(daily_df, db_path), on="day", how="left")
+    model_df = model_df.merge(
+        _build_daily_vdot_series(daily_df, db_path), on="day", how="left"
+    )
 
     tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
     rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
@@ -5600,15 +6523,29 @@ def _day_lookup_with_daily_model(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_default = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
     model_df["lt_pace_target_sec_per_km"] = model_df["day"].map(
-        lambda day: float(_curve_value_at(pace_curve, pace_default, pd.Timestamp(day).to_pydatetime()))
+        lambda day: float(
+            _curve_value_at(pace_curve, pace_default, pd.Timestamp(day).to_pydatetime())
+        )
     )
-    model_df["lt_target_tss"] = pd.to_numeric(model_df.get("lt_pace_target_sec_per_km"), errors="coerce").map(
-        lambda pace: float(max(_weekly_tss_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
+    model_df["lt_target_tss"] = pd.to_numeric(
+        model_df.get("lt_pace_target_sec_per_km"), errors="coerce"
+    ).map(
+        lambda pace: float(max(_weekly_tss_target_from_lt_pace(float(pace)) / 7.0, 0.0))
+        if float(pace) > 0
+        else 0.0
     )
-    model_df["lt_target_distance_km"] = pd.to_numeric(model_df.get("lt_pace_target_sec_per_km"), errors="coerce").map(
-        lambda pace: float(max(_weekly_distance_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
+    model_df["lt_target_distance_km"] = pd.to_numeric(
+        model_df.get("lt_pace_target_sec_per_km"), errors="coerce"
+    ).map(
+        lambda pace: float(
+            max(_weekly_distance_target_from_lt_pace(float(pace)) / 7.0, 0.0)
+        )
+        if float(pace) > 0
+        else 0.0
     )
 
     model_df["fitness"] = tss_emas[42]
@@ -5634,7 +6571,9 @@ def _day_lookup_with_daily_model(
         upper_bound=None,
     )
     baseline_blend_profile = _load_baseline_blend_profile(db_path)
-    model_df = _apply_athlete_progression_baseline_fields(model_df, blend_profile=baseline_blend_profile)
+    model_df = _apply_athlete_progression_baseline_fields(
+        model_df, blend_profile=baseline_blend_profile
+    )
 
     fitfat_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
@@ -5686,7 +6625,9 @@ def _metrics_for_filters(
     )
     if_thresholds = _load_if_zone_thresholds(db_path)
 
-    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    specificity_profile = _load_specificity_profile(
+        db_path=db_path, fallback_default=0.8
+    )
 
     metrics_parts: list[pd.DataFrame] = []
 
@@ -5695,13 +6636,17 @@ def _metrics_for_filters(
         runs_metrics_df = compute_metrics(
             runs_df=runs_df,
             lthr_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
-            threshold_pace_sec_per_km=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+            threshold_pace_sec_per_km=float(pace_curve[-1][1])
+            if pace_curve
+            else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
             lthr_curve_points=lthr_curve,
             threshold_pace_curve_points=pace_curve,
             include_mechanical_load=include_mechanical_load,
         )
         if not runs_metrics_df.empty:
-            runs_metrics_df = _apply_specificity_factor(runs_metrics_df, specificity_profile=specificity_profile)
+            runs_metrics_df = _apply_specificity_factor(
+                runs_metrics_df, specificity_profile=specificity_profile
+            )
             metrics_parts.append(runs_metrics_df)
 
     custom_df = get_custom_activities_df(db_path=db_path)
@@ -5713,7 +6658,9 @@ def _metrics_for_filters(
             lthr_curve_points=lthr_curve,
             lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
             lt_pace_curve_points=pace_curve,
-            lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+            lt_pace_default_sec=float(pace_curve[-1][1])
+            if pace_curve
+            else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
             specificity_profile=specificity_profile,
         )
         if not custom_metrics.empty:
@@ -5759,7 +6706,13 @@ def _metrics_for_filters(
                     return "cycling"
                 if "swim" in text:
                     return "swimming"
-                if "ellipt" in text or "xtrain" in text or "x-train" in text or "cross train" in text or "cross-train" in text:
+                if (
+                    "ellipt" in text
+                    or "xtrain" in text
+                    or "x-train" in text
+                    or "cross train" in text
+                    or "cross-train" in text
+                ):
                     return "elliptical"
                 if "strength" in text or "lift" in text:
                     return "strength_training"
@@ -5772,7 +6725,11 @@ def _metrics_for_filters(
                     continue
                 day_norm = pd.Timestamp(day_ts).normalize()
                 line_no = int(_safe_float(row.get("line_no")))
-                start_time = day_norm + pd.Timedelta(hours=12) + pd.Timedelta(minutes=max(0, line_no - 1))
+                start_time = (
+                    day_norm
+                    + pd.Timedelta(hours=12)
+                    + pd.Timedelta(minutes=max(0, line_no - 1))
+                )
                 sport_type = _custom_primary_sport(row)
                 dist_eqv_km = _safe_float(row.get("distance_proxy_km"))
                 is_running_like = ("run" in sport_type) or ("treadmill" in sport_type)
@@ -5790,12 +6747,22 @@ def _metrics_for_filters(
                     except Exception:
                         segments = []
 
-                day_for_curve = pd.to_datetime(row.get("day_utc"), utc=True, errors="coerce")
-                lthr_for_day = float(_curve_value_at(lthr_curve, float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR, day_for_curve))
+                day_for_curve = pd.to_datetime(
+                    row.get("day_utc"), utc=True, errors="coerce"
+                )
+                lthr_for_day = float(
+                    _curve_value_at(
+                        lthr_curve,
+                        float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+                        day_for_curve,
+                    )
+                )
                 lt_pace_for_day = float(
                     _curve_value_at(
                         pace_curve,
-                        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+                        float(pace_curve[-1][1])
+                        if pace_curve
+                        else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
                         day_for_curve,
                     )
                 )
@@ -5803,8 +6770,12 @@ def _metrics_for_filters(
                 if segments:
                     for seg in segments:
                         seg_kind = str(seg.get("kind") or "").strip().lower()
-                        seg_spec = _specificity_factor_for_plan_kind(seg_kind, specificity_profile)
-                        seg_for_metrics = _segment_with_effective_intensity_for_metrics(seg, seg_kind=seg_kind, seg_spec=seg_spec)
+                        seg_spec = _specificity_factor_for_plan_kind(
+                            seg_kind, specificity_profile
+                        )
+                        seg_for_metrics = _segment_with_effective_intensity_for_metrics(
+                            seg, seg_kind=seg_kind, seg_spec=seg_spec
+                        )
                         seg_metrics = _planned_segment_metrics(
                             seg_for_metrics,
                             lthr_bpm=lthr_for_day,
@@ -5816,13 +6787,19 @@ def _metrics_for_filters(
                         if seg_duration_s <= 0:
                             continue
                         zone_key = _zone_key_from_if_proxy(seg_if_proxy, if_thresholds)
-                        zone_seconds[zone_key] = zone_seconds.get(zone_key, 0.0) + seg_duration_s
+                        zone_seconds[zone_key] = (
+                            zone_seconds.get(zone_key, 0.0) + seg_duration_s
+                        )
                 else:
                     fallback_duration_s = _safe_float(row.get("duration_s"))
                     fallback_if_proxy = _safe_float(row.get("if_proxy"))
                     if fallback_duration_s > 0:
-                        zone_key = _zone_key_from_if_proxy(fallback_if_proxy, if_thresholds)
-                        zone_seconds[zone_key] = zone_seconds.get(zone_key, 0.0) + fallback_duration_s
+                        zone_key = _zone_key_from_if_proxy(
+                            fallback_if_proxy, if_thresholds
+                        )
+                        zone_seconds[zone_key] = (
+                            zone_seconds.get(zone_key, 0.0) + fallback_duration_s
+                        )
 
                 custom_records.append(
                     {
@@ -5833,12 +6810,18 @@ def _metrics_for_filters(
                         "distance_m": dist_eqv_km * 1000.0 if is_running_like else 0.0,
                         "duration_s": _safe_float(row.get("duration_s")),
                         "avg_hr": 0.0,
-                        "avg_pace_s_per_km": _safe_float(row.get("pace_proxy_sec_per_km")) if is_running_like else 0.0,
+                        "avg_pace_s_per_km": _safe_float(
+                            row.get("pace_proxy_sec_per_km")
+                        )
+                        if is_running_like
+                        else 0.0,
                         "tss": _safe_float(row.get("tss")),
                         "rtss": _safe_float(row.get("rtss")),
                         "distance_proxy_km": dist_eqv_km,
                         "if_proxy": _safe_float(row.get("if_proxy")),
-                        "pace_proxy_sec_per_km": _safe_float(row.get("pace_proxy_sec_per_km")),
+                        "pace_proxy_sec_per_km": _safe_float(
+                            row.get("pace_proxy_sec_per_km")
+                        ),
                         "training_load_garmin": 0.0,
                         "calories_total": 0.0,
                         "hr_time_in_zone_1": _safe_float(zone_seconds.get("Z1")),
@@ -5857,7 +6840,9 @@ def _metrics_for_filters(
 
     metrics_df = pd.concat(metrics_parts, ignore_index=True, sort=False)
 
-    metrics_df["start_time_utc"] = pd.to_datetime(metrics_df["start_time_utc"], utc=True, errors="coerce")
+    metrics_df["start_time_utc"] = pd.to_datetime(
+        metrics_df["start_time_utc"], utc=True, errors="coerce"
+    )
     metrics_df = metrics_df.dropna(subset=["start_time_utc"]).copy()
 
     if start_day or end_day:
@@ -5868,14 +6853,22 @@ def _metrics_for_filters(
         if end_day:
             end_ts = pd.to_datetime(end_day, utc=True, errors="coerce")
             if pd.notna(end_ts):
-                metrics_df = metrics_df[metrics_df["start_time_utc"] <= (end_ts + pd.Timedelta(days=1))]
+                metrics_df = metrics_df[
+                    metrics_df["start_time_utc"] <= (end_ts + pd.Timedelta(days=1))
+                ]
     else:
         cutoff = datetime.now(timezone.utc) - timedelta(days=int(days))
         metrics_df = metrics_df[metrics_df["start_time_utc"] >= cutoff]
 
     sport_filter = str(sport or "").strip().lower()
     if sport_filter:
-        mask = metrics_df["sport_type"].fillna("").astype(str).str.lower().str.contains(sport_filter)
+        mask = (
+            metrics_df["sport_type"]
+            .fillna("")
+            .astype(str)
+            .str.lower()
+            .str.contains(sport_filter)
+        )
         metrics_df = metrics_df[mask]
 
     return metrics_df
@@ -5898,27 +6891,38 @@ def _dashboard_metrics_frames(
         return pd.DataFrame(), pd.DataFrame()
 
     actual_metrics_df = actual_metrics_df.copy()
-    actual_metrics_df["start_local"] = _activity_start_local_series(actual_metrics_df, db_path)
+    actual_metrics_df["start_local"] = _activity_start_local_series(
+        actual_metrics_df, db_path
+    )
     actual_metrics_df = actual_metrics_df.dropna(subset=["start_local"]).copy()
     if actual_metrics_df.empty:
         return pd.DataFrame(), pd.DataFrame()
 
     actual_metrics_df["day"] = actual_metrics_df["start_local"].dt.normalize()
     sport_lower = actual_metrics_df["sport_type"].fillna("").astype(str).str.lower()
-    is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
+    is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains(
+        "treadmill"
+    )
     actual_metrics_df["distance_km_running"] = (
-        pd.to_numeric(actual_metrics_df.get("distance_m"), errors="coerce").fillna(0.0).where(is_running_like, 0.0) / 1000.0
+        pd.to_numeric(actual_metrics_df.get("distance_m"), errors="coerce")
+        .fillna(0.0)
+        .where(is_running_like, 0.0)
+        / 1000.0
     )
 
     invalid_values = pd.Series(0.0, index=actual_metrics_df.index, dtype="float64")
     if "is_invalid" in actual_metrics_df.columns:
-        invalid_values = pd.to_numeric(actual_metrics_df["is_invalid"], errors="coerce").fillna(0.0)
+        invalid_values = pd.to_numeric(
+            actual_metrics_df["is_invalid"], errors="coerce"
+        ).fillna(0.0)
 
     metrics_df = actual_metrics_df.loc[invalid_values <= 0].copy()
     return metrics_df, actual_metrics_df
 
 
-def _filter_metrics_by_activity(metrics_df: pd.DataFrame, activity_filter: str | None) -> pd.DataFrame:
+def _filter_metrics_by_activity(
+    metrics_df: pd.DataFrame, activity_filter: str | None
+) -> pd.DataFrame:
     if metrics_df.empty:
         return metrics_df
 
@@ -5926,8 +6930,15 @@ def _filter_metrics_by_activity(metrics_df: pd.DataFrame, activity_filter: str |
     if key in {"all", "all_activities"}:
         return metrics_df
 
-    sport_lower = metrics_df.get("sport_type", pd.Series(index=metrics_df.index, dtype=object)).fillna("").astype(str).str.lower()
-    is_running = sport_lower.str.contains("run") & ~sport_lower.str.contains("treadmill")
+    sport_lower = (
+        metrics_df.get("sport_type", pd.Series(index=metrics_df.index, dtype=object))
+        .fillna("")
+        .astype(str)
+        .str.lower()
+    )
+    is_running = sport_lower.str.contains("run") & ~sport_lower.str.contains(
+        "treadmill"
+    )
     is_treadmill = sport_lower.str.contains("treadmill")
     is_running_like = is_running | is_treadmill
     is_cycling = sport_lower.str.contains("cycl") | sport_lower.str.contains("bike")
@@ -5953,25 +6964,44 @@ def _build_daily_vdot_series(activity_df: pd.DataFrame, db_path: Path) -> pd.Dat
 
     working = activity_df.copy()
     if "start_local" not in working.columns:
-        working["start_local"] = pd.to_datetime(working.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
+        working["start_local"] = pd.to_datetime(
+            working.get("start_time_utc"), utc=True, errors="coerce"
+        ).dt.tz_convert(None)
     else:
-        working["start_local"] = pd.to_datetime(working.get("start_local"), errors="coerce")
-    working["day"] = pd.to_datetime(working.get("day", working.get("start_local")), errors="coerce").dt.normalize()
+        working["start_local"] = pd.to_datetime(
+            working.get("start_local"), errors="coerce"
+        )
+    working["day"] = pd.to_datetime(
+        working.get("day", working.get("start_local")), errors="coerce"
+    ).dt.normalize()
     working = working.dropna(subset=["day"]).copy()
     if working.empty:
         return pd.DataFrame(columns=["day", "vdot", "vdot_max"])
 
-    working["distance_m"] = pd.to_numeric(working.get("distance_m"), errors="coerce").fillna(0.0)
-    working["duration_s"] = pd.to_numeric(working.get("duration_s"), errors="coerce").fillna(0.0)
-    working["if_proxy"] = pd.to_numeric(working.get("if_proxy"), errors="coerce").fillna(0.0)
-    sport_lower = working.get("sport_type", pd.Series(index=working.index, dtype=object)).fillna("").astype(str).str.lower()
+    working["distance_m"] = pd.to_numeric(
+        working.get("distance_m"), errors="coerce"
+    ).fillna(0.0)
+    working["duration_s"] = pd.to_numeric(
+        working.get("duration_s"), errors="coerce"
+    ).fillna(0.0)
+    working["if_proxy"] = pd.to_numeric(
+        working.get("if_proxy"), errors="coerce"
+    ).fillna(0.0)
+    sport_lower = (
+        working.get("sport_type", pd.Series(index=working.index, dtype=object))
+        .fillna("")
+        .astype(str)
+        .str.lower()
+    )
     eligible_vdot_mask = (
         (sport_lower.str.contains("run") | sport_lower.str.contains("treadmill"))
         & (working["distance_m"] > 0.0)
         & (working["duration_s"] > 0.0)
         & (working["if_proxy"] > 0.90)
     )
-    vdot_candidates = working.loc[eligible_vdot_mask, ["day", "distance_m", "duration_s"]].copy()
+    vdot_candidates = working.loc[
+        eligible_vdot_mask, ["day", "distance_m", "duration_s"]
+    ].copy()
 
     day_index = pd.date_range(
         start=pd.to_datetime(working["day"], errors="coerce").min(),
@@ -6036,12 +7066,24 @@ def _apply_athlete_progression_baseline_fields(
     rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
     if float(rtss_series.abs().sum()) <= 1e-9:
         rtss_series = tss_series.copy()
-    lt_daily_tss_target_series = pd.to_numeric(model_df.get("lt_target_tss"), errors="coerce").fillna(0.0)
-    lt_daily_distance_target_series = pd.to_numeric(model_df.get("lt_target_distance_km"), errors="coerce").fillna(0.0)
-    recent_load_21d = tss_series.shift(1, fill_value=0.0).rolling(window=21, min_periods=1).sum()
-    recent_load_63d = tss_series.shift(1, fill_value=0.0).rolling(window=63, min_periods=1).sum()
-    recent_load_365d = tss_series.shift(1, fill_value=0.0).rolling(window=365, min_periods=1).sum()
-    observed_days_series = pd.Series(np.arange(1, len(model_df.index) + 1), index=model_df.index, dtype=float)
+    lt_daily_tss_target_series = pd.to_numeric(
+        model_df.get("lt_target_tss"), errors="coerce"
+    ).fillna(0.0)
+    lt_daily_distance_target_series = pd.to_numeric(
+        model_df.get("lt_target_distance_km"), errors="coerce"
+    ).fillna(0.0)
+    recent_load_21d = (
+        tss_series.shift(1, fill_value=0.0).rolling(window=21, min_periods=1).sum()
+    )
+    recent_load_63d = (
+        tss_series.shift(1, fill_value=0.0).rolling(window=63, min_periods=1).sum()
+    )
+    recent_load_365d = (
+        tss_series.shift(1, fill_value=0.0).rolling(window=365, min_periods=1).sum()
+    )
+    observed_days_series = pd.Series(
+        np.arange(1, len(model_df.index) + 1), index=model_df.index, dtype=float
+    )
     observed_days_21d = observed_days_series.clip(upper=21).astype(int)
     observed_days_63d = observed_days_series.clip(upper=63).astype(int)
     observed_days_365d = observed_days_series.clip(upper=365).astype(int)
@@ -6075,29 +7117,45 @@ def _apply_athlete_progression_baseline_fields(
                 )
             )
         )
-    blended_weekly_baseline_raw = pd.Series(blended_values, index=model_df.index, dtype=float)
+    blended_weekly_baseline_raw = pd.Series(
+        blended_values, index=model_df.index, dtype=float
+    )
     # `_blend_baseline_tss()` already mixes short, medium, and long history with
     # capacity plus a chronic floor, so keep that as the single inertia source.
     blended_weekly_baseline = blended_weekly_baseline_raw
     daily_tss_target_series = (blended_weekly_baseline / 7.0).fillna(0.0)
     capacity_baseline_tss_series = (weekly_capacity_series / 7.0).fillna(0.0)
-    recent_load_anchor_tss_series = pd.Series(history_anchor_values, index=model_df.index, dtype=float).div(7.0).fillna(0.0)
-    blended_baseline_tss_before_smoothing_series = (blended_weekly_baseline_raw / 7.0).fillna(0.0)
+    recent_load_anchor_tss_series = (
+        pd.Series(history_anchor_values, index=model_df.index, dtype=float)
+        .div(7.0)
+        .fillna(0.0)
+    )
+    blended_baseline_tss_before_smoothing_series = (
+        blended_weekly_baseline_raw / 7.0
+    ).fillna(0.0)
     smoothed_baseline_tss_series = daily_tss_target_series
-    blend_factor_series = pd.Series(
-        np.where(
-            lt_daily_tss_target_series > 0.0,
-            daily_tss_target_series / lt_daily_tss_target_series,
-            1.0,
-        ),
-        index=model_df.index,
-        dtype=float,
-    ).replace([np.inf, -np.inf], 1.0).fillna(1.0)
+    blend_factor_series = (
+        pd.Series(
+            np.where(
+                lt_daily_tss_target_series > 0.0,
+                daily_tss_target_series / lt_daily_tss_target_series,
+                1.0,
+            ),
+            index=model_df.index,
+            dtype=float,
+        )
+        .replace([np.inf, -np.inf], 1.0)
+        .fillna(1.0)
+    )
     model_df["baseline_tss"] = daily_tss_target_series
-    model_df["baseline_distance_km"] = (lt_daily_distance_target_series * blend_factor_series).fillna(0.0)
+    model_df["baseline_distance_km"] = (
+        lt_daily_distance_target_series * blend_factor_series
+    ).fillna(0.0)
     model_df["capacity_baseline_tss"] = capacity_baseline_tss_series
     model_df["recent_load_anchor_tss"] = recent_load_anchor_tss_series
-    model_df["blended_baseline_tss_before_smoothing"] = blended_baseline_tss_before_smoothing_series
+    model_df[
+        "blended_baseline_tss_before_smoothing"
+    ] = blended_baseline_tss_before_smoothing_series
     model_df["smoothed_baseline_tss"] = smoothed_baseline_tss_series
     return model_df
 
@@ -6105,7 +7163,9 @@ def _apply_athlete_progression_baseline_fields(
 def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.DataFrame:
     baseline_points_df = _rollup_athlete_progression_weekly_baseline_fields(model_df)
     weekly_df = model_df.copy()
-    weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(_week_start_monday)
+    weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(
+        _week_start_monday
+    )
     points_df = (
         weekly_df.groupby("period_start", as_index=False)
         .agg(
@@ -6139,9 +7199,13 @@ def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.Data
     return points_df.merge(baseline_points_df, on="period_start", how="left")
 
 
-def _rollup_athlete_progression_weekly_baseline_fields(model_df: pd.DataFrame) -> pd.DataFrame:
+def _rollup_athlete_progression_weekly_baseline_fields(
+    model_df: pd.DataFrame,
+) -> pd.DataFrame:
     weekly_df = model_df.copy()
-    weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(_week_start_monday)
+    weekly_df["period_start"] = pd.to_datetime(weekly_df["day"], errors="coerce").map(
+        _week_start_monday
+    )
     weekly_df["day"] = pd.to_datetime(weekly_df["day"], errors="coerce")
     points_df = (
         weekly_df.sort_values(["period_start", "day"])
@@ -6151,8 +7215,12 @@ def _rollup_athlete_progression_weekly_baseline_fields(model_df: pd.DataFrame) -
         .copy()
     )
     for field in _ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS:
-        points_df[field] = pd.to_numeric(points_df.get(field), errors="coerce").fillna(0.0) * 7.0
-    return points_df[["period_start", *_ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS]].reset_index(drop=True)
+        points_df[field] = (
+            pd.to_numeric(points_df.get(field), errors="coerce").fillna(0.0) * 7.0
+        )
+    return points_df[
+        ["period_start", *_ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS]
+    ].reset_index(drop=True)
 
 
 def _athlete_progression_weekly_baseline_deviation_reason(row: dict[str, Any]) -> str:
@@ -6162,11 +7230,17 @@ def _athlete_progression_weekly_baseline_deviation_reason(row: dict[str, Any]) -
     baseline_tss = _safe_float(row.get("baseline_tss"))
     capacity_baseline_tss = _safe_float(row.get("capacity_baseline_tss"))
     recent_load_anchor_tss = _safe_float(row.get("recent_load_anchor_tss"))
-    blended_before_smoothing = _safe_float(row.get("blended_baseline_tss_before_smoothing"))
+    blended_before_smoothing = _safe_float(
+        row.get("blended_baseline_tss_before_smoothing")
+    )
     smoothed_baseline_tss = _safe_float(row.get("smoothed_baseline_tss"))
-    if baseline_tss < lt_target_tss and recent_load_anchor_tss < (capacity_baseline_tss * 0.8):
+    if baseline_tss < lt_target_tss and recent_load_anchor_tss < (
+        capacity_baseline_tss * 0.8
+    ):
         return "sparse_history_pull_down"
-    if baseline_tss > lt_target_tss and recent_load_anchor_tss > (capacity_baseline_tss * 1.05):
+    if baseline_tss > lt_target_tss and recent_load_anchor_tss > (
+        capacity_baseline_tss * 1.05
+    ):
         return "recent_load_pull_up"
     smoothing_adjustment_tss = smoothed_baseline_tss - blended_before_smoothing
     if abs(smoothing_adjustment_tss) >= max(5.0, abs(blended_before_smoothing) * 0.05):
@@ -6185,30 +7259,50 @@ def _format_athlete_progression_weekly_baseline_point(
     week_start_ts = pd.to_datetime(point.get("period_start"), errors="coerce")
     week_start = ""
     if pd.notna(week_start_ts):
-        week_start = _week_start_monday(pd.Timestamp(week_start_ts).normalize()).date().isoformat()
+        week_start = (
+            _week_start_monday(pd.Timestamp(week_start_ts).normalize())
+            .date()
+            .isoformat()
+        )
     baseline_tss = round(_safe_float(point.get("baseline_tss")), decimals_tss)
     lt_target_tss = round(_safe_float(point.get("lt_target_tss")), decimals_tss)
-    capacity_baseline_tss = round(_safe_float(point.get("capacity_baseline_tss")), decimals_tss)
-    recent_load_anchor_tss = round(_safe_float(point.get("recent_load_anchor_tss")), decimals_tss)
+    capacity_baseline_tss = round(
+        _safe_float(point.get("capacity_baseline_tss")), decimals_tss
+    )
+    recent_load_anchor_tss = round(
+        _safe_float(point.get("recent_load_anchor_tss")), decimals_tss
+    )
     blended_baseline_tss_before_smoothing = round(
         _safe_float(point.get("blended_baseline_tss_before_smoothing")),
         decimals_tss,
     )
-    smoothed_baseline_tss = round(_safe_float(point.get("smoothed_baseline_tss")), decimals_tss)
+    smoothed_baseline_tss = round(
+        _safe_float(point.get("smoothed_baseline_tss")), decimals_tss
+    )
     row = {
         "week_start": week_start,
         "baseline_tss": baseline_tss,
-        "baseline_distance_km": round(_safe_float(point.get("baseline_distance_km")), decimals_distance),
+        "baseline_distance_km": round(
+            _safe_float(point.get("baseline_distance_km")), decimals_distance
+        ),
         "lt_target_tss": lt_target_tss,
-        "lt_target_distance_km": round(_safe_float(point.get("lt_target_distance_km")), decimals_distance),
+        "lt_target_distance_km": round(
+            _safe_float(point.get("lt_target_distance_km")), decimals_distance
+        ),
         "capacity_baseline_tss": capacity_baseline_tss,
         "recent_load_anchor_tss": recent_load_anchor_tss,
         "blended_baseline_tss_before_smoothing": blended_baseline_tss_before_smoothing,
         "smoothed_baseline_tss": smoothed_baseline_tss,
         "deviation_from_lt_tss": round(baseline_tss - lt_target_tss, decimals_tss),
-        "deviation_from_lt_pct": round((baseline_tss / lt_target_tss) - 1.0, 4) if lt_target_tss > 0 else None,
-        "capacity_vs_lt_tss": round(capacity_baseline_tss - lt_target_tss, decimals_tss),
-        "recent_vs_capacity_tss": round(recent_load_anchor_tss - capacity_baseline_tss, decimals_tss),
+        "deviation_from_lt_pct": round((baseline_tss / lt_target_tss) - 1.0, 4)
+        if lt_target_tss > 0
+        else None,
+        "capacity_vs_lt_tss": round(
+            capacity_baseline_tss - lt_target_tss, decimals_tss
+        ),
+        "recent_vs_capacity_tss": round(
+            recent_load_anchor_tss - capacity_baseline_tss, decimals_tss
+        ),
         "smoothing_adjustment_tss": round(
             smoothed_baseline_tss - blended_baseline_tss_before_smoothing,
             decimals_tss,
@@ -6293,12 +7387,16 @@ def _build_athlete_progression_payload(
         }
 
     filtered = filtered.copy()
-    filtered["start_local"] = pd.to_datetime(filtered.get("start_time_utc"), utc=True, errors="coerce").dt.tz_convert(None)
+    filtered["start_local"] = pd.to_datetime(
+        filtered.get("start_time_utc"), utc=True, errors="coerce"
+    ).dt.tz_convert(None)
     filtered = filtered.dropna(subset=["start_local"]).copy()
     filtered["day"] = filtered["start_local"].dt.normalize()
     today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
     if mode == "weekly":
-        display_cutoff_day = _week_start_monday(today_local - pd.Timedelta(days=requested_days))
+        display_cutoff_day = _week_start_monday(
+            today_local - pd.Timedelta(days=requested_days)
+        )
     else:
         display_cutoff_day = today_local - pd.Timedelta(days=requested_days - 1)
 
@@ -6322,20 +7420,33 @@ def _build_athlete_progression_payload(
         filtered[col] = pd.to_numeric(filtered[col], errors="coerce").fillna(0.0)
     if "if_proxy" not in filtered.columns:
         filtered["if_proxy"] = 0.0
-    filtered["if_proxy"] = pd.to_numeric(filtered["if_proxy"], errors="coerce").fillna(0.0)
+    filtered["if_proxy"] = pd.to_numeric(filtered["if_proxy"], errors="coerce").fillna(
+        0.0
+    )
 
     sport_lower = filtered["sport_type"].fillna("").astype(str).str.lower()
-    is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains("treadmill")
-    running_like_with_distance_duration = is_running_like & (filtered["distance_m"] > 0) & (filtered["duration_s"] > 0)
-    filtered["distance_km_running"] = (filtered["distance_m"].where(is_running_like, 0.0) / 1000.0).fillna(0.0)
+    is_running_like = sport_lower.str.contains("run") | sport_lower.str.contains(
+        "treadmill"
+    )
+    running_like_with_distance_duration = (
+        is_running_like & (filtered["distance_m"] > 0) & (filtered["duration_s"] > 0)
+    )
+    filtered["distance_km_running"] = (
+        filtered["distance_m"].where(is_running_like, 0.0) / 1000.0
+    ).fillna(0.0)
     display_filtered = filtered[filtered["day"] >= display_cutoff_day].copy()
     if display_filtered.empty:
         display_filtered = filtered.copy()
-    eligible_vdot_mask = (
-        running_like_with_distance_duration
-        & (filtered["if_proxy"] > 0.90)
+    eligible_vdot_mask = running_like_with_distance_duration & (
+        filtered["if_proxy"] > 0.90
     )
-    vdot_candidates = filtered.loc[eligible_vdot_mask, ["start_local", "day", "distance_m", "duration_s"]].copy() if "day" in filtered.columns else pd.DataFrame()
+    vdot_candidates = (
+        filtered.loc[
+            eligible_vdot_mask, ["start_local", "day", "distance_m", "duration_s"]
+        ].copy()
+        if "day" in filtered.columns
+        else pd.DataFrame()
+    )
     if not vdot_candidates.empty:
         vdot_candidates["vdot"] = vdot_candidates.apply(
             lambda row: _activity_vdot(
@@ -6344,14 +7455,20 @@ def _build_athlete_progression_payload(
             ),
             axis=1,
         )
-        vdot_candidates["vdot"] = pd.to_numeric(vdot_candidates["vdot"], errors="coerce")
+        vdot_candidates["vdot"] = pd.to_numeric(
+            vdot_candidates["vdot"], errors="coerce"
+        )
         vdot_candidates = vdot_candidates.dropna(subset=["vdot"]).copy()
     vdot_eligibility = {
         "running_like_activities": int(is_running_like.sum()),
-        "running_like_with_distance_duration": int(running_like_with_distance_duration.sum()),
+        "running_like_with_distance_duration": int(
+            running_like_with_distance_duration.sum()
+        ),
         "eligible_candidates_before_vdot": int(eligible_vdot_mask.sum()),
         "eligible_candidates_after_vdot": int(len(vdot_candidates.index)),
-        "max_single_activity_if_pct": round(float(filtered["if_proxy"].max() * 100.0), 1),
+        "max_single_activity_if_pct": round(
+            float(filtered["if_proxy"].max() * 100.0), 1
+        ),
         "max_single_activity_rtss": round(float(filtered["rtss"].max()), 1),
     }
 
@@ -6384,7 +7501,9 @@ def _build_athlete_progression_payload(
             "owner": owner,
             "days": max(30, int(days)),
             "activity_filter": str(activity_filter or "all"),
-            "aggregation": "weekly" if str(aggregation).lower() == "weekly" else "daily",
+            "aggregation": "weekly"
+            if str(aggregation).lower() == "weekly"
+            else "daily",
             "range": {"start_day": "", "end_day": ""},
             "summary": {
                 "activities": int(len(filtered.index)),
@@ -6403,7 +7522,9 @@ def _build_athlete_progression_payload(
     model_df = model_df.merge(daily_agg, on="day", how="left")
     for col in [c for c in model_df.columns if c != "day"]:
         model_df[col] = pd.to_numeric(model_df[col], errors="coerce").fillna(0.0)
-    model_df = model_df.merge(_build_daily_vdot_series(filtered, db_path), on="day", how="left")
+    model_df = model_df.merge(
+        _build_daily_vdot_series(filtered, db_path), on="day", how="left"
+    )
 
     pace_curve = _load_curve_points(
         db_path=db_path,
@@ -6411,37 +7532,63 @@ def _build_athlete_progression_payload(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_default = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
     model_df["lt_pace_target_sec_per_km"] = model_df["day"].map(
-        lambda day: float(_curve_value_at(pace_curve, pace_default, pd.Timestamp(day).to_pydatetime()))
+        lambda day: float(
+            _curve_value_at(pace_curve, pace_default, pd.Timestamp(day).to_pydatetime())
+        )
     )
-    model_df["lt_target_tss"] = pd.to_numeric(model_df["lt_pace_target_sec_per_km"], errors="coerce").map(
-        lambda pace: float(max(_weekly_tss_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
+    model_df["lt_target_tss"] = pd.to_numeric(
+        model_df["lt_pace_target_sec_per_km"], errors="coerce"
+    ).map(
+        lambda pace: float(max(_weekly_tss_target_from_lt_pace(float(pace)) / 7.0, 0.0))
+        if float(pace) > 0
+        else 0.0
     )
-    model_df["lt_target_distance_km"] = pd.to_numeric(model_df["lt_pace_target_sec_per_km"], errors="coerce").map(
-        lambda pace: float(max(_weekly_distance_target_from_lt_pace(float(pace)) / 7.0, 0.0)) if float(pace) > 0 else 0.0
+    model_df["lt_target_distance_km"] = pd.to_numeric(
+        model_df["lt_pace_target_sec_per_km"], errors="coerce"
+    ).map(
+        lambda pace: float(
+            max(_weekly_distance_target_from_lt_pace(float(pace)) / 7.0, 0.0)
+        )
+        if float(pace) > 0
+        else 0.0
     )
     baseline_blend_profile = _load_baseline_blend_profile(db_path)
-    model_df = _apply_athlete_progression_baseline_fields(model_df, blend_profile=baseline_blend_profile)
+    model_df = _apply_athlete_progression_baseline_fields(
+        model_df, blend_profile=baseline_blend_profile
+    )
 
     tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
     rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
     if float(rtss_series.abs().sum()) <= 1e-9:
         rtss_series = tss_series.copy()
-    daily_tss_target_series = pd.to_numeric(model_df.get("baseline_tss"), errors="coerce").fillna(0.0)
+    daily_tss_target_series = pd.to_numeric(
+        model_df.get("baseline_tss"), errors="coerce"
+    ).fillna(0.0)
 
     tss_emas = ema_multi(tss_series, [42, 28, 7])
     rtss_emas = ema_multi(rtss_series, [42, 28, 7])
     model_df["fitness"] = tss_emas[42]
     model_df["fatigue"] = tss_emas[7]
-    _tss_acwr = _acwr_with_baseline_floor(tss_emas[7], tss_emas[28], daily_tss_target_series)
-    _rtss_acwr = _acwr_with_baseline_floor(rtss_emas[7], rtss_emas[28], daily_tss_target_series)
+    _tss_acwr = _acwr_with_baseline_floor(
+        tss_emas[7], tss_emas[28], daily_tss_target_series
+    )
+    _rtss_acwr = _acwr_with_baseline_floor(
+        rtss_emas[7], rtss_emas[28], daily_tss_target_series
+    )
     overreach_base = (1.0 / (1.0 + np.exp(-4.0 * (_tss_acwr - 1.8)))) * 100.0
     injury_base = (1.0 / (1.0 + np.exp(-4.0 * (_rtss_acwr - 1.8)))) * 100.0
     overreach_scale = _baseline_load_scale(tss_emas[7], daily_tss_target_series)
     injury_scale = _baseline_load_scale(rtss_emas[7], daily_tss_target_series)
-    model_df["raw_overreach_signal"] = (overreach_base * overreach_scale).clip(lower=0.0, upper=100.0)
-    model_df["raw_injury_signal"] = (injury_base * injury_scale).clip(lower=0.0, upper=100.0)
+    model_df["raw_overreach_signal"] = (overreach_base * overreach_scale).clip(
+        lower=0.0, upper=100.0
+    )
+    model_df["raw_injury_signal"] = (injury_base * injury_scale).clip(
+        lower=0.0, upper=100.0
+    )
     # Carried-state risk model:
     # - raw_*_signal keeps the local-window ACWR + baseline-load view.
     # - *_state carries short-term strain memory forward with daily decay.
@@ -6467,22 +7614,62 @@ def _build_athlete_progression_payload(
 
     model_df["zone_low_aerobic_h"] = model_df["hr_time_in_zone_1"] / 3600.0
     model_df["zone_moderate_aerobic_h"] = model_df["hr_time_in_zone_2"] / 3600.0
-    model_df["zone_high_aerobic_h"] = (model_df["hr_time_in_zone_3"] + model_df["hr_time_in_zone_4"]) / 3600.0
+    model_df["zone_high_aerobic_h"] = (
+        model_df["hr_time_in_zone_3"] + model_df["hr_time_in_zone_4"]
+    ) / 3600.0
     model_df["zone_total_h"] = model_df["duration_s"] / 3600.0
 
     if mode == "weekly":
         points_df = _rollup_athlete_progression_weekly_points(model_df)
-        points_df = points_df[pd.to_datetime(points_df.get("period_start"), errors="coerce") >= display_cutoff_day].copy()
+        points_df = points_df[
+            pd.to_datetime(points_df.get("period_start"), errors="coerce")
+            >= display_cutoff_day
+        ].copy()
     else:
         points_df = model_df.rename(columns={"day": "period_start"}).copy()
-        points_df = points_df[pd.to_datetime(points_df.get("period_start"), errors="coerce") >= display_cutoff_day].copy()
+        points_df = points_df[
+            pd.to_datetime(points_df.get("period_start"), errors="coerce")
+            >= display_cutoff_day
+        ].copy()
 
     summary = {
         "activities": int(len(display_filtered.index)),
-        "distance_km": round(float(pd.to_numeric(display_filtered.get("distance_km_running"), errors="coerce").fillna(0.0).sum()), 1),
-        "distance_eqv_km": round(float(pd.to_numeric(display_filtered.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()), 1),
-        "tss": round(float(pd.to_numeric(display_filtered.get("tss"), errors="coerce").fillna(0.0).sum()), 1),
-        "rtss": round(float(pd.to_numeric(display_filtered.get("rtss"), errors="coerce").fillna(0.0).sum()), 1),
+        "distance_km": round(
+            float(
+                pd.to_numeric(
+                    display_filtered.get("distance_km_running"), errors="coerce"
+                )
+                .fillna(0.0)
+                .sum()
+            ),
+            1,
+        ),
+        "distance_eqv_km": round(
+            float(
+                pd.to_numeric(
+                    display_filtered.get("distance_proxy_km"), errors="coerce"
+                )
+                .fillna(0.0)
+                .sum()
+            ),
+            1,
+        ),
+        "tss": round(
+            float(
+                pd.to_numeric(display_filtered.get("tss"), errors="coerce")
+                .fillna(0.0)
+                .sum()
+            ),
+            1,
+        ),
+        "rtss": round(
+            float(
+                pd.to_numeric(display_filtered.get("rtss"), errors="coerce")
+                .fillna(0.0)
+                .sum()
+            ),
+            1,
+        ),
     }
 
     points: list[dict[str, Any]] = []
@@ -6499,44 +7686,80 @@ def _build_athlete_progression_payload(
                 "duration_h": round(_safe_float(row.get("duration_s")) / 3600.0, 2),
                 "tss": round(_safe_float(row.get("tss")), 2),
                 "rtss": round(_safe_float(row.get("rtss")), 2),
-                "training_load_garmin": round(_safe_float(row.get("training_load_garmin")), 2),
+                "training_load_garmin": round(
+                    _safe_float(row.get("training_load_garmin")), 2
+                ),
                 "calories_total": round(_safe_float(row.get("calories_total")), 2),
-                "zone_low_aerobic_h": round(_safe_float(row.get("zone_low_aerobic_h")), 3),
-                "zone_moderate_aerobic_h": round(_safe_float(row.get("zone_moderate_aerobic_h")), 3),
-                "zone_high_aerobic_h": round(_safe_float(row.get("zone_high_aerobic_h")), 3),
+                "zone_low_aerobic_h": round(
+                    _safe_float(row.get("zone_low_aerobic_h")), 3
+                ),
+                "zone_moderate_aerobic_h": round(
+                    _safe_float(row.get("zone_moderate_aerobic_h")), 3
+                ),
+                "zone_high_aerobic_h": round(
+                    _safe_float(row.get("zone_high_aerobic_h")), 3
+                ),
                 "zone_total_h": round(_safe_float(row.get("zone_total_h")), 3),
                 "fitness": round(_safe_float(row.get("fitness")), 3),
                 "fatigue": round(_safe_float(row.get("fatigue")), 3),
                 "overreach": round(_safe_float(row.get("overreach")), 3),
                 "injury_risk": round(_safe_float(row.get("injury_risk")), 3),
-                "raw_overreach_signal": round(_safe_float(row.get("raw_overreach_signal")), 3),
-                "raw_injury_signal": round(_safe_float(row.get("raw_injury_signal")), 3),
+                "raw_overreach_signal": round(
+                    _safe_float(row.get("raw_overreach_signal")), 3
+                ),
+                "raw_injury_signal": round(
+                    _safe_float(row.get("raw_injury_signal")), 3
+                ),
                 "overreach_state": round(_safe_float(row.get("overreach_state")), 3),
-                "injury_risk_state": round(_safe_float(row.get("injury_risk_state")), 3),
+                "injury_risk_state": round(
+                    _safe_float(row.get("injury_risk_state")), 3
+                ),
                 "durability": round(_safe_float(row.get("durability")), 3),
                 "pounding": round(_safe_float(row.get("pounding")), 3),
                 "vdot": (
                     int(round(_safe_float(row.get("vdot"))))
-                    if pd.notna(pd.to_numeric(pd.Series([row.get("vdot")]), errors="coerce").iloc[0])
+                    if pd.notna(
+                        pd.to_numeric(
+                            pd.Series([row.get("vdot")]), errors="coerce"
+                        ).iloc[0]
+                    )
                     and _safe_float(row.get("vdot")) > 0
                     else None
                 ),
                 "vdot_max": (
                     int(round(_safe_float(row.get("vdot_max"))))
-                    if pd.notna(pd.to_numeric(pd.Series([row.get("vdot_max")]), errors="coerce").iloc[0])
+                    if pd.notna(
+                        pd.to_numeric(
+                            pd.Series([row.get("vdot_max")]), errors="coerce"
+                        ).iloc[0]
+                    )
                     and _safe_float(row.get("vdot_max")) > 0
                     else None
                 ),
                 "baseline_tss": round(_safe_float(row.get("baseline_tss")), 3),
-                "baseline_distance_km": round(_safe_float(row.get("baseline_distance_km")), 3),
+                "baseline_distance_km": round(
+                    _safe_float(row.get("baseline_distance_km")), 3
+                ),
                 "lt_target_tss": round(_safe_float(row.get("lt_target_tss")), 3),
-                "lt_target_distance_km": round(_safe_float(row.get("lt_target_distance_km")), 3),
-                "capacity_baseline_tss": round(_safe_float(row.get("capacity_baseline_tss")), 3),
-                "recent_load_anchor_tss": round(_safe_float(row.get("recent_load_anchor_tss")), 3),
-                "blended_baseline_tss_before_smoothing": round(_safe_float(row.get("blended_baseline_tss_before_smoothing")), 3),
-                "smoothed_baseline_tss": round(_safe_float(row.get("smoothed_baseline_tss")), 3),
+                "lt_target_distance_km": round(
+                    _safe_float(row.get("lt_target_distance_km")), 3
+                ),
+                "capacity_baseline_tss": round(
+                    _safe_float(row.get("capacity_baseline_tss")), 3
+                ),
+                "recent_load_anchor_tss": round(
+                    _safe_float(row.get("recent_load_anchor_tss")), 3
+                ),
+                "blended_baseline_tss_before_smoothing": round(
+                    _safe_float(row.get("blended_baseline_tss_before_smoothing")), 3
+                ),
+                "smoothed_baseline_tss": round(
+                    _safe_float(row.get("smoothed_baseline_tss")), 3
+                ),
                 "target_tss": round(_safe_float(row.get("baseline_tss")), 3),
-                "target_distance_km": round(_safe_float(row.get("baseline_distance_km")), 3),
+                "target_distance_km": round(
+                    _safe_float(row.get("baseline_distance_km")), 3
+                ),
             }
         )
 
@@ -6569,7 +7792,9 @@ def _build_wellness_payload(
         return {
             "owner": owner,
             "days": max(30, int(days)),
-            "aggregation": "weekly" if str(aggregation).strip().lower() == "weekly" else "daily",
+            "aggregation": "weekly"
+            if str(aggregation).strip().lower() == "weekly"
+            else "daily",
             "range": {"start_day": "", "end_day": ""},
             "summary": {},
             "points": [],
@@ -6577,15 +7802,27 @@ def _build_wellness_payload(
 
     if not sleep_df.empty:
         sleep_df = sleep_df.copy()
-        sleep_df["day"] = pd.to_datetime(sleep_df.get("day_utc"), errors="coerce").dt.normalize()
-        sleep_df = sleep_df.dropna(subset=["day"]).sort_values("day").drop_duplicates(subset=["day"], keep="last")
+        sleep_df["day"] = pd.to_datetime(
+            sleep_df.get("day_utc"), errors="coerce"
+        ).dt.normalize()
+        sleep_df = (
+            sleep_df.dropna(subset=["day"])
+            .sort_values("day")
+            .drop_duplicates(subset=["day"], keep="last")
+        )
     else:
         sleep_df = pd.DataFrame(columns=["day"])
 
     if not wellness_df.empty:
         wellness_df = wellness_df.copy()
-        wellness_df["day"] = pd.to_datetime(wellness_df.get("day_utc"), errors="coerce").dt.normalize()
-        wellness_df = wellness_df.dropna(subset=["day"]).sort_values("day").drop_duplicates(subset=["day"], keep="last")
+        wellness_df["day"] = pd.to_datetime(
+            wellness_df.get("day_utc"), errors="coerce"
+        ).dt.normalize()
+        wellness_df = (
+            wellness_df.dropna(subset=["day"])
+            .sort_values("day")
+            .drop_duplicates(subset=["day"], keep="last")
+        )
     else:
         wellness_df = pd.DataFrame(columns=["day"])
 
@@ -6600,7 +7837,9 @@ def _build_wellness_payload(
         return {
             "owner": owner,
             "days": max(30, int(days)),
-            "aggregation": "weekly" if str(aggregation).strip().lower() == "weekly" else "daily",
+            "aggregation": "weekly"
+            if str(aggregation).strip().lower() == "weekly"
+            else "daily",
             "range": {"start_day": "", "end_day": ""},
             "summary": {},
             "points": [],
@@ -6634,7 +7873,9 @@ def _build_wellness_payload(
         return {
             "owner": owner,
             "days": max(30, int(days)),
-            "aggregation": "weekly" if str(aggregation).strip().lower() == "weekly" else "daily",
+            "aggregation": "weekly"
+            if str(aggregation).strip().lower() == "weekly"
+            else "daily",
             "range": {"start_day": "", "end_day": ""},
             "summary": {},
             "points": [],
@@ -6644,15 +7885,25 @@ def _build_wellness_payload(
     start_bound = pd.Timestamp(end_day).normalize() - pd.Timedelta(days=window_days - 1)
     merged = merged[merged["day"] >= start_bound].copy()
 
-    merged["sleep_duration_h"] = pd.to_numeric(merged.get("sleep_duration_s"), errors="coerce") / 3600.0
-    merged["deep_sleep_h"] = pd.to_numeric(merged.get("deep_sleep_s"), errors="coerce") / 3600.0
-    merged["rem_sleep_h"] = pd.to_numeric(merged.get("rem_sleep_s"), errors="coerce") / 3600.0
-    merged["light_sleep_h"] = pd.to_numeric(merged.get("light_sleep_s"), errors="coerce") / 3600.0
+    merged["sleep_duration_h"] = (
+        pd.to_numeric(merged.get("sleep_duration_s"), errors="coerce") / 3600.0
+    )
+    merged["deep_sleep_h"] = (
+        pd.to_numeric(merged.get("deep_sleep_s"), errors="coerce") / 3600.0
+    )
+    merged["rem_sleep_h"] = (
+        pd.to_numeric(merged.get("rem_sleep_s"), errors="coerce") / 3600.0
+    )
+    merged["light_sleep_h"] = (
+        pd.to_numeric(merged.get("light_sleep_s"), errors="coerce") / 3600.0
+    )
     merged["awake_h"] = pd.to_numeric(merged.get("awake_s"), errors="coerce") / 3600.0
 
     mode = "weekly" if str(aggregation).strip().lower() == "weekly" else "daily"
     if mode == "weekly":
-        merged["period_start"] = pd.to_datetime(merged["day"], errors="coerce").map(_week_start_monday)
+        merged["period_start"] = pd.to_datetime(merged["day"], errors="coerce").map(
+            _week_start_monday
+        )
         points_df = (
             merged.groupby("period_start", as_index=False)
             .agg(
@@ -6734,8 +7985,12 @@ def _build_wellness_payload(
         "days": window_days,
         "aggregation": mode,
         "range": {
-            "start_day": pd.Timestamp(start_bound).date().isoformat() if pd.notna(start_bound) else "",
-            "end_day": pd.Timestamp(end_day).date().isoformat() if pd.notna(end_day) else "",
+            "start_day": pd.Timestamp(start_bound).date().isoformat()
+            if pd.notna(start_bound)
+            else "",
+            "end_day": pd.Timestamp(end_day).date().isoformat()
+            if pd.notna(end_day)
+            else "",
         },
         "summary": summary,
         "points": points,
@@ -6805,7 +8060,9 @@ def _build_activity_dashboard_payload(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    latest_lt_pace = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    latest_lt_pace = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
     daily_tss_target = max(_weekly_tss_target_from_lt_pace(latest_lt_pace) / 7.0, 0.0)
     if metrics_df.empty:
         day_agg = pd.DataFrame()
@@ -6820,12 +8077,16 @@ def _build_activity_dashboard_payload(
         )
     weekly_baseline_lookup: dict[pd.Timestamp, float] = {}
     if not model_df.empty:
-        weekly_progression_df = _rollup_athlete_progression_weekly_baseline_fields(model_df)
+        weekly_progression_df = _rollup_athlete_progression_weekly_baseline_fields(
+            model_df
+        )
         for _, row in weekly_progression_df.iterrows():
             period_start = pd.to_datetime(row.get("period_start"), errors="coerce")
             if pd.isna(period_start):
                 continue
-            weekly_baseline_lookup[pd.Timestamp(period_start).normalize()] = _safe_float(row.get("baseline_tss"))
+            weekly_baseline_lookup[
+                pd.Timestamp(period_start).normalize()
+            ] = _safe_float(row.get("baseline_tss"))
 
     day_stats_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     for _, row in day_agg.iterrows():
@@ -6839,7 +8100,9 @@ def _build_activity_dashboard_payload(
         }
 
     today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
-    render_max_day = max(pd.Timestamp(max_day).normalize(), today_local + pd.Timedelta(days=28))
+    render_max_day = max(
+        pd.Timestamp(max_day).normalize(), today_local + pd.Timedelta(days=28)
+    )
 
     planned_rows = get_planned_activities_df(
         db_path=db_path,
@@ -6856,19 +8119,30 @@ def _build_activity_dashboard_payload(
             value_key="lthr_bpm",
             fallback_value=DEFAULT_LTHR,
         )
-        specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+        specificity_profile = _load_specificity_profile(
+            db_path=db_path, fallback_default=0.8
+        )
         planned_metrics = _compute_planned_rows_metrics_df(
             planned_rows=planned_rows,
             lthr_curve_points=lthr_curve,
             lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
             lt_pace_curve_points=pace_curve,
-            lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+            lt_pace_default_sec=float(pace_curve[-1][1])
+            if pace_curve
+            else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
             specificity_profile=specificity_profile,
         )
         if not planned_metrics.empty:
-            planned_metrics["day"] = pd.to_datetime(planned_metrics.get("day_utc"), errors="coerce").dt.normalize()
+            planned_metrics["day"] = pd.to_datetime(
+                planned_metrics.get("day_utc"), errors="coerce"
+            ).dt.normalize()
             planned_metrics = planned_metrics.dropna(subset=["day"]).copy()
-            planned_metrics["manual_done"] = pd.to_numeric(planned_metrics.get("manual_done"), errors="coerce").fillna(0.0) > 0
+            planned_metrics["manual_done"] = (
+                pd.to_numeric(
+                    planned_metrics.get("manual_done"), errors="coerce"
+                ).fillna(0.0)
+                > 0
+            )
             effective_planned_metrics = _filter_effective_planned_rows(
                 planned_metrics,
                 today_local_day=today_local,
@@ -6890,10 +8164,14 @@ def _build_activity_dashboard_payload(
                             ),
                             "workout_text": str(row.get("workout_text") or ""),
                             "duration_s": _safe_float(row.get("duration_s")),
-                            "distance_eqv_km": _safe_float(row.get("distance_proxy_km")),
+                            "distance_eqv_km": _safe_float(
+                                row.get("distance_proxy_km")
+                            ),
                             "if_proxy": _safe_float(row.get("if_proxy")),
                             "avg_hr_bpm": _safe_float(row.get("avg_hr_bpm")),
-                            "pace_label": _format_pace_short(_safe_float(row.get("pace_proxy_sec_per_km"))),
+                            "pace_label": _format_pace_short(
+                                _safe_float(row.get("pace_proxy_sec_per_km"))
+                            ),
                             "tss": _safe_float(row.get("tss")),
                             "rtss": _safe_float(row.get("rtss")),
                             "manual_done": bool(row.get("manual_done")),
@@ -6903,15 +8181,38 @@ def _build_activity_dashboard_payload(
                     planned_by_day[day_key] = cards
                 planned_tss_lookup[day_key] = float(max(remaining_tss, 0.0))
                 planned_summary_lookup[day_key] = {
-                    "duration_s": float(pd.to_numeric(grp.get("duration_s"), errors="coerce").fillna(0.0).sum()),
-                    "distance_eqv_km": float(pd.to_numeric(grp.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()),
+                    "duration_s": float(
+                        pd.to_numeric(grp.get("duration_s"), errors="coerce")
+                        .fillna(0.0)
+                        .sum()
+                    ),
+                    "distance_eqv_km": float(
+                        pd.to_numeric(grp.get("distance_proxy_km"), errors="coerce")
+                        .fillna(0.0)
+                        .sum()
+                    ),
                     "if_proxy": (
                         float(
-                            (pd.to_numeric(grp.get("if_proxy"), errors="coerce").fillna(0.0)
-                             * pd.to_numeric(grp.get("duration_s"), errors="coerce").fillna(0.0)).sum()
+                            (
+                                pd.to_numeric(
+                                    grp.get("if_proxy"), errors="coerce"
+                                ).fillna(0.0)
+                                * pd.to_numeric(
+                                    grp.get("duration_s"), errors="coerce"
+                                ).fillna(0.0)
+                            ).sum()
                         )
-                        / float(pd.to_numeric(grp.get("duration_s"), errors="coerce").fillna(0.0).sum())
-                        if float(pd.to_numeric(grp.get("duration_s"), errors="coerce").fillna(0.0).sum()) > 0
+                        / float(
+                            pd.to_numeric(grp.get("duration_s"), errors="coerce")
+                            .fillna(0.0)
+                            .sum()
+                        )
+                        if float(
+                            pd.to_numeric(grp.get("duration_s"), errors="coerce")
+                            .fillna(0.0)
+                            .sum()
+                        )
+                        > 0
                         else 0.0
                     ),
                 }
@@ -6920,8 +8221,14 @@ def _build_activity_dashboard_payload(
     wellness_df = get_wellness_df(db_path=db_path)
     if not wellness_df.empty:
         wellness_df = wellness_df.copy()
-        wellness_df["day"] = pd.to_datetime(wellness_df.get("day_utc"), errors="coerce").dt.normalize()
-        wellness_df = wellness_df.dropna(subset=["day"]).sort_values("day").drop_duplicates(subset=["day"], keep="last")
+        wellness_df["day"] = pd.to_datetime(
+            wellness_df.get("day_utc"), errors="coerce"
+        ).dt.normalize()
+        wellness_df = (
+            wellness_df.dropna(subset=["day"])
+            .sort_values("day")
+            .drop_duplicates(subset=["day"], keep="last")
+        )
         for _, row in wellness_df.iterrows():
             d = pd.Timestamp(row["day"]).normalize()
             wellness_lookup[d] = {
@@ -6941,7 +8248,11 @@ def _build_activity_dashboard_payload(
         min_model_day = pd.to_datetime(day_agg.get("day"), errors="coerce").min()
         projection_end_day = render_max_day
         if pd.notna(min_model_day):
-            projection_days = pd.date_range(start=pd.Timestamp(min_model_day).normalize(), end=projection_end_day, freq="D")
+            projection_days = pd.date_range(
+                start=pd.Timestamp(min_model_day).normalize(),
+                end=projection_end_day,
+                freq="D",
+            )
             actual_tss_lookup = {
                 pd.Timestamp(row["day"]).normalize(): _safe_float(row.get("tss"))
                 for _, row in day_agg.iterrows()
@@ -6949,14 +8260,20 @@ def _build_activity_dashboard_payload(
             projected_tss = pd.Series(
                 [
                     (
-                        _safe_float(actual_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0))
-                        + _safe_float(planned_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0))
+                        _safe_float(
+                            actual_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0)
+                        )
+                        + _safe_float(
+                            planned_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0)
+                        )
                     )
                     if pd.Timestamp(day).normalize() == today_local
                     else (
                         actual_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0)
                         if pd.Timestamp(day).normalize() < today_local
-                        else _safe_float(planned_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0))
+                        else _safe_float(
+                            planned_tss_lookup.get(pd.Timestamp(day).normalize(), 0.0)
+                        )
                     )
                     for day in projection_days
                 ],
@@ -6967,20 +8284,29 @@ def _build_activity_dashboard_payload(
             projected_fatigue = projected_models[7]
             projected_fitness = projected_models[42]
             for day, value in projected_fitness.items():
-                fitness_expected_lookup[pd.Timestamp(day).normalize()] = _safe_float(value)
+                fitness_expected_lookup[pd.Timestamp(day).normalize()] = _safe_float(
+                    value
+                )
             for day, value in projected_fatigue.items():
-                fatigue_expected_lookup[pd.Timestamp(day).normalize()] = _safe_float(value)
+                fatigue_expected_lookup[pd.Timestamp(day).normalize()] = _safe_float(
+                    value
+                )
 
     actual_week_starts = {
         _week_start_monday(pd.Timestamp(day))
-        for day in pd.to_datetime(actual_metrics_df.get("day"), errors="coerce").dropna().tolist()
+        for day in pd.to_datetime(actual_metrics_df.get("day"), errors="coerce")
+        .dropna()
+        .tolist()
     }
     planned_week_starts = {
         _week_start_monday(pd.Timestamp(day))
         for day in list(planned_summary_lookup.keys())
     }
 
-    all_week_starts = {pd.Timestamp(ws).normalize() for ws in actual_week_starts.union(planned_week_starts)}
+    all_week_starts = {
+        pd.Timestamp(ws).normalize()
+        for ws in actual_week_starts.union(planned_week_starts)
+    }
     all_week_starts.add(current_week_start)
     # Strict chronological order: latest week first.
     ordered_week_starts = sorted(all_week_starts, reverse=True)
@@ -6988,14 +8314,38 @@ def _build_activity_dashboard_payload(
     weeks_total = int(len(ordered_week_starts))
     max_visible = max(1, min(int(visible_weeks), max(weeks_total, 1)))
     safe_offset = max(0, min(int(week_offset), max(weeks_total - 1, 0)))
-    selected_week_starts = ordered_week_starts[safe_offset:safe_offset + max_visible]
+    selected_week_starts = ordered_week_starts[safe_offset : safe_offset + max_visible]
 
     summary = {
         "activities": int(len(metrics_df.index)),
-        "distance_km": round(float(pd.to_numeric(metrics_df.get("distance_km_running"), errors="coerce").fillna(0.0).sum()), 1),
-        "distance_eqv_km": round(float(pd.to_numeric(metrics_df.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum()), 1),
-        "tss": round(float(pd.to_numeric(metrics_df.get("tss"), errors="coerce").fillna(0.0).sum()), 1),
-        "rtss": round(float(pd.to_numeric(metrics_df.get("rtss"), errors="coerce").fillna(0.0).sum()), 1),
+        "distance_km": round(
+            float(
+                pd.to_numeric(metrics_df.get("distance_km_running"), errors="coerce")
+                .fillna(0.0)
+                .sum()
+            ),
+            1,
+        ),
+        "distance_eqv_km": round(
+            float(
+                pd.to_numeric(metrics_df.get("distance_proxy_km"), errors="coerce")
+                .fillna(0.0)
+                .sum()
+            ),
+            1,
+        ),
+        "tss": round(
+            float(
+                pd.to_numeric(metrics_df.get("tss"), errors="coerce").fillna(0.0).sum()
+            ),
+            1,
+        ),
+        "rtss": round(
+            float(
+                pd.to_numeric(metrics_df.get("rtss"), errors="coerce").fillna(0.0).sum()
+            ),
+            1,
+        ),
     }
 
     sorted_model_days = sorted(model_lookup.keys())
@@ -7021,42 +8371,93 @@ def _build_activity_dashboard_payload(
     for ws in selected_week_starts:
         ws = pd.Timestamp(ws).normalize()
         we = ws + pd.Timedelta(days=6)
-        week_df = metrics_df[(metrics_df["day"] >= ws) & (metrics_df["day"] <= we)].copy()
-        week_actual_df = actual_metrics_df[(actual_metrics_df["day"] >= ws) & (actual_metrics_df["day"] <= we)].copy()
+        week_df = metrics_df[
+            (metrics_df["day"] >= ws) & (metrics_df["day"] <= we)
+        ].copy()
+        week_actual_df = actual_metrics_df[
+            (actual_metrics_df["day"] >= ws) & (actual_metrics_df["day"] <= we)
+        ].copy()
         has_planned_week = any(
             ((ws + pd.Timedelta(days=offset)) in planned_summary_lookup)
             or ((ws + pd.Timedelta(days=offset)) in planned_by_day)
             for offset in range(7)
         )
-        if week_df.empty and week_actual_df.empty and not has_planned_week and ws != current_week_start:
+        if (
+            week_df.empty
+            and week_actual_df.empty
+            and not has_planned_week
+            and ws != current_week_start
+        ):
             continue
 
-        week_duration_s = float(pd.to_numeric(week_df.get("duration_s"), errors="coerce").fillna(0.0).sum())
-        week_distance_km = float(pd.to_numeric(week_df.get("distance_km_running"), errors="coerce").fillna(0.0).sum())
-        week_distance_eqv = float(pd.to_numeric(week_df.get("distance_proxy_km"), errors="coerce").fillna(0.0).sum())
-        week_calories = float(pd.to_numeric(week_df.get("calories_total"), errors="coerce").fillna(0.0).sum())
-        week_tss = float(pd.to_numeric(week_df.get("tss"), errors="coerce").fillna(0.0).sum())
-        week_rtss = float(pd.to_numeric(week_df.get("rtss"), errors="coerce").fillna(0.0).sum())
+        week_duration_s = float(
+            pd.to_numeric(week_df.get("duration_s"), errors="coerce").fillna(0.0).sum()
+        )
+        week_distance_km = float(
+            pd.to_numeric(week_df.get("distance_km_running"), errors="coerce")
+            .fillna(0.0)
+            .sum()
+        )
+        week_distance_eqv = float(
+            pd.to_numeric(week_df.get("distance_proxy_km"), errors="coerce")
+            .fillna(0.0)
+            .sum()
+        )
+        week_calories = float(
+            pd.to_numeric(week_df.get("calories_total"), errors="coerce")
+            .fillna(0.0)
+            .sum()
+        )
+        week_tss = float(
+            pd.to_numeric(week_df.get("tss"), errors="coerce").fillna(0.0).sum()
+        )
+        week_rtss = float(
+            pd.to_numeric(week_df.get("rtss"), errors="coerce").fillna(0.0).sum()
+        )
         summary_lookup_day = min(we, today_local) if ws <= today_local <= we else we
         week_daily_model = _model_on_or_before(summary_lookup_day)
         week_zones_seconds = {
-            "Z1": float(pd.to_numeric(week_df.get("hr_time_in_zone_1"), errors="coerce").fillna(0.0).sum()),
-            "Z2": float(pd.to_numeric(week_df.get("hr_time_in_zone_2"), errors="coerce").fillna(0.0).sum()),
-            "Z3": float(pd.to_numeric(week_df.get("hr_time_in_zone_3"), errors="coerce").fillna(0.0).sum()),
-            "Z4": float(pd.to_numeric(week_df.get("hr_time_in_zone_4"), errors="coerce").fillna(0.0).sum()),
-            "Z5": float(pd.to_numeric(week_df.get("hr_time_in_zone_5"), errors="coerce").fillna(0.0).sum()),
+            "Z1": float(
+                pd.to_numeric(week_df.get("hr_time_in_zone_1"), errors="coerce")
+                .fillna(0.0)
+                .sum()
+            ),
+            "Z2": float(
+                pd.to_numeric(week_df.get("hr_time_in_zone_2"), errors="coerce")
+                .fillna(0.0)
+                .sum()
+            ),
+            "Z3": float(
+                pd.to_numeric(week_df.get("hr_time_in_zone_3"), errors="coerce")
+                .fillna(0.0)
+                .sum()
+            ),
+            "Z4": float(
+                pd.to_numeric(week_df.get("hr_time_in_zone_4"), errors="coerce")
+                .fillna(0.0)
+                .sum()
+            ),
+            "Z5": float(
+                pd.to_numeric(week_df.get("hr_time_in_zone_5"), errors="coerce")
+                .fillna(0.0)
+                .sum()
+            ),
         }
         week_zone_total = max(float(sum(week_zones_seconds.values())), 0.0)
         zones_out: list[dict[str, Any]] = []
         for zone in ["Z1", "Z2", "Z3", "Z4", "Z5"]:
             sec = week_zones_seconds.get(zone, 0.0)
             pct = (sec / week_zone_total * 100.0) if week_zone_total > 0 else 0.0
-            zones_out.append({"zone": zone, "seconds": round(sec, 1), "pct": round(pct, 1)})
+            zones_out.append(
+                {"zone": zone, "seconds": round(sec, 1), "pct": round(pct, 1)}
+            )
 
         day_cards: list[dict[str, Any]] = []
         for offset in range(7):
             day = ws + pd.Timedelta(days=offset)
-            day_df = week_actual_df[week_actual_df["day"] == day].sort_values("start_local", ascending=False)
+            day_df = week_actual_df[week_actual_df["day"] == day].sort_values(
+                "start_local", ascending=False
+            )
             day_is_today = bool(day == today_local)
             day_stats = day_stats_lookup.get(day, {})
             fitfat = fitfat_lookup.get(day, {})
@@ -7081,8 +8482,14 @@ def _build_activity_dashboard_payload(
                 avg_pace = _safe_float(act.get("avg_pace_s_per_km"))
                 eqv_pace = _safe_float(act.get("pace_proxy_sec_per_km"))
                 vdot_value = (
-                    _activity_vdot(distance_m=_safe_float(act.get("distance_m")), duration_s=_safe_float(act.get("duration_s")))
-                    if is_running and if_proxy > 0.90 and _safe_float(act.get("distance_m")) > 0 and _safe_float(act.get("duration_s")) > 0
+                    _activity_vdot(
+                        distance_m=_safe_float(act.get("distance_m")),
+                        duration_s=_safe_float(act.get("duration_s")),
+                    )
+                    if is_running
+                    and if_proxy > 0.90
+                    and _safe_float(act.get("distance_m")) > 0
+                    and _safe_float(act.get("duration_s")) > 0
                     else None
                 )
                 start_local_ts = pd.to_datetime(act.get("start_local"), errors="coerce")
@@ -7090,12 +8497,23 @@ def _build_activity_dashboard_payload(
                     {
                         "activity_id": _normalize_activity_id(act.get("activity_id")),
                         "sport": sport_raw or "Activity",
-                        "is_custom": bool(str(act.get("source") or "").strip().lower() == "custom"),
+                        "is_custom": bool(
+                            str(act.get("source") or "").strip().lower() == "custom"
+                        ),
                         "is_invalid": bool(_safe_float(act.get("is_invalid")) > 0),
-                        "day_utc": day.date().isoformat() if bool(str(act.get("source") or "").strip().lower() == "custom") else None,
+                        "day_utc": day.date().isoformat()
+                        if bool(
+                            str(act.get("source") or "").strip().lower() == "custom"
+                        )
+                        else None,
                         "line_no": (
-                            _parse_custom_activity_id(_normalize_activity_id(act.get("activity_id")))[1]
-                            if _parse_custom_activity_id(_normalize_activity_id(act.get("activity_id"))) is not None
+                            _parse_custom_activity_id(
+                                _normalize_activity_id(act.get("activity_id"))
+                            )[1]
+                            if _parse_custom_activity_id(
+                                _normalize_activity_id(act.get("activity_id"))
+                            )
+                            is not None
                             else None
                         ),
                         "start_time_utc": str(act.get("start_time_utc") or ""),
@@ -7104,8 +8522,14 @@ def _build_activity_dashboard_payload(
                             if pd.notna(start_local_ts)
                             else ""
                         ),
-                        "duration_label": _format_duration_short(_safe_float(act.get("duration_s"))),
-                        "activity_text": str(act.get("activity_text") or "") if bool(str(act.get("source") or "").strip().lower() == "custom") else None,
+                        "duration_label": _format_duration_short(
+                            _safe_float(act.get("duration_s"))
+                        ),
+                        "activity_text": str(act.get("activity_text") or "")
+                        if bool(
+                            str(act.get("source") or "").strip().lower() == "custom"
+                        )
+                        else None,
                         "distance_label": (
                             f"{dist_km:.0f} km"
                             if is_running and dist_km > 0
@@ -7117,11 +8541,15 @@ def _build_activity_dashboard_payload(
                             if is_running
                             else _format_pace_short(eqv_pace if eqv_pace > 0 else None)
                         ),
-                        "vdot": round(float(vdot_value), 0) if vdot_value is not None and math.isfinite(float(vdot_value)) else None,
+                        "vdot": round(float(vdot_value), 0)
+                        if vdot_value is not None and math.isfinite(float(vdot_value))
+                        else None,
                         "if_pct": round(if_proxy * 100.0, 1),
                         "tss": round(tss, 1),
                         "rtss": round(rtss, 1),
-                        "intensity": _activity_intensity_token(if_proxy=if_proxy, tss=tss),
+                        "intensity": _activity_intensity_token(
+                            if_proxy=if_proxy, tss=tss
+                        ),
                     }
                 )
 
@@ -7133,30 +8561,50 @@ def _build_activity_dashboard_payload(
                     "is_today": day_is_today,
                     "is_past": bool(day < today_local),
                     "meta": {
-                        "distance_eqv_km": round(_safe_float(day_stats.get("distance_eqv_km")), 1),
+                        "distance_eqv_km": round(
+                            _safe_float(day_stats.get("distance_eqv_km")), 1
+                        ),
                         "calories": round(_safe_float(day_stats.get("calories")), 0),
                         "tss": (
                             round(_safe_float(planned_tss_lookup.get(day)), 1)
                             if show_planned_meta
                             else round(_safe_float(day_stats.get("tss")), 1)
                         ),
-                        "fitness": round(_safe_float(fitfat.get("fitness")), 1) if fitfat else None,
+                        "fitness": round(_safe_float(fitfat.get("fitness")), 1)
+                        if fitfat
+                        else None,
                         "fitness_expected": (
                             round(_safe_float(fitness_expected_lookup.get(day)), 1)
                             if day in fitness_expected_lookup
                             else None
                         ),
-                        "fatigue": round(_safe_float(fitfat.get("fatigue")), 1) if fitfat else None,
+                        "fatigue": round(_safe_float(fitfat.get("fatigue")), 1)
+                        if fitfat
+                        else None,
                         "fatigue_expected": (
                             round(_safe_float(fatigue_expected_lookup.get(day)), 1)
                             if day in fatigue_expected_lookup
                             else None
                         ),
-                        "resting_hr": _rounded_optional(wellness.get("resting_hr"), 1) if wellness else None,
-                        "hrv_status": _rounded_optional(wellness.get("hrv_status"), 1) if wellness else None,
-                        "stress_avg": _rounded_optional(wellness.get("stress_avg"), 1) if wellness else None,
-                        "planned_duration_s": round(_safe_float(planned_summary.get("duration_s")), 1) if show_planned_meta else 0.0,
-                        "planned_if_pct": round(_safe_float(planned_summary.get("if_proxy")) * 100.0, 1) if show_planned_meta else 0.0,
+                        "resting_hr": _rounded_optional(wellness.get("resting_hr"), 1)
+                        if wellness
+                        else None,
+                        "hrv_status": _rounded_optional(wellness.get("hrv_status"), 1)
+                        if wellness
+                        else None,
+                        "stress_avg": _rounded_optional(wellness.get("stress_avg"), 1)
+                        if wellness
+                        else None,
+                        "planned_duration_s": round(
+                            _safe_float(planned_summary.get("duration_s")), 1
+                        )
+                        if show_planned_meta
+                        else 0.0,
+                        "planned_if_pct": round(
+                            _safe_float(planned_summary.get("if_proxy")) * 100.0, 1
+                        )
+                        if show_planned_meta
+                        else 0.0,
                         "show_fatigue_expected": bool(
                             last_planned_day is not None
                             and day >= today_local
@@ -7171,9 +8619,15 @@ def _build_activity_dashboard_payload(
                             "line_no": int(_safe_float(row.get("line_no"))),
                             "activity": str(row.get("activity") or "Planned"),
                             "workout_text": str(row.get("workout_text") or ""),
-                            "duration_label": _format_duration_short(_safe_float(row.get("duration_s"))),
-                            "distance_eqv_km": round(_safe_float(row.get("distance_eqv_km")), 1),
-                            "if_pct": round(_safe_float(row.get("if_proxy")) * 100.0, 1),
+                            "duration_label": _format_duration_short(
+                                _safe_float(row.get("duration_s"))
+                            ),
+                            "distance_eqv_km": round(
+                                _safe_float(row.get("distance_eqv_km")), 1
+                            ),
+                            "if_pct": round(
+                                _safe_float(row.get("if_proxy")) * 100.0, 1
+                            ),
                             "hr_label": (
                                 f"{_safe_float(row.get('avg_hr_bpm')):.0f}b"
                                 if _safe_float(row.get("avg_hr_bpm")) > 0
@@ -7181,7 +8635,9 @@ def _build_activity_dashboard_payload(
                             ),
                             "pace_label": str(
                                 row.get("pace_label")
-                                or _format_pace_short(_safe_float(row.get("pace_proxy_sec_per_km")))
+                                or _format_pace_short(
+                                    _safe_float(row.get("pace_proxy_sec_per_km"))
+                                )
                             ),
                             "tss": round(_safe_float(row.get("tss")), 1),
                             "rtss": round(_safe_float(row.get("rtss")), 1),
@@ -7209,7 +8665,12 @@ def _build_activity_dashboard_payload(
                     "vdot_max": (
                         int(round(_safe_float(week_daily_model.get("vdot_max"))))
                         if isinstance(week_daily_model, dict)
-                        and pd.notna(pd.to_numeric(pd.Series([week_daily_model.get("vdot_max")]), errors="coerce").iloc[0])
+                        and pd.notna(
+                            pd.to_numeric(
+                                pd.Series([week_daily_model.get("vdot_max")]),
+                                errors="coerce",
+                            ).iloc[0]
+                        )
                         and _safe_float(week_daily_model.get("vdot_max")) > 0
                         else None
                     ),
@@ -7246,7 +8707,9 @@ def _build_activity_dashboard_payload(
 
     weeks_out = sorted(
         weeks_out,
-        key=lambda week: pd.Timestamp(pd.to_datetime(week.get("week_start"), errors="coerce")).timestamp()
+        key=lambda week: pd.Timestamp(
+            pd.to_datetime(week.get("week_start"), errors="coerce")
+        ).timestamp()
         if pd.notna(pd.to_datetime(week.get("week_start"), errors="coerce"))
         else float("-inf"),
         reverse=True,
@@ -7279,7 +8742,12 @@ def _build_weekly_payload(
         return {
             "range_days": int(days),
             "weeks": [],
-            "summary": {"weeks": 0, "total_distance_km": 0.0, "total_tss": 0.0, "total_activities": 0},
+            "summary": {
+                "weeks": 0,
+                "total_distance_km": 0.0,
+                "total_tss": 0.0,
+                "total_activities": 0,
+            },
         }
 
     weekly_df = weekly_summary(metrics_df)
@@ -7287,7 +8755,12 @@ def _build_weekly_payload(
         return {
             "range_days": int(days),
             "weeks": [],
-            "summary": {"weeks": 0, "total_distance_km": 0.0, "total_tss": 0.0, "total_activities": 0},
+            "summary": {
+                "weeks": 0,
+                "total_distance_km": 0.0,
+                "total_tss": 0.0,
+                "total_activities": 0,
+            },
         }
 
     rows: list[dict[str, Any]] = []
@@ -7295,12 +8768,16 @@ def _build_weekly_payload(
         week_start = pd.to_datetime(row.get("week_start"), utc=False, errors="coerce")
         rows.append(
             {
-                "week_start": week_start.date().isoformat() if pd.notna(week_start) else "",
+                "week_start": week_start.date().isoformat()
+                if pd.notna(week_start)
+                else "",
                 "distance_km": round(_safe_float(row.get("total_distance_km")), 2),
                 "tss": round(_safe_float(row.get("total_tss")), 1),
                 "rtss": round(_safe_float(row.get("total_rtss")), 1),
                 "runs": int(_safe_float(row.get("runs"))),
-                "distance_proxy_km": round(_safe_float(row.get("total_distance_proxy_km")), 2),
+                "distance_proxy_km": round(
+                    _safe_float(row.get("total_distance_proxy_km")), 2
+                ),
             }
         )
 
@@ -7417,7 +8894,9 @@ def _build_week_outlook_payload(
     )
     daily_agg["tss"] = pd.to_numeric(daily_agg["tss"], errors="coerce").fillna(0.0)
     daily_agg["rtss"] = pd.to_numeric(daily_agg["rtss"], errors="coerce").fillna(0.0)
-    daily_agg["distance_eqv_km"] = pd.to_numeric(daily_agg["distance_eqv_km"], errors="coerce").fillna(0.0)
+    daily_agg["distance_eqv_km"] = pd.to_numeric(
+        daily_agg["distance_eqv_km"], errors="coerce"
+    ).fillna(0.0)
     daily_agg["week_start"] = daily_agg["day"].map(_week_start_monday)
 
     min_week_start = pd.to_datetime(daily_agg["week_start"], errors="coerce").min()
@@ -7448,7 +8927,11 @@ def _build_week_outlook_payload(
     planned_remaining_metric_total = 0.0
     today = pd.Timestamp(datetime.now().astimezone().date()).normalize()
     if compare_key == "planned":
-        planned_metric_map, planned_tss_map, planned_remaining_metric_total = _planned_daily_metric_map(
+        (
+            planned_metric_map,
+            planned_tss_map,
+            planned_remaining_metric_total,
+        ) = _planned_daily_metric_map(
             db_path=db_path,
             week_start=ws,
             week_end=week_end,
@@ -7465,7 +8948,11 @@ def _build_week_outlook_payload(
     if compare_key == "planned" and ws <= today <= week_end and not has_activity_today:
         cutoff_day = max(ws, today - pd.Timedelta(days=1))
     day_offset = int(max(min((cutoff_day - ws).days, 6), 0))
-    compare_cutoff = compare_ws + pd.Timedelta(days=day_offset) if compare_key != "planned" else cutoff_day
+    compare_cutoff = (
+        compare_ws + pd.Timedelta(days=day_offset)
+        if compare_key != "planned"
+        else cutoff_day
+    )
     wtd_current = 0.0
     wtd_compare = 0.0
     remaining_to_go = 0.0
@@ -7477,13 +8964,17 @@ def _build_week_outlook_payload(
             pd.to_numeric(
                 daily_agg.loc[daily_agg["day"] == day, "tss"],
                 errors="coerce",
-            ).fillna(0.0).sum()
+            )
+            .fillna(0.0)
+            .sum()
         )
         current_v = float(
             pd.to_numeric(
                 daily_agg.loc[daily_agg["day"] == day, metric_key],
                 errors="coerce",
-            ).fillna(0.0).sum()
+            )
+            .fillna(0.0)
+            .sum()
         )
         if compare_key == "planned":
             compare_v = float(planned_metric_map.get(day, 0.0))
@@ -7492,7 +8983,9 @@ def _build_week_outlook_payload(
                 pd.to_numeric(
                     daily_agg.loc[daily_agg["day"] == cday, metric_key],
                     errors="coerce",
-                ).fillna(0.0).sum()
+                )
+                .fillna(0.0)
+                .sum()
             )
         week_total_current += current_v
         week_total_compare += compare_v
@@ -7517,9 +9010,18 @@ def _build_week_outlook_payload(
         # Sum raw daily planned values up to cutoff, then round only at payload formatting.
         wtd_compare = float(
             pd.to_numeric(
-                pd.Series([v for d, v in planned_metric_map.items() if pd.Timestamp(d) <= cutoff_day], dtype=float),
+                pd.Series(
+                    [
+                        v
+                        for d, v in planned_metric_map.items()
+                        if pd.Timestamp(d) <= cutoff_day
+                    ],
+                    dtype=float,
+                ),
                 errors="coerce",
-            ).fillna(0.0).sum()
+            )
+            .fillna(0.0)
+            .sum()
         )
         remaining_to_go = float(planned_remaining_metric_total)
 
@@ -7531,7 +9033,11 @@ def _build_week_outlook_payload(
     goal = float(blended_targets.get(metric_key, blended_targets.get("tss", 0.0)))
 
     progress = int(round((week_total_current / goal) * 100.0)) if goal > 0 else 0
-    projected_finish = float(wtd_current + remaining_to_go) if compare_key == "planned" else float("nan")
+    projected_finish = (
+        float(wtd_current + remaining_to_go)
+        if compare_key == "planned"
+        else float("nan")
+    )
     estimated_fatigue_eow: float | None = None
     if compare_key == "planned":
         try:
@@ -7545,7 +9051,11 @@ def _build_week_outlook_payload(
             # This allows "today" to use planned TSS when no actual activity exists yet.
             actual_days = pd.to_datetime(list(tss_map.keys()), errors="coerce")
             actual_days = actual_days[pd.notna(actual_days)]
-            last_actual_day = pd.Timestamp(actual_days.max()).normalize() if len(actual_days) else pd.NaT
+            last_actual_day = (
+                pd.Timestamp(actual_days.max()).normalize()
+                if len(actual_days)
+                else pd.NaT
+            )
             hist_start = ws - pd.Timedelta(days=42)
             full_days = pd.date_range(start=hist_start, end=week_end, freq="D")
             vals: list[float] = []
@@ -7557,7 +9067,9 @@ def _build_week_outlook_payload(
                     vals.append(float(planned_tss_map.get(dd, 0.0)))
             if vals:
                 alpha = 2.0 / (7.0 + 1.0)
-                fatigue_series = pd.Series(vals, dtype=float).ewm(alpha=alpha, adjust=False).mean()
+                fatigue_series = (
+                    pd.Series(vals, dtype=float).ewm(alpha=alpha, adjust=False).mean()
+                )
                 estimated_fatigue_eow = float(fatigue_series.iloc[-1])
         except Exception:
             estimated_fatigue_eow = None
@@ -7574,23 +9086,32 @@ def _build_week_outlook_payload(
         "wtd_current": round(float(wtd_current), 1),
         "wtd_compare": round(float(wtd_compare), 1),
         "remaining_to_go": round(float(remaining_to_go), 1),
-        "projected_finish": round(float(projected_finish), 1) if math.isfinite(projected_finish) else None,
+        "projected_finish": round(float(projected_finish), 1)
+        if math.isfinite(projected_finish)
+        else None,
         "estimated_fatigue_eow": (
             round(float(estimated_fatigue_eow), 1)
-            if estimated_fatigue_eow is not None and math.isfinite(float(estimated_fatigue_eow))
+            if estimated_fatigue_eow is not None
+            and math.isfinite(float(estimated_fatigue_eow))
             else None
         ),
         "week_total_current": round(float(week_total_current), 1),
         "week_total_compare": round(float(week_total_compare), 1),
         "rows": day_rows,
-        "min_week_start": min_week_start.date().isoformat() if pd.notna(min_week_start) else "",
-        "max_week_start": max_week_start.date().isoformat() if pd.notna(max_week_start) else "",
+        "min_week_start": min_week_start.date().isoformat()
+        if pd.notna(min_week_start)
+        else "",
+        "max_week_start": max_week_start.date().isoformat()
+        if pd.notna(max_week_start)
+        else "",
         "today_day": today.date().isoformat(),
     }
 
 
 def _planned_activity_label(parsed_json: Any, source_text: str = "") -> str:
-    segments = _segments_from_stored_or_source(parsed_json=parsed_json, source_text=source_text)
+    segments = _segments_from_stored_or_source(
+        parsed_json=parsed_json, source_text=source_text
+    )
     kinds_seen: list[str] = []
     for seg in segments:
         kind = str(seg.get("kind") or "").strip().lower()
@@ -7627,13 +9148,17 @@ def _build_planned_activities_payload(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    specificity_profile = _load_specificity_profile(
+        db_path=db_path, fallback_default=0.8
+    )
     planned_rows = _compute_planned_rows_metrics_df(
         planned_rows=planned_rows,
         lthr_curve_points=lthr_curve,
         lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
         lt_pace_curve_points=pace_curve,
-        lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        lt_pace_default_sec=float(pace_curve[-1][1])
+        if pace_curve
+        else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
         specificity_profile=specificity_profile,
     )
     if planned_rows.empty:
@@ -7644,7 +9169,9 @@ def _build_planned_activities_payload(
             "rows": [],
         }
 
-    planned_rows["day"] = pd.to_datetime(planned_rows.get("day_utc"), errors="coerce").dt.normalize()
+    planned_rows["day"] = pd.to_datetime(
+        planned_rows.get("day_utc"), errors="coerce"
+    ).dt.normalize()
     planned_rows = planned_rows.dropna(subset=["day"]).copy()
     if planned_rows.empty:
         return {
@@ -7665,7 +9192,9 @@ def _build_planned_activities_payload(
         end_day=None,
         sport=None,
     )
-    current_week_start = _week_start_monday(pd.Timestamp(datetime.now().astimezone().date()))
+    current_week_start = _week_start_monday(
+        pd.Timestamp(datetime.now().astimezone().date())
+    )
     goals = _blended_weekly_targets_for_day(
         db_path=db_path,
         target_day=current_week_start,
@@ -7676,7 +9205,9 @@ def _build_planned_activities_payload(
     if not in_scope_rows.empty:
         wk = in_scope_rows.copy()
         wk["week_start"] = wk["day"].map(_week_start_monday)
-        wk["duration_s"] = pd.to_numeric(wk.get("duration_s"), errors="coerce").fillna(0.0)
+        wk["duration_s"] = pd.to_numeric(wk.get("duration_s"), errors="coerce").fillna(
+            0.0
+        )
         wk["if_proxy"] = pd.to_numeric(wk.get("if_proxy"), errors="coerce").fillna(0.0)
         wk["if_weighted"] = wk["if_proxy"] * wk["duration_s"]
         grouped = (
@@ -7695,7 +9226,11 @@ def _build_planned_activities_payload(
             ws = pd.Timestamp(row["week_start"]).normalize()
             we = ws + pd.Timedelta(days=6)
             dur_s = _safe_float(row.get("duration_s"))
-            if_pct = (_safe_float(row.get("if_weighted")) / dur_s * 100.0) if dur_s > 0 else 0.0
+            if_pct = (
+                (_safe_float(row.get("if_weighted")) / dur_s * 100.0)
+                if dur_s > 0
+                else 0.0
+            )
             week_goals = _blended_weekly_targets_for_day(
                 db_path=db_path,
                 target_day=ws,
@@ -7706,20 +9241,28 @@ def _build_planned_activities_payload(
                     "week_start": ws.date().isoformat(),
                     "week_end": we.date().isoformat(),
                     "week_label": f"{ws.strftime('%d %b')} - {we.strftime('%d %b')}",
-                    "planned_activities": int(_safe_float(row.get("planned_activities"))),
+                    "planned_activities": int(
+                        _safe_float(row.get("planned_activities"))
+                    ),
                     "duration_h": round(dur_s / 3600.0, 1),
                     "tss": round(_safe_float(row.get("tss")), 1),
                     "rtss": round(_safe_float(row.get("rtss")), 1),
-                    "distance_eqv_km": round(_safe_float(row.get("distance_eqv_km")), 1),
+                    "distance_eqv_km": round(
+                        _safe_float(row.get("distance_eqv_km")), 1
+                    ),
                     "if_proxy_pct": round(if_pct, 1),
                     "goal_tss": float(week_goals.get("tss", 0.0)),
                     "goal_rtss": float(week_goals.get("rtss", 0.0)),
-                    "goal_distance_eqv_km": float(week_goals.get("distance_eqv_km", 0.0)),
+                    "goal_distance_eqv_km": float(
+                        week_goals.get("distance_eqv_km", 0.0)
+                    ),
                 }
             )
 
     day_rows: list[dict[str, Any]] = []
-    for _, row in in_scope_rows.sort_values(["day", "line_no"], ascending=[True, True]).iterrows():
+    for _, row in in_scope_rows.sort_values(
+        ["day", "line_no"], ascending=[True, True]
+    ).iterrows():
         day_rows.append(
             {
                 "day_utc": pd.Timestamp(row.get("day")).date().isoformat(),
@@ -7758,16 +9301,18 @@ def root() -> dict[str, str]:
 
 @app.post("/api/v1/auth/login")
 def auth_login(payload: LoginRequest) -> dict[str, Any]:
-    if not _auth_is_enforced():
-        token = _build_token(user="default", role="admin")
-        return {"token": token, "user": "default", "role": "admin"}
+    if not _auth_enabled():
+        return {"token": "auth-disabled", "user": "default", "role": "admin"}
+    _require_auth_ready()
 
     users = _auth_users()
     resolved_user, user_data = resolve_user(users, payload.username)
     if not user_data or not resolved_user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not password_matches(payload.password, str(user_data.get("password_hash") or "")):
+    if not password_matches(
+        payload.password, str(user_data.get("password_hash") or "")
+    ):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     role = str(user_data.get("role") or "viewer").strip().lower()
@@ -7776,14 +9321,23 @@ def auth_login(payload: LoginRequest) -> dict[str, Any]:
 
 
 @app.get("/api/v1/auth/me")
-def auth_me(authorization: str | None = Header(default=None, alias="Authorization")) -> dict[str, Any]:
+def auth_me(
+    authorization: str | None = Header(default=None, alias="Authorization")
+) -> dict[str, Any]:
     ctx = _auth_context(authorization)
     owner = _resolve_owner(ctx, None)
-    return {"user": ctx["user"], "role": ctx["role"], "owner": owner, "auth_enabled": _auth_is_enforced()}
+    return {
+        "user": ctx["user"],
+        "role": ctx["role"],
+        "owner": owner,
+        "auth_enabled": _auth_enabled(),
+    }
 
 
 @app.get("/api/v1/auth/owners")
-def auth_owners(authorization: str | None = Header(default=None, alias="Authorization")) -> dict[str, Any]:
+def auth_owners(
+    authorization: str | None = Header(default=None, alias="Authorization")
+) -> dict[str, Any]:
     ctx = _auth_context(authorization)
     if str(ctx.get("role")) == "admin":
         users = _auth_users()
@@ -7800,10 +9354,16 @@ def garmin_oauth_start(
     ctx = _auth_context(authorization)
     role = str(ctx.get("role") or "viewer").strip().lower()
     if role == "admin":
-        raise HTTPException(status_code=403, detail="Garmin OAuth is only available for non-admin users.")
+        raise HTTPException(
+            status_code=403,
+            detail="Garmin OAuth is only available for non-admin users.",
+        )
     resolved_owner = _resolve_owner(ctx, owner)
     if resolved_owner != str(ctx.get("user") or "").strip():
-        raise HTTPException(status_code=403, detail="Garmin OAuth can only be linked for the active user.")
+        raise HTTPException(
+            status_code=403,
+            detail="Garmin OAuth can only be linked for the active user.",
+        )
     try:
         state = build_garmin_oauth_state(
             user=str(ctx.get("user") or ""),
@@ -7832,33 +9392,53 @@ def garmin_oauth_callback(
     error_value = _query_string_or_none(error)
     error_description_value = _query_string_or_none(error_description)
     if error_value:
-        message = str(error_description_value or error_value or "Garmin OAuth was cancelled.")
-        return RedirectResponse(url=_garmin_oauth_redirect_url("error", message), status_code=303)
+        message = str(
+            error_description_value or error_value or "Garmin OAuth was cancelled."
+        )
+        return RedirectResponse(
+            url=_garmin_oauth_redirect_url("error", message), status_code=303
+        )
     if not code_value or not state_value:
         return RedirectResponse(
-            url=_garmin_oauth_redirect_url("error", "Garmin OAuth callback is missing code or state."),
+            url=_garmin_oauth_redirect_url(
+                "error", "Garmin OAuth callback is missing code or state."
+            ),
             status_code=303,
         )
     try:
         parsed_state = parse_garmin_oauth_state(state_value)
         if str(parsed_state.get("r") or "").strip().lower() == "admin":
-            raise GarminOAuthError("Garmin OAuth is only supported for non-admin users.")
+            raise GarminOAuthError(
+                "Garmin OAuth is only supported for non-admin users."
+            )
         resolved_owner = str(parsed_state.get("o") or "").strip()
         db_path = _db_path_for_owner(resolved_owner)
         token_payload = exchange_garmin_oauth_code_for_tokens(code_value)
         access_token = str(token_payload.get("access_token") or "").strip()
-        userinfo_payload = fetch_garmin_oauth_userinfo(access_token) if access_token else None
-        connection = _save_garmin_oauth_connection(db_path, token_payload=token_payload, userinfo_payload=userinfo_payload)
+        userinfo_payload = (
+            fetch_garmin_oauth_userinfo(access_token) if access_token else None
+        )
+        connection = _save_garmin_oauth_connection(
+            db_path, token_payload=token_payload, userinfo_payload=userinfo_payload
+        )
         account_email = str(connection.get("account_email") or "").strip()
         message = f"Garmin OAuth connected for {account_email or resolved_owner}."
         log_sync(db_path, source="garmin_oauth_connect", success=True, message=message)
-        return RedirectResponse(url=_garmin_oauth_redirect_url("success", message), status_code=303)
+        return RedirectResponse(
+            url=_garmin_oauth_redirect_url("success", message), status_code=303
+        )
     except GarminOAuthConfigurationError as exc:
-        return RedirectResponse(url=_garmin_oauth_redirect_url("error", str(exc)), status_code=303)
+        return RedirectResponse(
+            url=_garmin_oauth_redirect_url("error", str(exc)), status_code=303
+        )
     except GarminOAuthError as exc:
-        return RedirectResponse(url=_garmin_oauth_redirect_url("error", str(exc)), status_code=303)
+        return RedirectResponse(
+            url=_garmin_oauth_redirect_url("error", str(exc)), status_code=303
+        )
     except Exception as exc:
-        return RedirectResponse(url=_garmin_oauth_redirect_url("error", str(exc)), status_code=303)
+        return RedirectResponse(
+            url=_garmin_oauth_redirect_url("error", str(exc)), status_code=303
+        )
 
 
 @app.post("/api/v1/garmin/oauth/disconnect")
@@ -7869,15 +9449,28 @@ def garmin_oauth_disconnect(
     ctx = _auth_context(authorization)
     role = str(ctx.get("role") or "viewer").strip().lower()
     if role == "admin":
-        raise HTTPException(status_code=403, detail="Garmin OAuth is only available for non-admin users.")
+        raise HTTPException(
+            status_code=403,
+            detail="Garmin OAuth is only available for non-admin users.",
+        )
     resolved_owner = _resolve_owner(ctx, owner)
     if resolved_owner != str(ctx.get("user") or "").strip():
-        raise HTTPException(status_code=403, detail="Garmin OAuth can only be disconnected for the active user.")
+        raise HTTPException(
+            status_code=403,
+            detail="Garmin OAuth can only be disconnected for the active user.",
+        )
     db_path = _db_path_for_owner(resolved_owner)
     deleted = delete_oauth_connection(db_path, GARMIN_OAUTH_PROVIDER)
-    message = "Garmin OAuth disconnected." if deleted else "Garmin OAuth was not connected."
+    message = (
+        "Garmin OAuth disconnected." if deleted else "Garmin OAuth was not connected."
+    )
     log_sync(db_path, source="garmin_oauth_disconnect", success=True, message=message)
-    return {"success": True, "owner": resolved_owner, "disconnected": deleted, "message": message}
+    return {
+        "success": True,
+        "owner": resolved_owner,
+        "disconnected": deleted,
+        "message": message,
+    }
 
 
 @app.get("/api/v1/overview")
@@ -7905,11 +9498,15 @@ def overview(
         except Exception:
             activities = 0
         try:
-            activity_details = cur.execute("SELECT COUNT(*) FROM activity_details").fetchone()[0]
+            activity_details = cur.execute(
+                "SELECT COUNT(*) FROM activity_details"
+            ).fetchone()[0]
         except Exception:
             activity_details = 0
         try:
-            wellness_daily = cur.execute("SELECT COUNT(*) FROM wellness_daily").fetchone()[0]
+            wellness_daily = cur.execute(
+                "SELECT COUNT(*) FROM wellness_daily"
+            ).fetchone()[0]
         except Exception:
             wellness_daily = 0
 
@@ -7948,11 +9545,17 @@ def _settings_view_core(db_path: Path) -> dict[str, Any]:
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
     lthr_rows = [
-        {"date": d.astimezone(timezone.utc).date().isoformat(), "lthr_bpm": round(float(v), 2)}
+        {
+            "date": d.astimezone(timezone.utc).date().isoformat(),
+            "lthr_bpm": round(float(v), 2),
+        }
         for d, v in lthr_curve
     ]
     pace_rows = [
-        {"date": d.astimezone(timezone.utc).date().isoformat(), "lt_pace_sec_per_km": round(float(v), 2)}
+        {
+            "date": d.astimezone(timezone.utc).date().isoformat(),
+            "lt_pace_sec_per_km": round(float(v), 2),
+        }
         for d, v in lt_pace_curve
     ]
 
@@ -7998,7 +9601,9 @@ def _settings_update_core(db_path: Path, settings: dict[str, Any]) -> dict[str, 
 
     if settings.get("if_zone_thresholds") is not None:
         normalized = _normalize_if_zone_thresholds(settings["if_zone_thresholds"])
-        save_setting(db_path, SETTINGS_KEY_IF_ZONE_THRESHOLDS, _settings_json(normalized))
+        save_setting(
+            db_path, SETTINGS_KEY_IF_ZONE_THRESHOLDS, _settings_json(normalized)
+        )
         updated.append("if_zone_thresholds")
 
     if settings.get("vdot_lookback_days") is not None:
@@ -8009,13 +9614,23 @@ def _settings_update_core(db_path: Path, settings: dict[str, Any]) -> dict[str, 
     if settings.get("specificity_profile") is not None:
         sp = settings["specificity_profile"]
         fallback = _safe_float(sp.get("non_running")) if isinstance(sp, dict) else 0.8
-        normalized = _normalize_specificity_profile(sp, fallback_default=max(fallback, 0.1))
-        save_setting(db_path, SETTINGS_KEY_ACTIVITY_SPECIFICITY, _settings_json(normalized))
-        save_setting(db_path, SETTINGS_KEY_NON_RUNNING_FACTOR, f"{float(normalized['non_running']):.4f}")
+        normalized = _normalize_specificity_profile(
+            sp, fallback_default=max(fallback, 0.1)
+        )
+        save_setting(
+            db_path, SETTINGS_KEY_ACTIVITY_SPECIFICITY, _settings_json(normalized)
+        )
+        save_setting(
+            db_path,
+            SETTINGS_KEY_NON_RUNNING_FACTOR,
+            f"{float(normalized['non_running']):.4f}",
+        )
         updated.append("specificity_profile")
 
     if settings.get("baseline_blend") is not None:
-        normalized = _normalize_baseline_blend_profile(settings["baseline_blend"], strict=True)
+        normalized = _normalize_baseline_blend_profile(
+            settings["baseline_blend"], strict=True
+        )
         save_setting(db_path, SETTINGS_KEY_BASELINE_BLEND, _settings_json(normalized))
         updated.append("baseline_blend")
 
@@ -8053,16 +9668,19 @@ def settings_update(
     ctx = _auth_context(authorization)
     resolved_owner = _resolve_owner(ctx, owner)
     db_path = _db_path_for_owner(resolved_owner)
-    return _settings_update_core(db_path, {
-        "if_zone_thresholds": payload.if_zone_thresholds,
-        "vdot_lookback_days": payload.vdot_lookback_days,
-        "specificity_profile": payload.specificity_profile,
-        "baseline_blend": payload.baseline_blend,
-        "lthr_curve": payload.lthr_curve,
-        "lt_pace_curve": payload.lt_pace_curve,
-        "injury_windows": payload.injury_windows,
-        "timezone": payload.timezone,
-    })
+    return _settings_update_core(
+        db_path,
+        {
+            "if_zone_thresholds": payload.if_zone_thresholds,
+            "vdot_lookback_days": payload.vdot_lookback_days,
+            "specificity_profile": payload.specificity_profile,
+            "baseline_blend": payload.baseline_blend,
+            "lthr_curve": payload.lthr_curve,
+            "lt_pace_curve": payload.lt_pace_curve,
+            "injury_windows": payload.injury_windows,
+            "timezone": payload.timezone,
+        },
+    )
 
 
 @app.get("/api/v1/vdot")
@@ -8088,11 +9706,15 @@ def vdot_view(
         try:
             as_of_dt = datetime.fromisoformat(str(as_of).strip())
         except Exception as exc:
-            raise HTTPException(status_code=400, detail="Invalid as_of date. Use YYYY-MM-DD.") from exc
+            raise HTTPException(
+                status_code=400, detail="Invalid as_of date. Use YYYY-MM-DD."
+            ) from exc
         if as_of_dt.tzinfo is None:
             as_of_dt = as_of_dt.replace(tzinfo=timezone.utc)
         as_of_ts = as_of_dt.astimezone(timezone.utc)
-        lt_pace = float(_curve_value_at(lt_pace_curve, float(lt_pace_curve[-1][1]), as_of_ts))
+        lt_pace = float(
+            _curve_value_at(lt_pace_curve, float(lt_pace_curve[-1][1]), as_of_ts)
+        )
         source_date = as_of_ts.date().isoformat()
     else:
         source_date = lt_pace_curve[-1][0].astimezone(timezone.utc).date().isoformat()
@@ -8111,18 +9733,35 @@ def vdot_view(
     )
     if not metrics_df.empty:
         metrics_df = metrics_df.copy()
-        metrics_df["distance_m"] = pd.to_numeric(metrics_df.get("distance_m"), errors="coerce").fillna(0.0)
-        metrics_df["duration_s"] = pd.to_numeric(metrics_df.get("duration_s"), errors="coerce").fillna(0.0)
-        metrics_df["if_proxy"] = pd.to_numeric(metrics_df.get("if_proxy"), errors="coerce").fillna(0.0)
-        metrics_df["start_time_utc"] = pd.to_datetime(metrics_df.get("start_time_utc"), utc=True, errors="coerce")
-        sport_lower = metrics_df.get("sport_type", pd.Series(index=metrics_df.index, dtype=object)).fillna("").astype(str).str.lower()
+        metrics_df["distance_m"] = pd.to_numeric(
+            metrics_df.get("distance_m"), errors="coerce"
+        ).fillna(0.0)
+        metrics_df["duration_s"] = pd.to_numeric(
+            metrics_df.get("duration_s"), errors="coerce"
+        ).fillna(0.0)
+        metrics_df["if_proxy"] = pd.to_numeric(
+            metrics_df.get("if_proxy"), errors="coerce"
+        ).fillna(0.0)
+        metrics_df["start_time_utc"] = pd.to_datetime(
+            metrics_df.get("start_time_utc"), utc=True, errors="coerce"
+        )
+        sport_lower = (
+            metrics_df.get(
+                "sport_type", pd.Series(index=metrics_df.index, dtype=object)
+            )
+            .fillna("")
+            .astype(str)
+            .str.lower()
+        )
         eligible_mask = (
             (sport_lower.str.contains("run") | sport_lower.str.contains("treadmill"))
             & (metrics_df["distance_m"] > 0)
             & (metrics_df["duration_s"] > 0)
             & (metrics_df["if_proxy"] > 0.90)
         )
-        observed_candidates = metrics_df.loc[eligible_mask, ["distance_m", "duration_s", "start_time_utc"]].copy()
+        observed_candidates = metrics_df.loc[
+            eligible_mask, ["distance_m", "duration_s", "start_time_utc"]
+        ].copy()
         if not observed_candidates.empty:
             observed_candidates["vdot"] = observed_candidates.apply(
                 lambda row: _activity_vdot(
@@ -8131,31 +9770,59 @@ def vdot_view(
                 ),
                 axis=1,
             )
-            observed_candidates["vdot"] = pd.to_numeric(observed_candidates["vdot"], errors="coerce")
+            observed_candidates["vdot"] = pd.to_numeric(
+                observed_candidates["vdot"], errors="coerce"
+            )
             observed_candidates = observed_candidates.dropna(subset=["vdot"]).copy()
             if not observed_candidates.empty:
                 if as_of:
                     observed_window_end = as_of_ts
                 else:
-                    observed_window_end = pd.to_datetime(observed_candidates["start_time_utc"], utc=True, errors="coerce").max()
+                    observed_window_end = pd.to_datetime(
+                        observed_candidates["start_time_utc"], utc=True, errors="coerce"
+                    ).max()
                 if pd.notna(observed_window_end):
-                    window_start = pd.Timestamp(observed_window_end) - pd.Timedelta(days=max(vdot_lookback_days - 1, 0))
+                    window_start = pd.Timestamp(observed_window_end) - pd.Timedelta(
+                        days=max(vdot_lookback_days - 1, 0)
+                    )
                     observed_candidates = observed_candidates[
-                        (pd.to_datetime(observed_candidates["start_time_utc"], utc=True, errors="coerce") >= window_start)
-                        & (pd.to_datetime(observed_candidates["start_time_utc"], utc=True, errors="coerce") <= observed_window_end)
+                        (
+                            pd.to_datetime(
+                                observed_candidates["start_time_utc"],
+                                utc=True,
+                                errors="coerce",
+                            )
+                            >= window_start
+                        )
+                        & (
+                            pd.to_datetime(
+                                observed_candidates["start_time_utc"],
+                                utc=True,
+                                errors="coerce",
+                            )
+                            <= observed_window_end
+                        )
                     ].copy()
-                observed_candidates = observed_candidates.sort_values(["vdot", "start_time_utc"], ascending=[False, False])
+                observed_candidates = observed_candidates.sort_values(
+                    ["vdot", "start_time_utc"], ascending=[False, False]
+                )
             if not observed_candidates.empty:
                 best = observed_candidates.iloc[0]
                 best_vdot = float(best.get("vdot") or 0.0)
-                best_ts = pd.to_datetime(best.get("start_time_utc"), utc=True, errors="coerce")
+                best_ts = pd.to_datetime(
+                    best.get("start_time_utc"), utc=True, errors="coerce"
+                )
                 pred_lt_pace_sec = _lt_pace_sec_per_km_from_vdot(best_vdot)
                 observed_max = {
                     "vdot": round(best_vdot, 2),
-                    "source_date": best_ts.date().isoformat() if pd.notna(best_ts) else "",
+                    "source_date": best_ts.date().isoformat()
+                    if pd.notna(best_ts)
+                    else "",
                     "window_days": int(vdot_lookback_days),
                     "pred_lt_pace_sec_per_km": round(pred_lt_pace_sec, 2),
-                    "pred_lt_pace_label": f"{_format_mmss(pred_lt_pace_sec)}/km" if pred_lt_pace_sec > 0 else "-",
+                    "pred_lt_pace_label": f"{_format_mmss(pred_lt_pace_sec)}/km"
+                    if pred_lt_pace_sec > 0
+                    else "-",
                     "equivalents": _vdot_equivalents(best_vdot),
                 }
 
@@ -8182,20 +9849,23 @@ def data_extract_status(
     role = str(ctx.get("role") or "viewer").strip().lower()
     current_user = str(ctx.get("user") or "").strip()
     runtime_email, runtime_password = _runtime_garmin_credentials(resolved_owner)
-    garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(ctx, resolved_owner)
+    garmin_email, garmin_password, garmin_source = _resolve_garmin_credentials(
+        ctx, resolved_owner
+    )
     garmin_state = _garmin_connection_state(ctx, resolved_owner, db_path)
     auto_sync_gate = _auto_sync_gate(resolved_owner, db_path)
     garmin_rate_limit = _garmin_rate_limit_state(db_path)
     return {
         "owner": resolved_owner,
-        "db_path": str(db_path),
         "counts": counts,
         "last_sync": last_sync,
         "auto_sync": {
             "enabled": AUTO_SYNC_ENABLED and not AUTO_SYNC_TEMPORARILY_DISABLED,
             "configured_enabled": AUTO_SYNC_ENABLED,
             "temporarily_disabled": AUTO_SYNC_TEMPORARILY_DISABLED,
-            "disabled_reason": AUTO_SYNC_DISABLED_REASON if AUTO_SYNC_TEMPORARILY_DISABLED else None,
+            "disabled_reason": AUTO_SYNC_DISABLED_REASON
+            if AUTO_SYNC_TEMPORARILY_DISABLED
+            else None,
             "interval_seconds": AUTO_SYNC_INTERVAL_SECONDS,
             "minimum_interval_seconds": AUTO_SYNC_MIN_INTERVAL_SECONDS,
             "owner": AUTO_SYNC_OWNER,
@@ -8205,7 +9875,9 @@ def data_extract_status(
             "windows_local": auto_sync_gate.get("windows_local"),
             "allowed_now": auto_sync_gate.get("allowed"),
             "reason": auto_sync_gate.get("reason"),
-            "cooldown_remaining_seconds": auto_sync_gate.get("cooldown_remaining_seconds"),
+            "cooldown_remaining_seconds": auto_sync_gate.get(
+                "cooldown_remaining_seconds"
+            ),
             "rate_limited_until": auto_sync_gate.get("rate_limited_until"),
         },
         "garmin_rate_limit": garmin_rate_limit,
@@ -8222,7 +9894,6 @@ def data_extract_status(
             if role == "admin"
             else "Provide Garmin credentials for this user session (memory only)."
         ),
-        "import_dir": str((Path(load_config().import_dir) if hasattr(load_config(), "import_dir") else (TEMPERANCE_SRC / "data" / "import"))),
         "extract_progress": _extract_progress_get(resolved_owner),
     }
 
@@ -8253,16 +9924,22 @@ def data_extract_credentials(
         return {
             "updated": True,
             "source": "missing",
-            "message": "Owner credentials cleared from memory." if role == "admin" else "Session credentials cleared.",
+            "message": "Owner credentials cleared from memory."
+            if role == "admin"
+            else "Session credentials cleared.",
         }
     if not email or not password:
-        raise HTTPException(status_code=400, detail="Both email and password are required.")
+        raise HTTPException(
+            status_code=400, detail="Both email and password are required."
+        )
 
     _set_runtime_garmin_credentials(resolved_owner, email=email, password=password)
     return {
         "updated": True,
         "source": "session",
-        "message": "Owner credentials saved in memory only." if role == "admin" else "Session credentials saved in memory only.",
+        "message": "Owner credentials saved in memory only."
+        if role == "admin"
+        else "Session credentials saved in memory only.",
     }
 
 
@@ -8360,12 +10037,16 @@ def data_extract_sync(
                         source_label=f"sync_{source}_{profile}_oauth",
                     )
                     total_rows += int(sync_result.get("total_rows") or 0)
-                    details["garmin"] = dict(sync_result.get("details") or {}).get("garmin") or {}
+                    details["garmin"] = (
+                        dict(sync_result.get("details") or {}).get("garmin") or {}
+                    )
                     sync_completed = True
                     sync_logged = True
                 elif selection["mode"] == "oauth":
                     token_payload, _connection = _garmin_oauth_token_payload(db_path)
-                    deep_start = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
+                    deep_start = (
+                        datetime.now(timezone.utc) - timedelta(days=days_back)
+                    ).date()
                     access_token = str(token_payload.get("access_token") or "")
                     activity_payload = fetch_garmin_oauth_normalized_activities(
                         access_token,
@@ -8398,8 +10079,13 @@ def data_extract_sync(
                     sync_completed = True
                     _clear_garmin_rate_limit(db_path)
                 elif selection["mode"] == "missing":
-                    messages.append("Garmin credentials missing. Connect Garmin OAuth or add session credentials for the active owner scope.")
-                    details["garmin"] = {"skipped": True, "reason": "credentials_missing"}
+                    messages.append(
+                        "Garmin credentials missing. Connect Garmin OAuth or add session credentials for the active owner scope."
+                    )
+                    details["garmin"] = {
+                        "skipped": True,
+                        "reason": "credentials_missing",
+                    }
                 elif profile == "quick":
                     sync_result = _run_quick_activity_sync(
                         db_path,
@@ -8407,14 +10093,20 @@ def data_extract_sync(
                         str(selection.get("password") or ""),
                         days_back=days_back,
                         source_label=f"sync_{source}_{profile}",
-                        credentials_source=str(selection.get("credentials_source") or "session"),
+                        credentials_source=str(
+                            selection.get("credentials_source") or "session"
+                        ),
                     )
                     total_rows += int(sync_result.get("total_rows") or 0)
-                    details["garmin"] = dict(sync_result.get("details") or {}).get("garmin") or {}
+                    details["garmin"] = (
+                        dict(sync_result.get("details") or {}).get("garmin") or {}
+                    )
                     sync_completed = True
                     sync_logged = True
                 else:
-                    deep_start = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
+                    deep_start = (
+                        datetime.now(timezone.utc) - timedelta(days=days_back)
+                    ).date()
                     extract = fetch_garmin_comprehensive(
                         email=str(selection.get("email") or ""),
                         password=str(selection.get("password") or ""),
@@ -8435,7 +10127,9 @@ def data_extract_sync(
                     total_rows += len(extract.activities)
                     details["garmin"] = {
                         "profile": "deep",
-                        "credentials_source": str(selection.get("credentials_source") or "session"),
+                        "credentials_source": str(
+                            selection.get("credentials_source") or "session"
+                        ),
                         "activities": len(extract.activities),
                         "details": len(extract.activity_details),
                         "records": len(extract.activity_records),
@@ -8488,17 +10182,36 @@ def data_extract_sync(
                 _AUTO_SYNC_LOCK.release()
 
     if source in {"file_import", "both"}:
-        import_dir = Path(load_config().import_dir) if hasattr(load_config(), "import_dir") else (TEMPERANCE_SRC / "data" / "import")
+        import_dir = (
+            Path(load_config().import_dir)
+            if hasattr(load_config(), "import_dir")
+            else (TEMPERANCE_SRC / "data" / "import")
+        )
         rows = import_runs_from_folder(import_dir=import_dir, days_back=days_back)
         changed = upsert_activities(db_path, rows)
         total_rows += len(rows)
-        details["file_import"] = {"rows": len(rows), "db_changes": int(changed), "import_dir": str(import_dir)}
+        details["file_import"] = {
+            "rows": len(rows),
+            "db_changes": int(changed),
+            "import_dir": str(import_dir),
+        }
 
-    success = sync_completed or total_rows > 0 or any("missing" in m.lower() for m in messages)
+    success = (
+        sync_completed
+        or total_rows > 0
+        or any("missing" in m.lower() for m in messages)
+    )
     msg = " | ".join(messages) if messages else f"total_rows={total_rows}"
     if not sync_logged:
-        log_sync(db_path, source=f"sync_{source}_{profile}", success=success, message=msg)
-    return {"success": success, "messages": messages, "total_rows": total_rows, "details": details}
+        log_sync(
+            db_path, source=f"sync_{source}_{profile}", success=success, message=msg
+        )
+    return {
+        "success": success,
+        "messages": messages,
+        "total_rows": total_rows,
+        "details": details,
+    }
 
 
 @app.post("/api/v1/data-extract/comprehensive")
@@ -8523,15 +10236,25 @@ def data_extract_comprehensive(
             detail="Garmin credentials missing. Connect Garmin OAuth or add session credentials for the active owner scope.",
         )
     if selection["mode"] == "oauth" and "unsupported_reason" in selection:
-        raise HTTPException(status_code=400, detail=str(selection["unsupported_reason"]))
+        raise HTTPException(
+            status_code=400, detail=str(selection["unsupported_reason"])
+        )
     _ensure_garmin_available(db_path)
 
     requested_start_day = parse_supported_day_value(payload.start_day)
     if requested_start_day is None:
-        raise HTTPException(status_code=400, detail="Invalid start_day. Use `3Mar26`, `YYYY-MM-DD`, or `DD/MM/YYYY`.")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid start_day. Use `3Mar26`, `YYYY-MM-DD`, or `DD/MM/YYYY`.",
+        )
     end_day = datetime.now(timezone.utc).date()
 
-    start_day, target_activity_days, target_wellness_days, planning_logs = _plan_comprehensive_extract_dates(
+    (
+        start_day,
+        target_activity_days,
+        target_wellness_days,
+        planning_logs,
+    ) = _plan_comprehensive_extract_dates(
         requested_start_day=requested_start_day,
         db_path=db_path,
         include_wellness=bool(payload.include_wellness),
@@ -8541,7 +10264,10 @@ def data_extract_comprehensive(
 
     existing_progress = _extract_progress_get(resolved_owner)
     if bool(existing_progress.get("running")):
-        raise HTTPException(status_code=409, detail="A comprehensive extract is already running for this owner.")
+        raise HTTPException(
+            status_code=409,
+            detail="A comprehensive extract is already running for this owner.",
+        )
 
     _extract_progress_start(resolved_owner, start_day.isoformat(), end_day.isoformat())
     _extract_progress_append(
@@ -8564,7 +10290,9 @@ def data_extract_comprehensive(
             "errors": [],
         }
     worker = threading.Thread(
-        target=_run_oauth_comprehensive_extract_background if selection["mode"] == "oauth" else _run_comprehensive_extract_background,
+        target=_run_oauth_comprehensive_extract_background
+        if selection["mode"] == "oauth"
+        else _run_comprehensive_extract_background,
         kwargs={
             "owner": resolved_owner,
             "db_path": db_path,
@@ -8592,7 +10320,9 @@ def data_extract_comprehensive(
         "computed_start_day": start_day.isoformat(),
         "start_day": start_day.isoformat(),
         "end_day": end_day.isoformat(),
-        "summary": "Comprehensive extract started in background." if selection["mode"] != "oauth" else "Garmin OAuth extract started in background.",
+        "summary": "Comprehensive extract started in background."
+        if selection["mode"] != "oauth"
+        else "Garmin OAuth extract started in background.",
         "errors": [],
     }
 
@@ -8748,25 +10478,51 @@ def planned_activity_delete(
 def _ingest_planned_entries_core(db_path: Path, entry_text: str) -> dict[str, Any]:
     """Core planned-activity ingest logic shared by the HTTP endpoint and MCP tool."""
     if len(entry_text) > int(MAX_PLANNED_ENTRY_CHARS):
-        return {"saved_count": 0, "errors": [f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save."]}
+        return {
+            "saved_count": 0,
+            "errors": [
+                f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save."
+            ],
+        }
 
     entries = _split_dated_activity_entries(entry_text)
     if not entries:
-        return {"saved_count": 0, "errors": ["Input is empty. Use `[date]:[activity]`."]}
+        return {
+            "saved_count": 0,
+            "errors": ["Input is empty. Use `[date]:[activity]`."],
+        }
     if len(entries) > int(MAX_PLANNED_ENTRIES_PER_SAVE):
-        return {"saved_count": 0, "errors": [f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}."]}
+        return {
+            "saved_count": 0,
+            "errors": [
+                f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}."
+            ],
+        }
 
     today_local = pd.Timestamp(datetime.now().astimezone().date())
     previous_sunday = today_local - pd.Timedelta(days=int(today_local.weekday()) + 1)
 
     existing = get_planned_activities_df(db_path=db_path)
-    max_line_by_day = existing.groupby("day_utc")["line_no"].max().to_dict() if not existing.empty else {}
+    max_line_by_day = (
+        existing.groupby("day_utc")["line_no"].max().to_dict()
+        if not existing.empty
+        else {}
+    )
     existing_signatures: set[str] = set()
     if not existing.empty:
         for _, er in existing.iterrows():
-            existing_signatures.add(_planned_row_signature(str(er.get("day_utc") or ""), str(er.get("workout_text") or "")))
+            existing_signatures.add(
+                _planned_row_signature(
+                    str(er.get("day_utc") or ""), str(er.get("workout_text") or "")
+                )
+            )
 
-    lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
+    lthr_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=DEFAULT_LTHR,
+    )
     pace_curve = _load_curve_points(
         db_path=db_path,
         key=SETTINGS_KEY_LT_PACE_CURVE,
@@ -8775,7 +10531,9 @@ def _ingest_planned_entries_core(db_path: Path, entry_text: str) -> dict[str, An
     )
     has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
     lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_default = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
 
     rows_to_upsert: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -8788,7 +10546,9 @@ def _ingest_planned_entries_core(db_path: Path, entry_text: str) -> dict[str, An
             errors.append(f"entry {idx}: could not parse date")
             continue
         if day_ts < previous_sunday:
-            errors.append(f"entry {idx}: date `{day_ts:%Y-%m-%d}` is before `{previous_sunday:%Y-%m-%d}`")
+            errors.append(
+                f"entry {idx}: date `{day_ts:%Y-%m-%d}` is before `{previous_sunday:%Y-%m-%d}`"
+            )
             continue
 
         lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
@@ -8800,14 +10560,18 @@ def _ingest_planned_entries_core(db_path: Path, entry_text: str) -> dict[str, An
             has_vdot_basis=has_vdot_basis,
         )
         if warns or not segs:
-            details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
+            details = (
+                "; ".join(warns[:2]) if warns else "Could not parse this activity."
+            )
             errors.append(f"entry {idx}: {details}")
             continue
 
         day_key = day_ts.date().isoformat()
         sig = _planned_row_signature(day_key, normalized)
         if sig in existing_signatures:
-            errors.append(f"entry {idx}: duplicate skipped for `{day_key}` (`{normalized}` already exists).")
+            errors.append(
+                f"entry {idx}: duplicate skipped for `{day_key}` (`{normalized}` already exists)."
+            )
             continue
 
         next_line_no = int(max_line_by_day.get(day_key, 0)) + 1
@@ -8845,7 +10609,11 @@ def planned_activities_ingest(
     result = _ingest_planned_entries_core(db_path, entry_text)
     if result["saved_count"] == 0 and result["errors"]:
         first_error = result["errors"][0]
-        if "Input is empty" in first_error or "Input too large" in first_error or "Too many entries" in first_error:
+        if (
+            "Input is empty" in first_error
+            or "Input too large" in first_error
+            or "Too many entries" in first_error
+        ):
             raise HTTPException(status_code=400, detail=first_error)
     return result
 
@@ -8864,10 +10632,15 @@ def _update_planned_workout_core(
     if not workout_text:
         return {"updated": False, "error": "Workout text cannot be empty"}
 
-    existing = get_planned_activities_df(db_path=db_path, start_day_utc=day_utc, end_day_utc=day_utc)
+    existing = get_planned_activities_df(
+        db_path=db_path, start_day_utc=day_utc, end_day_utc=day_utc
+    )
     if existing.empty:
         return {"updated": False, "error": "Planned activity not found"}
-    existing = existing[pd.to_numeric(existing.get("line_no"), errors="coerce").fillna(0).astype(int) == line_no]
+    existing = existing[
+        pd.to_numeric(existing.get("line_no"), errors="coerce").fillna(0).astype(int)
+        == line_no
+    ]
     if existing.empty:
         return {"updated": False, "error": "Planned activity not found"}
     current_row = existing.iloc[0]
@@ -8876,7 +10649,12 @@ def _update_planned_workout_core(
     if pd.isna(day_ts):
         return {"updated": False, "error": "Invalid day_utc"}
 
-    lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
+    lthr_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=DEFAULT_LTHR,
+    )
     pace_curve = _load_curve_points(
         db_path=db_path,
         key=SETTINGS_KEY_LT_PACE_CURVE,
@@ -8885,7 +10663,9 @@ def _update_planned_workout_core(
     )
     has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
     lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_default = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
     lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
     pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
     segs, warns = _expand_planned_segments(
@@ -8955,14 +10735,21 @@ def custom_activities_view(
     if raw.empty:
         return {"owner": resolved_owner, "rows": [], "weeks": []}
 
-    lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
+    lthr_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=DEFAULT_LTHR,
+    )
     pace_curve = _load_curve_points(
         db_path=db_path,
         key=SETTINGS_KEY_LT_PACE_CURVE,
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
-    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    specificity_profile = _load_specificity_profile(
+        db_path=db_path, fallback_default=0.8
+    )
     custom_rows = raw.rename(columns={"activity_text": "workout_text"}).copy()
     custom_rows["manual_done"] = False
     metrics = _compute_planned_rows_metrics_df(
@@ -8970,18 +10757,33 @@ def custom_activities_view(
         lthr_curve_points=lthr_curve,
         lthr_default_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
         lt_pace_curve_points=pace_curve,
-        lt_pace_default_sec=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        lt_pace_default_sec=float(pace_curve[-1][1])
+        if pace_curve
+        else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
         specificity_profile=specificity_profile,
     )
     merged = custom_rows.merge(
-        metrics[["day_utc", "line_no", "tss", "rtss", "distance_proxy_km", "duration_s", "if_proxy", "pace_proxy_sec_per_km"]],
+        metrics[
+            [
+                "day_utc",
+                "line_no",
+                "tss",
+                "rtss",
+                "distance_proxy_km",
+                "duration_s",
+                "if_proxy",
+                "pace_proxy_sec_per_km",
+            ]
+        ],
         on=["day_utc", "line_no"],
         how="left",
         suffixes=("", "_metric"),
     )
     merged["day"] = pd.to_datetime(merged.get("day_utc"), errors="coerce")
     merged = merged.dropna(subset=["day"]).copy()
-    merged["week_start"] = (merged["day"] - pd.to_timedelta(merged["day"].dt.weekday, unit="D")).dt.normalize()
+    merged["week_start"] = (
+        merged["day"] - pd.to_timedelta(merged["day"].dt.weekday, unit="D")
+    ).dt.normalize()
     merged = merged.sort_values(["day_utc", "line_no"], ascending=[False, False]).copy()
 
     rows_out: list[dict[str, Any]] = []
@@ -9000,7 +10802,9 @@ def custom_activities_view(
                 "rtss": round(_safe_float(row.get("rtss")), 1),
                 "distance_eqv_km": round(_safe_float(row.get("distance_proxy_km")), 1),
                 "if_proxy_pct": round(_safe_float(row.get("if_proxy")) * 100.0, 1),
-                "pace_label": _format_pace_short(_safe_float(row.get("pace_proxy_sec_per_km"))),
+                "pace_label": _format_pace_short(
+                    _safe_float(row.get("pace_proxy_sec_per_km"))
+                ),
                 "source": str(row.get("source") or "manual"),
             }
         )
@@ -9013,7 +10817,10 @@ def custom_activities_view(
             tss=("tss", "sum"),
             rtss=("rtss", "sum"),
             distance_eqv_km=("distance_proxy_km", "sum"),
-            if_weighted=("if_proxy", lambda v: float((pd.to_numeric(v, errors="coerce").fillna(0.0)).sum())),
+            if_weighted=(
+                "if_proxy",
+                lambda v: float((pd.to_numeric(v, errors="coerce").fillna(0.0)).sum()),
+            ),
         )
         .sort_values("week_start", ascending=False)
     )
@@ -9024,7 +10831,9 @@ def custom_activities_view(
         ws = pd.Timestamp(row.get("week_start")).normalize()
         we = ws + pd.Timedelta(days=6)
         dur_s = _safe_float(row.get("duration_s"))
-        avg_if = _safe_float(row.get("if_weighted")) / max(float(_safe_float(row.get("custom_activities"))), 1.0)
+        avg_if = _safe_float(row.get("if_weighted")) / max(
+            float(_safe_float(row.get("custom_activities"))), 1.0
+        )
         weeks_out.append(
             {
                 "week_start": ws.date().isoformat(),
@@ -9072,7 +10881,11 @@ def generated_activity(
         raise HTTPException(status_code=400, detail="Missing day_utc")
     if mode not in {"planned", "custom"}:
         raise HTTPException(status_code=400, detail="Invalid mode")
-    if activity_type is not None and activity_type not in {"running", "elliptical", "bike"}:
+    if activity_type is not None and activity_type not in {
+        "running",
+        "elliptical",
+        "bike",
+    }:
         raise HTTPException(status_code=400, detail="Invalid activity_type")
     response, _ = _planning_decision_for_owner(
         owner=resolved_owner,
@@ -9090,18 +10903,40 @@ def generated_activity(
 def _ingest_custom_entries_core(db_path: Path, entry_text: str) -> dict[str, Any]:
     """Core custom-activity ingest logic shared by the HTTP endpoint and MCP tool."""
     if len(entry_text) > int(MAX_PLANNED_ENTRY_CHARS):
-        return {"saved_count": 0, "errors": [f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save."]}
+        return {
+            "saved_count": 0,
+            "errors": [
+                f"Input too large. Max {MAX_PLANNED_ENTRY_CHARS} characters per save."
+            ],
+        }
 
     entries = _split_dated_activity_entries(entry_text)
     if not entries:
-        return {"saved_count": 0, "errors": ["Input is empty. Use `[date]:[activity]`."]}
+        return {
+            "saved_count": 0,
+            "errors": ["Input is empty. Use `[date]:[activity]`."],
+        }
     if len(entries) > int(MAX_PLANNED_ENTRIES_PER_SAVE):
-        return {"saved_count": 0, "errors": [f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}."]}
+        return {
+            "saved_count": 0,
+            "errors": [
+                f"Too many entries in one save. Max {MAX_PLANNED_ENTRIES_PER_SAVE}."
+            ],
+        }
 
     existing = get_custom_activities_df(db_path=db_path)
-    max_line_by_day = existing.groupby("day_utc")["line_no"].max().to_dict() if not existing.empty else {}
+    max_line_by_day = (
+        existing.groupby("day_utc")["line_no"].max().to_dict()
+        if not existing.empty
+        else {}
+    )
 
-    lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
+    lthr_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=DEFAULT_LTHR,
+    )
     pace_curve = _load_curve_points(
         db_path=db_path,
         key=SETTINGS_KEY_LT_PACE_CURVE,
@@ -9110,7 +10945,9 @@ def _ingest_custom_entries_core(db_path: Path, entry_text: str) -> dict[str, Any
     )
     has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
     lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_default = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
 
     rows_to_upsert: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -9132,7 +10969,9 @@ def _ingest_custom_entries_core(db_path: Path, entry_text: str) -> dict[str, Any
             has_vdot_basis=has_vdot_basis,
         )
         if warns or not segs:
-            details = "; ".join(warns[:2]) if warns else "Could not parse this activity."
+            details = (
+                "; ".join(warns[:2]) if warns else "Could not parse this activity."
+            )
             errors.append(f"entry {idx}: {details}")
             continue
 
@@ -9175,7 +11014,11 @@ def custom_activities_ingest(
     result = _ingest_custom_entries_core(db_path, entry_text)
     if result["saved_count"] == 0 and result["errors"]:
         first_error = result["errors"][0]
-        if "Input is empty" in first_error or "Input too large" in first_error or "Too many entries" in first_error:
+        if (
+            "Input is empty" in first_error
+            or "Input too large" in first_error
+            or "Too many entries" in first_error
+        ):
             raise HTTPException(status_code=400, detail=first_error)
     return result
 
@@ -9203,7 +11046,12 @@ def custom_activity_workout_update(
         raise HTTPException(status_code=404, detail="Custom activity not found")
     existing = existing[
         (existing.get("day_utc").astype(str) == day_utc)
-        & (pd.to_numeric(existing.get("line_no"), errors="coerce").fillna(0).astype(int) == line_no)
+        & (
+            pd.to_numeric(existing.get("line_no"), errors="coerce")
+            .fillna(0)
+            .astype(int)
+            == line_no
+        )
     ]
     if existing.empty:
         raise HTTPException(status_code=404, detail="Custom activity not found")
@@ -9213,7 +11061,12 @@ def custom_activity_workout_update(
     if pd.isna(day_ts):
         raise HTTPException(status_code=400, detail="Invalid day_utc")
 
-    lthr_curve = _load_curve_points(db_path=db_path, key=SETTINGS_KEY_LTHR_CURVE, value_key="lthr_bpm", fallback_value=DEFAULT_LTHR)
+    lthr_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=DEFAULT_LTHR,
+    )
     pace_curve = _load_curve_points(
         db_path=db_path,
         key=SETTINGS_KEY_LT_PACE_CURVE,
@@ -9222,7 +11075,9 @@ def custom_activity_workout_update(
     )
     has_vdot_basis = _has_explicit_lt_pace_curve(db_path)
     lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
-    pace_default = float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    pace_default = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
     lthr_for_day = float(_curve_value_at(lthr_curve, lthr_default, day_ts))
     pace_for_day = float(_curve_value_at(pace_curve, pace_default, day_ts))
     segs, warns = _expand_planned_segments(
@@ -9287,7 +11142,11 @@ def activity_invalid_update(
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Activity not found")
-    return {"updated": True, "activity_id": str(payload.activity_id or "").strip(), "is_invalid": bool(payload.is_invalid)}
+    return {
+        "updated": True,
+        "activity_id": str(payload.activity_id or "").strip(),
+        "is_invalid": bool(payload.is_invalid),
+    }
 
 
 @app.get("/api/v1/activities/{activity_id}")
@@ -9322,23 +11181,38 @@ def activity_detail(
     custom_key = _parse_custom_activity_id(activity_id_norm)
     if custom_key is not None:
         day_utc, line_no = custom_key
-        custom_df = get_custom_activities_df(db_path=db_path, start_day_utc=day_utc, end_day_utc=day_utc)
+        custom_df = get_custom_activities_df(
+            db_path=db_path, start_day_utc=day_utc, end_day_utc=day_utc
+        )
         if custom_df.empty:
             raise HTTPException(status_code=404, detail="Activity not found")
         selected_custom = custom_df[
             (custom_df["day_utc"].astype(str) == day_utc)
-            & (pd.to_numeric(custom_df["line_no"], errors="coerce").fillna(0).astype(int) == int(line_no))
+            & (
+                pd.to_numeric(custom_df["line_no"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+                == int(line_no)
+            )
         ].head(1)
         if selected_custom.empty:
             raise HTTPException(status_code=404, detail="Activity not found")
 
         row = selected_custom.iloc[0]
         day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
-        lthr_for_day = float(_curve_value_at(lthr_curve, float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR, day_ts))
+        lthr_for_day = float(
+            _curve_value_at(
+                lthr_curve,
+                float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+                day_ts,
+            )
+        )
         threshold_pace_for_day = float(
             _curve_value_at(
                 pace_curve,
-                float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+                float(pace_curve[-1][1])
+                if pace_curve
+                else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
                 day_ts,
             )
         )
@@ -9352,7 +11226,9 @@ def activity_detail(
         )
 
         if_thresholds = _load_if_zone_thresholds(db_path)
-        specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+        specificity_profile = _load_specificity_profile(
+            db_path=db_path, fallback_default=0.8
+        )
 
         total_duration_s = 0.0
         total_tss = 0.0
@@ -9374,7 +11250,9 @@ def activity_detail(
             if seg_kind and seg_kind not in kinds_seen:
                 kinds_seen.append(seg_kind)
             seg_spec = _specificity_factor_for_plan_kind(seg_kind, specificity_profile)
-            seg_for_metrics = _segment_with_effective_intensity_for_metrics(seg, seg_kind=seg_kind, seg_spec=seg_spec)
+            seg_for_metrics = _segment_with_effective_intensity_for_metrics(
+                seg, seg_kind=seg_kind, seg_spec=seg_spec
+            )
             metric_row = _planned_segment_metrics(
                 seg_for_metrics,
                 lthr_bpm=lthr_for_day,
@@ -9391,11 +11269,19 @@ def activity_detail(
             is_running_like = seg_kind in {"run", "treadmill"}
 
             pace_raw = _safe_float(seg_for_metrics.get("pace_s_per_km"))
-            pace_eqv_s_per_km = (threshold_pace_for_day / if_proxy) if (threshold_pace_for_day > 0 and if_proxy > 0) else 0.0
+            pace_eqv_s_per_km = (
+                (threshold_pace_for_day / if_proxy)
+                if (threshold_pace_for_day > 0 and if_proxy > 0)
+                else 0.0
+            )
             pace_label_s_per_km = pace_raw if pace_raw > 0 else pace_eqv_s_per_km
             distance_km = distance_eqv_km
-            avg_hr = _target_hr_bpm(seg_for_metrics.get("avg_hr_bpm"), if_proxy, lthr_for_day)
-            avg_speed_mps = (1000.0 / pace_label_s_per_km) if pace_label_s_per_km > 0 else 0.0
+            avg_hr = _target_hr_bpm(
+                seg_for_metrics.get("avg_hr_bpm"), if_proxy, lthr_for_day
+            )
+            avg_speed_mps = (
+                (1000.0 / pace_label_s_per_km) if pace_label_s_per_km > 0 else 0.0
+            )
 
             total_duration_s += duration_s
             total_tss += tss
@@ -9416,14 +11302,20 @@ def activity_detail(
             split_rows.append(
                 {
                     "lap": idx,
-                    "description": _split_description_from_if_proxy(if_proxy, if_thresholds),
+                    "description": _split_description_from_if_proxy(
+                        if_proxy, if_thresholds
+                    ),
                     "duration_label": _format_duration_compact_with_seconds(duration_s),
                     "avg_hr": round(avg_hr, 0) if avg_hr > 0 else 0.0,
                     "if_pct": round(if_proxy * 100.0, 1) if if_proxy > 0 else 0.0,
                     "distance_km": round(max(distance_km, 0.0), 2),
                     "distance_eqv_km": round(max(distance_eqv_km, 0.0), 2),
-                    "pace_label": _format_pace_short(pace_label_s_per_km if pace_label_s_per_km > 0 else None),
-                    "pace_eqv_label": _format_pace_short(pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else None),
+                    "pace_label": _format_pace_short(
+                        pace_label_s_per_km if pace_label_s_per_km > 0 else None
+                    ),
+                    "pace_eqv_label": _format_pace_short(
+                        pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else None
+                    ),
                     "display_mode": "running" if is_running_like else "eqv",
                 }
             )
@@ -9440,12 +11332,30 @@ def activity_detail(
                 }
             )
 
-        sport_type = ", ".join([k.replace("_", " ").title() for k in kinds_seen]) if kinds_seen else "Custom"
-        avg_if_proxy = (if_weighted_sum / if_weight_seconds) if if_weight_seconds > 0 else 0.0
-        avg_pace_s_per_km = (pace_weighted_sum / pace_weight_seconds) if pace_weight_seconds > 0 else 0.0
+        sport_type = (
+            ", ".join([k.replace("_", " ").title() for k in kinds_seen])
+            if kinds_seen
+            else "Custom"
+        )
+        avg_if_proxy = (
+            (if_weighted_sum / if_weight_seconds) if if_weight_seconds > 0 else 0.0
+        )
+        avg_pace_s_per_km = (
+            (pace_weighted_sum / pace_weight_seconds)
+            if pace_weight_seconds > 0
+            else 0.0
+        )
         avg_hr = (hr_weighted_sum / hr_weight_seconds) if hr_weight_seconds > 0 else 0.0
-        start_time = pd.Timestamp(day_ts).tz_convert("UTC").tz_localize(None) if pd.notna(day_ts) else pd.Timestamp.utcnow().tz_localize(None)
-        start_time = start_time.normalize() + pd.Timedelta(hours=12) + pd.Timedelta(minutes=max(0, int(line_no) - 1))
+        start_time = (
+            pd.Timestamp(day_ts).tz_convert("UTC").tz_localize(None)
+            if pd.notna(day_ts)
+            else pd.Timestamp.utcnow().tz_localize(None)
+        )
+        start_time = (
+            start_time.normalize()
+            + pd.Timedelta(hours=12)
+            + pd.Timedelta(minutes=max(0, int(line_no) - 1))
+        )
 
         return {
             "owner": resolved_owner,
@@ -9456,7 +11366,9 @@ def activity_detail(
                 "sport_type": sport_type,
                 "distance_km": round(max(total_distance_eqv_km, 0.0), 2),
                 "duration_min": round(total_duration_s / 60.0, 1),
-                "avg_pace_display": _format_pace_short(avg_pace_s_per_km if avg_pace_s_per_km > 0 else None),
+                "avg_pace_display": _format_pace_short(
+                    avg_pace_s_per_km if avg_pace_s_per_km > 0 else None
+                ),
                 "avg_hr": round(avg_hr, 1) if avg_hr > 0 else 0.0,
                 "max_hr": round(avg_hr, 1) if avg_hr > 0 else 0.0,
                 "tss": round(total_tss, 1),
@@ -9464,8 +11376,16 @@ def activity_detail(
                 "training_load_garmin": 0.0,
             },
             "records": [],
-            "raw": {"day_utc": day_utc, "line_no": int(line_no), "activity_text": str(row.get("activity_text") or "")},
-            "details": {"source": "custom", "if_proxy": avg_if_proxy, "segments": segments},
+            "raw": {
+                "day_utc": day_utc,
+                "line_no": int(line_no),
+                "activity_text": str(row.get("activity_text") or ""),
+            },
+            "details": {
+                "source": "custom",
+                "if_proxy": avg_if_proxy,
+                "segments": segments,
+            },
             "splits": {
                 "lap_count": len(lap_dtos),
                 "total_duration_s": round(total_duration_s, 1),
@@ -9480,23 +11400,38 @@ def activity_detail(
     planned_key = _parse_planned_activity_id(activity_id_norm)
     if planned_key is not None:
         day_utc, line_no = planned_key
-        planned_df = get_planned_activities_df(db_path=db_path, start_day_utc=day_utc, end_day_utc=day_utc)
+        planned_df = get_planned_activities_df(
+            db_path=db_path, start_day_utc=day_utc, end_day_utc=day_utc
+        )
         if planned_df.empty:
             raise HTTPException(status_code=404, detail="Activity not found")
         selected_planned = planned_df[
             (planned_df["day_utc"].astype(str) == day_utc)
-            & (pd.to_numeric(planned_df["line_no"], errors="coerce").fillna(0).astype(int) == int(line_no))
+            & (
+                pd.to_numeric(planned_df["line_no"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+                == int(line_no)
+            )
         ].head(1)
         if selected_planned.empty:
             raise HTTPException(status_code=404, detail="Activity not found")
 
         row = selected_planned.iloc[0]
         day_ts = pd.to_datetime(day_utc, utc=True, errors="coerce")
-        lthr_for_day = float(_curve_value_at(lthr_curve, float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR, day_ts))
+        lthr_for_day = float(
+            _curve_value_at(
+                lthr_curve,
+                float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+                day_ts,
+            )
+        )
         threshold_pace_for_day = float(
             _curve_value_at(
                 pace_curve,
-                float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+                float(pace_curve[-1][1])
+                if pace_curve
+                else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
                 day_ts,
             )
         )
@@ -9510,7 +11445,9 @@ def activity_detail(
         )
 
         if_thresholds = _load_if_zone_thresholds(db_path)
-        specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+        specificity_profile = _load_specificity_profile(
+            db_path=db_path, fallback_default=0.8
+        )
 
         total_duration_s = 0.0
         total_tss = 0.0
@@ -9532,7 +11469,9 @@ def activity_detail(
             if seg_kind and seg_kind not in kinds_seen:
                 kinds_seen.append(seg_kind)
             seg_spec = _specificity_factor_for_plan_kind(seg_kind, specificity_profile)
-            seg_for_metrics = _segment_with_effective_intensity_for_metrics(seg, seg_kind=seg_kind, seg_spec=seg_spec)
+            seg_for_metrics = _segment_with_effective_intensity_for_metrics(
+                seg, seg_kind=seg_kind, seg_spec=seg_spec
+            )
             metric_row = _planned_segment_metrics(
                 seg_for_metrics,
                 lthr_bpm=lthr_for_day,
@@ -9549,11 +11488,19 @@ def activity_detail(
             is_running_like = seg_kind in {"run", "treadmill"}
 
             pace_raw = _safe_float(seg_for_metrics.get("pace_s_per_km"))
-            pace_eqv_s_per_km = (threshold_pace_for_day / if_proxy) if (threshold_pace_for_day > 0 and if_proxy > 0) else 0.0
+            pace_eqv_s_per_km = (
+                (threshold_pace_for_day / if_proxy)
+                if (threshold_pace_for_day > 0 and if_proxy > 0)
+                else 0.0
+            )
             pace_label_s_per_km = pace_raw if pace_raw > 0 else pace_eqv_s_per_km
             distance_km = distance_eqv_km
-            avg_hr = _target_hr_bpm(seg_for_metrics.get("avg_hr_bpm"), if_proxy, lthr_for_day)
-            avg_speed_mps = (1000.0 / pace_label_s_per_km) if pace_label_s_per_km > 0 else 0.0
+            avg_hr = _target_hr_bpm(
+                seg_for_metrics.get("avg_hr_bpm"), if_proxy, lthr_for_day
+            )
+            avg_speed_mps = (
+                (1000.0 / pace_label_s_per_km) if pace_label_s_per_km > 0 else 0.0
+            )
 
             total_duration_s += duration_s
             total_tss += tss
@@ -9574,14 +11521,20 @@ def activity_detail(
             split_rows.append(
                 {
                     "lap": idx,
-                    "description": _split_description_from_if_proxy(if_proxy, if_thresholds),
+                    "description": _split_description_from_if_proxy(
+                        if_proxy, if_thresholds
+                    ),
                     "duration_label": _format_duration_compact_with_seconds(duration_s),
                     "avg_hr": round(avg_hr, 0) if avg_hr > 0 else 0.0,
                     "if_pct": round(if_proxy * 100.0, 1) if if_proxy > 0 else 0.0,
                     "distance_km": round(max(distance_km, 0.0), 2),
                     "distance_eqv_km": round(max(distance_eqv_km, 0.0), 2),
-                    "pace_label": _format_pace_short(pace_label_s_per_km if pace_label_s_per_km > 0 else None),
-                    "pace_eqv_label": _format_pace_short(pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else None),
+                    "pace_label": _format_pace_short(
+                        pace_label_s_per_km if pace_label_s_per_km > 0 else None
+                    ),
+                    "pace_eqv_label": _format_pace_short(
+                        pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else None
+                    ),
                     "display_mode": "running" if is_running_like else "eqv",
                 }
             )
@@ -9598,12 +11551,30 @@ def activity_detail(
                 }
             )
 
-        sport_type = ", ".join([k.replace("_", " ").title() for k in kinds_seen]) if kinds_seen else "Planned"
-        avg_if_proxy = (if_weighted_sum / if_weight_seconds) if if_weight_seconds > 0 else 0.0
-        avg_pace_s_per_km = (pace_weighted_sum / pace_weight_seconds) if pace_weight_seconds > 0 else 0.0
+        sport_type = (
+            ", ".join([k.replace("_", " ").title() for k in kinds_seen])
+            if kinds_seen
+            else "Planned"
+        )
+        avg_if_proxy = (
+            (if_weighted_sum / if_weight_seconds) if if_weight_seconds > 0 else 0.0
+        )
+        avg_pace_s_per_km = (
+            (pace_weighted_sum / pace_weight_seconds)
+            if pace_weight_seconds > 0
+            else 0.0
+        )
         avg_hr = (hr_weighted_sum / hr_weight_seconds) if hr_weight_seconds > 0 else 0.0
-        start_time = pd.Timestamp(day_ts).tz_convert("UTC").tz_localize(None) if pd.notna(day_ts) else pd.Timestamp.utcnow().tz_localize(None)
-        start_time = start_time.normalize() + pd.Timedelta(hours=12) + pd.Timedelta(minutes=max(0, int(line_no) - 1))
+        start_time = (
+            pd.Timestamp(day_ts).tz_convert("UTC").tz_localize(None)
+            if pd.notna(day_ts)
+            else pd.Timestamp.utcnow().tz_localize(None)
+        )
+        start_time = (
+            start_time.normalize()
+            + pd.Timedelta(hours=12)
+            + pd.Timedelta(minutes=max(0, int(line_no) - 1))
+        )
 
         return {
             "owner": resolved_owner,
@@ -9614,7 +11585,9 @@ def activity_detail(
                 "sport_type": sport_type,
                 "distance_km": round(max(total_distance_eqv_km, 0.0), 2),
                 "duration_min": round(total_duration_s / 60.0, 1),
-                "avg_pace_display": _format_pace_short(avg_pace_s_per_km if avg_pace_s_per_km > 0 else None),
+                "avg_pace_display": _format_pace_short(
+                    avg_pace_s_per_km if avg_pace_s_per_km > 0 else None
+                ),
                 "avg_hr": round(avg_hr, 1) if avg_hr > 0 else 0.0,
                 "max_hr": round(avg_hr, 1) if avg_hr > 0 else 0.0,
                 "tss": round(total_tss, 1),
@@ -9622,8 +11595,16 @@ def activity_detail(
                 "training_load_garmin": 0.0,
             },
             "records": [],
-            "raw": {"day_utc": day_utc, "line_no": int(line_no), "workout_text": str(row.get("workout_text") or "")},
-            "details": {"source": "planned", "if_proxy": avg_if_proxy, "segments": segments},
+            "raw": {
+                "day_utc": day_utc,
+                "line_no": int(line_no),
+                "workout_text": str(row.get("workout_text") or ""),
+            },
+            "details": {
+                "source": "planned",
+                "if_proxy": avg_if_proxy,
+                "segments": segments,
+            },
             "splits": {
                 "lap_count": len(lap_dtos),
                 "total_duration_s": round(total_duration_s, 1),
@@ -9642,25 +11623,39 @@ def activity_detail(
     metrics_df = compute_metrics(
         runs_df=runs_df,
         lthr_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
-        threshold_pace_sec_per_km=float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+        threshold_pace_sec_per_km=float(pace_curve[-1][1])
+        if pace_curve
+        else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
         lthr_curve_points=lthr_curve,
         threshold_pace_curve_points=pace_curve,
     )
     selected = metrics_df[
-        metrics_df["activity_id"].astype(str).map(_normalize_activity_id) == activity_id_norm
+        metrics_df["activity_id"].astype(str).map(_normalize_activity_id)
+        == activity_id_norm
     ].head(1)
     if selected.empty:
         raise HTTPException(status_code=404, detail="Activity not found")
 
     table_row = display_table(selected).head(1)
-    base = table_row.iloc[0].to_dict() if not table_row.empty else selected.iloc[0].to_dict()
+    base = (
+        table_row.iloc[0].to_dict()
+        if not table_row.empty
+        else selected.iloc[0].to_dict()
+    )
     selected_base = selected.iloc[0].to_dict()
-    selected_activity_id = _normalize_activity_id(base.get("activity_id") or activity_id_norm)
+    selected_activity_id = _normalize_activity_id(
+        base.get("activity_id") or activity_id_norm
+    )
 
     records: list[dict[str, Any]] = []
     if include_records:
-        records_df = get_activity_records_df(db_path, selected_activity_id).head(int(records_limit)).copy()
+        records_df = (
+            get_activity_records_df(db_path, selected_activity_id)
+            .head(int(records_limit))
+            .copy()
+        )
         if not records_df.empty:
+
             def _extract_from_raw(raw_payload: Any, keys: tuple[str, ...]) -> float:
                 if raw_payload is None:
                     return 0.0
@@ -9699,33 +11694,51 @@ def activity_detail(
                         "altitude": _safe_float(row.get("altitude")),
                         "stamina": _safe_float(row.get("stamina")),
                         "grade_adjusted_speed": gap_mps,
-                        "grade_adjusted_pace_s_per_km": (1000.0 / gap_mps) if gap_mps > 0 else 0.0,
+                        "grade_adjusted_pace_s_per_km": (1000.0 / gap_mps)
+                        if gap_mps > 0
+                        else 0.0,
                     }
                 )
 
     splits_raw = get_activity_splits_raw(db_path, selected_activity_id) or {}
     split_rows: list[dict[str, Any]] = []
     split_payload = splits_raw.get("split") if isinstance(splits_raw, dict) else {}
-    summaries_payload = splits_raw.get("split_summaries") if isinstance(splits_raw, dict) else {}
+    summaries_payload = (
+        splits_raw.get("split_summaries") if isinstance(splits_raw, dict) else {}
+    )
     laps = split_payload.get("lapDTOs") if isinstance(split_payload, dict) else None
     if not isinstance(laps, list) or not laps:
-        maybe = summaries_payload.get("splitSummaries") if isinstance(summaries_payload, dict) else None
+        maybe = (
+            summaries_payload.get("splitSummaries")
+            if isinstance(summaries_payload, dict)
+            else None
+        )
         if isinstance(maybe, list):
             laps = maybe
     if not isinstance(laps, list):
         laps = []
 
     start_ts = pd.to_datetime(base.get("start_time_utc"), utc=True, errors="coerce")
-    lthr_for_day = float(_curve_value_at(lthr_curve, float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR, start_ts))
+    lthr_for_day = float(
+        _curve_value_at(
+            lthr_curve,
+            float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
+            start_ts,
+        )
+    )
     threshold_pace_for_day = float(
         _curve_value_at(
             pace_curve,
-            float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
+            float(pace_curve[-1][1])
+            if pace_curve
+            else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
             start_ts,
         )
     )
     if_thresholds = _load_if_zone_thresholds(db_path)
-    specificity_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    specificity_profile = _load_specificity_profile(
+        db_path=db_path, fallback_default=0.8
+    )
     sport_type = str(base.get("sport_type") or "")
     sport_lower = sport_type.lower()
     is_running_like = ("run" in sport_lower) or ("treadmill" in sport_lower)
@@ -9739,7 +11752,9 @@ def activity_detail(
         )
         if duration_s <= 0:
             continue
-        distance_m = _safe_float(lap.get("distance") or lap.get("totalDistance") or lap.get("distanceMeters"))
+        distance_m = _safe_float(
+            lap.get("distance") or lap.get("totalDistance") or lap.get("distanceMeters")
+        )
         avg_hr = _safe_float(lap.get("averageHR"))
         avg_speed_mps = _safe_float(lap.get("averageSpeed"))
         pace_s_per_km = (1000.0 / avg_speed_mps) if avg_speed_mps > 0 else 0.0
@@ -9752,15 +11767,27 @@ def activity_detail(
         elif pace_s_per_km > 0 and threshold_pace_for_day > 0:
             if_proxy = threshold_pace_for_day / pace_s_per_km
 
-        pace_eqv_s_per_km = (threshold_pace_for_day / if_proxy) if (threshold_pace_for_day > 0 and if_proxy > 0) else 0.0
+        pace_eqv_s_per_km = (
+            (threshold_pace_for_day / if_proxy)
+            if (threshold_pace_for_day > 0 and if_proxy > 0)
+            else 0.0
+        )
         if is_running_like:
-            distance_eqv_km = (distance_m / 1000.0) if distance_m > 0 else (duration_s / pace_s_per_km if pace_s_per_km > 0 else 0.0)
-            distance_km_ui = (distance_m / 1000.0) if distance_m > 0 else distance_eqv_km
+            distance_eqv_km = (
+                (distance_m / 1000.0)
+                if distance_m > 0
+                else (duration_s / pace_s_per_km if pace_s_per_km > 0 else 0.0)
+            )
+            distance_km_ui = (
+                (distance_m / 1000.0) if distance_m > 0 else distance_eqv_km
+            )
             pace_ui_s_per_km = pace_s_per_km if pace_s_per_km > 0 else pace_eqv_s_per_km
         else:
             if pace_eqv_s_per_km <= 0 and pace_s_per_km > 0:
                 pace_eqv_s_per_km = pace_s_per_km / max(specificity_factor, 0.01)
-            distance_eqv_km = duration_s / pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else 0.0
+            distance_eqv_km = (
+                duration_s / pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else 0.0
+            )
             if distance_eqv_km <= 0 and distance_m > 0:
                 distance_eqv_km = (distance_m / 1000.0) * max(specificity_factor, 0.01)
             distance_km_ui = distance_eqv_km
@@ -9769,14 +11796,20 @@ def activity_detail(
         split_rows.append(
             {
                 "lap": int(_safe_float(lap.get("lapIndex")) or idx),
-                "description": _split_description_from_if_proxy(if_proxy, if_thresholds),
+                "description": _split_description_from_if_proxy(
+                    if_proxy, if_thresholds
+                ),
                 "duration_label": _format_duration_compact_with_seconds(duration_s),
                 "avg_hr": round(avg_hr, 0) if avg_hr > 0 else 0.0,
                 "if_pct": round(if_proxy * 100.0, 1) if if_proxy > 0 else 0.0,
                 "distance_km": round(max(distance_km_ui, 0.0), 2),
                 "distance_eqv_km": round(max(distance_eqv_km, 0.0), 2),
-                "pace_label": _format_pace_short(pace_ui_s_per_km if pace_ui_s_per_km > 0 else None),
-                "pace_eqv_label": _format_pace_short(pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else None),
+                "pace_label": _format_pace_short(
+                    pace_ui_s_per_km if pace_ui_s_per_km > 0 else None
+                ),
+                "pace_eqv_label": _format_pace_short(
+                    pace_eqv_s_per_km if pace_eqv_s_per_km > 0 else None
+                ),
                 "display_mode": "running" if is_running_like else "eqv",
             }
         )
@@ -9795,8 +11828,12 @@ def activity_detail(
         "activity": {
             "activity_id": selected_activity_id,
             "date": str(base.get("date") or selected_base.get("date") or ""),
-            "start_time_utc": str(base.get("start_time_utc") or selected_base.get("start_time_utc") or ""),
-            "sport_type": str(base.get("sport_type") or selected_base.get("sport_type") or ""),
+            "start_time_utc": str(
+                base.get("start_time_utc") or selected_base.get("start_time_utc") or ""
+            ),
+            "sport_type": str(
+                base.get("sport_type") or selected_base.get("sport_type") or ""
+            ),
             "distance_km": round(_safe_float(base.get("distance_km")), 2),
             "duration_min": round(_safe_float(base.get("duration_min")), 1),
             "avg_pace_display": str(base.get("avg_pace_display") or "-"),
@@ -9804,7 +11841,9 @@ def activity_detail(
             "max_hr": round(_safe_float(base.get("max_hr")), 1),
             "tss": round(_safe_float(base.get("tss")), 1),
             "rtss": round(_safe_float(base.get("rtss")), 1),
-            "training_load_garmin": round(_safe_float(base.get("training_load_garmin")), 1),
+            "training_load_garmin": round(
+                _safe_float(base.get("training_load_garmin")), 1
+            ),
         },
         "records": records,
         "raw": get_activity_raw(db_path, selected_activity_id) or {},
