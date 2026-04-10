@@ -327,7 +327,7 @@ class EstimateXtrainTSSArgs(BaseModel):
 
 
 class PlanningHistoryArgs(BaseModel):
-    owner: str = ""
+    owner: str = DEFAULT_OWNER
     days: int = 30
 
 
@@ -384,7 +384,6 @@ def _db_helpers() -> dict[str, Any]:
         delete_planned_activities,
         get_last_sync,
         get_setting,
-        set_activity_invalid,
         set_planned_activity_manual_done,
     )
 
@@ -394,7 +393,6 @@ def _db_helpers() -> dict[str, Any]:
         "delete_planned_activities": delete_planned_activities,
         "set_planned_activity_manual_done": set_planned_activity_manual_done,
         "delete_custom_activities": delete_custom_activities,
-        "set_activity_invalid": set_activity_invalid,
     }
 
 
@@ -1921,20 +1919,6 @@ def tool_get_sync_status(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def tool_mark_activity_invalid(arguments: dict[str, Any]) -> dict[str, Any]:
-    args = MarkActivityInvalidArgs.model_validate(arguments or {})
-    db_path = _resolve_db_path(args.owner)
-    db = _db_helpers()
-    success = db["set_activity_invalid"](db_path, args.activity_id, args.is_invalid)
-    return {
-        "owner": args.owner,
-        "db_path": str(db_path),
-        "activity_id": args.activity_id,
-        "is_invalid": args.is_invalid,
-        "success": success,
-    }
-
-
 # ---------------------------------------------------------------------------
 # Phase 3: Settings, workout search, and fitness form tools
 # ---------------------------------------------------------------------------
@@ -3314,12 +3298,6 @@ TOOLS: dict[str, ToolSpec] = {
         description="Check the last Garmin sync time and result.",
         input_schema=SyncStatusArgs.model_json_schema(),
         handler=tool_get_sync_status,
-    ),
-    "mark_activity_invalid": ToolSpec(
-        name="mark_activity_invalid",
-        description="Flag an activity as invalid (e.g., GPS glitch, bad data) or restore it.",
-        input_schema=MarkActivityInvalidArgs.model_json_schema(),
-        handler=tool_mark_activity_invalid,
     ),
     # --- Settings & analytics tools ---
     "get_settings": ToolSpec(
