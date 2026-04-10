@@ -302,6 +302,72 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(payload["owner"], "admin")
         self.assertEqual(payload["window_days"], 42)
 
+    def test_planning_context_builder_delegates_to_backend_core(self):
+        original = mcp_server._backend_main_module
+        original_active_build = mcp_server._build_active_build_payload
+        original_today_status = mcp_server.tool_get_today_status
+        try:
+            mcp_server._build_active_build_payload = lambda: {"active_build_doc": {"markdown": "phase"}}
+            mcp_server.tool_get_today_status = lambda arguments: {"owner": arguments["owner"], "status": "ok"}
+            mcp_server._backend_main_module = lambda: type(
+                "BackendMain",
+                (),
+                {
+                    "_mcp_planning_context_payload": staticmethod(
+                        lambda **kwargs: {
+                            "owner": kwargs["owner"],
+                            "target_day_utc": kwargs["target_day_utc"],
+                            "active_build": kwargs["active_build"],
+                            "today_status": kwargs["today_status"],
+                            "doctrine_resource_refs": kwargs["doctrine_resource_refs"],
+                            "methodology_id": kwargs["methodology_id"],
+                        }
+                    )
+                },
+            )()
+
+            payload = mcp_server._build_planning_context_payload("admin", "2026-04-05")
+        finally:
+            mcp_server._backend_main_module = original
+            mcp_server._build_active_build_payload = original_active_build
+            mcp_server.tool_get_today_status = original_today_status
+
+        self.assertEqual(payload["owner"], "admin")
+        self.assertEqual(payload["target_day_utc"], "2026-04-05")
+        self.assertEqual(payload["today_status"]["status"], "ok")
+        self.assertEqual(payload["methodology_id"], mcp_server.DEFAULT_METHODOLOGY_ID)
+        self.assertTrue(payload["doctrine_resource_refs"])
+
+    def test_history_judgment_builder_delegates_to_backend_core(self):
+        original = mcp_server._backend_main_module
+        original_active_build = mcp_server._build_active_build_payload
+        try:
+            mcp_server._build_active_build_payload = lambda: {"active_build_doc": {"markdown": "threshold"}}
+            mcp_server._backend_main_module = lambda: type(
+                "BackendMain",
+                (),
+                {
+                    "_mcp_build_history_judgment_payload": staticmethod(
+                        lambda **kwargs: {
+                            "window": {"owner": kwargs["owner"], "window_days": kwargs["window_days"]},
+                            "active_build": kwargs["active_build"],
+                            "doctrine_assessment": {"evidence_refs": kwargs["evidence_refs"]},
+                            "judgment": {"status": "mixed"},
+                        }
+                    )
+                },
+            )()
+
+            payload = mcp_server._build_history_judgment_payload({"owner": "admin", "window_days": 42})
+        finally:
+            mcp_server._backend_main_module = original
+            mcp_server._build_active_build_payload = original_active_build
+
+        self.assertEqual(payload["window"]["owner"], "admin")
+        self.assertEqual(payload["window"]["window_days"], 42)
+        self.assertEqual(payload["judgment"]["status"], "mixed")
+        self.assertTrue(payload["doctrine_assessment"]["evidence_refs"])
+
     def test_tool_get_activity_detail_delegates_to_backend_handler(self):
         captured = {}
 

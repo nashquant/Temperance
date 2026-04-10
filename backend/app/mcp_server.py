@@ -1335,6 +1335,9 @@ def _build_static_resource_payload(uri: str) -> dict[str, Any]:
 
 
 def _coerce_day_utc(value: str | None, *, default: Optional[date] = None) -> str:
+    backend_main = _backend_main_module()
+    if hasattr(backend_main, "_mcp_coerce_day_utc"):
+        return backend_main._mcp_coerce_day_utc(value, default=default)
     raw = str(value or "").strip()
     if not raw:
         if default is None:
@@ -1347,6 +1350,9 @@ def _coerce_day_utc(value: str | None, *, default: Optional[date] = None) -> str
 
 
 def _window_bounds(window_days: int, end_day_utc: Optional[str] = None) -> tuple[str, str]:
+    backend_main = _backend_main_module()
+    if hasattr(backend_main, "_mcp_window_bounds"):
+        return backend_main._mcp_window_bounds(window_days, end_day_utc=end_day_utc)
     safe_window = max(1, min(int(window_days), 365))
     end_day = date.fromisoformat(_coerce_day_utc(end_day_utc, default=_utc_now().date()))
     start_day = end_day - timedelta(days=safe_window - 1)
@@ -1354,608 +1360,84 @@ def _window_bounds(window_days: int, end_day_utc: Optional[str] = None) -> tuple
 
 
 def _lt_pace_for_day(db_path: Path, day_utc: str) -> float:
-    backend_main = _backend_main_module()
-    pace_curve = backend_main._load_curve_points(
-        db_path=db_path,
-        key=backend_main.SETTINGS_KEY_LT_PACE_CURVE,
-        value_key="lt_pace_sec",
-        fallback_value=backend_main.DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
-    )
-    pace_default = float(pace_curve[-1][1]) if pace_curve else backend_main.DEFAULT_THRESHOLD_PACE_SEC_PER_KM
-    day_ts = backend_main.pd.to_datetime(day_utc, utc=True, errors="coerce")
-    if backend_main.pd.isna(day_ts):
-        raise ValueError(f"Invalid target_day_utc: {day_utc}")
-    return float(backend_main._curve_value_at(pace_curve, pace_default, day_ts))
+    return float(_backend_main_module()._lt_pace_for_day(db_path, day_utc))
 
 
 def _lthr_for_day(db_path: Path, day_utc: str) -> float:
-    backend_main = _backend_main_module()
-    lthr_curve = backend_main._load_curve_points(
-        db_path=db_path,
-        key=backend_main.SETTINGS_KEY_LTHR_CURVE,
-        value_key="lthr_bpm",
-        fallback_value=backend_main.DEFAULT_LTHR,
-    )
-    lthr_default = float(lthr_curve[-1][1]) if lthr_curve else backend_main.DEFAULT_LTHR
-    day_ts = backend_main.pd.to_datetime(day_utc, utc=True, errors="coerce")
-    if backend_main.pd.isna(day_ts):
-        raise ValueError(f"Invalid target_day_utc: {day_utc}")
-    return float(backend_main._curve_value_at(lthr_curve, lthr_default, day_ts))
+    return float(_backend_main_module()._lthr_for_day(db_path, day_utc))
 
 
 def _weekly_baseline_tss_for_day(db_path: Path, day_utc: str) -> float:
-    backend_main = _backend_main_module()
-    target_ts = backend_main.pd.to_datetime(day_utc, errors="coerce")
-    if backend_main.pd.isna(target_ts):
-        raise ValueError(f"Invalid target_day_utc: {day_utc}")
-    target_week_start = backend_main._week_start_monday(backend_main.pd.Timestamp(target_ts).normalize()).date().isoformat()
-    payload = backend_main._build_athlete_progression_payload(
-        db_path=db_path,
-        days=400,
-        activity_filter="all",
-        aggregation="weekly",
-        owner="",
-    )
-    points = list(payload.get("points") or [])
-    for point in points:
-        if str(point.get("period_start") or "") == target_week_start:
-            return _safe_float(point.get("baseline_tss"))
-    if points:
-        return _safe_float(points[-1].get("baseline_tss"))
-    return 0.0
-
-
-def _planning_context_parts(
-    *,
-    owner: str,
-    target_day_utc: str,
-    methodology_id: Optional[str] = None,
-    seed: Optional[int] = None,
-    horizon_days: Optional[int] = None,
-    schedule_constraints: list[dict[str, Any]] | None = None,
-) -> PlanningContextParts:
-    backend_main = _backend_main_module()
-    db_path = backend_main._db_path_for_owner(owner)
-    planning_state = backend_main._generated_activity_planning_state(
-        db_path=db_path,
-        day_utc=target_day_utc,
-        threshold_pace_sec_per_km=_lt_pace_for_day(db_path, target_day_utc),
-        methodology_id=methodology_id,
-        schedule_constraints=schedule_constraints or [],
-    )
-    if planning_state is None:
-        raise ValueError("Invalid target_day_utc")
-    methodology = get_methodology(methodology_id)
-    horizon, preview_meta = preview_horizon(
-        state=planning_state,
-        methodology_id=methodology.methodology_id,
-        seed=seed,
-        horizon_days=horizon_days,
-    )
-    return PlanningContextParts(
-        db_path=db_path,
-        methodology=methodology,
-        planning_state=planning_state,
-        horizon=horizon,
-        preview_meta=preview_meta,
-    )
-
-
-def _preview_intents_payload(horizon: tuple[Any, ...]) -> list[dict[str, Any]]:
-    return [
-        {
-            "day_utc": intent.day_utc,
-            "cycle_step_id": intent.cycle_step_id,
-            "day_type": intent.day_type.value,
-            "hard_subtype": intent.hard_subtype.value if intent.hard_subtype is not None else None,
-            "target_tss": intent.target_tss,
-            "sampled_tss_share": intent.sampled_tss_share,
-            "target_duration_min": intent.target_duration_min,
-            "modality_bias": intent.modality_bias,
-            "planned_rest": intent.planned_rest,
-        }
-        for intent in horizon
-    ]
-
-
-def _planning_state_summary(planning_state: Any) -> dict[str, Any]:
-    return {
-        "weekly_baseline_tss": planning_state.weekly_baseline_tss,
-        "recent_load_7d": planning_state.recent_load_7d,
-        "recent_load_28d": planning_state.recent_load_28d,
-        "recent_load_ratio": planning_state.recent_load_ratio,
-        "fatigue": {
-            "fitness": planning_state.fatigue.fitness,
-            "fatigue": planning_state.fatigue.fatigue,
-            "overreach": planning_state.fatigue.overreach,
-            "injury_risk": planning_state.fatigue.injury_risk,
-            "training_readiness": planning_state.fatigue.training_readiness,
-            "sleep_score": planning_state.fatigue.sleep_score,
-            "stress_avg": planning_state.fatigue.stress_avg,
-            "recovery_alert": planning_state.fatigue.recovery_alert,
-        },
-        "mechanical_risk": {
-            "injury_window_active": planning_state.mechanical_risk.injury_window_active,
-            "injury_labels": list(planning_state.mechanical_risk.injury_labels),
-            "running_share_14d": planning_state.mechanical_risk.running_share_14d,
-            "elliptical_share_14d": planning_state.mechanical_risk.elliptical_share_14d,
-            "mechanical_load_7d": planning_state.mechanical_risk.mechanical_load_7d,
-            "fragility_score": planning_state.mechanical_risk.fragility_score,
-            "prefer_low_impact": planning_state.mechanical_risk.prefer_low_impact,
-        },
-        "modality_mix": {
-            "running": planning_state.modality_mix_running,
-            "elliptical": planning_state.modality_mix_elliptical,
-        },
-        "last_long_run": {
-            "day_utc": planning_state.last_long_run_day_utc,
-            "duration_min": planning_state.last_long_run_minutes,
-        },
-    }
+    return float(_backend_main_module()._weekly_baseline_tss_for_day(db_path, day_utc))
 
 
 def _build_planning_context_payload(owner: str, target_day_utc: str) -> dict[str, Any]:
-    normalized_day = _coerce_day_utc(target_day_utc)
-    context = _planning_context_parts(
-        owner=owner,
-        target_day_utc=normalized_day,
-        methodology_id=DEFAULT_METHODOLOGY_ID,
-    )
     active_build = _build_active_build_payload()
-    return {
-        "owner": owner,
-        "target_day_utc": normalized_day,
-        "db_path": str(context.db_path),
-        "active_build": active_build,
-        "planning_state_summary": _planning_state_summary(context.planning_state),
-        "today_status": tool_get_today_status({"owner": owner}),
-        "preview_horizon": _preview_intents_payload(context.horizon),
-        "preview_meta": context.preview_meta,
-        "recent_long_run_summary": [
-            {
-                "day_utc": item.day_utc,
-                "duration_min": item.duration_min,
-                "avg_if": item.avg_if,
-                "tss": item.tss,
-                "source": item.source,
-            }
-            for item in context.planning_state.recent_long_runs
-        ],
-        "schedule_constraints": [
-            {
-                "day_utc": constraint.day_utc,
-                "allow_long_run": constraint.allow_long_run,
-                "preferred_modality": constraint.preferred_modality,
-                "blocked": constraint.blocked,
-            }
-            for constraint in planning_state.schedule_constraints
-        ],
-        "doctrine_resource_refs": [
-            _resource_uri("guidelines/read-order"),
-            _resource_uri("guidelines/active-build"),
-            _resource_uri("workouts/overview"),
-        ]
-        + [profile.get("resource_uri") for profile in active_build.get("selected_profiles", {}).values() if isinstance(profile, dict) and profile.get("resource_uri")],
-        "methodology_id": methodology.methodology_id,
-    }
-
-
-def _aggregate_actual_day_rows(owner: str, start_day_utc: str, end_day_utc: str) -> tuple[Path, list[dict[str, Any]]]:
-    backend_main = _backend_main_module()
-    db_path = _resolve_db_path(owner)
-    metrics_df = _analytics_helpers()["_metrics_for_filters"](
-        db_path=db_path,
-        days=max((date.fromisoformat(end_day_utc) - date.fromisoformat(start_day_utc)).days + 1, 1),
-        start_day=start_day_utc,
-        end_day=end_day_utc,
-        sport=None,
-        include_invalid=False,
-        include_mechanical_load=True,
-    )
-    selected_day = backend_main.pd.Timestamp(date.fromisoformat(end_day_utc) + timedelta(days=1))
-    return db_path, backend_main._aggregate_actual_days_for_planning(metrics_df=metrics_df, selected_day=selected_day)
-
-
-def _aggregate_planned_day_rows(db_path: Path, start_day_utc: str, end_day_utc: str) -> list[dict[str, Any]]:
-    backend_main = _backend_main_module()
-    return backend_main._aggregate_planned_days_for_planning(
-        db_path=db_path,
-        start_day=backend_main.pd.Timestamp(start_day_utc),
-        end_day=backend_main.pd.Timestamp(end_day_utc),
-    )
-
-
-def _hard_flavor_from_row(row: dict[str, Any], stress_profile: Any, hard_subtype: Any) -> Optional[str]:
-    modality = str(row.get("modality") or "").strip().lower()
-    total_minutes = _format_duration_minutes(row.get("duration_s"))
-    avg_if = _safe_float(row.get("avg_if"))
-    max_if = _safe_float(row.get("max_if"))
-    if hard_subtype is None:
-        return None
-    if is_long_run_candidate(
-        modality=modality,
-        total_minutes=total_minutes,
-        avg_if=avg_if,
-        max_if=max_if,
-        stress_profile=stress_profile,
-    ):
-        return "long-run-hard"
-    if avg_if >= 0.93 or max_if >= 0.98:
-        return "sharp-hard"
-    if modality == "running" and total_minutes >= 60.0 and avg_if >= 0.79:
-        return "specific-hard"
-    return "threshold-hard"
-
-
-def _classify_history_rows(rows: list[dict[str, Any]], weekly_baseline_tss: float, stress_profile: Any) -> list[dict[str, Any]]:
-    classified: list[dict[str, Any]] = []
-    for row in rows:
-        modality = str(row.get("modality") or "").strip().lower()
-        total_minutes = _format_duration_minutes(row.get("duration_s"))
-        avg_if = _safe_float(row.get("avg_if"))
-        max_if = _safe_float(row.get("max_if"))
-        stress_class, toughness_score, override_reason = classify_session_stress(
-            estimated_tss=_safe_float(row.get("tss")),
-            avg_if=avg_if,
-            max_if=max_if,
-            total_minutes=total_minutes,
-            modality=modality,
-            bucket=str(row.get("bucket") or ""),
-            weekly_baseline_tss=weekly_baseline_tss,
-            stress_profile=stress_profile,
-        )
-        hard_subtype = infer_hard_subtype(
-            stress_class=stress_class,
-            modality=modality,
-            total_minutes=total_minutes,
-            avg_if=avg_if,
-            max_if=max_if,
-            workout_text=str(row.get("workout_text") or ""),
-            stress_profile=stress_profile,
-        )
-        is_long = is_long_run_candidate(
-            modality=modality,
-            total_minutes=total_minutes,
-            avg_if=avg_if,
-            max_if=max_if,
-            stress_profile=stress_profile,
-        )
-        classified.append(
-            {
-                **row,
-                "stress_class": stress_class.value,
-                "hard_subtype": hard_subtype.value if hard_subtype is not None else None,
-                "toughness_score": toughness_score,
-                "stress_override_reason": override_reason,
-                "is_long_run": is_long,
-                "hard_flavor": _hard_flavor_from_row(row, stress_profile, hard_subtype),
-            }
-        )
-    return classified
-
-
-def _load_summary(rows: list[dict[str, Any]], window_days: int) -> dict[str, Any]:
-    total_tss = sum(_safe_float(row.get("tss")) for row in rows)
-    total_duration_min = sum(_format_duration_minutes(row.get("duration_s")) for row in rows)
-    return {
-        "total_tss": round(total_tss, 1),
-        "avg_daily_tss": round(total_tss / max(window_days, 1), 1),
-        "total_duration_min": round(total_duration_min, 1),
-        "days_with_activities": len(rows),
-    }
-
-
-def _hard_session_mix(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    hard_rows = [row for row in rows if row.get("stress_class") == "hard"]
-    subtype_counts = Counter(str(row.get("hard_subtype") or "unknown") for row in hard_rows)
-    flavor_counts = Counter(str(row.get("hard_flavor") or "unclassified") for row in hard_rows)
-    return {
-        "hard_day_count": len(hard_rows),
-        "hard_subtype_counts": dict(subtype_counts),
-        "hard_flavor_counts": dict(flavor_counts),
-        "hard_days": [
-            {
-                "day_utc": row.get("day_utc"),
-                "tss": round(_safe_float(row.get("tss")), 1),
-                "avg_if": round(_safe_float(row.get("avg_if")), 3),
-                "hard_subtype": row.get("hard_subtype"),
-                "hard_flavor": row.get("hard_flavor"),
-            }
-            for row in hard_rows
-        ],
-    }
-
-
-def _spacing_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    hard_days = sorted(date.fromisoformat(str(row.get("day_utc"))) for row in rows if row.get("stress_class") == "hard")
-    gaps = [(current - previous).days for previous, current in zip(hard_days, hard_days[1:])]
-    return {
-        "hard_day_count": len(hard_days),
-        "min_gap_days": min(gaps) if gaps else None,
-        "avg_gap_days": round(sum(gaps) / len(gaps), 1) if gaps else None,
-        "tight_spacings": [
-            {"gap_days": gap, "from_day_utc": previous.isoformat(), "to_day_utc": current.isoformat()}
-            for previous, current, gap in zip(hard_days, hard_days[1:], gaps)
-            if gap < 2
-        ],
-    }
-
-
-def _long_run_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    long_runs = [row for row in rows if bool(row.get("is_long_run"))]
-    durations = [_format_duration_minutes(row.get("duration_s")) for row in long_runs]
-    latest = long_runs[-1] if long_runs else None
-    previous = long_runs[-2] if len(long_runs) >= 2 else None
-    latest_duration = _format_duration_minutes(latest.get("duration_s")) if latest else None
-    previous_duration = _format_duration_minutes(previous.get("duration_s")) if previous else None
-    return {
-        "count": len(long_runs),
-        "latest": (
-            {
-                "day_utc": latest.get("day_utc"),
-                "duration_min": latest_duration,
-                "avg_if": round(_safe_float(latest.get("avg_if")), 3),
-                "tss": round(_safe_float(latest.get("tss")), 1),
-            }
-            if latest
-            else None
-        ),
-        "latest_progression_delta_min": round(latest_duration - previous_duration, 1)
-        if latest_duration is not None and previous_duration is not None
-        else None,
-        "durations_min": durations,
-    }
-
-
-def _modality_mix_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    duration_by_modality: Counter[str] = Counter()
-    total_duration = 0.0
-    for row in rows:
-        duration_min = _format_duration_minutes(row.get("duration_s"))
-        modality = str(row.get("modality") or "unknown").strip().lower() or "unknown"
-        duration_by_modality[modality] += duration_min
-        total_duration += duration_min
-    return {
-        "duration_min_by_modality": {key: round(value, 1) for key, value in duration_by_modality.items()},
-        "share_by_modality": {
-            key: round((value / total_duration), 3) if total_duration > 0 else 0.0
-            for key, value in duration_by_modality.items()
-        },
-    }
-
-
-def _coverage_summary(owner: str, db_path: Path, start_day_utc: str, end_day_utc: str, actual_rows: list[dict[str, Any]]) -> dict[str, Any]:
-    wellness_payload = _analytics_helpers()["_build_wellness_payload"](db_path=db_path, days=max((date.fromisoformat(end_day_utc) - date.fromisoformat(start_day_utc)).days + 1, 1), aggregation="daily", owner=owner)
-    points = [
-        point
-        for point in list(wellness_payload.get("points") or [])
-        if start_day_utc <= str(point.get("period_start") or "") <= end_day_utc
+    doctrine_resource_refs = [
+        _resource_uri("guidelines/read-order"),
+        _resource_uri("guidelines/active-build"),
+        _resource_uri("workouts/overview"),
+    ] + [
+        profile.get("resource_uri")
+        for profile in active_build.get("selected_profiles", {}).values()
+        if isinstance(profile, dict) and profile.get("resource_uri")
     ]
-    return {
-        "has_actual_data": bool(actual_rows),
-        "actual_days_with_activities": len(actual_rows),
-        "wellness_days_available": len(points),
-        "has_wellness_data": bool(points),
-    }
-
-
-def _history_snapshot_components(owner: str, window_days: int, end_day_utc: Optional[str] = None) -> dict[str, Any]:
-    start_day_utc, normalized_end_day_utc = _window_bounds(window_days, end_day_utc)
-    reference_day_utc = (date.fromisoformat(normalized_end_day_utc) + timedelta(days=1)).isoformat()
-    context = _planning_context_parts(
+    return _backend_main_module()._mcp_planning_context_payload(
         owner=owner,
-        target_day_utc=reference_day_utc,
+        target_day_utc=target_day_utc,
+        active_build=active_build,
+        doctrine_resource_refs=doctrine_resource_refs,
+        today_status=tool_get_today_status({"owner": owner}),
         methodology_id=DEFAULT_METHODOLOGY_ID,
     )
-    actual_db_path, actual_rows = _aggregate_actual_day_rows(owner, start_day_utc, normalized_end_day_utc)
-    classified_actuals = _classify_history_rows(
-        actual_rows,
-        context.planning_state.weekly_baseline_tss,
-        context.methodology.stress_profile,
+
+
+def _build_preview_payload(args: dict[str, Any]) -> dict[str, Any]:
+    owner = str(args.get("owner") or "default").strip() or "default"
+    return _backend_main_module()._mcp_preview_cycle_payload(
+        owner=owner,
+        target_day_utc=str(args.get("target_day_utc") or "").strip(),
+        methodology_id=str(args.get("methodology_id") or "").strip() or None,
+        seed=int(args["seed"]) if args.get("seed") is not None else None,
+        horizon_days=int(args["horizon_days"]) if args.get("horizon_days") is not None else None,
+        schedule_constraints=_coerce_constraints(args),
     )
-    return {
-        "owner": owner,
-        "window_days": max(1, min(int(window_days), 365)),
-        "start_day_utc": start_day_utc,
-        "end_day_utc": normalized_end_day_utc,
-        "db_path": str(context.db_path),
-        "planning_state": context.planning_state,
-        "methodology": context.methodology,
-        "coverage": _coverage_summary(owner, actual_db_path, start_day_utc, normalized_end_day_utc, classified_actuals),
-        "actual_rows": classified_actuals,
-        "planned_rows": _aggregate_planned_day_rows(context.db_path, start_day_utc, normalized_end_day_utc),
-    }
 
 
 def _build_history_snapshot_payload(owner: str, window_days: int, end_day_utc: Optional[str] = None) -> dict[str, Any]:
-    snapshot = _history_snapshot_components(owner, window_days, end_day_utc=end_day_utc)
-    rows = snapshot["actual_rows"]
-    return {
-        "owner": owner,
-        "window_days": snapshot["window_days"],
-        "end_day_utc": snapshot["end_day_utc"],
-        "start_day_utc": snapshot["start_day_utc"],
-        "actual_history_coverage_flags": snapshot["coverage"],
-        "load_summary": _load_summary(rows, snapshot["window_days"]),
-        "hard_session_mix": _hard_session_mix(rows),
-        "spacing_summary": _spacing_summary(rows),
-        "long_run_summary": _long_run_summary(rows),
-        "modality_mix": _modality_mix_summary(rows),
-        "evidence_refs": [
+    return _backend_main_module()._mcp_build_history_snapshot_payload(
+        owner=owner,
+        window_days=window_days,
+        end_day_utc=end_day_utc,
+        methodology_id=DEFAULT_METHODOLOGY_ID,
+        evidence_refs=[
             _resource_uri("guidelines/active-build"),
             _resource_uri_for_doc_id(HISTORY_DOC_ID),
             _resource_uri("workouts/overview"),
         ],
-    }
-
-
-def _build_planned_comparison(snapshot: dict[str, Any]) -> dict[str, Any]:
-    actual_rows = snapshot["actual_rows"]
-    planned_rows = _classify_history_rows(snapshot["planned_rows"], snapshot["planning_state"].weekly_baseline_tss, snapshot["methodology"].stress_profile)
-    actual_total_tss = sum(_safe_float(row.get("tss")) for row in actual_rows)
-    planned_total_tss = sum(_safe_float(row.get("tss")) for row in planned_rows)
-    return {
-        "actual_total_tss": round(actual_total_tss, 1),
-        "planned_total_tss": round(planned_total_tss, 1),
-        "tss_delta": round(actual_total_tss - planned_total_tss, 1),
-        "actual_hard_days": _hard_session_mix(actual_rows).get("hard_day_count"),
-        "planned_hard_days": _hard_session_mix(planned_rows).get("hard_day_count"),
-    }
-
-
-def _assess_history_against_doctrine(snapshot: dict[str, Any], active_build: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], str]:
-    actual_rows = snapshot["actual_rows"]
-    planning_state = snapshot["planning_state"]
-    load_summary = _load_summary(actual_rows, snapshot["window_days"])
-    hard_mix = _hard_session_mix(actual_rows)
-    spacing = _spacing_summary(actual_rows)
-    long_run = _long_run_summary(actual_rows)
-    modality_mix = _modality_mix_summary(actual_rows)
-    active_markdown = str(active_build.get("active_build_doc", {}).get("markdown") or "").lower()
-    concerns: list[str] = []
-    imbalances: list[str] = []
-    aligned: list[str] = []
-    alerts: list[dict[str, Any]] = []
-
-    if not snapshot["coverage"].get("has_actual_data"):
-        alerts.append({"severity": "hard", "type": "coverage", "message": "No actual activity data is available in the requested window."})
-        concerns.append("Actual-history coverage is missing, so the judgment is necessarily partial.")
-    else:
-        aligned.append(f"Window includes {snapshot['coverage']['actual_days_with_activities']} actual training days.")
-
-    if spacing.get("min_gap_days") is not None and spacing["min_gap_days"] < 2 and hard_mix.get("hard_day_count", 0) >= 3:
-        alerts.append({"severity": "hard", "type": "spacing", "message": "Hard sessions are stacked with less than two days between them."})
-        concerns.append("Hard-session spacing is tighter than the default control logic usually wants.")
-    elif hard_mix.get("hard_day_count", 0) > 0:
-        aligned.append("Hard-session spacing stays within a usable range for the requested window.")
-
-    sharp_count = int(hard_mix.get("hard_flavor_counts", {}).get("sharp-hard", 0))
-    threshold_count = int(hard_mix.get("hard_flavor_counts", {}).get("threshold-hard", 0))
-    if sharp_count > threshold_count and "threshold" in active_markdown:
-        alerts.append({"severity": "soft", "type": "mix", "message": "Sharp work is outnumbering threshold-oriented hard work."})
-        imbalances.append("The hard-session mix is skewing sharper than the active philosophy suggests.")
-    elif threshold_count > 0:
-        aligned.append("Threshold-oriented hard work is represented in the window.")
-
-    if long_run.get("count", 0) == 0 and snapshot["window_days"] >= 14 and ("long-run" in active_markdown or "marathon" in active_markdown):
-        alerts.append({"severity": "soft", "type": "long_run", "message": "No qualifying long run appears in a window where the active build still values long-run continuity."})
-        concerns.append("Long-run continuity is missing for the active build.")
-    elif long_run.get("count", 0) > 0:
-        aligned.append("The window contains long-run contact.")
-
-    running_share = _safe_float(modality_mix.get("share_by_modality", {}).get("running"))
-    if planning_state.mechanical_risk.prefer_low_impact and running_share >= 0.75:
-        alerts.append({"severity": "hard", "type": "durability", "message": "Running is dominating the window despite a low-impact preference in the current state."})
-        concerns.append("The modality mix may be too run-heavy for the current durability context.")
-    elif running_share > 0:
-        aligned.append("The modality mix is explicit enough to judge against current constraints.")
-
-    if planning_state.recent_load_ratio >= 1.25 and planning_state.fatigue.recovery_alert:
-        alerts.append({"severity": "hard", "type": "load_shape", "message": "Recent load is elevated while recovery alerts are already active."})
-        concerns.append("Recent load shape and recovery status are both flashing caution.")
-
-    status = "aligned"
-    if any(alert["severity"] == "hard" for alert in alerts):
-        status = "risky"
-    elif alerts or imbalances or concerns:
-        status = "mixed"
-    headline_map = {
-        "aligned": "History is broadly aligned with the active build and current control logic.",
-        "mixed": "History is usable but shows gaps or imbalances against the active doctrine.",
-        "risky": "History is carrying meaningful structural risk against the active doctrine.",
-    }
-    doctrine_assessment = {
-        "aligned": aligned,
-        "gaps": concerns,
-        "imbalances": imbalances,
-        "evidence_refs": [
-            _resource_uri("guidelines/active-build"),
-            _resource_uri("guidelines/read-order"),
-            _resource_uri_for_doc_id(HISTORY_DOC_ID),
-        ],
-    }
-    judgment = {
-        "status": status,
-        "headline": headline_map[status],
-        "primary_risk": alerts[0]["message"] if alerts else None,
-    }
-    narrative = " ".join(
-        part
-        for part in [
-            headline_map[status],
-            f"Load: {load_summary['total_tss']} TSS across {load_summary['days_with_activities']} active days."
-            if snapshot["coverage"].get("has_actual_data")
-            else None,
-            f"Hard mix: {hard_mix.get('hard_day_count', 0)} hard days."
-            if hard_mix.get("hard_day_count", 0)
-            else "No hard days were detected.",
-            f"Long runs: {long_run.get('count', 0)}."
-            if long_run.get("count", 0) or snapshot["window_days"] >= 14
-            else None,
-        ]
-        if part
     )
-    return doctrine_assessment, alerts, judgment, narrative
 
 
 def _build_history_judgment_payload(arguments: dict[str, Any]) -> dict[str, Any]:
     args = HistoryJudgmentArgs.model_validate(arguments or {})
-    snapshot = _history_snapshot_components(args.owner, args.window_days, end_day_utc=args.end_day_utc)
     active_build = _build_active_build_payload()
-    actual_summary = {
-        "coverage": snapshot["coverage"],
-        "load_summary": _load_summary(snapshot["actual_rows"], snapshot["window_days"]),
-    }
-    structure_summary = {
-        "hard_session_mix": _hard_session_mix(snapshot["actual_rows"]),
-        "spacing_summary": _spacing_summary(snapshot["actual_rows"]),
-        "long_run_summary": _long_run_summary(snapshot["actual_rows"]),
-        "modality_mix": _modality_mix_summary(snapshot["actual_rows"]),
-    }
-    doctrine_assessment, alerts, judgment, narrative = _assess_history_against_doctrine(snapshot, active_build)
-    payload = {
-        "window": {
-            "owner": args.owner,
-            "window_days": snapshot["window_days"],
-            "start_day_utc": snapshot["start_day_utc"],
-            "end_day_utc": snapshot["end_day_utc"],
-        },
-        "active_build": active_build,
-        "actual_summary": actual_summary,
-        "structure_summary": structure_summary,
-        "doctrine_assessment": doctrine_assessment,
-        "alerts": alerts,
-        "judgment": judgment,
-        "narrative": narrative,
-    }
-    if args.include_planned_comparison:
-        payload["planned_comparison"] = _build_planned_comparison(snapshot)
-    return payload
+    return _backend_main_module()._mcp_build_history_judgment_payload(
+        owner=args.owner,
+        window_days=args.window_days,
+        end_day_utc=args.end_day_utc,
+        include_planned_comparison=bool(args.include_planned_comparison),
+        active_build=active_build,
+        methodology_id=DEFAULT_METHODOLOGY_ID,
+        evidence_refs=[
+            _resource_uri("guidelines/active-build"),
+            _resource_uri("guidelines/read-order"),
+            _resource_uri_for_doc_id(HISTORY_DOC_ID),
+        ],
+    )
 
 
 def _answer_history_question(payload: dict[str, Any], question: Optional[str]) -> str:
-    q = str(question or "").strip().lower()
-    structure = dict(payload.get("structure_summary") or {})
-    judgment = dict(payload.get("judgment") or {})
-    if "spacing" in q:
-        spacing = dict(structure.get("spacing_summary") or {})
-        return (
-            f"{judgment.get('headline')} Min hard-session gap: {spacing.get('min_gap_days')}; "
-            f"tight spacings: {len(spacing.get('tight_spacings') or [])}."
-        )
-    if "long" in q:
-        long_run = dict(structure.get("long_run_summary") or {})
-        return (
-            f"{judgment.get('headline')} Long-run count: {long_run.get('count')}; "
-            f"latest progression delta: {long_run.get('latest_progression_delta_min')} min."
-        )
-    if "mix" in q or "threshold" in q or "sharp" in q:
-        hard_mix = dict(structure.get("hard_session_mix") or {})
-        return (
-            f"{judgment.get('headline')} Hard-flavor mix: "
-            f"{json.dumps(hard_mix.get('hard_flavor_counts') or {}, ensure_ascii=False)}."
-        )
-    return str(payload.get("narrative") or judgment.get("headline") or "")
+    return str(_backend_main_module()._mcp_answer_history_question(payload, question))
 
 
 def tool_judge_training_history(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1994,41 +1476,6 @@ def _coerce_constraints(args: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return out
-
-
-def _build_preview_payload(args: dict[str, Any]) -> dict[str, Any]:
-    owner = str(args.get("owner") or "default").strip() or "default"
-    day_utc = _coerce_day_utc(str(args.get("target_day_utc") or "").strip())
-    methodology_id = str(args.get("methodology_id") or "").strip() or None
-    seed = int(args["seed"]) if args.get("seed") is not None else None
-    horizon_days = int(args["horizon_days"]) if args.get("horizon_days") is not None else None
-    context = _planning_context_parts(
-        owner=owner,
-        target_day_utc=day_utc,
-        methodology_id=methodology_id,
-        seed=seed,
-        horizon_days=horizon_days,
-        schedule_constraints=_coerce_constraints(args),
-    )
-    return {
-        "owner": owner,
-        "db_path": str(context.db_path),
-        "methodology_id": context.methodology.methodology_id,
-        "target_day_utc": day_utc,
-        "preview": _preview_intents_payload(context.horizon),
-        "recent_long_runs": [
-            {
-                "day_utc": item.day_utc,
-                "duration_min": item.duration_min,
-                "avg_if": item.avg_if,
-                "tss": item.tss,
-                "source": item.source,
-            }
-            for item in context.planning_state.recent_long_runs
-        ],
-        "preview_meta": context.preview_meta,
-    }
-
 
 def _explain_response(plan_payload: dict[str, Any], question: str | None = None) -> str:
     planning = dict(plan_payload.get("planning") or {})
