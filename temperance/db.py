@@ -4,7 +4,7 @@ import json
 import os
 import sqlite3
 from contextlib import closing
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -206,6 +206,14 @@ CREATE TABLE IF NOT EXISTS sync_log (
     message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS planning_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_day_utc TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_planning_decisions_day ON planning_decisions(target_day_utc);
+
 CREATE TABLE IF NOT EXISTS schema_migrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -351,6 +359,22 @@ def run_migrations(db_path: Path) -> None:
                 ADD COLUMN is_invalid INTEGER NOT NULL DEFAULT 0
                 """
             )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS planning_decisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_day_utc TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_planning_decisions_day
+            ON planning_decisions(target_day_utc)
+            """
+        )
         conn.commit()
 
 
@@ -1634,3 +1658,55 @@ def upsert_custom_activities_rows(
         )
         conn.commit()
     return len(valid_rows)
+
+
+def upsert_planning_decision(db_path: Path, payload: dict[str, Any]) -> None:
+    """Persist one planning decision payload as returned by _planning_decision_payload."""
+    now = UTC_NOW()
+    target_day = str(payload.get("target_day_utc") or "")
+    with closing(get_conn(db_path)) as conn:
+        conn.execute(
+            """
+            INSERT INTO planning_decisions (target_day_utc, created_at, payload_json)
+            VALUES (:target_day_utc, :created_at, :payload_json)
+            """,
+            {
+                "target_day_utc": target_day,
+                "created_at": now,
+                "payload_json": json.dumps(payload),
+            },
+        )
+        conn.commit()
+
+
+def get_planning_decisions(db_path: Path, days: int = 30) -> list[dict[str, Any]]:
+    """Return recent planning decisions, newest first, capped at 100 rows."""
+    cutoff = (
+        (datetime.now(timezone.utc) - timedelta(days=max(1, int(days))))
+        .date()
+        .isoformat()
+    )
+    with closing(get_conn(db_path)) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, target_day_utc, created_at, payload_json
+            FROM planning_decisions
+            WHERE target_day_utc >= ?
+            ORDER BY created_at DESC
+            LIMIT 100
+            """,
+            (cutoff,),
+        ).fetchall()
+    result = []
+    for row in rows:
+        entry: dict[str, Any] = {
+            "id": row["id"],
+            "target_day_utc": row["target_day_utc"],
+            "created_at": row["created_at"],
+        }
+        try:
+            entry["planning"] = json.loads(row["payload_json"])
+        except Exception:
+            entry["planning"] = {}
+        result.append(entry)
+    return result
