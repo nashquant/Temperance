@@ -72,6 +72,29 @@ class MCPServerHelpersTest(unittest.TestCase):
     def test_planning_history_tool_registered(self):
         self.assertIn("get_planning_history", mcp_server.TOOLS)
 
+    def test_planning_history_tool_returns_expected_structure(self):
+        import tempfile
+        from pathlib import Path
+        from temperance.db import init_db
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            init_db(db_path)
+
+            with patch.object(mcp_server, "_resolve_db_path", return_value=db_path):
+                result = mcp_server.tool_get_planning_history(
+                    {"owner": "test", "days": 7}
+                )
+
+        self.assertIn("owner", result)
+        self.assertIn("db_path", result)
+        self.assertIn("days", result)
+        self.assertIn("count", result)
+        self.assertIn("decisions", result)
+        self.assertIsInstance(result["decisions"], list)
+        self.assertEqual(result["count"], 0)  # empty DB
+
     def test_tools_list_returns_all_registered_tools(self):
         response = mcp_server.handle_message(
             {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
