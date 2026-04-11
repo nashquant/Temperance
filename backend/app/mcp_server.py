@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import signal
 import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -3718,6 +3719,8 @@ def handle_message(message: dict[str, Any]) -> Optional[dict[str, Any]]:
 
 
 def serve_stdio() -> int:
+    # Exit cleanly when the parent process or terminal dies (e.g. tmux session killed).
+    signal.signal(signal.SIGHUP, lambda *_: sys.exit(0))
     for raw_line in sys.stdin:
         line = raw_line.strip()
         if not line:
