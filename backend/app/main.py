@@ -4,6 +4,7 @@ import base64
 from collections import Counter
 import hashlib
 import hmac
+from http.cookies import SimpleCookie
 import json
 import math
 import os
@@ -19,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -197,6 +198,7 @@ SETTINGS_KEY_VDOT_LOOKBACK_DAYS = "vdot_lookback_days_v1"
 TOKEN_TTL_S = int(
     os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60)
 )
+AUTH_COOKIE_NAME = "temperance_session"
 MAX_PLANNED_ENTRY_CHARS = 4000
 MAX_PLANNED_ENTRIES_PER_SAVE = 40
 CUSTOM_ACTIVITIES_LIMIT = 5000
@@ -309,6 +311,60 @@ app.add_middleware(
 )
 
 
+def _auth_cookie_secure() -> bool:
+    return str(os.getenv("TEMPERANCE_AUTH_COOKIE_SECURE", "0")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _cookie_header_token(raw_cookie: str | None) -> str:
+    if not raw_cookie:
+        return ""
+    parsed = SimpleCookie()
+    try:
+        parsed.load(str(raw_cookie))
+    except Exception:
+        return ""
+    morsel = parsed.get(AUTH_COOKIE_NAME)
+    return str(morsel.value or "").strip() if morsel else ""
+
+
+def _request_cookie_token(request: Request) -> str:
+    try:
+        cookie_value = getattr(request, "cookies", {}).get(AUTH_COOKIE_NAME)
+        if cookie_value:
+            return str(cookie_value).strip()
+    except Exception:
+        pass
+    for key, value in request.scope.get("headers", []) or []:
+        if key.lower() == b"cookie":
+            return _cookie_header_token(value.decode("latin1"))
+    return ""
+
+
+def _scope_has_authorization(request: Request) -> bool:
+    return any(key.lower() == b"authorization" for key, _value in request.scope.get("headers", []) or [])
+
+
+def _set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        token,
+        max_age=max(int(TOKEN_TTL_S), 60),
+        httponly=True,
+        secure=_auth_cookie_secure(),
+        samesite="lax",
+        path="/",
+    )
+
+
+def _clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(AUTH_COOKIE_NAME, path="/", samesite="lax")
+
+
 @app.middleware("http")
 async def _rewrite_flat_api_prefix(request: Request, call_next):
     path = str(request.scope.get("path") or "")
@@ -316,6 +372,12 @@ async def _rewrite_flat_api_prefix(request: Request, call_next):
         rewritten_path = f"/api/v1{path[4:]}" if path != "/api" else "/api/v1"
         request.scope["path"] = rewritten_path
         request.scope["raw_path"] = rewritten_path.encode("ascii")
+    if not _scope_has_authorization(request):
+        cookie_token = _request_cookie_token(request)
+        if cookie_token:
+            headers = list(request.scope.get("headers", []) or [])
+            headers.append((b"authorization", f"Bearer {cookie_token}".encode("latin1")))
+            request.scope["headers"] = headers
     return await call_next(request)
 
 
@@ -9300,8 +9362,9 @@ def root() -> dict[str, str]:
 
 
 @app.post("/api/v1/auth/login")
-def auth_login(payload: LoginRequest) -> dict[str, Any]:
+def auth_login(payload: LoginRequest, response: Response) -> dict[str, Any]:
     if not _auth_enabled():
+        _clear_auth_cookie(response)
         return {"token": "auth-disabled", "user": "default", "role": "admin"}
     _require_auth_ready()
 
@@ -9317,7 +9380,14 @@ def auth_login(payload: LoginRequest) -> dict[str, Any]:
 
     role = str(user_data.get("role") or "viewer").strip().lower()
     token = _build_token(user=resolved_user, role=role)
+    _set_auth_cookie(response, token)
     return {"token": token, "user": resolved_user, "role": role}
+
+
+@app.post("/api/v1/auth/logout")
+def auth_logout(response: Response) -> dict[str, bool]:
+    _clear_auth_cookie(response)
+    return {"ok": True}
 
 
 @app.get("/api/v1/auth/me")
@@ -9485,7 +9555,6 @@ def overview(
     if not db_path.exists():
         return {
             "owner": resolved_owner,
-            "db_path": str(db_path),
             "activities": 0,
             "activity_details": 0,
             "wellness_daily": 0,
@@ -9512,7 +9581,6 @@ def overview(
 
     return {
         "owner": resolved_owner,
-        "db_path": str(db_path),
         "activities": int(activities),
         "activity_details": int(activity_details),
         "wellness_daily": int(wellness_daily),
@@ -9570,7 +9638,6 @@ def _settings_view_core(db_path: Path) -> dict[str, Any]:
             injury_rows = []
 
     return {
-        "db_path": str(db_path),
         "if_zone_thresholds": if_thresholds,
         "vdot_lookback_days": vdot_lookback_days,
         "specificity_profile": spec_profile,
@@ -10193,7 +10260,6 @@ def data_extract_sync(
         details["file_import"] = {
             "rows": len(rows),
             "db_changes": int(changed),
-            "import_dir": str(import_dir),
         }
 
     success = (
@@ -10350,7 +10416,6 @@ def week_outlook_view(
         week_start=week_start,
     )
     payload["owner"] = resolved_owner
-    payload["db_path"] = str(db_path)
     return payload
 
 
@@ -10372,7 +10437,6 @@ def athlete_progression_view(
         aggregation=aggregation,
         owner=resolved_owner,
     )
-    payload["db_path"] = str(db_path)
     return payload
 
 
@@ -10392,7 +10456,6 @@ def wellness_view(
         aggregation=aggregation,
         owner=resolved_owner,
     )
-    payload["db_path"] = str(db_path)
     return payload
 
 
@@ -10414,7 +10477,6 @@ def activity_dashboard(
         sport=sport,
     )
     payload["owner"] = resolved_owner
-    payload["db_path"] = str(db_path)
     return payload
 
 
@@ -10432,7 +10494,6 @@ def planned_activities_view(
         owner=resolved_owner,
         weeks=weeks,
     )
-    payload["db_path"] = str(db_path)
     return payload
 
 

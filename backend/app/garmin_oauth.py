@@ -103,12 +103,14 @@ def capabilities() -> dict[str, Any]:
 
 
 def _state_secret() -> str:
-    return (
+    secret = (
         str(os.getenv("GARMIN_OAUTH_STATE_SECRET") or "").strip()
         or str(os.getenv("TEMPERANCE_AUTH_COOKIE_SECRET") or "").strip()
         or str(os.getenv("TEMPERANCE_AUTH_SECRET") or "").strip()
-        or "temperance-dev-secret"
     )
+    if not secret:
+        raise GarminOAuthConfigurationError("Missing required signing secret: GARMIN_OAUTH_STATE_SECRET or TEMPERANCE_AUTH_SECRET")
+    return secret
 
 
 def _sign(payload_b64: str) -> str:

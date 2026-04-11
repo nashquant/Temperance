@@ -130,7 +130,11 @@ def _populate_client_identity(client: Any) -> None:
 
 def _persist_session_to_disk(client: Any, email: str) -> None:
     session_dir = _garmin_session_dir()
-    session_dir.mkdir(parents=True, exist_ok=True)
+    session_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(session_dir, 0o700)
+    except Exception:
+        logger.debug("Unable to tighten Garmin session directory permissions.", exc_info=True)
     payload = {
         "email_hash": _email_hash(email),
         "saved_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -139,7 +143,15 @@ def _persist_session_to_disk(client: Any, email: str) -> None:
         "full_name": client.full_name,
         "unit_system": client.unit_system,
     }
-    _garmin_session_file().write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    session_file = _garmin_session_file()
+    blob = json.dumps(payload, indent=2).encode("utf-8")
+    fd = os.open(session_file, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(blob)
+    try:
+        os.chmod(session_file, 0o600)
+    except Exception:
+        logger.debug("Unable to tighten Garmin session file permissions.", exc_info=True)
 
 
 def _clear_client_state(client: Any | None) -> None:
@@ -194,6 +206,12 @@ def _restore_session_from_disk(client: Any, email: str) -> bool:
     session_file = _garmin_session_file()
     if not session_file.exists():
         return False
+    try:
+        current_mode = session_file.stat().st_mode & 0o777
+        if current_mode != 0o600:
+            os.chmod(session_file, 0o600)
+    except Exception:
+        logger.debug("Unable to normalize Garmin session file permissions before restore.", exc_info=True)
 
     try:
         payload = json.loads(session_file.read_text(encoding="utf-8"))
