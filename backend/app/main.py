@@ -81,6 +81,7 @@ from temperance.db import (
     get_activity_merge_by_id,
     get_activity_meta,
     get_activity_raw,
+    get_activity_row,
     get_activity_records_df,
     get_activity_splits_raw,
     get_custom_activities_df,
@@ -8170,22 +8171,7 @@ def _build_garmin_activity_detail(
     This is a simplified version used for building merged activity details — it
     reads the activity row and splits, then builds a detail-compatible dict.
     """
-    meta = get_activity_meta(db_path, activity_id)
-    if meta is None:
-        return None
-
-    # Read normalized columns directly from the activities table.
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    try:
-        row = conn.execute(
-            "SELECT activity_id, start_time_utc, sport_type, distance_m, duration_s, "
-            "avg_hr, max_hr, avg_pace_s_per_km, trimp, training_load_garmin "
-            "FROM activities WHERE activity_id = ?",
-            (activity_id,),
-        ).fetchone()
-    finally:
-        conn.close()
+    row = get_activity_row(db_path, activity_id)
     if row is None:
         return None
 
@@ -8331,15 +8317,14 @@ def _merge_activity_details(
     tss_total = float(a1.get("tss") or 0) + float(a2.get("tss") or 0)
     rtss_total = float(a1.get("rtss") or 0) + float(a2.get("rtss") or 0)
 
-    # Concatenate split_rows and renumber laps.
+    # Concatenate split_rows and renumber laps 1-based and continuous.
     splits1 = list(detail1.get("split_rows") or [])
     splits2 = list(detail2.get("split_rows") or [])
-    combined_splits: list[dict[str, Any]] = list(splits1)
-    offset = len(splits1)
-    for i, s in enumerate(splits2):
-        row = dict(s)
-        row["lap"] = offset + i + 1
-        combined_splits.append(row)
+    combined_splits: list[dict[str, Any]] = []
+    for i, s in enumerate(splits1 + splits2, start=1):
+        entry = dict(s)
+        entry["lap"] = i
+        combined_splits.append(entry)
 
     # Use the earlier activity's start time.
     start1 = str(a1.get("start_time_utc") or "")

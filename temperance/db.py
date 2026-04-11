@@ -1102,6 +1102,32 @@ def get_activity_meta(db_path: Path, activity_id: str) -> dict[str, Any] | None:
     }
 
 
+def get_activity_row(db_path: Path, activity_id: str) -> dict[str, Any] | None:
+    """Return key columns from the activities table for a single activity.
+    Returns None if the activity is not found."""
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            "SELECT activity_id, start_time_utc, sport_type, distance_m, duration_s, "
+            "avg_hr, max_hr, avg_pace_s_per_km, trimp, training_load_garmin "
+            "FROM activities WHERE activity_id = ?",
+            (activity_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "activity_id": str(row["activity_id"] or ""),
+        "start_time_utc": str(row["start_time_utc"] or ""),
+        "sport_type": str(row["sport_type"] or ""),
+        "distance_m": row["distance_m"],
+        "duration_s": row["duration_s"],
+        "avg_hr": row["avg_hr"],
+        "max_hr": row["max_hr"],
+        "avg_pace_s_per_km": row["avg_pace_s_per_km"],
+        "trimp": row["trimp"],
+        "training_load_garmin": row["training_load_garmin"],
+    }
+
+
 def get_activity_local_start_map(
     db_path: Path, activity_ids: list[str]
 ) -> dict[str, str]:
