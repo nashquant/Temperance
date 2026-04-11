@@ -3299,7 +3299,13 @@ TOOLS: dict[str, ToolSpec] = {
     # --- Settings & analytics tools ---
     "get_settings": ToolSpec(
         name="get_settings",
-        description="View athlete configuration: LTHR curve, threshold pace curve, timezone, specificity profile, injury windows, and IF zone thresholds.",
+        description=(
+            "View athlete configuration: LTHR curve, threshold pace curve, timezone, specificity profile, "
+            "injury windows, IF zone thresholds, vdot_lookback_days, and baseline_blend. "
+            "baseline_blend controls how weekly TSS targets are blended from three sources: "
+            "history_influence_pct (weight for load-based history), and within that: "
+            "short_history_pct (21-day), medium_history_pct (63-day), long_history_pct (365-day)."
+        ),
         input_schema=GetSettingsArgs.model_json_schema(),
         handler=tool_get_settings,
     ),
