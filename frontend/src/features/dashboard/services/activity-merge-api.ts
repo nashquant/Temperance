@@ -29,7 +29,7 @@ export async function createActivityMerge(
     activity_id_2: activityId2,
   };
 
-  return apiRequest<CreateActivityMergeResponse>(`/activity-merges${suffix}`, {
+  return apiRequest<CreateActivityMergeResponse>(`${API_CONFIG.endpoints.activityMerges}${suffix}`, {
     method: 'POST',
     token,
     body: payload,
@@ -44,7 +44,7 @@ export async function deleteActivityMerge(
   if (owner) search.set('owner', owner);
   const suffix = search.toString() ? `?${search.toString()}` : '';
 
-  return apiRequest<void>(`/activity-merges/${mergeId}${suffix}`, {
+  return apiRequest<void>(`${API_CONFIG.endpoints.activityMerges}/${mergeId}${suffix}`, {
     method: 'DELETE',
     token,
   });
