@@ -9,6 +9,7 @@ import { deleteCustomActivity, ingestCustomActivities } from '@/features/custom-
 import { DashboardWeekCard } from '@/features/dashboard/components/dashboard-week-card';
 import { useDashboardQuery } from '@/features/dashboard/hooks/use-dashboard-query';
 import { getDashboard, toggleActivityInvalid } from '@/features/dashboard/services/dashboard-api';
+import { createActivityMerge, deleteActivityMerge } from '@/features/dashboard/services/activity-merge-api';
 import { generateActivitySuggestion } from '@/features/dashboard/services/generated-activity-api';
 import type { DashboardActivityCard, DashboardResponse } from '@/features/dashboard/types/dashboard';
 import { useDataExtractStatusQuery } from '@/features/data-extract/hooks/use-data-extract-status';
@@ -195,6 +196,7 @@ export function DashboardPage(): JSX.Element {
     finalize: (() => Promise<void>) | null;
   } | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
+  const [mergePendingId, setMergePendingId] = useState<string | null>(null);
   const { setHeaderActions } = useAppLayoutContext();
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
@@ -578,6 +580,38 @@ export function DashboardPage(): JSX.Element {
       await refreshDashboardViews();
     },
   });
+  const createMergeMutation = useMutation({
+    mutationFn: async ({ activityId1, activityId2 }: { activityId1: string; activityId2: string }) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return createActivityMerge({ token: session.token, owner: profile?.owner }, activityId1, activityId2);
+    },
+    onSettled: () => {
+      setMergePendingId(null);
+    },
+    onSuccess: async () => {
+      await refreshDashboardViews();
+    },
+  });
+  const deleteMergeMutation = useMutation({
+    mutationFn: async ({ mergeId }: { mergeId: number }) => {
+      if (!session?.token) throw new Error('Missing auth token');
+      return deleteActivityMerge({ token: session.token, owner: profile?.owner }, mergeId);
+    },
+    onSuccess: async () => {
+      await refreshDashboardViews();
+    },
+  });
+  const handleMergeActivity = (activityId: string) => {
+    if (mergePendingId === null) {
+      setMergePendingId(activityId);
+      return;
+    }
+    if (mergePendingId === activityId) {
+      setMergePendingId(null);
+      return;
+    }
+    createMergeMutation.mutate({ activityId1: mergePendingId, activityId2: activityId });
+  };
   const generateActivityMutation = useMutation({
     mutationFn: async ({
       dayUtc,
@@ -840,6 +874,7 @@ export function DashboardPage(): JSX.Element {
                         setAddActivityText('');
                         setAddActivityMode(dayUtc < composerCurrentWeekStart ? 'custom' : 'planned');
                         setAddActivityResult(null);
+                        setMergePendingId(null);
                       }}
                       onMarkPlannedDone={(activity, index) =>
                         (() => {
@@ -922,12 +957,16 @@ export function DashboardPage(): JSX.Element {
                           { onError: () => void refreshDashboardViews() },
                         );
                       }}
-                      onSelectActivity={(activityId) => setSelectedActivityId(activityId)}
+                      onSelectActivity={(activityId) => { setSelectedActivityId(activityId); setMergePendingId(null); }}
                       addingPlannedActivity={plannedCreateMutation.isPending}
                       markingPlannedDone={plannedDoneMutation.isPending}
                       deletingPlannedActivity={plannedDeleteMutation.isPending}
                       deletingCustomActivity={customDeleteMutation.isPending}
                       togglingActivityInvalid={toggleActivityInvalidMutation.isPending}
+                      onMergeActivity={handleMergeActivity}
+                      onUnmergeActivity={(mergeId) => deleteMergeMutation.mutate({ mergeId })}
+                      mergePendingId={mergePendingId}
+                      mergingActivity={createMergeMutation.isPending || deleteMergeMutation.isPending}
                       userTimeZone={userTimeZone}
                       undoActivity={
                         undoState?.dayUtc && typeof undoState.lineNo === 'number' && typeof undoState.slotIndex === 'number'
