@@ -2684,6 +2684,12 @@ def _parse_custom_activity_id(activity_id: str) -> tuple[str, int] | None:
     return day_utc, line_no
 
 
+def _parse_merged_activity_id(activity_id: str) -> int | None:
+    """If activity_id is 'merged-{N}', return N as int. Otherwise None."""
+    m = re.fullmatch(r"merged-(\d+)", str(activity_id or "").strip().lower())
+    return int(m.group(1)) if m else None
+
+
 def _parse_planned_activity_id(activity_id: str) -> tuple[str, int] | None:
     raw = _normalize_activity_id(activity_id)
     match = re.match(r"^planned-(\d{4}-\d{2}-\d{2})-(\d+)$", raw)
@@ -8154,6 +8160,228 @@ def _collapse_merged_cards(
     return result
 
 
+def _build_garmin_activity_detail(
+    activity_id: str,
+    db_path: Path,
+    lthr_curve: list,
+    pace_curve: list,
+) -> dict[str, Any] | None:
+    """Fetch detail for a single Garmin activity. Returns None if not found.
+    This is a simplified version used for building merged activity details — it
+    reads the activity row and splits, then builds a detail-compatible dict.
+    """
+    meta = get_activity_meta(db_path, activity_id)
+    if meta is None:
+        return None
+
+    # Read normalized columns directly from the activities table.
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT activity_id, start_time_utc, sport_type, distance_m, duration_s, "
+            "avg_hr, max_hr, avg_pace_s_per_km, trimp, training_load_garmin "
+            "FROM activities WHERE activity_id = ?",
+            (activity_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+
+    distance_km = _safe_float(row["distance_m"]) / 1000.0
+    duration_s = _safe_float(row["duration_s"])
+    duration_min = duration_s / 60.0
+    avg_hr = _safe_float(row["avg_hr"])
+    max_hr = _safe_float(row["max_hr"])
+    avg_pace = _safe_float(row["avg_pace_s_per_km"])
+    avg_pace_display = _format_pace_short(avg_pace if avg_pace > 0 else None)
+    training_load = _safe_float(row["training_load_garmin"])
+
+    lthr_bpm = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
+    threshold_pace = (
+        float(pace_curve[-1][1]) if pace_curve else DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+    )
+
+    # TSS = duration_s * (avg_hr / lthr_bpm)^2 / 3600 * 100
+    tss = 0.0
+    if duration_s > 0 and avg_hr > 0 and lthr_bpm > 0:
+        tss = duration_s * ((avg_hr / lthr_bpm) ** 2) / 3600.0 * 100.0
+
+    # rTSS = duration_s * (threshold_pace / avg_pace)^2 / 3600 * 100
+    rtss = 0.0
+    sport_lower = str(row["sport_type"] or "").lower()
+    is_running_like = "run" in sport_lower or "treadmill" in sport_lower
+    if is_running_like and duration_s > 0 and avg_pace > 0 and threshold_pace > 0:
+        rtss = duration_s * ((threshold_pace / avg_pace) ** 2) / 3600.0 * 100.0
+
+    # Build split rows from splits table if available.
+    splits_raw = get_activity_splits_raw(db_path, activity_id) or {}
+    split_rows: list[dict[str, Any]] = []
+    split_payload = splits_raw.get("split") if isinstance(splits_raw, dict) else {}
+    summaries_payload = (
+        splits_raw.get("split_summaries") if isinstance(splits_raw, dict) else {}
+    )
+    laps = split_payload.get("lapDTOs") if isinstance(split_payload, dict) else None
+    if not isinstance(laps, list) or not laps:
+        maybe = (
+            summaries_payload.get("splitSummaries")
+            if isinstance(summaries_payload, dict)
+            else None
+        )
+        if isinstance(maybe, list):
+            laps = maybe
+    if not isinstance(laps, list):
+        laps = []
+
+    for idx, lap in enumerate([x for x in laps if isinstance(x, dict)], start=1):
+        lap_dur = _safe_float(
+            lap.get("duration")
+            or lap.get("elapsedDuration")
+            or lap.get("movingDuration")
+            or lap.get("totalTimerTime")
+        )
+        if lap_dur <= 0:
+            continue
+        lap_dist = _safe_float(
+            lap.get("distance") or lap.get("totalDistance") or lap.get("distanceMeters")
+        )
+        lap_hr = _safe_float(lap.get("averageHR"))
+        lap_speed = _safe_float(lap.get("averageSpeed"))
+        lap_pace = (1000.0 / lap_speed) if lap_speed > 0 else 0.0
+        split_rows.append(
+            {
+                "lap": int(_safe_float(lap.get("lapIndex")) or idx),
+                "description": f"Lap {idx}",
+                "duration_label": _format_duration_short(lap_dur),
+                "duration_seconds": lap_dur,
+                "avg_hr": round(lap_hr, 1),
+                "if_pct": 0.0,
+                "distance_km": round(lap_dist / 1000.0, 3) if lap_dist > 0 else 0.0,
+                "distance_eqv_km": round(lap_dist / 1000.0, 3) if lap_dist > 0 else 0.0,
+                "pace_label": _format_pace_short(lap_pace if lap_pace > 0 else None),
+                "pace_eqv_label": _format_pace_short(
+                    lap_pace if lap_pace > 0 else None
+                ),
+                "display_mode": "running" if is_running_like else "eqv",
+            }
+        )
+
+    split_rows = sorted(split_rows, key=lambda r: int(_safe_float(r.get("lap"))))
+
+    return {
+        "owner": "",
+        "activity": {
+            "activity_id": str(row["activity_id"]),
+            "date": str(row["start_time_utc"] or "")[:10],
+            "start_time_utc": str(row["start_time_utc"] or ""),
+            "sport_type": str(row["sport_type"] or ""),
+            "distance_km": round(distance_km, 2),
+            "duration_min": round(duration_min, 2),
+            "avg_pace_display": avg_pace_display,
+            "avg_hr": round(avg_hr, 1),
+            "max_hr": round(max_hr, 1),
+            "tss": round(tss, 1),
+            "rtss": round(rtss, 1),
+            "training_load_garmin": round(training_load, 1),
+        },
+        "details": {"source": "garmin"},
+        "split_rows": split_rows,
+        "zone_summary": [],
+    }
+
+
+def _merge_activity_details(
+    detail1: dict[str, Any],
+    detail2: dict[str, Any],
+    merge_id: int,
+    activity_id_1: str,
+    activity_id_2: str,
+) -> dict[str, Any]:
+    """Combine two activity detail dicts into one merged detail response."""
+    a1 = detail1.get("activity", {})
+    a2 = detail2.get("activity", {})
+
+    dur1 = float(a1.get("duration_min") or 0.0) * 60.0
+    dur2 = float(a2.get("duration_min") or 0.0) * 60.0
+    total_dur = dur1 + dur2
+    total_dur_min = total_dur / 60.0
+
+    dist1 = float(a1.get("distance_km") or 0.0)
+    dist2 = float(a2.get("distance_km") or 0.0)
+    total_dist = dist1 + dist2
+
+    def _wav(v1: float, w1: float, v2: float, w2: float) -> float:
+        return (v1 * w1 + v2 * w2) / (w1 + w2) if (w1 + w2) > 0 else 0.0
+
+    avg_hr = _wav(
+        float(a1.get("avg_hr") or 0),
+        dur1,
+        float(a2.get("avg_hr") or 0),
+        dur2,
+    )
+    max_hr = max(float(a1.get("max_hr") or 0), float(a2.get("max_hr") or 0))
+
+    if total_dist > 0 and total_dur > 0:
+        avg_pace_s_per_km = total_dur / total_dist
+        avg_pace_display = _format_pace_short(avg_pace_s_per_km)
+    else:
+        avg_pace_display = "-"
+
+    tss_total = float(a1.get("tss") or 0) + float(a2.get("tss") or 0)
+    rtss_total = float(a1.get("rtss") or 0) + float(a2.get("rtss") or 0)
+
+    # Concatenate split_rows and renumber laps.
+    splits1 = list(detail1.get("split_rows") or [])
+    splits2 = list(detail2.get("split_rows") or [])
+    combined_splits: list[dict[str, Any]] = list(splits1)
+    offset = len(splits1)
+    for i, s in enumerate(splits2):
+        row = dict(s)
+        row["lap"] = offset + i + 1
+        combined_splits.append(row)
+
+    # Use the earlier activity's start time.
+    start1 = str(a1.get("start_time_utc") or "")
+    start2 = str(a2.get("start_time_utc") or "")
+    if start1 <= start2:
+        date = str(a1.get("date") or "")
+        start_time_utc = start1
+        sport_type = str(a1.get("sport_type") or a2.get("sport_type") or "unknown")
+    else:
+        date = str(a2.get("date") or "")
+        start_time_utc = start2
+        sport_type = str(a2.get("sport_type") or a1.get("sport_type") or "unknown")
+
+    return {
+        "owner": detail1.get("owner", ""),
+        "is_merged": True,
+        "merge_id": merge_id,
+        "merged_activity_ids": [activity_id_1, activity_id_2],
+        "activity": {
+            "activity_id": f"merged-{merge_id}",
+            "date": date,
+            "start_time_utc": start_time_utc,
+            "sport_type": sport_type,
+            "distance_km": round(total_dist, 2),
+            "duration_min": round(total_dur_min, 2),
+            "avg_pace_display": avg_pace_display,
+            "avg_hr": round(avg_hr, 1),
+            "max_hr": round(max_hr, 1),
+            "tss": round(tss_total, 1),
+            "rtss": round(rtss_total, 1),
+            "training_load_garmin": round(
+                float(a1.get("training_load_garmin") or 0)
+                + float(a2.get("training_load_garmin") or 0),
+                1,
+            ),
+        },
+        "details": {"source": "merged"},
+        "split_rows": combined_splits,
+        "zone_summary": [],
+    }
+
+
 def _build_activity_dashboard_payload(
     db_path: Path,
     visible_weeks: int,
@@ -11418,6 +11646,39 @@ def activity_detail(
     )
 
     activity_id_norm = _normalize_activity_id(activity_id)
+    merge_id_val = _parse_merged_activity_id(activity_id_norm)
+    if merge_id_val is not None:
+        merge = get_activity_merge_by_id(db_path, merge_id_val)
+        if merge is None:
+            raise HTTPException(status_code=404, detail="Merged activity not found")
+
+        detail1 = _build_garmin_activity_detail(
+            activity_id=merge["activity_id_1"],
+            db_path=db_path,
+            lthr_curve=lthr_curve,
+            pace_curve=pace_curve,
+        )
+        detail2 = _build_garmin_activity_detail(
+            activity_id=merge["activity_id_2"],
+            db_path=db_path,
+            lthr_curve=lthr_curve,
+            pace_curve=pace_curve,
+        )
+        if detail1 is None or detail2 is None:
+            raise HTTPException(
+                status_code=404,
+                detail="One or both source activities not found",
+            )
+        result = _merge_activity_details(
+            detail1=detail1,
+            detail2=detail2,
+            merge_id=merge_id_val,
+            activity_id_1=merge["activity_id_1"],
+            activity_id_2=merge["activity_id_2"],
+        )
+        result["owner"] = resolved_owner
+        return result
+
     custom_key = _parse_custom_activity_id(activity_id_norm)
     if custom_key is not None:
         day_utc, line_no = custom_key
