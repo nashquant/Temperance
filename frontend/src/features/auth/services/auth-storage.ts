@@ -1,3 +1,4 @@
+import { COOKIE_AUTH_TOKEN } from '@/api/auth-token';
 import type { AuthSession } from '@/features/auth/types';
 
 const AUTH_STORAGE_KEY = 'temperance.session';
@@ -8,15 +9,15 @@ export function readAuthSession(): AuthSession | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as AuthSession;
-    if (!parsed?.token || !parsed?.user || !parsed?.role) return null;
-    return parsed;
+    if (!parsed?.user || !parsed?.role) return null;
+    return { ...parsed, token: COOKIE_AUTH_TOKEN };
   } catch {
     return null;
   }
 }
 
 export function writeAuthSession(session: AuthSession): void {
-  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user: session.user, role: session.role }));
   localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
 }
 

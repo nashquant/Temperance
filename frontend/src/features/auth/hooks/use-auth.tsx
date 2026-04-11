@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { getMe, getOwners, login as loginRequest } from '@/features/auth/services/auth-api';
+import { COOKIE_AUTH_TOKEN } from '@/api/auth-token';
+import { getMe, getOwners, login as loginRequest, logout as logoutRequest } from '@/features/auth/services/auth-api';
 import { clearAuthSession, readAuthSession, writeAuthSession } from '@/features/auth/services/auth-storage';
 import type { AuthSession, LoginPayload, MeResponse } from '@/features/auth/types';
 import { queryClient } from '@/lib/query-client';
@@ -39,17 +40,18 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
 
   const bootstrap = useCallback(async () => {
     const stored = readAuthSession();
-    if (!stored) {
-      setOwners([]);
-      setSelectedOwner('');
-      setStatus('unauthenticated');
-      return;
-    }
+    const bootstrapSession = stored ?? { token: COOKIE_AUTH_TOKEN, user: '', role: 'viewer' as const };
 
     try {
-      const me = await getMe(stored.token);
-      const ownerOptions = stored.role === 'admin' ? (await getOwners(stored.token)).owners : [me.owner];
-      setSession(stored);
+      const me = await getMe(bootstrapSession.token);
+      const nextSession: AuthSession = {
+        token: COOKIE_AUTH_TOKEN,
+        user: me.user,
+        role: me.role,
+      };
+      const ownerOptions = me.role === 'admin' ? (await getOwners(nextSession.token)).owners : [me.owner];
+      writeAuthSession(nextSession);
+      setSession(nextSession);
       setOwners(ownerOptions);
       setProfile(applyOwnerScope(me, ownerOptions));
       setStatus('authenticated');
@@ -70,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
   const login = useCallback(async (payload: LoginPayload) => {
     const response = await loginRequest(payload);
     const nextSession: AuthSession = {
-      token: response.token,
+      token: COOKIE_AUTH_TOKEN,
       user: response.user,
       role: response.role,
     };
@@ -87,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
 
   const logout = useCallback(() => {
     clearAuthSession();
+    void logoutRequest().catch(() => undefined);
     setSession(null);
     setProfile(null);
     setOwners([]);

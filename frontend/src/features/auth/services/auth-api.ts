@@ -15,14 +15,20 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
   });
 }
 
-export async function getMe(token: string): Promise<MeResponse> {
+export async function logout(): Promise<void> {
+  await apiRequest<{ ok: boolean }>(API_CONFIG.endpoints.logout, {
+    method: 'POST',
+  });
+}
+
+export async function getMe(token?: string | null): Promise<MeResponse> {
   return apiRequest<MeResponse>(API_CONFIG.endpoints.me, {
     method: 'GET',
     token,
   });
 }
 
-export async function getOwners(token: string): Promise<OwnersResponse> {
+export async function getOwners(token?: string | null): Promise<OwnersResponse> {
   return apiRequest<OwnersResponse>(API_CONFIG.endpoints.owners, {
     method: 'GET',
     token,

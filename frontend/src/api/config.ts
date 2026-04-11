@@ -2,6 +2,7 @@ export const API_CONFIG = {
   basePath: '/api',
   endpoints: {
     login: '/auth/login',
+    logout: '/auth/logout',
     me: '/auth/me',
     owners: '/auth/owners',
     dashboard: '/dashboard',
