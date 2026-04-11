@@ -1,4 +1,5 @@
 import { API_CONFIG } from '@/api/config';
+import { COOKIE_AUTH_TOKEN } from '@/api/auth-token';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -19,12 +20,14 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, headers, token, ...rest } = options;
+  const bearerToken = token && token !== COOKIE_AUTH_TOKEN ? token : null;
 
   const response = await fetch(`${API_CONFIG.basePath}${path}`, {
     ...rest,
+    credentials: rest.credentials ?? 'same-origin',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
       ...(headers ?? {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
