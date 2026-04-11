@@ -1086,6 +1086,22 @@ def get_activity_raw(db_path: Path, activity_id: str) -> dict[str, Any] | None:
     return json.loads(row["raw_json"]) if row["raw_json"] else {}
 
 
+def get_activity_meta(db_path: Path, activity_id: str) -> dict[str, Any] | None:
+    """Return activity_id, sport_type, and source for an activity. Returns None if not found."""
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            "SELECT activity_id, sport_type, source FROM activities WHERE activity_id = ?",
+            (activity_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "activity_id": row["activity_id"],
+        "sport_type": str(row["sport_type"] or ""),
+        "source": str(row["source"] or ""),
+    }
+
+
 def get_activity_local_start_map(
     db_path: Path, activity_ids: list[str]
 ) -> dict[str, str]:

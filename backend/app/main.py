@@ -69,12 +69,17 @@ from temperance.planning.state_builder import infer_hard_subtype
 from temperance.auth import build_users, password_matches, resolve_user
 from temperance.config import load_config
 from temperance.db import (
+    create_activity_merge,
+    delete_activity_merge,
     delete_custom_activities,
     delete_oauth_connection,
     delete_planned_activities,
+    get_active_merges,
     get_activity_days,
     get_activity_detail_raw,
     get_activity_local_start_map,
+    get_activity_merge_by_id,
+    get_activity_meta,
     get_activity_raw,
     get_activity_records_df,
     get_activity_splits_raw,
@@ -136,6 +141,21 @@ DB_PATH = Path(str(os.getenv("TEMPERANCE_DB_PATH") or _default_db_path()))
 
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
+
+# Only running-like and cycling-like activities may be merged.
+MERGE_COMPAT_GROUPS: list[frozenset[str]] = [
+    frozenset({"running", "track_running", "virtual_run", "treadmill_running"}),
+    frozenset({"cycling", "indoor_cycling"}),
+]
+
+
+def _merge_compatible(sport_a: str, sport_b: str) -> bool:
+    """Return True iff both sport types belong to the same merge compatibility group."""
+    a = sport_a.strip().lower()
+    b = sport_b.strip().lower()
+    return any(a in g and b in g for g in MERGE_COMPAT_GROUPS)
+
+
 SETTINGS_KEY_LTHR_CURVE = "lthr_curve_v1"
 SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
@@ -223,6 +243,11 @@ class PlannedManualDoneRequest(BaseModel):
     day_utc: str
     line_no: int
     manual_done: bool
+
+
+class ActivityMergeRequest(BaseModel):
+    activity_id_1: str
+    activity_id_2: str
 
 
 class ActivityInvalidRequest(BaseModel):
@@ -11147,6 +11172,77 @@ def activity_invalid_update(
         "activity_id": str(payload.activity_id or "").strip(),
         "is_invalid": bool(payload.is_invalid),
     }
+
+
+@app.post("/api/v1/activity-merges")
+def create_merge(
+    payload: ActivityMergeRequest,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+
+    id1 = _normalize_activity_id(payload.activity_id_1)
+    id2 = _normalize_activity_id(payload.activity_id_2)
+
+    if id1 == id2:
+        raise HTTPException(
+            status_code=422, detail="Cannot merge an activity with itself"
+        )
+
+    meta1 = get_activity_meta(db_path, id1)
+    meta2 = get_activity_meta(db_path, id2)
+    if meta1 is None or meta2 is None:
+        raise HTTPException(status_code=404, detail="One or both activities not found")
+    if meta1["source"].lower() == "custom" or meta2["source"].lower() == "custom":
+        raise HTTPException(
+            status_code=422, detail="Custom activities cannot be merged"
+        )
+
+    sport1 = meta1["sport_type"].strip().lower()
+    sport2 = meta2["sport_type"].strip().lower()
+    if not _merge_compatible(sport1, sport2):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Incompatible sport types: {sport1!r} and {sport2!r}",
+        )
+
+    local_map = get_activity_local_start_map(db_path=db_path, activity_ids=[id1, id2])
+    ts1 = local_map.get(id1)
+    ts2 = local_map.get(id2)
+    if ts1 is not None and ts2 is not None:
+        if pd.Timestamp(ts1).date() != pd.Timestamp(ts2).date():
+            raise HTTPException(
+                status_code=422,
+                detail="Activities must be on the same day to be merged",
+            )
+
+    try:
+        merge_id = create_activity_merge(db_path, id1, id2)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="One or both activities are already part of a merge",
+        ) from exc
+
+    return {"merge_id": merge_id}
+
+
+@app.delete("/api/v1/activity-merges/{merge_id}")
+def delete_merge(
+    merge_id: int,
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    ctx = _auth_context(authorization)
+    resolved_owner = _resolve_owner(ctx, owner)
+    db_path = _db_path_for_owner(resolved_owner)
+    deleted = delete_activity_merge(db_path, merge_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Merge not found")
+    return {"deleted": True}
 
 
 @app.get("/api/v1/activities/{activity_id}")
