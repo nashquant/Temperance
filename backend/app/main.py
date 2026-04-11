@@ -8022,6 +8022,138 @@ def _build_wellness_payload(
     }
 
 
+def _build_merged_activity_card(
+    card1: dict[str, Any],
+    card2: dict[str, Any],
+    merge_id: int,
+) -> dict[str, Any]:
+    """Combine two DashboardActivityCard dicts into one merged card.
+    card1 is the earlier activity (lower start_time_utc), card2 is later.
+    """
+    import re
+
+    tss1 = float(card1.get("tss") or 0.0)
+    tss2 = float(card2.get("tss") or 0.0)
+
+    if_pct1 = float(card1.get("if_pct") or 0.0)
+    if_pct2 = float(card2.get("if_pct") or 0.0)
+    if_pct_merged = round((if_pct1 + if_pct2) / 2.0, 1)
+
+    def _km_from_label(label: str) -> float:
+        m = re.search(r"([\d.]+)\s*km", str(label or ""))
+        return float(m.group(1)) if m else 0.0
+
+    dist1 = _km_from_label(card1.get("distance_label", ""))
+    dist2 = _km_from_label(card2.get("distance_label", ""))
+    dist_total = dist1 + dist2
+    dist_suffix = (
+        " km eqv."
+        if "eqv" in str(card1.get("distance_label", ""))
+        or "eqv" in str(card2.get("distance_label", ""))
+        else " km"
+    )
+    distance_label = f"{dist_total:.0f}{dist_suffix}" if dist_total > 0 else "0 km"
+
+    def _hr_from_label(label: str) -> float:
+        m = re.search(r"([\d.]+)b", str(label or ""))
+        return float(m.group(1)) if m else 0.0
+
+    hr1 = _hr_from_label(card1.get("hr_label", ""))
+    hr2 = _hr_from_label(card2.get("hr_label", ""))
+    hr_avg = (hr1 + hr2) / 2.0 if hr1 > 0 and hr2 > 0 else max(hr1, hr2)
+    hr_label = f"{hr_avg:.0f}b" if hr_avg > 0 else "-"
+
+    intensity_rank = {"green": 0, "blue": 1, "orange": 2, "red": 3}
+
+    def _rank(tok: str) -> int:
+        return intensity_rank.get(str(tok or "").lower(), 1)
+
+    intensity = (
+        card1["intensity"]
+        if _rank(card1["intensity"]) >= _rank(card2["intensity"])
+        else card2["intensity"]
+    )
+
+    duration_label = f"{card1['duration_label']}+{card2['duration_label']}"
+
+    return {
+        "activity_id": f"merged-{merge_id}",
+        "sport": card1.get("sport") or card2.get("sport") or "Activity",
+        "is_custom": False,
+        "is_invalid": False,
+        "is_merged": True,
+        "merge_id": merge_id,
+        "merged_activity_ids": [
+            str(card1["activity_id"]),
+            str(card2["activity_id"]),
+        ],
+        "start_time_utc": card1.get("start_time_utc")
+        or card2.get("start_time_utc")
+        or "",
+        "start_time_hhmm": card1.get("start_time_hhmm")
+        or card2.get("start_time_hhmm")
+        or "",
+        "duration_label": duration_label,
+        "distance_label": distance_label,
+        "hr_label": hr_label,
+        "pace_label": card1.get("pace_label") or card2.get("pace_label") or "-",
+        "vdot": None,
+        "if_pct": if_pct_merged,
+        "tss": round(tss1 + tss2, 1),
+        "rtss": round(
+            float(card1.get("rtss") or 0.0) + float(card2.get("rtss") or 0.0), 1
+        ),
+        "intensity": intensity,
+    }
+
+
+def _collapse_merged_cards(
+    actual_cards: list[dict[str, Any]],
+    merges_by_id1: dict[str, dict[str, Any]],
+    merges_by_id2: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Replace any merged pair in actual_cards with a single merged card.
+    Cards not part of any merge pass through unchanged.
+    """
+    result: list[dict[str, Any]] = []
+    consumed: set[str] = set()
+    card_by_id: dict[str, dict[str, Any]] = {c["activity_id"]: c for c in actual_cards}
+
+    for card in actual_cards:
+        aid = str(card["activity_id"])
+        if aid in consumed:
+            continue
+
+        merge = merges_by_id1.get(aid) or merges_by_id2.get(aid)
+        if merge is None:
+            result.append(card)
+            continue
+
+        partner_id = (
+            merge["activity_id_2"]
+            if merge["activity_id_1"] == aid
+            else merge["activity_id_1"]
+        )
+        partner = card_by_id.get(partner_id)
+        if partner is None:
+            # Partner not present in this day's cards — show card individually.
+            result.append(card)
+            continue
+
+        # Put the earlier-starting activity first.
+        card1, card2 = (
+            (card, partner)
+            if str(card.get("start_time_utc") or "")
+            <= str(partner.get("start_time_utc") or "")
+            else (partner, card)
+        )
+        result.append(_build_merged_activity_card(card1, card2, int(merge["id"])))
+        consumed.add(aid)
+        consumed.add(partner_id)
+
+    return result
+
+
 def _build_activity_dashboard_payload(
     db_path: Path,
     visible_weeks: int,
@@ -8261,6 +8393,15 @@ def _build_activity_dashboard_payload(
                 "hrv_status": _rounded_optional(row.get("hrv_status")),
                 "stress_avg": _rounded_optional(row.get("stress_avg")),
             }
+
+    # Load all active merges for this owner's DB upfront.
+    all_merges = get_active_merges(db_path)
+    merges_by_id1: dict[str, dict[str, Any]] = {
+        m["activity_id_1"]: m for m in all_merges
+    }
+    merges_by_id2: dict[str, dict[str, Any]] = {
+        m["activity_id_2"]: m for m in all_merges
+    }
 
     latest_actual_day = pd.Timestamp(max_day).normalize()
     current_week_start = _week_start_monday(today_local)
@@ -8578,6 +8719,9 @@ def _build_activity_dashboard_payload(
                     }
                 )
 
+            actual_cards = _collapse_merged_cards(
+                actual_cards, merges_by_id1, merges_by_id2
+            )
             planned_cards = planned_by_day.get(day, [])
             day_cards.append(
                 {
