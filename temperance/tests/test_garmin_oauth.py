@@ -18,6 +18,7 @@ def _configure_oauth_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GARMIN_OAUTH_TOKEN_URL", "https://garmin.example.test/oauth/token")
     monkeypatch.setenv("GARMIN_OAUTH_USERINFO_URL", "https://garmin.example.test/oauth/userinfo")
     monkeypatch.setenv("TEMPERANCE_OAUTH_TOKEN_ENCRYPTION_KEY", "oauth-encryption-secret")
+    monkeypatch.setenv("TEMPERANCE_AUTH_SECRET", "auth-secret")
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +48,16 @@ def test_garmin_oauth_state_rejects_tampering(monkeypatch: pytest.MonkeyPatch) -
 
     with pytest.raises(garmin_oauth.GarminOAuthError):
         garmin_oauth.parse_state(tampered)
+
+
+def test_garmin_oauth_state_requires_signing_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_oauth_env(monkeypatch)
+    monkeypatch.delenv("GARMIN_OAUTH_STATE_SECRET", raising=False)
+    monkeypatch.delenv("TEMPERANCE_AUTH_SECRET", raising=False)
+    monkeypatch.delenv("TEMPERANCE_AUTH_COOKIE_SECRET", raising=False)
+
+    with pytest.raises(garmin_oauth.GarminOAuthConfigurationError):
+        garmin_oauth.build_state(user="runner", role="viewer", owner="runner", ttl_seconds=600)
 
 
 def test_encrypt_and_decrypt_token_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -114,8 +125,15 @@ def test_oauth_callback_saves_owner_connection(monkeypatch: pytest.MonkeyPatch, 
     response = backend_main.garmin_oauth_callback(code="auth-code", state=state)
     connection = get_oauth_connection(db_path, backend_main.GARMIN_OAUTH_PROVIDER)
 
-    assert response.status_code == 303
-    assert "garmin_oauth=success" in response.headers["location"]
+    status_code = getattr(response, "status_code", None)
+    if status_code is None:
+        status_code = getattr(response, "kwargs", {}).get("status_code")
+    assert status_code == 303
+    location = getattr(response, "headers", {}).get("location")
+    if location is None:
+        location = getattr(response, "kwargs", {}).get("url")
+    assert location is not None
+    assert "garmin_oauth=success" in location
     assert connection is not None
     assert connection["account_email"] == "runner@example.com"
     token_payload = garmin_oauth.decrypt_token_payload(connection["token_ciphertext"])
@@ -162,6 +180,8 @@ def test_viewer_status_prefers_oauth_over_session(monkeypatch: pytest.MonkeyPatc
     assert payload["garmin_connection_mode"] == "oauth"
     assert payload["garmin_oauth"]["connected"] is True
     assert payload["garmin_credentials_source"] == "session"
+    assert "db_path" not in payload
+    assert "import_dir" not in payload
 
 
 def test_viewer_sync_source_falls_back_to_session_when_oauth_sync_is_not_configured(

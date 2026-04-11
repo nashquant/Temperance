@@ -2,16 +2,33 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
+
+PBKDF2_SHA256_PREFIX = "pbkdf2_sha256"
+PBKDF2_SHA256_ITERATIONS = 310_000
 
 
 def auth_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def password_hash(value: str, *, iterations: int = PBKDF2_SHA256_ITERATIONS) -> str:
+    salt = os.urandom(16).hex()
+    digest = hashlib.pbkdf2_hmac("sha256", value.encode("utf-8"), bytes.fromhex(salt), int(iterations)).hex()
+    return f"{PBKDF2_SHA256_PREFIX}${int(iterations)}${salt}${digest}"
+
+
 def normalize_password_hash(value: str) -> str:
     candidate = str(value or "").strip()
     if candidate.lower().startswith("sha256:"):
         candidate = candidate.split(":", 1)[1].strip()
+        return candidate.lower()
+    if candidate.lower().startswith(f"{PBKDF2_SHA256_PREFIX}$"):
+        parts = candidate.split("$", 3)
+        if len(parts) != 4:
+            return candidate
+        prefix, iterations, salt_hex, digest_hex = parts
+        return f"{prefix.lower()}${iterations.strip()}${salt_hex.strip().lower()}${digest_hex.strip().lower()}"
     return candidate.lower()
 
 
@@ -55,25 +72,25 @@ def build_users(
     admin_user_clean = str(admin_user or "").strip()
     if admin_user_clean and (admin_pass or admin_pass_hash):
         users[admin_user_clean] = {
-            "password_hash": normalize_password_hash(admin_pass_hash) or auth_hash(admin_pass),
+            "password_hash": normalize_password_hash(admin_pass_hash) or password_hash(admin_pass),
             "role": "admin",
         }
 
     viewer_user_clean = str(viewer_user or "").strip()
     if viewer_user_clean and (viewer_pass or viewer_pass_hash):
         users[viewer_user_clean] = {
-            "password_hash": normalize_password_hash(viewer_pass_hash) or auth_hash(viewer_pass),
+            "password_hash": normalize_password_hash(viewer_pass_hash) or password_hash(viewer_pass),
             "role": "viewer",
         }
 
     for username, password in _parse_user_map(viewer_users).items():
         users[username] = {
-            "password_hash": auth_hash(password),
+            "password_hash": password_hash(password),
             "role": "viewer",
         }
 
-    for username, password_hash in _parse_user_map(viewer_users_hash).items():
-        normalized = normalize_password_hash(password_hash)
+    for username, configured_hash in _parse_user_map(viewer_users_hash).items():
+        normalized = normalize_password_hash(configured_hash)
         if normalized:
             users[username] = {
                 "password_hash": normalized,
@@ -99,10 +116,21 @@ def resolve_user(users: dict[str, dict[str, str]], username: str) -> tuple[str, 
 
 def password_matches(password: str, configured_hash: str) -> bool:
     normalized = normalize_password_hash(configured_hash)
+    if normalized.startswith(f"{PBKDF2_SHA256_PREFIX}$"):
+        parts = normalized.split("$", 3)
+        if len(parts) != 4:
+            return False
+        _, iterations_text, salt_hex, expected_hex = parts
+        try:
+            iterations = int(iterations_text)
+            salt = bytes.fromhex(salt_hex)
+        except ValueError:
+            return False
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations).hex()
+        return hmac.compare_digest(actual, expected_hex)
     if len(normalized) == 64 and all(ch in "0123456789abcdef" for ch in normalized):
         return hmac.compare_digest(auth_hash(password), normalized)
-    # Backward-compatible fallback when a plain password is accidentally provided
-    return hmac.compare_digest(str(password), str(configured_hash))
+    return False
 
 
 def resolve_garmin_credentials(

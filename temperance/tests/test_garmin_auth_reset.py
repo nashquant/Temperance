@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -79,7 +80,9 @@ def test_get_session_logs_in_once_and_reuses_memory(monkeypatch: pytest.MonkeyPa
     assert first is second
     assert len(created) == 1
     assert created[0].login_calls == 1
-    assert (tmp_path / "garmin_auth" / "session.json").exists()
+    session_file = tmp_path / "garmin_auth" / "session.json"
+    assert session_file.exists()
+    assert os.stat(session_file).st_mode & 0o777 == 0o600
 
 
 def test_get_session_reuses_disk_cache_without_login(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
