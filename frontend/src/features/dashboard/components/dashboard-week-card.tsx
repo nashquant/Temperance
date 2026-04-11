@@ -14,13 +14,11 @@ interface DashboardWeekCardProps {
   onMarkPlannedDone?: (activity: DashboardWeekRow['days'][number]['planned_activities'][number], index: number) => void;
   onDeletePlannedActivity?: (activity: DashboardWeekRow['days'][number]['planned_activities'][number], index: number) => void;
   onDeleteCustomActivity?: (activity: DashboardWeekRow['days'][number]['actual_activities'][number], index: number) => void;
-  onToggleActivityInvalid?: (activity: DashboardWeekRow['days'][number]['actual_activities'][number], nextInvalid: boolean) => void;
   onSelectActivity?: (activityId: string) => void;
   addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
   deletingPlannedActivity?: boolean;
   deletingCustomActivity?: boolean;
-  togglingActivityInvalid?: boolean;
   userTimeZone?: string;
   undoActivity?: {
     dayUtc: string;
@@ -152,13 +150,11 @@ function DashboardWeekCardComponent({
   onMarkPlannedDone,
   onDeletePlannedActivity,
   onDeleteCustomActivity,
-  onToggleActivityInvalid,
   onSelectActivity,
   addingPlannedActivity,
   markingPlannedDone,
   deletingPlannedActivity,
   deletingCustomActivity,
-  togglingActivityInvalid,
   userTimeZone,
   undoActivity,
   undoVisible,
@@ -194,13 +190,11 @@ function DashboardWeekCardComponent({
                       onMarkPlannedDone={onMarkPlannedDone}
                       onDeletePlannedActivity={onDeletePlannedActivity}
                       onDeleteCustomActivity={onDeleteCustomActivity}
-                      onToggleActivityInvalid={onToggleActivityInvalid}
                       onSelectActivity={onSelectActivity}
                       addingPlannedActivity={addingPlannedActivity}
                       markingPlannedDone={markingPlannedDone}
                       deletingPlannedActivity={deletingPlannedActivity}
                       deletingCustomActivity={deletingCustomActivity}
-                      togglingActivityInvalid={togglingActivityInvalid}
                       userTimeZone={userTimeZone}
                       undoActivity={undoActivity}
                       undoVisible={undoVisible}
@@ -222,13 +216,11 @@ function DashboardWeekCardComponent({
                     onMarkPlannedDone={onMarkPlannedDone}
                     onDeletePlannedActivity={onDeletePlannedActivity}
                     onDeleteCustomActivity={onDeleteCustomActivity}
-                    onToggleActivityInvalid={onToggleActivityInvalid}
                     onSelectActivity={onSelectActivity}
                     addingPlannedActivity={addingPlannedActivity}
                     markingPlannedDone={markingPlannedDone}
                     deletingPlannedActivity={deletingPlannedActivity}
                     deletingCustomActivity={deletingCustomActivity}
-                    togglingActivityInvalid={togglingActivityInvalid}
                     userTimeZone={userTimeZone}
                     undoActivity={undoActivity}
                     undoVisible={undoVisible}
@@ -252,7 +244,6 @@ export const DashboardWeekCard = memo(DashboardWeekCardComponent, (prev, next) =
   && prev.markingPlannedDone === next.markingPlannedDone
   && prev.deletingPlannedActivity === next.deletingPlannedActivity
   && prev.deletingCustomActivity === next.deletingCustomActivity
-  && prev.togglingActivityInvalid === next.togglingActivityInvalid
   && prev.userTimeZone === next.userTimeZone
   && prev.undoActivity === next.undoActivity
   && prev.undoVisible === next.undoVisible

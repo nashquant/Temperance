@@ -10,13 +10,6 @@ interface GetDashboardParams {
   sport?: string;
 }
 
-interface ToggleActivityInvalidParams {
-  token: string;
-  owner?: string;
-  activityId: string;
-  isInvalid: boolean;
-}
-
 export async function getDashboard({ token, owner, weeks, weekOffset = 0, sport }: GetDashboardParams): Promise<DashboardResponse> {
   const search = new URLSearchParams({
     weeks: String(weeks),
@@ -31,25 +24,3 @@ export async function getDashboard({ token, owner, weeks, weekOffset = 0, sport 
   });
 }
 
-export async function toggleActivityInvalid({
-  token,
-  owner,
-  activityId,
-  isInvalid,
-}: ToggleActivityInvalidParams): Promise<{ updated: boolean; activity_id: string; is_invalid: boolean }> {
-  const search = new URLSearchParams();
-  if (owner) search.set('owner', owner);
-  const suffix = search.toString() ? `?${search.toString()}` : '';
-
-  return apiRequest<{ updated: boolean; activity_id: string; is_invalid: boolean }>(
-    `${API_CONFIG.endpoints.activityInvalid}${suffix}`,
-    {
-      method: 'PATCH',
-      token,
-      body: {
-        activity_id: activityId,
-        is_invalid: isInvalid,
-      },
-    },
-  );
-}

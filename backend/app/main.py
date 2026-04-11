@@ -96,7 +96,6 @@ from temperance.db import (
     init_db,
     log_sync,
     save_setting,
-    set_activity_invalid,
     set_planned_activity_manual_done,
     upsert_oauth_connection,
     upsert_activities,
@@ -225,11 +224,6 @@ class PlannedManualDoneRequest(BaseModel):
     day_utc: str
     line_no: int
     manual_done: bool
-
-
-class ActivityInvalidRequest(BaseModel):
-    activity_id: str
-    is_invalid: bool
 
 
 class PlannedIngestRequest(BaseModel):
@@ -11184,30 +11178,6 @@ def custom_activity_delete(
     if deleted <= 0:
         raise HTTPException(status_code=404, detail="Custom activity not found")
     return {"deleted": int(deleted)}
-
-
-@app.patch("/api/v1/activities/invalid")
-def activity_invalid_update(
-    payload: ActivityInvalidRequest,
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-
-    updated = set_activity_invalid(
-        db_path=db_path,
-        activity_id=str(payload.activity_id or "").strip(),
-        is_invalid=bool(payload.is_invalid),
-    )
-    if not updated:
-        raise HTTPException(status_code=404, detail="Activity not found")
-    return {
-        "updated": True,
-        "activity_id": str(payload.activity_id or "").strip(),
-        "is_invalid": bool(payload.is_invalid),
-    }
 
 
 @app.get("/api/v1/activities/{activity_id}")
