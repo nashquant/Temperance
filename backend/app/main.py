@@ -11221,7 +11221,7 @@ def create_merge(
 
     try:
         merge_id = create_activity_merge(db_path, id1, id2)
-    except Exception as exc:
+    except sqlite3.IntegrityError as exc:
         raise HTTPException(
             status_code=409,
             detail="One or both activities are already part of a merge",
