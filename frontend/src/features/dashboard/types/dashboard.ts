@@ -39,6 +39,9 @@ export interface DashboardActivityCard {
   tss: number;
   rtss: number;
   intensity: 'green' | 'blue' | 'orange' | 'red' | string;
+  is_merged?: boolean;
+  merge_id?: number;
+  merged_activity_ids?: string[];
 }
 
 export interface DashboardPlannedCard {

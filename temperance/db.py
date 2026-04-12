@@ -220,6 +220,15 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS activity_merges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    activity_id_1 TEXT NOT NULL UNIQUE,
+    activity_id_2 TEXT NOT NULL UNIQUE,
+    merged_at TEXT NOT NULL,
+    FOREIGN KEY(activity_id_1) REFERENCES activities(activity_id),
+    FOREIGN KEY(activity_id_2) REFERENCES activities(activity_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_activities_start_time ON activities(start_time_utc);
 CREATE INDEX IF NOT EXISTS idx_activity_records_activity_time ON activity_records(activity_id, record_time_utc);
 CREATE INDEX IF NOT EXISTS idx_activity_splits_activity ON activity_splits(activity_id);
@@ -373,6 +382,18 @@ def run_migrations(db_path: Path) -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_planning_decisions_day
             ON planning_decisions(target_day_utc)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS activity_merges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                activity_id_1 TEXT NOT NULL UNIQUE,
+                activity_id_2 TEXT NOT NULL UNIQUE,
+                merged_at TEXT NOT NULL,
+                FOREIGN KEY(activity_id_1) REFERENCES activities(activity_id),
+                FOREIGN KEY(activity_id_2) REFERENCES activities(activity_id)
+            )
             """
         )
         conn.commit()
@@ -874,6 +895,65 @@ def upsert_activity_trimp(db_path: Path, rows: list[dict[str, Any]]) -> int:
         return conn.total_changes
 
 
+def create_activity_merge(db_path: Path, activity_id_1: str, activity_id_2: str) -> int:
+    """Create a merge record. Raises sqlite3.IntegrityError if either activity
+    already participates in a merge (UNIQUE constraints on both columns)."""
+    now = UTC_NOW()
+    with closing(get_conn(db_path)) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO activity_merges (activity_id_1, activity_id_2, merged_at)
+            VALUES (?, ?, ?)
+            """,
+            (activity_id_1, activity_id_2, now),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def delete_activity_merge(db_path: Path, merge_id: int) -> bool:
+    """Delete a merge by id. Returns True if a row was deleted, False if not found."""
+    with closing(get_conn(db_path)) as conn:
+        cur = conn.execute("DELETE FROM activity_merges WHERE id = ?", (merge_id,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def get_activity_merge_by_id(db_path: Path, merge_id: int) -> dict[str, Any] | None:
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            "SELECT id, activity_id_1, activity_id_2, merged_at "
+            "FROM activity_merges WHERE id = ?",
+            (merge_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "activity_id_1": row["activity_id_1"],
+            "activity_id_2": row["activity_id_2"],
+            "merged_at": row["merged_at"],
+        }
+
+
+def get_active_merges(db_path: Path) -> list[dict[str, Any]]:
+    """Return all merge records, ordered by id."""
+    with closing(get_conn(db_path)) as conn:
+        rows = conn.execute(
+            "SELECT id, activity_id_1, activity_id_2, merged_at "
+            "FROM activity_merges ORDER BY id"
+        ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "activity_id_1": r["activity_id_1"],
+                "activity_id_2": r["activity_id_2"],
+                "merged_at": r["merged_at"],
+            }
+            for r in rows
+        ]
+
+
 def upsert_daily_summary(db_path: Path, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
@@ -1004,6 +1084,48 @@ def get_activity_raw(db_path: Path, activity_id: str) -> dict[str, Any] | None:
     if not row:
         return None
     return json.loads(row["raw_json"]) if row["raw_json"] else {}
+
+
+def get_activity_meta(db_path: Path, activity_id: str) -> dict[str, Any] | None:
+    """Return activity_id, sport_type, and source for an activity. Returns None if not found."""
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            "SELECT activity_id, sport_type, source FROM activities WHERE activity_id = ?",
+            (activity_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "activity_id": row["activity_id"],
+        "sport_type": str(row["sport_type"] or ""),
+        "source": str(row["source"] or ""),
+    }
+
+
+def get_activity_row(db_path: Path, activity_id: str) -> dict[str, Any] | None:
+    """Return key columns from the activities table for a single activity.
+    Returns None if the activity is not found."""
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            "SELECT activity_id, start_time_utc, sport_type, distance_m, duration_s, "
+            "avg_hr, max_hr, avg_pace_s_per_km, trimp, training_load_garmin "
+            "FROM activities WHERE activity_id = ?",
+            (activity_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "activity_id": str(row["activity_id"] or ""),
+        "start_time_utc": str(row["start_time_utc"] or ""),
+        "sport_type": str(row["sport_type"] or ""),
+        "distance_m": row["distance_m"],
+        "duration_s": row["duration_s"],
+        "avg_hr": row["avg_hr"],
+        "max_hr": row["max_hr"],
+        "avg_pace_s_per_km": row["avg_pace_s_per_km"],
+        "trimp": row["trimp"],
+        "training_load_garmin": row["training_load_garmin"],
+    }
 
 
 def get_activity_local_start_map(

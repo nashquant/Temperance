@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Activity, Check, Clock3, Flame, Gauge, Heart, HeartPulse, Moon, Plus, Route, RotateCcw, Zap, X } from 'lucide-react';
+import { Activity, Check, Clock3, Flame, Gauge, Heart, HeartPulse, Link2, Moon, Plus, Route, RotateCcw, Unlink, Zap, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,6 +16,10 @@ interface DashboardDayColumnProps {
   onDeletePlannedActivity?: (activity: DashboardDayColumnType['planned_activities'][number], index: number) => void;
   onDeleteCustomActivity?: (activity: DashboardDayColumnType['actual_activities'][number], index: number) => void;
   onSelectActivity?: (activityId: string) => void;
+  onMergeActivity?: (activityId: string) => void;
+  onUnmergeActivity?: (mergeId: number) => void;
+  mergePendingId?: string | null;
+  mergingActivity?: boolean;
   addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
   deletingPlannedActivity?: boolean;
@@ -396,6 +400,10 @@ function DashboardDayColumnComponent({
   onDeletePlannedActivity,
   onDeleteCustomActivity,
   onSelectActivity,
+  onMergeActivity,
+  onUnmergeActivity,
+  mergePendingId,
+  mergingActivity,
   addingPlannedActivity,
   markingPlannedDone,
   deletingPlannedActivity,
@@ -603,6 +611,7 @@ function DashboardDayColumnComponent({
                     ? { tone: 'load', label: metricPillLabel(primaryLoadLabel(activity.tss, activity.rtss, runningLike))! }
                     : null,
                 ].filter((pill): pill is MetricBadgeItem => Boolean(pill));
+                const isMergePending = mergePendingId === activity.activity_id;
                 return (
                   <div
                     key={activity.activity_id}
@@ -612,6 +621,7 @@ function DashboardDayColumnComponent({
                       activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
                       isInvalid ? invalidActivityCardClasses : undefined,
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
+                      isMergePending ? 'ring-1 ring-sky-400/60' : undefined,
                     )}
                     style={isInvalid ? undefined : activityCardToneStyle(activity.intensity, false)}
                     onClick={() => onSelectActivity?.(activity.activity_id)}
@@ -633,12 +643,43 @@ function DashboardDayColumnComponent({
                           event.stopPropagation();
                           onDeleteCustomActivity?.(activity, item.index);
                         }}
-                        disabled={deletingCustomActivity}
-                        aria-label="Delete custom activity"
+                      disabled={deletingCustomActivity}
+                      aria-label="Delete custom activity"
+                    >
+                      <X className={dashboardScaleClassNames.actionButtonGlyph} />
+                    </Button>
+                    ) : activity.is_merged ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-sky-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (activity.merge_id != null) onUnmergeActivity?.(activity.merge_id);
+                        }}
+                        disabled={mergingActivity}
+                        aria-label="Unmerge activities"
                       >
-                        <X className={dashboardScaleClassNames.actionButtonGlyph} />
+                        <Unlink className={dashboardScaleClassNames.actionButtonGlyph} />
                       </Button>
-                    ) : null}
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`,
+                          isMergePending ? 'text-sky-400' : 'text-slate-300',
+                        )}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onMergeActivity?.(activity.activity_id);
+                        }}
+                        disabled={mergingActivity}
+                        aria-label={isMergePending ? 'Cancel merge' : 'Merge with another activity'}
+                      >
+                        <Link2 className={dashboardScaleClassNames.actionButtonGlyph} />
+                      </Button>
+                    )}
                     <div className="min-w-0 pr-6">
                       <div className="min-w-0 flex-1">
                         <p className={cn('truncate text-[12px] font-semibold leading-4 text-foreground lg:text-[13px] lg:leading-4.5', isInvalid ? 'text-rose-100/92' : undefined)}>
@@ -666,6 +707,7 @@ function DashboardDayColumnComponent({
                   </div>
                 );
               }
+              const isMergePendingDesktop = mergePendingId === activity.activity_id;
               return (
                 <div
                   key={activity.activity_id}
@@ -675,6 +717,7 @@ function DashboardDayColumnComponent({
                       activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
                       isInvalid ? invalidActivityCardClasses : undefined,
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
+                      isMergePendingDesktop ? 'ring-1 ring-sky-400/60' : undefined,
                   )}
                   style={isInvalid ? undefined : activityCardToneStyle(activity.intensity, false)}
                   onClick={() => onSelectActivity?.(activity.activity_id)}
@@ -701,7 +744,38 @@ function DashboardDayColumnComponent({
                     >
                       <X className={dashboardScaleClassNames.actionButtonGlyph} />
                     </Button>
-                  ) : null}
+                  ) : activity.is_merged ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(tabletDesktopActionButtonClassName, 'text-sky-300')}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (activity.merge_id != null) onUnmergeActivity?.(activity.merge_id);
+                      }}
+                      disabled={mergingActivity}
+                      aria-label="Unmerge activities"
+                    >
+                      <Unlink className={dashboardScaleClassNames.actionButtonGlyph} />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        tabletDesktopActionButtonClassName,
+                        isMergePendingDesktop ? 'text-sky-400' : 'text-slate-300',
+                      )}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onMergeActivity?.(activity.activity_id);
+                      }}
+                      disabled={mergingActivity}
+                      aria-label={isMergePendingDesktop ? 'Cancel merge' : 'Merge with another activity'}
+                    >
+                      <Link2 className={dashboardScaleClassNames.actionButtonGlyph} />
+                    </Button>
+                  )}
                   <div className="flex min-w-0 items-center pr-5 lg:pr-0">
                     <p className={cn('truncate font-semibold tracking-[0.01em] text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14.5px] lg:leading-5', isInvalid ? 'text-rose-100/92' : undefined)}>
                       {formatActivityTitle(activity.sport)}
@@ -942,6 +1016,8 @@ export const DashboardDayColumn = memo(DashboardDayColumnComponent, (prev, next)
   && prev.markingPlannedDone === next.markingPlannedDone
   && prev.deletingPlannedActivity === next.deletingPlannedActivity
   && prev.deletingCustomActivity === next.deletingCustomActivity
+  && prev.mergePendingId === next.mergePendingId
+  && prev.mergingActivity === next.mergingActivity
   && prev.userTimeZone === next.userTimeZone
   && prev.compactMobile === next.compactMobile
   && prev.mobileFullWidth === next.mobileFullWidth

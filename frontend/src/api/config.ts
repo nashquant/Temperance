@@ -22,6 +22,7 @@ export const API_CONFIG = {
     customActivities: '/custom-activities',
     customActivitiesIngest: '/custom-activities/ingest',
     customActivitiesWorkoutUpdate: '/custom-activities/workout',
+    activityMerges: '/activity-merges',
     weekOutlook: '/week-outlook',
     plannedActivities: '/planned-activities',
     plannedManualDone: '/planned-activities/manual-done',

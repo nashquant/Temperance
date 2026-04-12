@@ -15,6 +15,10 @@ interface DashboardWeekCardProps {
   onDeletePlannedActivity?: (activity: DashboardWeekRow['days'][number]['planned_activities'][number], index: number) => void;
   onDeleteCustomActivity?: (activity: DashboardWeekRow['days'][number]['actual_activities'][number], index: number) => void;
   onSelectActivity?: (activityId: string) => void;
+  onMergeActivity?: (activityId: string) => void;
+  onUnmergeActivity?: (mergeId: number) => void;
+  mergePendingId?: string | null;
+  mergingActivity?: boolean;
   addingPlannedActivity?: boolean;
   markingPlannedDone?: boolean;
   deletingPlannedActivity?: boolean;
@@ -151,6 +155,10 @@ function DashboardWeekCardComponent({
   onDeletePlannedActivity,
   onDeleteCustomActivity,
   onSelectActivity,
+  onMergeActivity,
+  onUnmergeActivity,
+  mergePendingId,
+  mergingActivity,
   addingPlannedActivity,
   markingPlannedDone,
   deletingPlannedActivity,
@@ -191,6 +199,10 @@ function DashboardWeekCardComponent({
                       onDeletePlannedActivity={onDeletePlannedActivity}
                       onDeleteCustomActivity={onDeleteCustomActivity}
                       onSelectActivity={onSelectActivity}
+                      onMergeActivity={onMergeActivity}
+                      onUnmergeActivity={onUnmergeActivity}
+                      mergePendingId={mergePendingId}
+                      mergingActivity={mergingActivity}
                       addingPlannedActivity={addingPlannedActivity}
                       markingPlannedDone={markingPlannedDone}
                       deletingPlannedActivity={deletingPlannedActivity}
@@ -244,6 +256,8 @@ export const DashboardWeekCard = memo(DashboardWeekCardComponent, (prev, next) =
   && prev.markingPlannedDone === next.markingPlannedDone
   && prev.deletingPlannedActivity === next.deletingPlannedActivity
   && prev.deletingCustomActivity === next.deletingCustomActivity
+  && prev.mergePendingId === next.mergePendingId
+  && prev.mergingActivity === next.mergingActivity
   && prev.userTimeZone === next.userTimeZone
   && prev.undoActivity === next.undoActivity
   && prev.undoVisible === next.undoVisible
