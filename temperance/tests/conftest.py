@@ -81,6 +81,16 @@ except ModuleNotFoundError:
     class Request:  # pragma: no cover - test stub only
         scope: dict[str, object]
 
+    class Response:  # pragma: no cover - test stub only
+        def __init__(self):
+            self.cookies: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+
+        def set_cookie(self, key: str, *args, **kwargs):
+            self.cookies.append(("set", (key, *args), kwargs))
+
+        def delete_cookie(self, key: str, *args, **kwargs):
+            self.cookies.append(("delete", (key, *args), kwargs))
+
     class CORSMiddleware:  # pragma: no cover - test stub only
         pass
 
@@ -94,6 +104,7 @@ except ModuleNotFoundError:
     fastapi_module.HTTPException = HTTPException
     fastapi_module.Query = _identity
     fastapi_module.Request = Request
+    fastapi_module.Response = Response
     cors_module.CORSMiddleware = CORSMiddleware
     responses_module.RedirectResponse = RedirectResponse
 

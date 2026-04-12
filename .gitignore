@@ -11,6 +11,7 @@ __pycache__/
 temperance/data/private/
 temperance/data/imports/
 temperance/guidelines/temperance-guidelines/*.local.md
+docs/**
 
 # v2 frontend artifacts
 v2/frontend/node_modules/

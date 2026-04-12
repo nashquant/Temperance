@@ -88,7 +88,6 @@ Also available:
   - `delete_custom_activities`
   - `trigger_sync`
   - `get_sync_status`
-  - `mark_activity_invalid`
   - `get_settings`
   - `update_settings`
 

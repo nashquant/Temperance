@@ -15,7 +15,6 @@ interface DashboardDayColumnProps {
   onMarkPlannedDone?: (activity: DashboardDayColumnType['planned_activities'][number], index: number) => void;
   onDeletePlannedActivity?: (activity: DashboardDayColumnType['planned_activities'][number], index: number) => void;
   onDeleteCustomActivity?: (activity: DashboardDayColumnType['actual_activities'][number], index: number) => void;
-  onToggleActivityInvalid?: (activity: DashboardDayColumnType['actual_activities'][number], nextInvalid: boolean) => void;
   onSelectActivity?: (activityId: string) => void;
   onMergeActivity?: (activityId: string) => void;
   onUnmergeActivity?: (mergeId: number) => void;
@@ -25,7 +24,6 @@ interface DashboardDayColumnProps {
   markingPlannedDone?: boolean;
   deletingPlannedActivity?: boolean;
   deletingCustomActivity?: boolean;
-  togglingActivityInvalid?: boolean;
   userTimeZone?: string;
   compactMobile?: boolean;
   mobileFullWidth?: boolean;
@@ -401,7 +399,6 @@ function DashboardDayColumnComponent({
   onMarkPlannedDone,
   onDeletePlannedActivity,
   onDeleteCustomActivity,
-  onToggleActivityInvalid,
   onSelectActivity,
   onMergeActivity,
   onUnmergeActivity,
@@ -411,7 +408,6 @@ function DashboardDayColumnComponent({
   markingPlannedDone,
   deletingPlannedActivity,
   deletingCustomActivity,
-  togglingActivityInvalid,
   userTimeZone,
   compactMobile = false,
   mobileFullWidth = false,
@@ -652,20 +648,6 @@ function DashboardDayColumnComponent({
                     >
                       <X className={dashboardScaleClassNames.actionButtonGlyph} />
                     </Button>
-                    ) : isInvalid ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onToggleActivityInvalid?.(activity, false);
-                        }}
-                      disabled={togglingActivityInvalid}
-                      aria-label="Restore activity"
-                    >
-                      <RotateCcw className={dashboardScaleClassNames.actionButtonGlyph} />
-                    </Button>
                     ) : activity.is_merged ? (
                       <Button
                         variant="ghost"
@@ -681,37 +663,22 @@ function DashboardDayColumnComponent({
                         <Unlink className={dashboardScaleClassNames.actionButtonGlyph} />
                       </Button>
                     ) : (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={`absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onToggleActivityInvalid?.(activity, true);
-                          }}
-                          disabled={togglingActivityInvalid}
-                          aria-label="Mark activity invalid"
-                        >
-                          <X className={dashboardScaleClassNames.actionButtonGlyph} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={cn(
-                            `absolute right-1 top-[22px] ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`,
-                            isMergePending ? 'text-sky-400' : 'text-slate-300',
-                          )}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onMergeActivity?.(activity.activity_id);
-                          }}
-                          disabled={mergingActivity}
-                          aria-label={isMergePending ? 'Cancel merge' : 'Merge with another activity'}
-                        >
-                          <Link2 className={dashboardScaleClassNames.actionButtonGlyph} />
-                        </Button>
-                      </>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`,
+                          isMergePending ? 'text-sky-400' : 'text-slate-300',
+                        )}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onMergeActivity?.(activity.activity_id);
+                        }}
+                        disabled={mergingActivity}
+                        aria-label={isMergePending ? 'Cancel merge' : 'Merge with another activity'}
+                      >
+                        <Link2 className={dashboardScaleClassNames.actionButtonGlyph} />
+                      </Button>
                     )}
                     <div className="min-w-0 pr-6">
                       <div className="min-w-0 flex-1">
@@ -777,20 +744,6 @@ function DashboardDayColumnComponent({
                     >
                       <X className={dashboardScaleClassNames.actionButtonGlyph} />
                     </Button>
-                  ) : isInvalid ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={tabletDesktopActionButtonClassName}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onToggleActivityInvalid?.(activity, false);
-                      }}
-                      disabled={togglingActivityInvalid}
-                      aria-label="Restore activity"
-                    >
-                      <RotateCcw className={dashboardScaleClassNames.actionButtonGlyph} />
-                    </Button>
                   ) : activity.is_merged ? (
                     <Button
                       variant="ghost"
@@ -806,37 +759,22 @@ function DashboardDayColumnComponent({
                       <Unlink className={dashboardScaleClassNames.actionButtonGlyph} />
                     </Button>
                   ) : (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={tabletDesktopActionButtonClassName}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onToggleActivityInvalid?.(activity, true);
-                        }}
-                        disabled={togglingActivityInvalid}
-                        aria-label="Mark activity invalid"
-                      >
-                        <X className={dashboardScaleClassNames.actionButtonGlyph} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          tabletDesktopSecondaryActionButtonClassName,
-                          isMergePendingDesktop ? 'text-sky-400' : 'text-slate-300',
-                        )}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onMergeActivity?.(activity.activity_id);
-                        }}
-                        disabled={mergingActivity}
-                        aria-label={isMergePendingDesktop ? 'Cancel merge' : 'Merge with another activity'}
-                      >
-                        <Link2 className={dashboardScaleClassNames.actionButtonGlyph} />
-                      </Button>
-                    </>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        tabletDesktopActionButtonClassName,
+                        isMergePendingDesktop ? 'text-sky-400' : 'text-slate-300',
+                      )}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onMergeActivity?.(activity.activity_id);
+                      }}
+                      disabled={mergingActivity}
+                      aria-label={isMergePendingDesktop ? 'Cancel merge' : 'Merge with another activity'}
+                    >
+                      <Link2 className={dashboardScaleClassNames.actionButtonGlyph} />
+                    </Button>
                   )}
                   <div className="flex min-w-0 items-center pr-5 lg:pr-0">
                     <p className={cn('truncate font-semibold tracking-[0.01em] text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14.5px] lg:leading-5', isInvalid ? 'text-rose-100/92' : undefined)}>
@@ -1078,7 +1016,6 @@ export const DashboardDayColumn = memo(DashboardDayColumnComponent, (prev, next)
   && prev.markingPlannedDone === next.markingPlannedDone
   && prev.deletingPlannedActivity === next.deletingPlannedActivity
   && prev.deletingCustomActivity === next.deletingCustomActivity
-  && prev.togglingActivityInvalid === next.togglingActivityInvalid
   && prev.mergePendingId === next.mergePendingId
   && prev.mergingActivity === next.mergingActivity
   && prev.userTimeZone === next.userTimeZone
