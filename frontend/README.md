@@ -1,60 +1,42 @@
 # Temperance Frontend
 
-React + Vite + TypeScript frontend for Temperance.
+The frontend is your daily interface to the training archive. Open it to see the dashboard, check recovery and wellness, review what's planned, drill into activity detail, and run a Garmin sync.
 
-## Quick start
+## Open the app
 
 ```bash
-cd /Users/matheus/Temperance/frontend
+cd frontend
 npm install
 npm run dev
 ```
 
-Dev server: `http://127.0.0.1:5173`
+App runs at `http://127.0.0.1:5173`. The backend must be running at `http://127.0.0.1:8000` for data to load.
 
-## Build
+## What you can do
+
+- **Dashboard** — see this week's completed and planned activities side by side, with load, pace, and recovery signals per day. Tap any activity for splits and detail.
+- **Athlete Progression** — fitness, fatigue, form, and weekly baseline over time.
+- **Weekly Outlook** — structured week view with load and spacing context.
+- **Plan Activities** — add or edit planned workouts in compact workout text.
+- **Wellness** — daily sleep, HRV, resting HR, and body battery.
+- **Data Extract** — connect Garmin, run a comprehensive or incremental sync, and inspect sync state.
+- **Settings** — configure owner scope, thresholds, and display preferences.
+
+## Build for production
 
 ```bash
-npm run build
-npm run preview
+npm run build    # type-checks and bundles
+npm run preview  # serves the bundle locally
 ```
 
-## Backend integration notes
+## Notes for developers
 
-- API base path is configured in `src/api/config.ts` as `/api`.
-- During local dev, Vite proxy in `vite.config.ts` forwards `/api/*` and `/health` to `http://127.0.0.1:8000`.
-- Auth token is stored in localStorage key `temperance.session`.
-- The public app is served from the root path at `https://app.temperance-rtl.work`.
+API calls go to `/api/*`, proxied to the backend during local dev via `vite.config.ts`. Auth is cookie-based. Session context lives in `src/features/auth/`.
 
-## Main frontend surfaces
+Workout strings displayed or submitted by the frontend are the same normalized strings the backend parses — don't mutate them for display purposes without checking `temperance/activity_parsing.py` first.
 
-- Login and protected routing
-- Dashboard and activity detail drill-down
-- Week planner, planned activities, and weekly outlook
-- Wellness, settings, and athlete progression
-- Data extract controls for Garmin credentials, sync, and reset
-
-## String-contract awareness
-
-The frontend displays and submits normalized workout strings rather than inventing a separate client-only schema.
-
-- Planned and custom activity entry text should stay compatible with backend parsing rules
-- Generated activity text is intentionally reparseable by the backend, so UI copy changes should not silently mutate those strings
-- If a feature starts editing `workout_text` or `activity_text`, validate the change against backend parsing tests before assuming it is display-only
-
-### Update points for backend contracts
-
-1. `src/api/config.ts`
-- Adjust endpoint paths if backend changes.
-
-2. `src/features/auth/services/auth-api.ts`
-- Align login and `me` response types if fields differ.
-
-3. `src/features/weekly-outlook/types/weekly-outlook.ts`
-- Update raw contract types if payload shape changes.
-
-4. `src/features/weekly-outlook/utils/weekly-outlook-mapper.ts`
-- Keep backend-specific assumptions isolated in the mapper.
-
-5. `src/features/weekly-outlook/services/weekly-outlook-api.ts`
-- Add extra query params if backend requires additional filters.
+Contract touchpoints:
+- `src/api/config.ts` — endpoint paths
+- `src/features/auth/services/auth-api.ts` — login and `me` response types
+- `src/features/weekly-outlook/types/weekly-outlook.ts` — raw payload shape
+- `src/features/weekly-outlook/utils/weekly-outlook-mapper.ts` — backend-specific mapping

@@ -1,26 +1,36 @@
 # Temperance Backend
 
-## MCP Server
+The backend is the local server that powers the app. It handles auth, Garmin sync, training analytics, planning, and the MCP coaching interface. Everything runs on your machine — no cloud dependency for core function.
 
-Temperance exposes one canonical stdio MCP server at `backend/app/mcp_server.py`.
-
-This server gives an MCP client access to:
-- planning tools
-- analytics and status tools
-- doctrine resources and workout-library context
-- write tools for planned/custom activities and admin actions
-
-The MCP server is not a separate analytics engine. It is a thin interface over the backend logic in [`backend/app/main.py`](/Users/matheus/Temperance/backend/app/main.py).
-
-## Quick start
-
-Run it from the repo root:
+## Start the server
 
 ```bash
+cd backend
+source .venv/bin/activate
+./run.sh
+```
+
+API available at `http://127.0.0.1:8000`. The frontend proxies to this during local development.
+
+First-time setup:
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## MCP coaching tools
+
+The MCP server gives a Claude-based client doctrine-aware coaching context: what the current build is doing, how recent training looks against it, and what makes sense tomorrow.
+
+```bash
+# from repo root
 python3 -m backend.app.mcp_server --stdio
 ```
 
-Example MCP client config:
+Claude Desktop / Claude Code config:
 
 ```json
 {
@@ -34,110 +44,56 @@ Example MCP client config:
 }
 ```
 
-The server exposes standard MCP `tools` and `resources`.
-
-## Baseline rules
-
-The weekly baseline shown by MCP is the same baseline used by Athlete Progression. This is the current contract:
-
-1. Start from LT-derived weekly capacity.
-2. Blend that capacity with trailing load history using the prior 21, 63, and 365 days of TSS.
-3. Use that blended model directly as the canonical baseline; there is no extra post-blend EMA layer.
-4. Expose Monday-labeled weekly baseline points using the latest modeled baseline observed within each week.
-5. Expose those weekly points through `get_fitness_form.weekly_baseline`.
-
-Practical interpretation:
-- MCP does not own an alternate baseline formula.
-- If the dashboard shows `Base = X` for a given Monday week, MCP should return approximately the same `baseline_tss` for that same `week_start`.
-- If they diverge materially, treat it as a bug, version mismatch, or data mismatch.
-- Backend and MCP now use the same formatter/helper for weekly baseline rows, including deviation explanation fields.
-- If a Monday-labeled week has no modeled point yet, the dashboard leaves `baseline_tss` blank rather than fabricating a carry-forward weekly value.
-
-## Main tools
-
-Available tools:
-- planning:
-  - `plan_next_day`
-  - `preview_cycle`
-  - `explain_planning_decision`
-- analytics / data:
-  - `get_today_status`
-  - `get_recent_activities`
-  - `get_planned_activities`
-  - `get_week_outlook`
-  - `get_load_trend`
-  - `get_recovery_trend`
-  - `get_activity_detail`
-- history:
-  - `judge_training_history`
-  - `explain_history_judgment`
-
-Also available:
-- load analysis:
-  - `estimate_workout_tss`
-  - `simulate_plan_week`
-  - `critique_day_plan`
-  - `estimate_xtrain_tss`
-  - `search_workouts`
-- writes/admin:
-  - `save_planned_activities`
-  - `update_planned_activity`
-  - `delete_planned_activities`
-  - `mark_planned_done`
-  - `save_custom_activities`
-  - `delete_custom_activities`
-  - `trigger_sync`
-  - `get_sync_status`
-  - `get_settings`
-  - `update_settings`
-
-## Resources
-
-Static resources:
-- `temperance://guidelines/read-order`
-- `temperance://guidelines/core-bundle`
-- `temperance://guidelines/active-build`
-- `temperance://workouts/overview`
-- `temperance://workouts/catalog`
-
-Resource templates:
-- `temperance://guidelines/doc/{doc_id}`
-- `temperance://workouts/family/{session_family}`
-- `temperance://workouts/template/{template_id}`
-- `temperance://planning/context/{owner}/{target_day_utc}`
-- `temperance://history/snapshot/{owner}/{window_days}`
-
-## Example requests
-
-Example `resources/read` request:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "resources/read",
-  "params": {
-    "uri": "temperance://planning/context/admin/2026-04-05"
-  }
-}
-```
-
-Example `judge_training_history` arguments:
-
-```json
-{
-  "owner": "admin",
-  "window_days": 42,
-  "include_planned_comparison": true
-}
-```
-
-Useful prompts once the MCP tool is connected:
+Useful starting prompts once connected:
 
 - `Read the active build and tell me which doctrine files matter most before planning tomorrow.`
 - `Why is tomorrow hard?`
-- `Why not put the long run on Friday?`
-- `If I swap this run for elliptical, how does the next 3-day cycle change?`
-- `Show me how the long run is progressing from the last 4 long runs.`
 - `Judge the last 6 weeks of actual training against the active build and point out the main gaps.`
-- `For week 2026-03-30, confirm that MCP weekly baseline matches Athlete Progression Base and explain any residual difference.`
+- `If I swap this run for elliptical, how does the next 3-day cycle change?`
+- `For week 2026-03-30, confirm that MCP weekly baseline matches Athlete Progression Base.`
+
+## Tools and resources
+
+**Planning**
+- `plan_next_day`, `preview_cycle`, `explain_planning_decision`
+
+**Analytics and status**
+- `get_today_status`, `get_coaching_brief`, `get_fitness_form`, `get_week_outlook`
+- `get_recent_activities`, `get_planned_activities`, `get_load_trend`, `get_recovery_trend`, `get_activity_detail`
+
+**History**
+- `judge_training_history`, `explain_history_judgment`
+
+**Load analysis**
+- `estimate_workout_tss`, `simulate_plan_week`, `critique_day_plan`, `estimate_xtrain_tss`, `search_workouts`
+
+**Writes and admin**
+- `save_planned_activities`, `update_planned_activity`, `delete_planned_activities`, `mark_planned_done`
+- `save_custom_activities`, `delete_custom_activities`
+- `trigger_sync`, `get_sync_status`, `get_settings`, `update_settings`
+
+**Resources**
+- `temperance://guidelines/read-order` — doctrine read order
+- `temperance://guidelines/core-bundle` — core guideline set
+- `temperance://guidelines/active-build` — current build context
+- `temperance://workouts/overview` and `temperance://workouts/catalog`
+- `temperance://planning/context/{owner}/{target_day_utc}`
+- `temperance://history/snapshot/{owner}/{window_days}`
+
+## Weekly baseline contract
+
+`get_fitness_form.weekly_baseline` must match the Athlete Progression `Base` line in the frontend. The path:
+
+1. Start from LT-derived weekly capacity.
+2. Blend with trailing 21/63/365-day TSS load history.
+3. Expose Monday-labeled weekly points — no extra EMA layer on top.
+
+If they diverge materially, it is a bug. Backend and MCP use the same helper so the numbers should agree to within rounding.
+
+## After code changes
+
+```bash
+./temperance/scripts/install_keepalive.sh restart
+```
+
+Required whenever a backend process restart is needed (e.g. adding endpoints, changing imports).
