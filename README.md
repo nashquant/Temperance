@@ -1,34 +1,89 @@
 # Temperance
 
-Temperance is a local-first training and recovery app built around a Garmin-backed SQLite archive.
+Temperance is a local-first training and recovery app for endurance athletes. It turns a Garmin-backed SQLite archive into a daily view of what you did, how ready you look, what is planned next, and whether the structure of the week still makes sense.
 
-The project now has one supported product surface:
+The app is built for an athlete who wants coaching-quality context without giving up local control of the data. Garmin provides the activity and wellness archive, SQLite keeps it local, the backend computes training signals and planning state, and the frontend gives you a practical dashboard for day-to-day decisions.
 
-- `backend/`: FastAPI API for auth, dashboard, wellness, planning, and Garmin sync flows
-- `frontend/`: React/Vite client
-- `temperance/`: shared Python domain logic, SQLite schema, migrations, Garmin extraction, assets, and ops scripts
-- `temperance/data/private/`: local databases, logs, and private exports; gitignored by default
+## What You Can Do
 
-## Repo layout
+- Review recent training, recovery, wellness, and weekly outlook in one place.
+- Sync Garmin activities and wellness data into a local archive.
+- Plan workouts with compact text that the app can parse, normalize, edit, and re-use.
+- Compare planned work with completed activity history.
+- Track fitness, fatigue, form, durability, pounding, overreach, injury-risk burden, and weekly baseline.
+- Use doctrine-aware MCP coaching tools to inspect the active build, judge recent history, plan tomorrow, and critique proposed changes.
+- Keep multiple owner-scoped local databases while still running a single local app.
 
-```text
-Temperance/
-├── backend/         FastAPI app
-├── frontend/        React + Vite app
-└── temperance/
-    ├── analytics.py
-    ├── activity_parsing.py
-    ├── auth.py
-    ├── config.py
-    ├── db.py
-    ├── garmin_client.py
-    ├── migrate.py
-    └── scripts/     launchd and maintenance helpers
-```
+## The Mental Model
 
-## Quick start
+Temperance treats training as a control problem, not just a calendar.
 
-### 1. Run the backend
+The first question is what the current build is trying to protect and progress. The app separates total load from the load that is most specific to the event or current risk. For a running-limited block, total aerobic work may be high while run-specific mechanical load still needs careful progression.
+
+The second question is whether the structure is absorbable. A week can hit a load target and still be a bad week if hard work is clustered too tightly, if moderate work drifts into hidden hard work, or if support modalities quietly become another stressor instead of creating space.
+
+The third question is what to do next. Planning tools combine weekly anchors, recent actual training, recovery context, Garmin data, and doctrine resources so tomorrow's recommendation is judged against the week and build, not in isolation.
+
+## Core Concepts
+
+**Local-first archive**
+
+Temperance stores the canonical data in SQLite under `temperance/data/private/`. The default database is `temperance/data/private/temperance.db`, and owner-scoped databases live under `temperance/data/private/users/<owner>.db`. Private data, logs, exports, and imports are gitignored by default.
+
+**Garmin sync**
+
+Garmin is the main source for completed activities and wellness. A comprehensive sync can backfill activities, activity details, FIT records, sleep, and wellness. The lightweight backend auto-sync is activity-only, so blank current-day recovery data usually means a comprehensive sync has not populated the wellness endpoints yet.
+
+**Planned vs actual training**
+
+Planned activities are compact workout strings. Actual activities come from Garmin or custom entries. Temperance keeps the planned text parseable so the same workout can be displayed, edited, estimated, compared with history, and re-used by generated suggestions.
+
+**Load: TSS and rTSS**
+
+`TSS` is the broad training-load signal. `rTSS` is the run-specific or specificity-adjusted load signal used when the app needs to reason about mechanical or event-specific burden. Support modalities can preserve aerobic load while carrying less of the primary specific cost.
+
+**Weekly baseline**
+
+The weekly baseline is the app's modeled expectation for sustainable weekly load. It starts from LT-derived weekly capacity, blends in trailing 21/63/365-day load history, and is exported as Monday-labeled weekly points. MCP `get_fitness_form.weekly_baseline` is expected to match the Athlete Progression `Base` line as closely as rounding allows.
+
+**Fitness, fatigue, and form**
+
+The dashboard and MCP expose CTL/ATL/TSB-style signals. In current terms, fitness is a 42-day TSS EMA, fatigue is a 7-day TSS EMA, and form is fitness minus fatigue. These are planning context, not commands.
+
+**Durability, pounding, overreach, and injury risk**
+
+Durability tracks longer-term running robustness with a 100-day rTSS EMA. Pounding tracks acute running mechanical load with a 7-day rTSS EMA. Overreach and injury risk are accumulated burden signals from excess load above the daily target: overreach uses broad TSS pressure, while injury risk uses rTSS pressure.
+
+**Support modalities and specificity**
+
+A support modality is work that supports load, spacing, or fitness without carrying the same specific cost as the primary load. Elliptical and cycling may help preserve aerobic load, but they are not always one-for-one substitutes for running durability.
+
+**Doctrine, active build, and workout templates**
+
+Temperance planning is doctrine-aware. The invariant doctrine defines concepts such as `total_load`, `primary_specific_load`, `specificity_ratio`, `support_modality`, local spacing, rolling density, and progression alerts. The active build maps those ideas to the current athlete state and event context. Workout templates provide reusable session families, such as recovery, easy, support, steady aerobic, threshold, long run, specific endurance, VO2, hills, and x-train support.
+
+See the guideline docs for the deeper model:
+
+- [Training control system doctrine](temperance/guidelines/temperance-guidelines/training-control-system-doctrine.md)
+- [Durability-first threshold/support philosophy](temperance/guidelines/temperance-guidelines/training-philosophy-durability-threshold-support.md)
+- [Workout quick reference](temperance/guidelines/temperance-workouts/quick-reference.md)
+
+## Daily Use
+
+1. Start the backend and frontend locally.
+2. Open the frontend at `http://127.0.0.1:5173`.
+3. Log in and choose the owner scope you want to inspect.
+4. Sync Garmin from Data Extract, or keep working with already-synced data.
+5. Review dashboard, wellness, athlete progression, and weekly outlook.
+6. Add or edit planned activities in the planner surfaces.
+7. Use Data Extract again when you need a deeper activity/wellness refresh.
+8. Optionally connect MCP coaching tools for a doctrine-aware brief, next-day plan, history judgment, or plan critique.
+
+Main frontend surfaces are documented in [frontend/README.md](frontend/README.md).
+
+## Run It Locally
+
+### Backend
 
 ```bash
 cd /Users/matheus/Temperance/backend
@@ -40,7 +95,14 @@ pip install -r requirements.txt
 
 Backend URL: `http://127.0.0.1:8000`
 
-### 2. Run the frontend
+Equivalent uvicorn form:
+
+```bash
+cd /Users/matheus/Temperance
+python3 -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+### Frontend
 
 ```bash
 cd /Users/matheus/Temperance/frontend
@@ -50,10 +112,11 @@ npm run dev
 
 Frontend URL: `http://127.0.0.1:5173`
 
-The frontend proxies `/api/*` and `/health` to the backend during local development.
-The public app is served at `https://app.temperance-rtl.work`, and the API is mounted at `/api`.
+The frontend proxies `/api/*` and `/health` to the backend during local development. The public app is served at `https://app.temperance-rtl.work`, and the API is mounted at `/api`.
 
-### 3. Configure Garmin credentials when you need sync
+## Garmin Data And Sync
+
+For local admin sync with environment credentials:
 
 ```bash
 export GARMIN_EMAIL="you@example.com"
@@ -62,9 +125,7 @@ export GARMIN_PASSWORD="your_password"
 
 You can also keep these in `temperance/.env` for local use.
 
-### 4. Configure Garmin OAuth when you want non-admin user pairing
-
-Garmin OAuth is optional, but required if non-admin users should pair their own Garmin accounts instead of relying only on memory-only session credentials.
+Garmin OAuth is optional, but required if non-admin users should pair their own Garmin accounts instead of relying on memory-only session credentials.
 
 Minimum OAuth connection config:
 
@@ -77,7 +138,7 @@ export GARMIN_OAUTH_TOKEN_URL="https://<garmin-token-endpoint>"
 export TEMPERANCE_OAUTH_TOKEN_ENCRYPTION_KEY="replace_with_a_long_random_secret"
 ```
 
-Optional, but needed if OAuth-connected users should actually run Garmin data extract through the app:
+Optional, but needed if OAuth-connected users should run Garmin Data Extract through the app:
 
 ```bash
 export GARMIN_OAUTH_USERINFO_URL="https://<garmin-userinfo-endpoint>"
@@ -86,123 +147,47 @@ export GARMIN_OAUTH_WELLNESS_URL="https://<garmin-wellness-endpoint>"
 export GARMIN_OAUTH_SCOPES="activities wellness profile"
 ```
 
-If the activities/wellness URLs are missing, Garmin OAuth connect/disconnect will work, but the UI will keep OAuth-backed extract capability-gated and users will need the legacy session-credential fallback to actually sync data.
+Data Extract chooses the active sync mode from the logged-in user and available connection:
 
-## Data model and storage
+- Admin on the admin scope can use `GARMIN_EMAIL` and `GARMIN_PASSWORD`.
+- Admin viewing another owner can provide that owner's Garmin credentials in the UI; they stay in backend memory only.
+- Non-admin users can connect Garmin through OAuth when OAuth endpoints are configured.
+- Non-admin users can fall back to session credentials when OAuth is unavailable.
+- Without a Garmin connection, the app still works with existing synced data, custom activities, planning, and generated activities.
 
-- Default base DB: `temperance/data/private/temperance.db`
-- Owner-scoped DBs: `temperance/data/private/users/<owner>.db`
-- Private logs: `temperance/data/private/logs/`
-- Private exports and imports stay under `temperance/data/` and are gitignored
+`Run extract` can fetch activity rows, activity details, sleep, and wellness when the active sync source supports them. Incremental mode only refetches missing days plus the current freshness window. The Data Extract page surfaces the current connection mode as `oauth`, `session`, `env`, or `missing`.
 
-The backend resolves owner-scoped databases first and falls back to the base DB for the default owner when needed.
+More shared package and sync notes live in [temperance/README.md](temperance/README.md).
 
-## Main product features
+## Planning Text
 
-- Auth with local admin/viewer users and owner-scoped data access
-- Dashboard, wellness, athlete progression, and weekly outlook views
-- Planned activities ingestion, parsing, editing, and manual completion
-- Custom activities ingestion and generated activity suggestions
-- Garmin sync, Garmin auth reset, and incremental auto-sync
-- Shared SQLite-backed metrics, migrations, and activity detail retrieval
+Temperance workout text is intentionally compact and reparseable. Treat `activity_text` and `workout_text` as canonical display-plus-roundtrip strings, not free-form prose.
 
-## Planning text rules
+Examples:
 
-Temperance relies on compact workout strings for planned activities, custom activities, and some generated suggestions. Future changes should preserve these rules unless the parser and tests are updated together.
+```text
+today: Run 45min @4:40/km
+T+1: Elliptical 70min @138bpm
+2026-03-26: Run 3x8' @3:45/km / 2' @4:40/km
+```
 
-- Dated entries use `[date]:[activity]`
-- Bulk entry separators can be newline, comma, or semicolon
-- Accepted date forms include `today`, `tomorrow`, `yesterday`, `T`, `T+1`, `T-1`, `2026-03-26`, `26/03/2026`, and `26Mar26`
-- Whitespace is normalized before storage and duplicate planned rows are detected from normalized text plus day
-- Duration tokens accept `45min`, `45'`, `1h`, `1h30m`, `20s`, and `20"`
-- Distance tokens accept `42.2km`, `400m`, and repeated-distance forms like `6x1km` or `8x400m`
-- Running pace tokens accept forms like `@4:40`, `@4:40/km`, plus named pace shorthands `@mp`, `@hmp`, and `@10k`
-- Intensity tokens accept `%IF` such as `@78%`, heart rate such as `@138bpm`, and TSS such as `@80tss`
-- Interval recovery blocks can use slash syntax or parentheses, for example `3x8' @ 3:45 / 2' @ 4:40` or `3x8' @ 3:45 (2' @ 4:40)`
-- Elliptical aliases include `elliptical`, `xtrain`, `x-train`, `cross train`, and `cross-train`
-- Distance-only running segments require pace context; non-running segments should use minutes plus `bpm` or `%IF`
+Useful rules:
 
-## Generated string rules
+- Dated entries use `[date]:[activity]`.
+- Relative dates include `today`, `tomorrow`, `yesterday`, `T`, `T+1`, and `T-1`.
+- Absolute dates include `2026-03-26`, `26/03/2026`, and `26Mar26`.
+- Bulk entry separators can be newline, comma, or semicolon.
+- Duration tokens include `45min`, `45'`, `1h`, `1h30m`, `20s`, and `20"`.
+- Distance tokens include `42.2km`, `400m`, `6x1km`, and `8x400m`.
+- Intensity tokens include pace such as `@4:40/km`, named paces such as `@mp`, heart rate such as `@138bpm`, IF such as `@78%`, and TSS such as `@80tss`.
+- Interval recovery can use slash or parentheses, such as `3x8' @3:45 / 2' @4:40`.
+- Elliptical aliases include `elliptical`, `xtrain`, `x-train`, `cross train`, and `cross-train`.
 
-Generated activity suggestions intentionally emit normalized strings that are easy to parse again later.
+Generated activity suggestions emit normalized strings such as `Run 40min @4:40/km` or `Elliptical 70min @138bpm` so they can be parsed again later. Full parsing and generation contracts live in [temperance/README.md](temperance/README.md).
 
-- Duration is emitted as `NhMmin` or `Nmin`, for example `1h5min` or `40min`
-- Running and treadmill suggestions prefer pace output such as `Run 40min @4:40/km`
-- Non-running suggestions prefer heart-rate output such as `Elliptical 70min @138bpm`
-- The generated text is derived from structured segments, so preserving the parser and formatter contract keeps suggestion reuse stable
-- API clients should treat `activity_text` and `workout_text` as canonical display-plus-roundtrip strings, not free-form prose
+## MCP And Coaching Tools
 
-## Garmin sync modes
-
-- Comprehensive Garmin sync: full backfill path for activities, details, FIT records, sleep, and wellness
-- Embedded auto-sync in the backend: lightweight incremental activity sync only
-
-The embedded auto-sync does not fetch sleep, HRV, training readiness, or other wellness endpoints. If recovery data for the current day is blank, run a comprehensive sync before assuming the UI is wrong.
-
-## Data Extract modes
-
-Temperance now supports multiple ways to use the Data Extract page. The mode that runs depends on who is logged in and which Garmin connection is available.
-
-### Admin on own scope
-
-- If `GARMIN_EMAIL` and `GARMIN_PASSWORD` are set, the admin user can open **Data Extract** and run Garmin extract immediately.
-- The backend treats environment credentials as the primary source for the admin’s own owner scope.
-- `Reset Garmin auth` clears the cached Garmin session for the backend process, but does not remove the env vars.
-
-### Admin viewing another owner
-
-- Admin can switch owner scope in the UI and enter that owner’s Garmin email/password in the **Garmin Credentials** card.
-- Those credentials are stored in backend memory only and are not persisted to SQLite.
-- This is useful when OAuth is not available for that owner, or when you need a temporary legacy sync path.
-
-### Non-admin with Garmin OAuth
-
-- The non-admin user opens **Data Extract** and clicks `Connect Garmin`.
-- The app redirects through Garmin OAuth and returns to `/app/data-extract` after the callback succeeds or fails.
-- Once connected, Data Extract prefers the persisted Garmin OAuth token over memory-only session credentials.
-- If `GARMIN_OAUTH_ACTIVITIES_URL` and `GARMIN_OAUTH_WELLNESS_URL` are configured, `Run extract` uses the OAuth-backed Garmin path.
-- If those URLs are not configured, the UI will show Garmin as connected but keep extract capability-gated unless the user also provides legacy session credentials.
-
-### Non-admin without OAuth, using legacy session credentials
-
-- The non-admin user can still use the existing **Garmin Credentials** card.
-- Entered Garmin email/password are kept in backend memory only for that active backend session.
-- This remains the fallback path if OAuth is unavailable or if Garmin OAuth connection exists but extract endpoints are not configured.
-
-### No Garmin connection
-
-- Users can skip Garmin entirely and still use the app for:
-  - custom activities
-  - planning and generated activities
-  - dashboard/wellness views backed by previously synced data
-- In this mode, Data Extract will not run Garmin sync until either OAuth or legacy session credentials are available.
-
-### What `Run extract` does
-
-- `Activities` enabled: fetch activity rows and related activity detail payloads when supported by the active sync source.
-- `Wellness` enabled: fetch sleep and wellness rows when supported by the active sync source.
-- `Incremental` enabled: only refetch missing days plus the current freshness window.
-- The current connection mode is surfaced in the Data Extract page as `oauth`, `session`, `env`, or `missing`.
-
-## Operations
-
-- `temperance/scripts/install_keepalive.sh`: macOS `launchd` setup for the backend, frontend, and Cloudflare tunnel
-- `temperance/scripts/install_autoupdate.sh`: hourly fast-forward updater for machines that should track `origin/main`
-- `temperance/README.md`: shared Python package notes, data locations, and migration entry points
-
-After backend or frontend path changes, reinstall or restart the keepalive services so launch agents stop pointing at stale workspace paths.
-
-## MCP server
-
-Temperance now exposes one canonical stdio MCP server at `backend/app/mcp_server.py`.
-
-Analytics source-of-truth note:
-- MCP does not own an independent weekly baseline formula.
-- `get_fitness_form.weekly_baseline` is expected to match the canonical Athlete Progression weekly baseline series as closely as rounding allows.
-- For a given Monday-aligned week, the MCP `baseline_tss` should line up with the dashboard `Base` line/value for that same week.
-- If MCP and Athlete Progression disagree materially, treat that as a runtime/version/data-source mismatch or a bug, not as an acceptable alternate interpretation.
-- The current baseline path is: LT-derived weekly capacity -> trailing 21/63/365-day load blend -> direct modeled weekly baseline export -> Monday weekly rollup of the latest modeled point in each labeled week.
-- For the fuller user-facing MCP guide, see [backend/README.md](/Users/matheus/Temperance/backend/README.md).
+Temperance exposes one canonical stdio MCP server at `backend/app/mcp_server.py`.
 
 Run it from the repo root:
 
@@ -211,69 +196,18 @@ cd /Users/matheus/Temperance
 python3 -m backend.app.mcp_server --stdio
 ```
 
-The MCP surface is doctrine-aware and resources-first:
-- static resources expose doctrine read order, the core bundle, the active build, workout overview, and workout catalog
-- resource templates expose individual guideline docs, workout families, workout templates, planning context, and history snapshots
-- tools return guideline context inline (active phase, overlays, build refs) so the LLM has doctrine awareness without extra calls
-- activity summaries include pace, HR zones, elevation, stress classification, and mechanical load
-- fitness form (CTL/ATL/TSB/ACWR) is embedded in `get_today_status` and available via dedicated tools
+The MCP server is a thin interface over backend logic, not a separate analytics engine. It exposes:
 
-### Tools
+- resources for doctrine read order, core guideline bundles, active build context, workout overview, and workout catalog
+- planning tools such as `plan_next_day`, `preview_cycle`, and `explain_planning_decision`
+- analytics/status tools such as `get_coaching_brief`, `get_today_status`, `get_fitness_form`, `get_week_outlook`, and `get_activity_detail`
+- history tools such as `judge_training_history` and `explain_history_judgment`
+- load analysis tools such as `estimate_workout_tss`, `simulate_plan_week`, `critique_day_plan`, `estimate_xtrain_tss`, and `search_workouts`
+- write/admin tools for planned activities, custom activities, sync, settings, and invalid activity marking
 
-**Coaching entry point:**
-- `get_coaching_brief` — single-call situational awareness: fitness form, recovery, active build, week progress, recent stress pattern, and flags
+For the full tool/resource list, request examples, and baseline contract details, see [backend/README.md](backend/README.md).
 
-**Planning:**
-- `plan_next_day` — generate next workout suggestion with planning decision metadata and guideline context
-- `preview_cycle` — preview multi-day training horizon using methodology and athlete state
-- `explain_planning_decision` — explain planner choices including long-run and weekend constraints
-
-**Analytics and status:**
-- `get_today_status` — latest activity, wellness, week outlook, inline fitness form (CTL/ATL/TSB/ACWR), and guideline context
-- `get_recent_activities` — recent activities with pace, HR zones, stress classification (hard/easy/moderate), and long-run flag
-- `get_planned_activities` — planned workouts for the next N days
-- `get_week_outlook` — weekly TSS goal, progress, and projected finish
-- `get_load_trend` — daily TSS/rTSS with CTL/ATL/TSB/ACWR proxies, plus HR zone distribution and polarization index
-- `get_recovery_trend` — 28-day wellness trend: training readiness, sleep, stress, body battery
-- `get_activity_detail` — full activity detail with time-series records
-- `get_fitness_form` — full CTL/ATL/TSB/ACWR daily time series plus weekly baseline history mirrored from the canonical Athlete Progression weekly baseline path
-- `get_weekly_volume` — weekly distance, duration, TSS, run count, and modality split for last N weeks
-
-**History judgment:**
-- `judge_training_history` — assess recent history against active build and doctrine with guideline context
-- `explain_history_judgment` — structured explanation with evidence refs and question-specific focus
-
-**Load analysis and estimation:**
-- `estimate_workout_tss` — parse workout text and predict TSS/rTSS/IF/distance without saving
-- `simulate_plan_week` — project weekly totals and density warnings for proposed plan entries
-- `critique_day_plan` — audit planned days for spacing, density, and overload problems
-- `estimate_xtrain_tss` — estimate cross-training TSS from HR with specificity adjustment
-- `search_workouts` — filter workout template catalog by category, load role, phase, modality, TSS range
-
-**Write tools:**
-- `save_planned_activities`, `update_planned_activity`, `delete_planned_activities`, `mark_planned_done`
-- `save_custom_activities`, `delete_custom_activities`
-
-**Admin:**
-- `trigger_sync`, `get_sync_status`, `mark_activity_invalid`, `get_settings`, `update_settings`
-
-### Static resources
-
-- `temperance://guidelines/read-order`
-- `temperance://guidelines/core-bundle`
-- `temperance://guidelines/active-build`
-- `temperance://workouts/overview`
-- `temperance://workouts/catalog`
-
-### Resource templates
-
-- `temperance://guidelines/doc/{doc_id}`
-- `temperance://workouts/family/{session_family}`
-- `temperance://workouts/template/{template_id}`
-- `temperance://planning/context/{owner}/{target_day_utc}`
-- `temperance://history/snapshot/{owner}/{window_days}`
-
-### Minimal MCP smoke example
+Minimal MCP smoke example:
 
 ```bash
 cd /Users/matheus/Temperance
@@ -286,32 +220,47 @@ python3 -m backend.app.mcp_server --stdio <<'EOF'
 EOF
 ```
 
-### Example `judge_training_history` request
+## Project Structure
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 5,
-  "method": "tools/call",
-  "params": {
-    "name": "judge_training_history",
-    "arguments": {
-      "owner": "admin",
-      "window_days": 42,
-      "include_planned_comparison": true
-    }
-  }
-}
+```text
+Temperance/
+|-- backend/         FastAPI app and MCP server
+|-- frontend/        React + Vite app
+`-- temperance/      Shared Python domain logic, data, migrations, sync, scripts
 ```
 
-### Lightweight MCP tests
+Key modules:
 
-The MCP module now lazy-loads `backend.app.main`, so static resource and JSON-RPC tests can run without importing the whole FastAPI analytics stack at module import time.
+- `backend/app/main.py`: REST API for auth, dashboard, wellness, planning, analytics, and Garmin sync.
+- `backend/app/mcp_server.py`: MCP resources and tools over the backend/domain model.
+- `temperance/db.py`: SQLite schema, owner-scoped storage, CRUD, and migrations.
+- `temperance/analytics.py`: training metrics, daily summaries, CTL/ATL/TSB-style helpers.
+- `temperance/activity_parsing.py`: workout string parsing and normalization.
+- `temperance/garmin_client.py`: Garmin API sync, FIT parsing, wellness extraction.
+- `temperance/planning/`: recommendation state, policy, and session selection.
+- `frontend/src/features/`: feature modules for auth, dashboard, athlete progression, weekly outlook, planning, Data Extract, wellness, and settings.
+
+## Developer Reference
+
+Run migrations:
 
 ```bash
 cd /Users/matheus/Temperance
-backend/.venv/bin/python -m unittest backend.tests.test_mcp_server temperance.tests.test_mcp_server -v
+python -m temperance.migrate
 ```
+
+Restart keepalive services after backend or frontend path changes:
+
+```bash
+cd /Users/matheus/Temperance
+./temperance/scripts/install_keepalive.sh restart
+```
+
+Related docs:
+
+- [Backend and MCP guide](backend/README.md)
+- [Frontend guide](frontend/README.md)
+- [Shared Python package guide](temperance/README.md)
 
 ## Tests
 
@@ -320,6 +269,13 @@ Python tests:
 ```bash
 cd /Users/matheus/Temperance
 pytest temperance/tests -q
+```
+
+Backend MCP tests:
+
+```bash
+cd /Users/matheus/Temperance
+backend/.venv/bin/python -m unittest backend.tests.test_mcp_server temperance.tests.test_mcp_server -v
 ```
 
 Frontend build check:
