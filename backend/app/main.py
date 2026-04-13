@@ -9214,13 +9214,20 @@ def _build_activity_dashboard_payload(
         reverse=True,
     )
 
-    return {
+    payload = {
         "weeks_total": weeks_total,
         "weeks_visible": int(len(weeks_out)),
         "has_more_weeks": bool((safe_offset + max_visible) < weeks_total),
         "summary": summary,
         "weeks": weeks_out,
     }
+    # --- Cache write ---
+    with _dashboard_payload_cache_lock:
+        _dashboard_payload_cache[cache_key] = payload
+        _dashboard_payload_cache.move_to_end(cache_key)
+        while len(_dashboard_payload_cache) > _DASHBOARD_PAYLOAD_CACHE_MAXSIZE:
+            _dashboard_payload_cache.popitem(last=False)
+    return payload
 
 
 def _build_weekly_payload(
@@ -10337,12 +10344,6 @@ def vdot_view(
             "observed_max": observed_max,
         }
     )
-    # --- Cache write ---
-    with _dashboard_payload_cache_lock:
-        _dashboard_payload_cache[cache_key] = payload
-        _dashboard_payload_cache.move_to_end(cache_key)
-        while len(_dashboard_payload_cache) > _DASHBOARD_PAYLOAD_CACHE_MAXSIZE:
-            _dashboard_payload_cache.popitem(last=False)
     return payload
 
 

@@ -848,15 +848,18 @@ def get_runs_df(
         col_sql = ", ".join([f'"{c}"' for c in cols]) if cols else "*"
 
         conditions: list[str] = []
+        params: list[str] = []
         if not include_invalid:
             conditions.append("COALESCE(is_invalid, 0) = 0")
         if start_day_utc:
-            conditions.append(f"start_time_utc >= '{start_day_utc}T00:00:00Z'")
+            conditions.append("start_time_utc >= ?")
+            params.append(f"{start_day_utc}T00:00:00Z")
 
         where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         return pd.read_sql_query(
             f"SELECT {col_sql} FROM activities {where_sql} ORDER BY start_time_utc DESC",
             conn,
+            params=params if params else None,
         )
 
 
