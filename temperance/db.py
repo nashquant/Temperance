@@ -1325,6 +1325,48 @@ def get_planned_activities_cache_key(db_path: Path) -> str:
     return f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}:{row['max_day'] or 'none'}"
 
 
+def get_settings_cache_key(db_path: Path) -> str:
+    """Stable digest for settings-table-driven computation caching."""
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at
+            FROM settings
+            """
+        ).fetchone()
+    if not row:
+        return "0:none"
+    return f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}"
+
+
+def get_wellness_cache_key(db_path: Path) -> str:
+    """Stable digest for wellness-table-driven computation caching."""
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at, MAX(day_utc) AS max_day
+            FROM wellness_daily
+            """
+        ).fetchone()
+    if not row:
+        return "0:none:none"
+    return f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}:{row['max_day'] or 'none'}"
+
+
+def get_merges_cache_key(db_path: Path) -> str:
+    """Stable digest for activity-merges-table-driven computation caching."""
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS n, MAX(merged_at) AS max_merged_at
+            FROM activity_merges
+            """
+        ).fetchone()
+    if not row:
+        return "0:none"
+    return f"{int(row['n'] or 0)}:{row['max_merged_at'] or 'none'}"
+
+
 def get_table_counts(db_path: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     tables = [

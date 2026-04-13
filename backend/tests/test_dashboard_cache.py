@@ -16,7 +16,18 @@ def test_dashboard_cache_key_changes_when_activities_change():
         "backend.app.main.get_planned_activities_cache_key", return_value="p1"
     ), patch(
         "backend.app.main.get_custom_activities_cache_key", return_value="c1"
-    ):
+    ), patch(
+        "backend.app.main.get_settings_cache_key", return_value="s1"
+    ), patch(
+        "backend.app.main.get_wellness_cache_key", return_value="w1"
+    ), patch(
+        "backend.app.main.get_merges_cache_key", return_value="m1"
+    ), patch(
+        "backend.app.main.datetime"
+    ) as mock_dt:
+        mock_dt.now.return_value.astimezone.return_value.date.return_value.isoformat.return_value = (
+            "2026-04-12"
+        )
         key1 = _dashboard_cache_key(db, sport=None, week_offset=0, weeks=26)
         key2 = _dashboard_cache_key(db, sport=None, week_offset=0, weeks=26)
 
@@ -30,7 +41,20 @@ def test_dashboard_cache_key_stable_for_same_inputs():
     db = Path(tempfile.mktemp(suffix=".db"))
     with patch("backend.app.main.get_activities_cache_key", return_value="v1"), patch(
         "backend.app.main.get_planned_activities_cache_key", return_value="p1"
-    ), patch("backend.app.main.get_custom_activities_cache_key", return_value="c1"):
+    ), patch(
+        "backend.app.main.get_custom_activities_cache_key", return_value="c1"
+    ), patch(
+        "backend.app.main.get_settings_cache_key", return_value="s1"
+    ), patch(
+        "backend.app.main.get_wellness_cache_key", return_value="w1"
+    ), patch(
+        "backend.app.main.get_merges_cache_key", return_value="m1"
+    ), patch(
+        "backend.app.main.datetime"
+    ) as mock_dt:
+        mock_dt.now.return_value.astimezone.return_value.date.return_value.isoformat.return_value = (
+            "2026-04-12"
+        )
         key1 = _dashboard_cache_key(db, sport=None, week_offset=0, weeks=26)
         key2 = _dashboard_cache_key(db, sport=None, week_offset=0, weeks=26)
 
