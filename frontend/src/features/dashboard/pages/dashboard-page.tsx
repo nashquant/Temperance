@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Check, Link2, Loader2, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { QueryShell } from '@/components/ui/query-shell';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -197,6 +197,8 @@ export function DashboardPage(): JSX.Element {
   } | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
   const [mergePendingId, setMergePendingId] = useState<string | null>(null);
+  const [mergeMode, setMergeMode] = useState(false);
+  const [mergeSelectedIds, setMergeSelectedIds] = useState<string[]>([]);
   const { setHeaderActions } = useAppLayoutContext();
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
@@ -567,14 +569,16 @@ export function DashboardPage(): JSX.Element {
     },
   });
   const createMergeMutation = useMutation({
-    mutationFn: async ({ activityId1, activityId2 }: { activityId1: string; activityId2: string }) => {
+    mutationFn: async ({ activityIds }: { activityIds: string[] }) => {
       if (!session?.token) throw new Error('Missing auth token');
-      return createActivityMerge({ token: session.token, owner: profile?.owner }, activityId1, activityId2);
+      return createActivityMerge({ token: session.token, owner: profile?.owner }, activityIds);
     },
     onSettled: () => {
       setMergePendingId(null);
     },
     onSuccess: async () => {
+      setMergeMode(false);
+      setMergeSelectedIds([]);
       await refreshDashboardViews();
     },
   });
@@ -588,15 +592,21 @@ export function DashboardPage(): JSX.Element {
     },
   });
   const handleMergeActivity = (activityId: string) => {
-    if (mergePendingId === null) {
-      setMergePendingId(activityId);
-      return;
-    }
-    if (mergePendingId === activityId) {
-      setMergePendingId(null);
-      return;
-    }
-    createMergeMutation.mutate({ activityId1: mergePendingId, activityId2: activityId });
+    if (!mergeMode || createMergeMutation.isPending) return;
+    setMergeSelectedIds((current) =>
+      current.includes(activityId)
+        ? current.filter((selectedId) => selectedId !== activityId)
+        : [...current, activityId],
+    );
+  };
+  const submitSelectedMerge = () => {
+    if (mergeSelectedIds.length < 2 || createMergeMutation.isPending) return;
+    createMergeMutation.mutate({ activityIds: mergeSelectedIds });
+  };
+  const cancelMergeMode = () => {
+    setMergeMode(false);
+    setMergeSelectedIds([]);
+    setMergePendingId(null);
   };
   const generateActivityMutation = useMutation({
     mutationFn: async ({
@@ -771,9 +781,62 @@ export function DashboardPage(): JSX.Element {
 
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
   const reloadButtonBusy = dashboardReloadMutation.isPending || extractRunning || dashboardReloadQueued;
+  const mergeControls = useMemo(
+    () => (
+      <>
+        {mergeMode ? (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 border-sky-300/30 bg-sky-400/10 px-3 text-sky-100"
+              onClick={submitSelectedMerge}
+              disabled={!session?.token || mergeSelectedIds.length < 2 || createMergeMutation.isPending}
+              aria-label="Merge selected activities"
+              title="Merge selected activities"
+            >
+              <Check className="mr-1.5 h-4 w-4" />
+              Merge {mergeSelectedIds.length}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 w-10 border-white/10 bg-black/20 px-0 text-slate-100"
+              onClick={cancelMergeMode}
+              disabled={createMergeMutation.isPending}
+              aria-label="Cancel merge mode"
+              title="Cancel merge mode"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 border-white/10 bg-black/20 px-3 text-slate-100"
+            onClick={() => {
+              setSelectedActivityId(null);
+              setMergeMode(true);
+              setMergeSelectedIds([]);
+            }}
+            disabled={!session?.token}
+            aria-label="Enter activity merge mode"
+            title="Enter activity merge mode"
+          >
+            <Link2 className="mr-1.5 h-4 w-4" />
+            Merge
+          </Button>
+        )}
+      </>
+    ),
+    [createMergeMutation.isPending, mergeMode, mergeSelectedIds, session?.token],
+  );
+
   const dashboardHeaderActions = useMemo(
     () => (
       <>
+        {mergeControls}
         <Button
           variant="outline"
           size="sm"
@@ -809,7 +872,7 @@ export function DashboardPage(): JSX.Element {
         ) : null}
       </>
     ),
-    [dashboardReloadMutation, reloadButtonBusy, selectedWindow, selectedWindowLabel, session?.token, totalWindows],
+    [dashboardReloadMutation, mergeControls, reloadButtonBusy, selectedWindow, selectedWindowLabel, session?.token, totalWindows],
   );
 
   useEffect(() => {
@@ -828,6 +891,14 @@ export function DashboardPage(): JSX.Element {
             </div>
           ) : (
             <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                <p className="text-xs text-slate-300/80">
+                  {mergeMode
+                    ? 'Choose same-day efforts for one training record.'
+                    : 'Merge same-day efforts. Undo merged efforts anytime.'}
+                </p>
+                <div className="flex items-center gap-2">{mergeControls}</div>
+              </div>
               {dashboardReloadResult ? (
                 <p className="text-right text-xs text-slate-300/72">{dashboardReloadResult}</p>
               ) : null}
@@ -936,13 +1007,22 @@ export function DashboardPage(): JSX.Element {
                             })()
                           : undefined
                       }
-                      onSelectActivity={(activityId) => { setSelectedActivityId(activityId); setMergePendingId(null); }}
+                      onSelectActivity={(activityId) => {
+                        if (mergeMode) {
+                          handleMergeActivity(activityId);
+                          return;
+                        }
+                        setSelectedActivityId(activityId);
+                        setMergePendingId(null);
+                      }}
                       addingPlannedActivity={plannedCreateMutation.isPending}
                       markingPlannedDone={plannedDoneMutation.isPending}
                       deletingPlannedActivity={plannedDeleteMutation.isPending}
                       deletingCustomActivity={customDeleteMutation.isPending}
                       onMergeActivity={handleMergeActivity}
                       onUnmergeActivity={(mergeId) => deleteMergeMutation.mutate({ mergeId })}
+                      mergeMode={mergeMode}
+                      mergeSelectedIds={mergeSelectedIds}
                       mergePendingId={mergePendingId}
                       mergingActivity={createMergeMutation.isPending || deleteMergeMutation.isPending}
                       userTimeZone={userTimeZone}

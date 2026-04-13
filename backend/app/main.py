@@ -282,8 +282,9 @@ class PlannedManualDoneRequest(BaseModel):
 
 
 class ActivityMergeRequest(BaseModel):
-    activity_id_1: str
-    activity_id_2: str
+    activity_ids: list[str] | None = None
+    activity_id_1: str | None = None
+    activity_id_2: str | None = None
 
 
 class PlannedIngestRequest(BaseModel):
@@ -4984,6 +4985,7 @@ def _planning_modality_from_row(
 def _aggregate_actual_days_for_planning(
     metrics_df: pd.DataFrame,
     *,
+    db_path: Path,
     selected_day: pd.Timestamp,
 ) -> list[dict[str, Any]]:
     if metrics_df.empty:
@@ -5210,7 +5212,7 @@ def _generated_activity_planning_state(
         include_invalid=False,
     )
     recent_activity_rows = _aggregate_actual_days_for_planning(
-        metrics_df=metrics_df, selected_day=selected_day
+        metrics_df=metrics_df, db_path=db_path, selected_day=selected_day
     )
     model_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     if not metrics_df.empty:
@@ -5996,7 +5998,7 @@ def _mcp_history_snapshot_components(
         date.fromisoformat(normalized_end_day_utc) + timedelta(days=1)
     )
     actual_rows = _aggregate_actual_days_for_planning(
-        metrics_df=metrics_df, selected_day=selected_day
+        metrics_df=metrics_df, db_path=db_path, selected_day=selected_day
     )
     classified_actuals = _mcp_classify_history_rows(
         actual_rows,
@@ -8139,134 +8141,151 @@ def _build_wellness_payload(
     }
 
 
+def _parse_distance_km_label(label: str) -> float:
+    m = re.search(r"([\d.]+)\s*km", str(label or ""))
+    return float(m.group(1)) if m else 0.0
+
+
+def _parse_hr_label(label: str) -> float:
+    m = re.search(r"([\d.]+)b", str(label or ""))
+    return float(m.group(1)) if m else 0.0
+
+
+def _parse_duration_label_seconds(label: str) -> float:
+    text = str(label or "").strip().lower()
+    total = 0.0
+    hour_match = re.search(r"(\d+(?:\.\d+)?)\s*h", text)
+    minute_match = re.search(r"(\d+(?:\.\d+)?)\s*m", text)
+    second_match = re.search(r"(\d+(?:\.\d+)?)\s*s", text)
+    if hour_match:
+        total += float(hour_match.group(1)) * 3600.0
+    if minute_match:
+        total += float(minute_match.group(1)) * 60.0
+    if second_match and not text.endswith("ms"):
+        total += float(second_match.group(1))
+    return total
+
+
 def _build_merged_activity_card(
-    card1: dict[str, Any],
-    card2: dict[str, Any],
+    cards: list[dict[str, Any]],
     merge_id: int,
 ) -> dict[str, Any]:
-    """Combine two DashboardActivityCard dicts into one merged card.
-    card1 is the earlier activity (lower start_time_utc), card2 is later.
-    """
-    import re
+    """Combine N DashboardActivityCard dicts into one merged card."""
+    ordered_cards = sorted(cards, key=lambda c: str(c.get("start_time_utc") or ""))
+    first = ordered_cards[0]
 
-    tss1 = float(card1.get("tss") or 0.0)
-    tss2 = float(card2.get("tss") or 0.0)
+    tss_total = sum(float(card.get("tss") or 0.0) for card in ordered_cards)
+    rtss_total = sum(float(card.get("rtss") or 0.0) for card in ordered_cards)
+    if_values = [
+        float(card.get("if_pct") or 0.0)
+        for card in ordered_cards
+        if float(card.get("if_pct") or 0.0) > 0
+    ]
+    if_pct_merged = round(sum(if_values) / len(if_values), 1) if if_values else 0.0
 
-    if_pct1 = float(card1.get("if_pct") or 0.0)
-    if_pct2 = float(card2.get("if_pct") or 0.0)
-    if_pct_merged = round((if_pct1 + if_pct2) / 2.0, 1)
-
-    def _km_from_label(label: str) -> float:
-        m = re.search(r"([\d.]+)\s*km", str(label or ""))
-        return float(m.group(1)) if m else 0.0
-
-    dist1 = _km_from_label(card1.get("distance_label", ""))
-    dist2 = _km_from_label(card2.get("distance_label", ""))
-    dist_total = dist1 + dist2
+    dist_total = sum(
+        _parse_distance_km_label(str(card.get("distance_label") or ""))
+        for card in ordered_cards
+    )
     dist_suffix = (
         " km eqv."
-        if "eqv" in str(card1.get("distance_label", ""))
-        or "eqv" in str(card2.get("distance_label", ""))
+        if any("eqv" in str(card.get("distance_label") or "") for card in ordered_cards)
         else " km"
     )
     distance_label = f"{dist_total:.0f}{dist_suffix}" if dist_total > 0 else "0 km"
 
-    def _hr_from_label(label: str) -> float:
-        m = re.search(r"([\d.]+)b", str(label or ""))
-        return float(m.group(1)) if m else 0.0
+    hr_values = [
+        _parse_hr_label(str(card.get("hr_label") or "")) for card in ordered_cards
+    ]
+    hr_values = [value for value in hr_values if value > 0]
+    hr_label = f"{(sum(hr_values) / len(hr_values)):.0f}b" if hr_values else "-"
 
-    hr1 = _hr_from_label(card1.get("hr_label", ""))
-    hr2 = _hr_from_label(card2.get("hr_label", ""))
-    hr_avg = (hr1 + hr2) / 2.0 if hr1 > 0 and hr2 > 0 else max(hr1, hr2)
-    hr_label = f"{hr_avg:.0f}b" if hr_avg > 0 else "-"
-
-    intensity_rank = {"green": 0, "blue": 1, "orange": 2, "red": 3}
-
-    def _rank(tok: str) -> int:
-        return intensity_rank.get(str(tok or "").lower(), 1)
-
-    intensity = (
-        card1["intensity"]
-        if _rank(card1["intensity"]) >= _rank(card2["intensity"])
-        else card2["intensity"]
+    intensity_rank = {
+        "green": 0,
+        "gray": 0,
+        "blue": 1,
+        "orange": 2,
+        "red": 3,
+        "purple": 4,
+    }
+    intensity = max(
+        (str(card.get("intensity") or "blue") for card in ordered_cards),
+        key=lambda token: intensity_rank.get(token.lower(), 1),
     )
 
-    duration_label = f"{card1['duration_label']}+{card2['duration_label']}"
+    total_duration_s = sum(
+        _parse_duration_label_seconds(str(card.get("duration_label") or ""))
+        for card in ordered_cards
+    )
+    duration_label = (
+        _format_duration_short(total_duration_s)
+        if total_duration_s > 0
+        else "+".join(str(card.get("duration_label") or "") for card in ordered_cards)
+    )
 
     return {
         "activity_id": f"merged-{merge_id}",
-        "sport": card1.get("sport") or card2.get("sport") or "Activity",
+        "sport": first.get("sport") or "Activity",
         "is_custom": False,
         "is_invalid": False,
         "is_merged": True,
         "merge_id": merge_id,
-        "merged_activity_ids": [
-            str(card1["activity_id"]),
-            str(card2["activity_id"]),
-        ],
-        "start_time_utc": card1.get("start_time_utc")
-        or card2.get("start_time_utc")
-        or "",
-        "start_time_hhmm": card1.get("start_time_hhmm")
-        or card2.get("start_time_hhmm")
-        or "",
+        "merged_activity_ids": [str(card["activity_id"]) for card in ordered_cards],
+        "start_time_utc": first.get("start_time_utc") or "",
+        "start_time_hhmm": first.get("start_time_hhmm") or "",
         "duration_label": duration_label,
         "distance_label": distance_label,
         "hr_label": hr_label,
-        "pace_label": card1.get("pace_label") or card2.get("pace_label") or "-",
+        "pace_label": first.get("pace_label") or "-",
         "vdot": None,
         "if_pct": if_pct_merged,
-        "tss": round(tss1 + tss2, 1),
-        "rtss": round(
-            float(card1.get("rtss") or 0.0) + float(card2.get("rtss") or 0.0), 1
-        ),
+        "tss": round(tss_total, 1),
+        "rtss": round(rtss_total, 1),
         "intensity": intensity,
     }
 
 
 def _collapse_merged_cards(
     actual_cards: list[dict[str, Any]],
-    merges_by_id1: dict[str, dict[str, Any]],
-    merges_by_id2: dict[str, dict[str, Any]],
+    merges_by_activity_id: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Replace any merged pair in actual_cards with a single merged card.
-    Cards not part of any merge pass through unchanged.
-    """
+    """Replace any merge group in actual_cards with one merged card."""
     result: list[dict[str, Any]] = []
     consumed: set[str] = set()
-    card_by_id: dict[str, dict[str, Any]] = {c["activity_id"]: c for c in actual_cards}
+    card_by_id: dict[str, dict[str, Any]] = {
+        str(c["activity_id"]): c for c in actual_cards
+    }
 
     for card in actual_cards:
         aid = str(card["activity_id"])
         if aid in consumed:
             continue
 
-        merge = merges_by_id1.get(aid) or merges_by_id2.get(aid)
+        merge = merges_by_activity_id.get(aid)
         if merge is None:
             result.append(card)
             continue
 
-        partner_id = (
-            merge["activity_id_2"]
-            if merge["activity_id_1"] == aid
-            else merge["activity_id_1"]
-        )
-        partner = card_by_id.get(partner_id)
-        if partner is None:
-            # Partner not present in this day's cards — show card individually.
+        member_ids = [
+            str(mid)
+            for mid in merge.get("activity_ids")
+            or [merge.get("activity_id_1"), merge.get("activity_id_2")]
+        ]
+        member_cards = [card_by_id.get(member_id) for member_id in member_ids]
+        if any(member_card is None for member_card in member_cards):
             result.append(card)
             continue
 
-        # Put the earlier-starting activity first.
-        card1, card2 = (
-            (card, partner)
-            if str(card.get("start_time_utc") or "")
-            <= str(partner.get("start_time_utc") or "")
-            else (partner, card)
+        concrete_cards = [
+            member_card for member_card in member_cards if member_card is not None
+        ]
+        ordered_cards = sorted(
+            concrete_cards, key=lambda c: str(c.get("start_time_utc") or "")
         )
-        result.append(_build_merged_activity_card(card1, card2, int(merge["id"])))
-        consumed.add(aid)
-        consumed.add(partner_id)
+        result.append(_build_merged_activity_card(ordered_cards, int(merge["id"])))
+        consumed.update(
+            str(member_card["activity_id"]) for member_card in ordered_cards
+        )
 
     return result
 
@@ -8311,6 +8330,14 @@ def _build_garmin_activity_detail(
     if is_running_like and duration_s > 0 and avg_pace > 0 and threshold_pace > 0:
         rtss = duration_s * ((threshold_pace / avg_pace) ** 2) / 3600.0 * 100.0
 
+    if_thresholds = _load_if_zone_thresholds(db_path)
+    specificity_profile = _load_specificity_profile(
+        db_path=db_path, fallback_default=0.8
+    )
+    specificity_factor = _specificity_factor_for_sport(
+        str(row["sport_type"] or ""), specificity_profile
+    )
+
     # Build split rows from splits table if available.
     splits_raw = get_activity_splits_raw(db_path, activity_id) or {}
     split_rows: list[dict[str, Any]] = []
@@ -8345,19 +8372,47 @@ def _build_garmin_activity_detail(
         lap_hr = _safe_float(lap.get("averageHR"))
         lap_speed = _safe_float(lap.get("averageSpeed"))
         lap_pace = (1000.0 / lap_speed) if lap_speed > 0 else 0.0
+        if_proxy = 0.0
+        if is_running_like and lap_pace > 0 and threshold_pace > 0:
+            if_proxy = threshold_pace / lap_pace
+        elif lap_hr > 0 and lthr_bpm > 0:
+            if_proxy = lap_hr / lthr_bpm
+        elif lap_pace > 0 and threshold_pace > 0:
+            if_proxy = threshold_pace / lap_pace
+        pace_eqv = (
+            (threshold_pace / if_proxy) if threshold_pace > 0 and if_proxy > 0 else 0.0
+        )
+        if is_running_like:
+            distance_eqv_km = (
+                (lap_dist / 1000.0)
+                if lap_dist > 0
+                else (lap_dur / lap_pace if lap_pace > 0 else 0.0)
+            )
+            distance_km_ui = (lap_dist / 1000.0) if lap_dist > 0 else distance_eqv_km
+            pace_ui = lap_pace if lap_pace > 0 else pace_eqv
+        else:
+            if pace_eqv <= 0 and lap_pace > 0:
+                pace_eqv = lap_pace / max(specificity_factor, 0.01)
+            distance_eqv_km = lap_dur / pace_eqv if pace_eqv > 0 else 0.0
+            if distance_eqv_km <= 0 and lap_dist > 0:
+                distance_eqv_km = (lap_dist / 1000.0) * max(specificity_factor, 0.01)
+            distance_km_ui = distance_eqv_km
+            pace_ui = pace_eqv
         split_rows.append(
             {
                 "lap": int(_safe_float(lap.get("lapIndex")) or idx),
-                "description": f"Lap {idx}",
-                "duration_label": _format_duration_short(lap_dur),
+                "description": _split_description_from_if_proxy(
+                    if_proxy, if_thresholds
+                ),
+                "duration_label": _format_duration_compact_with_seconds(lap_dur),
                 "duration_seconds": lap_dur,
                 "avg_hr": round(lap_hr, 1),
-                "if_pct": 0.0,
-                "distance_km": round(lap_dist / 1000.0, 3) if lap_dist > 0 else 0.0,
-                "distance_eqv_km": round(lap_dist / 1000.0, 3) if lap_dist > 0 else 0.0,
-                "pace_label": _format_pace_short(lap_pace if lap_pace > 0 else None),
+                "if_pct": round(if_proxy * 100.0, 1) if if_proxy > 0 else 0.0,
+                "distance_km": round(max(distance_km_ui, 0.0), 3),
+                "distance_eqv_km": round(max(distance_eqv_km, 0.0), 3),
+                "pace_label": _format_pace_short(pace_ui if pace_ui > 0 else None),
                 "pace_eqv_label": _format_pace_short(
-                    lap_pace if lap_pace > 0 else None
+                    pace_eqv if pace_eqv > 0 else None
                 ),
                 "display_mode": "running" if is_running_like else "eqv",
             }
@@ -8383,97 +8438,107 @@ def _build_garmin_activity_detail(
         },
         "details": {"source": "garmin"},
         "split_rows": split_rows,
-        "zone_summary": [],
+        "zone_summary": _zone_summary_rows(
+            {
+                "Z1": _safe_float(row.get("hr_time_in_zone_1")),
+                "Z2": _safe_float(row.get("hr_time_in_zone_2")),
+                "Z3": _safe_float(row.get("hr_time_in_zone_3")),
+                "Z4": _safe_float(row.get("hr_time_in_zone_4")),
+                "Z5": _safe_float(row.get("hr_time_in_zone_5")),
+            }
+        ),
     }
 
 
 def _merge_activity_details(
-    detail1: dict[str, Any],
-    detail2: dict[str, Any],
+    details: list[dict[str, Any]],
     merge_id: int,
-    activity_id_1: str,
-    activity_id_2: str,
+    activity_ids: list[str],
 ) -> dict[str, Any]:
-    """Combine two activity detail dicts into one merged detail response."""
-    a1 = detail1.get("activity", {})
-    a2 = detail2.get("activity", {})
-
-    dur1 = float(a1.get("duration_min") or 0.0) * 60.0
-    dur2 = float(a2.get("duration_min") or 0.0) * 60.0
-    total_dur = dur1 + dur2
-    total_dur_min = total_dur / 60.0
-
-    dist1 = float(a1.get("distance_km") or 0.0)
-    dist2 = float(a2.get("distance_km") or 0.0)
-    total_dist = dist1 + dist2
-
-    def _wav(v1: float, w1: float, v2: float, w2: float) -> float:
-        return (v1 * w1 + v2 * w2) / (w1 + w2) if (w1 + w2) > 0 else 0.0
-
-    avg_hr = _wav(
-        float(a1.get("avg_hr") or 0),
-        dur1,
-        float(a2.get("avg_hr") or 0),
-        dur2,
+    """Combine N Garmin activity detail dicts into one merged detail response."""
+    ordered = sorted(
+        details,
+        key=lambda detail: str(detail.get("activity", {}).get("start_time_utc") or ""),
     )
-    max_hr = max(float(a1.get("max_hr") or 0), float(a2.get("max_hr") or 0))
+    activities = [detail.get("activity", {}) for detail in ordered]
+    ordered_activity_ids = [
+        str(activity.get("activity_id") or "") for activity in activities
+    ]
 
-    if total_dist > 0 and total_dur > 0:
-        avg_pace_s_per_km = total_dur / total_dist
-        avg_pace_display = _format_pace_short(avg_pace_s_per_km)
-    else:
-        avg_pace_display = "-"
+    total_dur = sum(
+        float(activity.get("duration_min") or 0.0) * 60.0 for activity in activities
+    )
+    total_dist = sum(
+        float(activity.get("distance_km") or 0.0) for activity in activities
+    )
 
-    tss_total = float(a1.get("tss") or 0) + float(a2.get("tss") or 0)
-    rtss_total = float(a1.get("rtss") or 0) + float(a2.get("rtss") or 0)
+    def _weighted_average(field: str) -> float:
+        weighted_sum = 0.0
+        weight_sum = 0.0
+        for activity in activities:
+            value = float(activity.get(field) or 0.0)
+            weight = float(activity.get("duration_min") or 0.0) * 60.0
+            if value > 0 and weight > 0:
+                weighted_sum += value * weight
+                weight_sum += weight
+        return weighted_sum / weight_sum if weight_sum > 0 else 0.0
 
-    # Concatenate split_rows and renumber laps 1-based and continuous.
-    splits1 = list(detail1.get("split_rows") or [])
-    splits2 = list(detail2.get("split_rows") or [])
+    avg_hr = _weighted_average("avg_hr")
+    max_hr = max(
+        (float(activity.get("max_hr") or 0.0) for activity in activities), default=0.0
+    )
+    avg_pace_display = (
+        _format_pace_short(total_dur / total_dist)
+        if total_dist > 0 and total_dur > 0
+        else "-"
+    )
+    tss_total = sum(float(activity.get("tss") or 0.0) for activity in activities)
+    rtss_total = sum(float(activity.get("rtss") or 0.0) for activity in activities)
+    training_load_total = sum(
+        float(activity.get("training_load_garmin") or 0.0) for activity in activities
+    )
+
     combined_splits: list[dict[str, Any]] = []
-    for i, s in enumerate(splits1 + splits2, start=1):
-        entry = dict(s)
+    for i, split in enumerate(
+        [split for detail in ordered for split in list(detail.get("split_rows") or [])],
+        start=1,
+    ):
+        entry = dict(split)
         entry["lap"] = i
         combined_splits.append(entry)
 
-    # Use the earlier activity's start time.
-    start1 = str(a1.get("start_time_utc") or "")
-    start2 = str(a2.get("start_time_utc") or "")
-    if start1 <= start2:
-        date = str(a1.get("date") or "")
-        start_time_utc = start1
-        sport_type = str(a1.get("sport_type") or a2.get("sport_type") or "unknown")
-    else:
-        date = str(a2.get("date") or "")
-        start_time_utc = start2
-        sport_type = str(a2.get("sport_type") or a1.get("sport_type") or "unknown")
+    zone_totals = {"Z1": 0.0, "Z2": 0.0, "Z3": 0.0, "Z4": 0.0, "Z5": 0.0}
+    for detail in ordered:
+        for row in list(detail.get("zone_summary") or []):
+            if not isinstance(row, dict):
+                continue
+            zone = str(row.get("zone") or "")
+            if zone in zone_totals:
+                zone_totals[zone] += _safe_float(row.get("seconds"))
 
+    first = activities[0] if activities else {}
     return {
-        "owner": detail1.get("owner", ""),
+        "owner": ordered[0].get("owner", "") if ordered else "",
         "is_merged": True,
         "merge_id": merge_id,
-        "merged_activity_ids": [activity_id_1, activity_id_2],
+        "merged_activity_ids": ordered_activity_ids,
         "activity": {
             "activity_id": f"merged-{merge_id}",
-            "date": date,
-            "start_time_utc": start_time_utc,
-            "sport_type": sport_type,
+            "date": str(first.get("date") or ""),
+            "start_time_utc": str(first.get("start_time_utc") or ""),
+            "sport_type": str(first.get("sport_type") or "unknown"),
             "distance_km": round(total_dist, 2),
-            "duration_min": round(total_dur_min, 2),
+            "duration_min": round(total_dur / 60.0, 2),
             "avg_pace_display": avg_pace_display,
             "avg_hr": round(avg_hr, 1),
             "max_hr": round(max_hr, 1),
             "tss": round(tss_total, 1),
             "rtss": round(rtss_total, 1),
-            "training_load_garmin": round(
-                float(a1.get("training_load_garmin") or 0)
-                + float(a2.get("training_load_garmin") or 0),
-                1,
-            ),
+            "training_load_garmin": round(training_load_total, 1),
         },
         "details": {"source": "merged"},
         "split_rows": combined_splits,
-        "zone_summary": [],
+        "zone_summary": _zone_summary_rows(zone_totals),
     }
 
 
@@ -8726,11 +8791,13 @@ def _build_activity_dashboard_payload(
 
     # Load all active merges for this owner's DB upfront.
     all_merges = get_active_merges(db_path)
-    merges_by_id1: dict[str, dict[str, Any]] = {
-        m["activity_id_1"]: m for m in all_merges
-    }
-    merges_by_id2: dict[str, dict[str, Any]] = {
-        m["activity_id_2"]: m for m in all_merges
+    merges_by_activity_id: dict[str, dict[str, Any]] = {
+        str(activity_id): merge
+        for merge in all_merges
+        for activity_id in (
+            merge.get("activity_ids")
+            or [merge.get("activity_id_1"), merge.get("activity_id_2")]
+        )
     }
 
     latest_actual_day = pd.Timestamp(max_day).normalize()
@@ -9049,9 +9116,7 @@ def _build_activity_dashboard_payload(
                     }
                 )
 
-            actual_cards = _collapse_merged_cards(
-                actual_cards, merges_by_id1, merges_by_id2
-            )
+            actual_cards = _collapse_merged_cards(actual_cards, merges_by_activity_id)
             planned_cards = planned_by_day.get(day, [])
             day_cards.append(
                 {
@@ -11640,47 +11705,70 @@ def create_merge(
     resolved_owner = _resolve_owner(ctx, owner)
     db_path = _db_path_for_owner(resolved_owner)
 
-    id1 = _normalize_activity_id(payload.activity_id_1)
-    id2 = _normalize_activity_id(payload.activity_id_2)
-
-    if id1 == id2:
+    raw_ids = (
+        payload.activity_ids
+        if payload.activity_ids is not None
+        else [payload.activity_id_1, payload.activity_id_2]
+    )
+    activity_ids = [
+        _normalize_activity_id(activity_id) for activity_id in raw_ids if activity_id
+    ]
+    if len(activity_ids) < 2:
         raise HTTPException(
-            status_code=422, detail="Cannot merge an activity with itself"
+            status_code=422, detail="At least two activities are required"
+        )
+    if len(set(activity_ids)) != len(activity_ids):
+        raise HTTPException(
+            status_code=422, detail="Duplicate activity ids cannot be merged"
         )
 
-    meta1 = get_activity_meta(db_path, id1)
-    meta2 = get_activity_meta(db_path, id2)
-    if meta1 is None or meta2 is None:
-        raise HTTPException(status_code=404, detail="One or both activities not found")
-    if meta1["source"].lower() == "custom" or meta2["source"].lower() == "custom":
+    metas = {
+        activity_id: get_activity_meta(db_path, activity_id)
+        for activity_id in activity_ids
+    }
+    if any(meta is None for meta in metas.values()):
+        raise HTTPException(status_code=404, detail="One or more activities not found")
+    if any(
+        str(meta["source"]).lower() == "custom"
+        for meta in metas.values()
+        if meta is not None
+    ):
         raise HTTPException(
             status_code=422, detail="Custom activities cannot be merged"
         )
 
-    sport1 = meta1["sport_type"].strip().lower()
-    sport2 = meta2["sport_type"].strip().lower()
-    if not _merge_compatible(sport1, sport2):
-        raise HTTPException(
-            status_code=422,
-            detail=f"Incompatible sport types: {sport1!r} and {sport2!r}",
-        )
-
-    local_map = get_activity_local_start_map(db_path=db_path, activity_ids=[id1, id2])
-    ts1 = local_map.get(id1)
-    ts2 = local_map.get(id2)
-    if ts1 is not None and ts2 is not None:
-        if pd.Timestamp(ts1).date() != pd.Timestamp(ts2).date():
+    sport_by_id = {
+        activity_id: str(meta["sport_type"]).strip().lower()
+        for activity_id, meta in metas.items()
+        if meta is not None
+    }
+    base_sport = sport_by_id[activity_ids[0]]
+    for activity_id in activity_ids[1:]:
+        sport = sport_by_id[activity_id]
+        if not _merge_compatible(base_sport, sport):
             raise HTTPException(
                 status_code=422,
-                detail="Activities must be on the same day to be merged",
+                detail=f"Incompatible sport types: {base_sport!r} and {sport!r}",
             )
 
+    local_map = get_activity_local_start_map(db_path=db_path, activity_ids=activity_ids)
+    local_dates = {
+        pd.Timestamp(ts).date()
+        for ts in (local_map.get(activity_id) for activity_id in activity_ids)
+        if ts is not None
+    }
+    if len(local_dates) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail="Activities must be on the same day to be merged",
+        )
+
     try:
-        merge_id = create_activity_merge(db_path, id1, id2)
+        merge_id = create_activity_merge(db_path, activity_ids)
     except sqlite3.IntegrityError as exc:
         raise HTTPException(
             status_code=409,
-            detail="One or both activities are already part of a merge",
+            detail="One or more activities are already part of a merge",
         ) from exc
 
     return {"merge_id": merge_id}
@@ -11736,29 +11824,31 @@ def activity_detail(
         if merge is None:
             raise HTTPException(status_code=404, detail="Merged activity not found")
 
-        detail1 = _build_garmin_activity_detail(
-            activity_id=merge["activity_id_1"],
-            db_path=db_path,
-            lthr_curve=lthr_curve,
-            pace_curve=pace_curve,
-        )
-        detail2 = _build_garmin_activity_detail(
-            activity_id=merge["activity_id_2"],
-            db_path=db_path,
-            lthr_curve=lthr_curve,
-            pace_curve=pace_curve,
-        )
-        if detail1 is None or detail2 is None:
+        activity_ids = [
+            str(activity_id)
+            for activity_id in (
+                merge.get("activity_ids")
+                or [merge["activity_id_1"], merge["activity_id_2"]]
+            )
+        ]
+        details = [
+            _build_garmin_activity_detail(
+                activity_id=source_activity_id,
+                db_path=db_path,
+                lthr_curve=lthr_curve,
+                pace_curve=pace_curve,
+            )
+            for source_activity_id in activity_ids
+        ]
+        if any(detail is None for detail in details):
             raise HTTPException(
                 status_code=404,
-                detail="One or both source activities not found",
+                detail="One or more source activities not found",
             )
         result = _merge_activity_details(
-            detail1=detail1,
-            detail2=detail2,
+            details=[detail for detail in details if detail is not None],
             merge_id=merge_id_val,
-            activity_id_1=merge["activity_id_1"],
-            activity_id_2=merge["activity_id_2"],
+            activity_ids=activity_ids,
         )
         result["owner"] = resolved_owner
         return result

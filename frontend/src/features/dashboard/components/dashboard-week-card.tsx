@@ -17,6 +17,8 @@ interface DashboardWeekCardProps {
   onSelectActivity?: (activityId: string) => void;
   onMergeActivity?: (activityId: string) => void;
   onUnmergeActivity?: (mergeId: number) => void;
+  mergeMode?: boolean;
+  mergeSelectedIds?: string[];
   mergePendingId?: string | null;
   mergingActivity?: boolean;
   addingPlannedActivity?: boolean;
@@ -157,6 +159,8 @@ function DashboardWeekCardComponent({
   onSelectActivity,
   onMergeActivity,
   onUnmergeActivity,
+  mergeMode,
+  mergeSelectedIds,
   mergePendingId,
   mergingActivity,
   addingPlannedActivity,
@@ -201,6 +205,8 @@ function DashboardWeekCardComponent({
                       onSelectActivity={onSelectActivity}
                       onMergeActivity={onMergeActivity}
                       onUnmergeActivity={onUnmergeActivity}
+                      mergeMode={mergeMode}
+                      mergeSelectedIds={mergeSelectedIds}
                       mergePendingId={mergePendingId}
                       mergingActivity={mergingActivity}
                       addingPlannedActivity={addingPlannedActivity}
@@ -229,6 +235,12 @@ function DashboardWeekCardComponent({
                     onDeletePlannedActivity={onDeletePlannedActivity}
                     onDeleteCustomActivity={onDeleteCustomActivity}
                     onSelectActivity={onSelectActivity}
+                    onMergeActivity={onMergeActivity}
+                    onUnmergeActivity={onUnmergeActivity}
+                    mergeMode={mergeMode}
+                    mergeSelectedIds={mergeSelectedIds}
+                    mergePendingId={mergePendingId}
+                    mergingActivity={mergingActivity}
                     addingPlannedActivity={addingPlannedActivity}
                     markingPlannedDone={markingPlannedDone}
                     deletingPlannedActivity={deletingPlannedActivity}
@@ -256,6 +268,8 @@ export const DashboardWeekCard = memo(DashboardWeekCardComponent, (prev, next) =
   && prev.markingPlannedDone === next.markingPlannedDone
   && prev.deletingPlannedActivity === next.deletingPlannedActivity
   && prev.deletingCustomActivity === next.deletingCustomActivity
+  && prev.mergeMode === next.mergeMode
+  && prev.mergeSelectedIds === next.mergeSelectedIds
   && prev.mergePendingId === next.mergePendingId
   && prev.mergingActivity === next.mergingActivity
   && prev.userTimeZone === next.userTimeZone

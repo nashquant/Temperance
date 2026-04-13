@@ -7,8 +7,7 @@ interface ActivityMergeParams {
 }
 
 interface CreateActivityMergeRequest {
-  activity_id_1: string;
-  activity_id_2: string;
+  activity_ids: string[];
 }
 
 interface CreateActivityMergeResponse {
@@ -17,16 +16,14 @@ interface CreateActivityMergeResponse {
 
 export async function createActivityMerge(
   { token, owner }: ActivityMergeParams,
-  activityId1: string,
-  activityId2: string,
+  activityIds: string[],
 ): Promise<CreateActivityMergeResponse> {
   const search = new URLSearchParams();
   if (owner) search.set('owner', owner);
   const suffix = search.toString() ? `?${search.toString()}` : '';
 
   const payload: CreateActivityMergeRequest = {
-    activity_id_1: activityId1,
-    activity_id_2: activityId2,
+    activity_ids: activityIds,
   };
 
   return apiRequest<CreateActivityMergeResponse>(`${API_CONFIG.endpoints.activityMerges}${suffix}`, {

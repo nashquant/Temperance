@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from temperance.db import (
+    get_conn,
     init_db,
     create_activity_merge,
     delete_activity_merge,
@@ -79,3 +80,56 @@ def test_activity_cant_appear_on_both_sides(db_path: Path) -> None:
     create_activity_merge(db_path, "act-1", "act-2")
     with pytest.raises(Exception):
         create_activity_merge(db_path, "act-3", "act-2")
+
+
+
+def test_create_merge_stores_n_way_members(db_path: Path) -> None:
+    merge_id = create_activity_merge(db_path, ["act-1", "act-2", "act-3"])
+
+    row = get_activity_merge_by_id(db_path, merge_id)
+    assert row is not None
+    assert row["activity_id_1"] == "act-1"
+    assert row["activity_id_2"] == "act-2"
+    assert row["activity_ids"] == ["act-1", "act-2", "act-3"]
+
+    with get_conn(db_path) as conn:
+        members = conn.execute(
+            """
+            SELECT activity_id FROM activity_merge_members
+            WHERE merge_id = ?
+            ORDER BY position
+            """,
+            (merge_id,),
+        ).fetchall()
+    assert [member["activity_id"] for member in members] == ["act-1", "act-2", "act-3"]
+
+
+def test_existing_pairwise_rows_backfill_members(db_path: Path) -> None:
+    merge_id = create_activity_merge(db_path, "act-1", "act-2")
+    with get_conn(db_path) as conn:
+        conn.execute("DELETE FROM activity_merge_members WHERE merge_id = ?", (merge_id,))
+        conn.commit()
+
+    row = get_activity_merge_by_id(db_path, merge_id)
+
+    assert row is not None
+    assert row["activity_ids"] == ["act-1", "act-2"]
+
+
+def test_n_way_member_cannot_be_merged_again(db_path: Path) -> None:
+    create_activity_merge(db_path, ["act-1", "act-2", "act-3"])
+    with pytest.raises(Exception):
+        create_activity_merge(db_path, ["act-3", "act-4"])
+
+
+def test_delete_n_way_merge_removes_member_rows(db_path: Path) -> None:
+    merge_id = create_activity_merge(db_path, ["act-1", "act-2", "act-3"])
+
+    assert delete_activity_merge(db_path, merge_id) is True
+
+    with get_conn(db_path) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) AS n FROM activity_merge_members WHERE merge_id = ?",
+            (merge_id,),
+        ).fetchone()["n"]
+    assert count == 0

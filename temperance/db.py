@@ -229,6 +229,16 @@ CREATE TABLE IF NOT EXISTS activity_merges (
     FOREIGN KEY(activity_id_2) REFERENCES activities(activity_id)
 );
 
+CREATE TABLE IF NOT EXISTS activity_merge_members (
+    merge_id INTEGER NOT NULL,
+    activity_id TEXT NOT NULL UNIQUE,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (merge_id, activity_id),
+    FOREIGN KEY(merge_id) REFERENCES activity_merges(id),
+    FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
+);
+CREATE INDEX IF NOT EXISTS idx_activity_merge_members_merge ON activity_merge_members(merge_id, position);
+
 CREATE INDEX IF NOT EXISTS idx_activities_start_time ON activities(start_time_utc);
 CREATE INDEX IF NOT EXISTS idx_activity_records_activity_time ON activity_records(activity_id, record_time_utc);
 CREATE INDEX IF NOT EXISTS idx_activity_splits_activity ON activity_splits(activity_id);
@@ -396,6 +406,25 @@ def run_migrations(db_path: Path) -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS activity_merge_members (
+                merge_id INTEGER NOT NULL,
+                activity_id TEXT NOT NULL UNIQUE,
+                position INTEGER NOT NULL,
+                PRIMARY KEY (merge_id, activity_id),
+                FOREIGN KEY(merge_id) REFERENCES activity_merges(id),
+                FOREIGN KEY(activity_id) REFERENCES activities(activity_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_activity_merge_members_merge
+            ON activity_merge_members(merge_id, position)
+            """
+        )
+        _backfill_activity_merge_members(conn)
         conn.commit()
 
 
@@ -909,25 +938,96 @@ def upsert_activity_trimp(db_path: Path, rows: list[dict[str, Any]]) -> int:
         return conn.total_changes
 
 
-def create_activity_merge(db_path: Path, activity_id_1: str, activity_id_2: str) -> int:
-    """Create a merge record. Raises sqlite3.IntegrityError if either activity
-    already participates in a merge (UNIQUE constraints on both columns)."""
+def _normalize_merge_activity_ids(
+    activity_id_1: str | list[str] | tuple[str, ...], activity_id_2: str | None = None
+) -> list[str]:
+    if isinstance(activity_id_1, (list, tuple)):
+        raw_ids = list(activity_id_1)
+    else:
+        raw_ids = [activity_id_1]
+        if activity_id_2 is not None:
+            raw_ids.append(activity_id_2)
+    activity_ids = [str(activity_id or "").strip() for activity_id in raw_ids]
+    activity_ids = [activity_id for activity_id in activity_ids if activity_id]
+    if len(activity_ids) < 2:
+        raise ValueError("At least two activity ids are required")
+    if len(set(activity_ids)) != len(activity_ids):
+        raise sqlite3.IntegrityError("Duplicate activity id in merge")
+    return activity_ids
+
+
+def _backfill_activity_merge_members(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT id, activity_id_1, activity_id_2 FROM activity_merges ORDER BY id"
+    ).fetchall()
+    for row in rows:
+        for position, activity_id in enumerate(
+            [row["activity_id_1"], row["activity_id_2"]], start=1
+        ):
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO activity_merge_members (merge_id, activity_id, position)
+                VALUES (?, ?, ?)
+                """,
+                (row["id"], activity_id, position),
+            )
+
+
+def _activity_ids_for_merge_row(
+    conn: sqlite3.Connection, row: sqlite3.Row
+) -> list[str]:
+    member_rows = conn.execute(
+        """
+        SELECT activity_id FROM activity_merge_members
+        WHERE merge_id = ?
+        ORDER BY position, activity_id
+        """,
+        (row["id"],),
+    ).fetchall()
+    activity_ids = [str(member["activity_id"] or "") for member in member_rows]
+    if activity_ids:
+        return activity_ids
+    return [str(row["activity_id_1"] or ""), str(row["activity_id_2"] or "")]
+
+def create_activity_merge(
+    db_path: Path, activity_id_1: str | list[str] | tuple[str, ...], activity_id_2: str | None = None
+) -> int:
+    """Create a merge group and member rows.
+
+    The legacy two-argument call remains supported. The first two ids are stored
+    in activity_merges as compatibility shadows; activity_merge_members is the
+    canonical N-way membership source.
+    """
+    activity_ids = _normalize_merge_activity_ids(activity_id_1, activity_id_2)
     now = UTC_NOW()
     with closing(get_conn(db_path)) as conn:
+        _backfill_activity_merge_members(conn)
         cur = conn.execute(
             """
             INSERT INTO activity_merges (activity_id_1, activity_id_2, merged_at)
             VALUES (?, ?, ?)
             """,
-            (activity_id_1, activity_id_2, now),
+            (activity_ids[0], activity_ids[1], now),
+        )
+        merge_id = int(cur.lastrowid)
+        conn.executemany(
+            """
+            INSERT INTO activity_merge_members (merge_id, activity_id, position)
+            VALUES (?, ?, ?)
+            """,
+            [
+                (merge_id, activity_id, position)
+                for position, activity_id in enumerate(activity_ids, start=1)
+            ],
         )
         conn.commit()
-        return int(cur.lastrowid)
+        return merge_id
 
 
 def delete_activity_merge(db_path: Path, merge_id: int) -> bool:
-    """Delete a merge by id. Returns True if a row was deleted, False if not found."""
+    """Delete a merge group by id. Returns True if a row was deleted."""
     with closing(get_conn(db_path)) as conn:
+        conn.execute("DELETE FROM activity_merge_members WHERE merge_id = ?", (merge_id,))
         cur = conn.execute("DELETE FROM activity_merges WHERE id = ?", (merge_id,))
         conn.commit()
         return cur.rowcount > 0
@@ -935,6 +1035,7 @@ def delete_activity_merge(db_path: Path, merge_id: int) -> bool:
 
 def get_activity_merge_by_id(db_path: Path, merge_id: int) -> dict[str, Any] | None:
     with closing(get_conn(db_path)) as conn:
+        _backfill_activity_merge_members(conn)
         row = conn.execute(
             "SELECT id, activity_id_1, activity_id_2, merged_at "
             "FROM activity_merges WHERE id = ?",
@@ -942,30 +1043,37 @@ def get_activity_merge_by_id(db_path: Path, merge_id: int) -> dict[str, Any] | N
         ).fetchone()
         if row is None:
             return None
+        activity_ids = _activity_ids_for_merge_row(conn, row)
+        conn.commit()
         return {
             "id": row["id"],
             "activity_id_1": row["activity_id_1"],
             "activity_id_2": row["activity_id_2"],
+            "activity_ids": activity_ids,
             "merged_at": row["merged_at"],
         }
 
 
 def get_active_merges(db_path: Path) -> list[dict[str, Any]]:
-    """Return all merge records, ordered by id."""
+    """Return all active merge groups, ordered by id."""
     with closing(get_conn(db_path)) as conn:
+        _backfill_activity_merge_members(conn)
         rows = conn.execute(
             "SELECT id, activity_id_1, activity_id_2, merged_at "
             "FROM activity_merges ORDER BY id"
         ).fetchall()
-        return [
+        result = [
             {
                 "id": r["id"],
                 "activity_id_1": r["activity_id_1"],
                 "activity_id_2": r["activity_id_2"],
+                "activity_ids": _activity_ids_for_merge_row(conn, r),
                 "merged_at": r["merged_at"],
             }
             for r in rows
         ]
+        conn.commit()
+        return result
 
 
 def upsert_daily_summary(db_path: Path, rows: list[dict[str, Any]]) -> int:
@@ -1122,7 +1230,9 @@ def get_activity_row(db_path: Path, activity_id: str) -> dict[str, Any] | None:
     with closing(get_conn(db_path)) as conn:
         row = conn.execute(
             "SELECT activity_id, start_time_utc, sport_type, distance_m, duration_s, "
-            "avg_hr, max_hr, avg_pace_s_per_km, trimp, training_load_garmin "
+            "avg_hr, max_hr, avg_pace_s_per_km, trimp, training_load_garmin, "
+            "hr_time_in_zone_1, hr_time_in_zone_2, hr_time_in_zone_3, "
+            "hr_time_in_zone_4, hr_time_in_zone_5 "
             "FROM activities WHERE activity_id = ?",
             (activity_id,),
         ).fetchone()
@@ -1139,6 +1249,11 @@ def get_activity_row(db_path: Path, activity_id: str) -> dict[str, Any] | None:
         "avg_pace_s_per_km": row["avg_pace_s_per_km"],
         "trimp": row["trimp"],
         "training_load_garmin": row["training_load_garmin"],
+        "hr_time_in_zone_1": row["hr_time_in_zone_1"],
+        "hr_time_in_zone_2": row["hr_time_in_zone_2"],
+        "hr_time_in_zone_3": row["hr_time_in_zone_3"],
+        "hr_time_in_zone_4": row["hr_time_in_zone_4"],
+        "hr_time_in_zone_5": row["hr_time_in_zone_5"],
     }
 
 
@@ -1361,13 +1476,18 @@ def get_merges_cache_key(db_path: Path) -> str:
     with closing(get_conn(db_path)) as conn:
         row = conn.execute(
             """
-            SELECT COUNT(*) AS n, MAX(merged_at) AS max_merged_at
+            SELECT
+                COUNT(DISTINCT activity_merges.id) AS n,
+                MAX(activity_merges.merged_at) AS max_merged_at,
+                COUNT(activity_merge_members.activity_id) AS member_n
             FROM activity_merges
+            LEFT JOIN activity_merge_members
+              ON activity_merge_members.merge_id = activity_merges.id
             """
         ).fetchone()
     if not row:
         return "0:none"
-    return f"{int(row['n'] or 0)}:{row['max_merged_at'] or 'none'}"
+    return f"{int(row['n'] or 0)}:{row['max_merged_at'] or 'none'}:{int(row['member_n'] or 0)}"
 
 
 def get_table_counts(db_path: Path) -> dict[str, int]:
