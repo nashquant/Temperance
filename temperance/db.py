@@ -833,7 +833,11 @@ def upsert_wellness_daily(
         return changed
 
 
-def get_runs_df(db_path: Path, include_invalid: bool = False) -> pd.DataFrame:
+def get_runs_df(
+    db_path: Path,
+    include_invalid: bool = False,
+    start_day_utc: str | None = None,
+) -> pd.DataFrame:
     with closing(get_conn(db_path)) as conn:
         # Avoid loading heavy raw payload blobs on every rerun; charts/metrics do not use raw_json.
         cols = [
@@ -842,7 +846,14 @@ def get_runs_df(db_path: Path, include_invalid: bool = False) -> pd.DataFrame:
             if str(row["name"]) != "raw_json"
         ]
         col_sql = ", ".join([f'"{c}"' for c in cols]) if cols else "*"
-        where_sql = "" if include_invalid else "WHERE COALESCE(is_invalid, 0) = 0"
+
+        conditions: list[str] = []
+        if not include_invalid:
+            conditions.append("COALESCE(is_invalid, 0) = 0")
+        if start_day_utc:
+            conditions.append(f"start_time_utc >= '{start_day_utc}T00:00:00Z'")
+
+        where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         return pd.read_sql_query(
             f"SELECT {col_sql} FROM activities {where_sql} ORDER BY start_time_utc DESC",
             conn,

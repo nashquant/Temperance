@@ -6729,7 +6729,17 @@ def _metrics_for_filters(
 
     metrics_parts: list[pd.DataFrame] = []
 
-    runs_df = get_runs_df(db_path, include_invalid=include_invalid)
+    # Compute the date-range cutoff early so the SQL query only loads what we need.
+    start_day_filter: str | None = None
+    if not start_day and not end_day:
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(days=int(days))
+        start_day_filter = cutoff_dt.strftime("%Y-%m-%d")
+    elif start_day:
+        start_day_filter = str(start_day)
+
+    runs_df = get_runs_df(
+        db_path, include_invalid=include_invalid, start_day_utc=start_day_filter
+    )
     if not runs_df.empty:
         runs_metrics_df = compute_metrics(
             runs_df=runs_df,
