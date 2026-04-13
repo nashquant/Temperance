@@ -113,6 +113,9 @@ from temperance.db import (
     upsert_planning_decision,
     upsert_sleep_daily,
     upsert_wellness_daily,
+    get_activities_cache_key,
+    get_planned_activities_cache_key,
+    get_custom_activities_cache_key,
 )
 from temperance.garmin_client import (
     GarminActivityChunk,
@@ -125,6 +128,30 @@ from temperance.garmin_client import (
 )
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+
+# ---------------------------------------------------------------------------
+# Process-level cache for _build_activity_dashboard_payload
+# Keyed by content hashes so entries are automatically invalidated when
+# data changes. OrderedDict enforces a maximum size (evicts oldest entries).
+# ---------------------------------------------------------------------------
+from collections import OrderedDict as _OrderedDict
+
+_DASHBOARD_PAYLOAD_CACHE_MAXSIZE = 32
+_dashboard_payload_cache: _OrderedDict[str, dict] = _OrderedDict()
+_dashboard_payload_cache_lock = threading.Lock()
+
+
+def _dashboard_cache_key(
+    db_path: Path,
+    sport: str | None,
+    week_offset: int,
+    weeks: int,
+) -> str:
+    acts = get_activities_cache_key(db_path)
+    planned = get_planned_activities_cache_key(db_path)
+    custom = get_custom_activities_cache_key(db_path)
+    raw = f"{db_path}|{sport}|{week_offset}|{weeks}|{acts}|{planned}|{custom}"
+    return hashlib.sha1(raw.encode()).hexdigest()
 
 
 class AuthConfigurationError(RuntimeError):
@@ -8449,6 +8476,13 @@ def _build_activity_dashboard_payload(
     week_offset: int,
     sport: str | None,
 ) -> dict[str, Any]:
+    # --- Cache read ---
+    cache_key = _dashboard_cache_key(db_path, sport, week_offset, visible_weeks)
+    with _dashboard_payload_cache_lock:
+        if cache_key in _dashboard_payload_cache:
+            _dashboard_payload_cache.move_to_end(cache_key)
+            return _dashboard_payload_cache[cache_key]
+
     metrics_df, actual_metrics_df = _dashboard_metrics_frames(
         db_path=db_path,
         sport=sport,
@@ -10296,6 +10330,12 @@ def vdot_view(
             "observed_max": observed_max,
         }
     )
+    # --- Cache write ---
+    with _dashboard_payload_cache_lock:
+        _dashboard_payload_cache[cache_key] = payload
+        _dashboard_payload_cache.move_to_end(cache_key)
+        while len(_dashboard_payload_cache) > _DASHBOARD_PAYLOAD_CACHE_MAXSIZE:
+            _dashboard_payload_cache.popitem(last=False)
     return payload
 
 
