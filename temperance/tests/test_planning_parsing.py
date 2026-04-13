@@ -28,7 +28,9 @@ def _load_module():
     sys.modules["pandas"] = fake_pandas
     sys.path.insert(0, str(BACKEND_ROOT))
     try:
-        spec = importlib.util.spec_from_file_location("temperance_planning_parsing", MODULE_PATH)
+        spec = importlib.util.spec_from_file_location(
+            "temperance_planning_parsing", MODULE_PATH
+        )
         assert spec is not None
         assert spec.loader is not None
         module = importlib.util.module_from_spec(spec)
@@ -58,9 +60,26 @@ def test_expand_planned_segments_supports_parenthetical_recovery_blocks() -> Non
     )
 
     assert warnings == []
-    assert [segment["minutes"] for segment in segments] == [15.0, 8.0, 2.0, 8.0, 2.0, 8.0, 2.0, 15.0]
-    assert [segment["pace_sec_per_km"] for segment in segments[1:6:2]] == [225.0, 225.0, 225.0]
-    assert [segment["pace_sec_per_km"] for segment in segments[2:7:2]] == [280.0, 280.0, 280.0]
+    assert [segment["duration_min"] for segment in segments] == [
+        15.0,
+        8.0,
+        2.0,
+        8.0,
+        2.0,
+        8.0,
+        2.0,
+        15.0,
+    ]
+    assert [segment["pace_s_per_km"] for segment in segments[1:6:2]] == [
+        225.0,
+        225.0,
+        225.0,
+    ]
+    assert [segment["pace_s_per_km"] for segment in segments[2:7:2]] == [
+        280.0,
+        280.0,
+        280.0,
+    ]
 
 
 def test_expand_planned_segments_derives_if_from_tss_for_repeated_distance() -> None:
@@ -76,8 +95,13 @@ def test_expand_planned_segments_derives_if_from_tss_for_repeated_distance() -> 
 
     assert all(segment["distance_km"] == 1.0 for segment in work_segments)
     assert all(segment["if_input_source"] == "tss_derived" for segment in work_segments)
-    assert all(math.isclose(float(segment["if_input"]), math.sqrt(0.8)) for segment in work_segments)
+    assert all(
+        math.isclose(float(segment["if_input"]), math.sqrt(0.8))
+        for segment in work_segments
+    )
 
-    assert all(segment["minutes"] == 2.0 for segment in recovery_segments)
+    assert all(segment["duration_min"] == 2.0 for segment in recovery_segments)
     assert all(segment["if_input"] == 0.6 for segment in recovery_segments)
-    assert all(segment["if_input_source"] == "explicit" for segment in recovery_segments)
+    assert all(
+        segment["if_input_source"] == "explicit" for segment in recovery_segments
+    )

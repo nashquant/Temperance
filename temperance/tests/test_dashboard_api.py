@@ -6,7 +6,9 @@ import pandas as pd
 from backend.app import main as backend_main
 
 
-def test_dashboard_metrics_frames_filter_invalid_rows_without_second_metrics_pass(monkeypatch) -> None:
+def test_dashboard_metrics_frames_filter_invalid_rows_without_second_metrics_pass(
+    monkeypatch,
+) -> None:
     calls: list[tuple[bool, bool]] = []
     source_df = pd.DataFrame(
         [
@@ -34,7 +36,9 @@ def test_dashboard_metrics_frames_filter_invalid_rows_without_second_metrics_pas
     )
 
     def fake_metrics_for_filters(**kwargs):
-        calls.append((bool(kwargs["include_invalid"]), bool(kwargs["include_mechanical_load"])))
+        calls.append(
+            (bool(kwargs["include_invalid"]), bool(kwargs["include_mechanical_load"]))
+        )
         return source_df.copy()
 
     monkeypatch.setattr(backend_main, "_metrics_for_filters", fake_metrics_for_filters)
@@ -53,14 +57,36 @@ def test_dashboard_metrics_frames_filter_invalid_rows_without_second_metrics_pas
     )
 
     assert calls == [(True, False)]
-    assert set(actual_metrics_df["activity_id"]) == {"run-1", "run-2", "custom-2026-03-31-1"}
+    assert set(actual_metrics_df["activity_id"]) == {
+        "run-1",
+        "run-2",
+        "custom-2026-03-31-1",
+    }
     assert set(metrics_df["activity_id"]) == {"run-1", "custom-2026-03-31-1"}
-    assert metrics_df.loc[metrics_df["activity_id"] == "run-1", "distance_km_running"].iloc[0] == 5.0
-    assert metrics_df.loc[metrics_df["activity_id"] == "custom-2026-03-31-1", "distance_km_running"].iloc[0] == 0.0
-    assert actual_metrics_df.loc[actual_metrics_df["activity_id"] == "run-1", "day"].iloc[0].date().isoformat() == "2026-03-31"
+    assert (
+        metrics_df.loc[
+            metrics_df["activity_id"] == "run-1", "distance_km_running"
+        ].iloc[0]
+        == 5.0
+    )
+    assert (
+        metrics_df.loc[
+            metrics_df["activity_id"] == "custom-2026-03-31-1", "distance_km_running"
+        ].iloc[0]
+        == 0.0
+    )
+    assert (
+        actual_metrics_df.loc[actual_metrics_df["activity_id"] == "run-1", "day"]
+        .iloc[0]
+        .date()
+        .isoformat()
+        == "2026-03-31"
+    )
 
 
-def test_dashboard_metrics_frames_uses_owner_timezone_for_late_evening_activities(monkeypatch) -> None:
+def test_dashboard_metrics_frames_uses_owner_timezone_for_late_evening_activities(
+    monkeypatch,
+) -> None:
     source_df = pd.DataFrame(
         [
             {
@@ -78,20 +104,40 @@ def test_dashboard_metrics_frames_uses_owner_timezone_for_late_evening_activitie
         ]
     )
 
-    monkeypatch.setattr(backend_main, "_metrics_for_filters", lambda **kwargs: source_df.copy())
-    monkeypatch.setattr(backend_main, "get_activity_local_start_map", lambda **kwargs: {})
-    monkeypatch.setattr(backend_main, "get_setting", lambda db_path, key: "America/Sao_Paulo")
+    monkeypatch.setattr(
+        backend_main, "_metrics_for_filters", lambda **kwargs: source_df.copy()
+    )
+    monkeypatch.setattr(
+        backend_main, "get_activity_local_start_map", lambda **kwargs: {}
+    )
+    monkeypatch.setattr(
+        backend_main, "get_setting", lambda db_path, key: "America/Sao_Paulo"
+    )
 
     metrics_df, actual_metrics_df = backend_main._dashboard_metrics_frames(
         db_path=Path("ignored.db"),
         sport=None,
     )
 
-    assert metrics_df.loc[metrics_df["activity_id"] == "run-1", "day"].iloc[0].date().isoformat() == "2026-04-05"
-    assert actual_metrics_df.loc[actual_metrics_df["activity_id"] == "run-1", "day"].iloc[0].date().isoformat() == "2026-04-05"
+    assert (
+        metrics_df.loc[metrics_df["activity_id"] == "run-1", "day"]
+        .iloc[0]
+        .date()
+        .isoformat()
+        == "2026-04-05"
+    )
+    assert (
+        actual_metrics_df.loc[actual_metrics_df["activity_id"] == "run-1", "day"]
+        .iloc[0]
+        .date()
+        .isoformat()
+        == "2026-04-05"
+    )
 
 
-def test_week_outlook_uses_yesterday_planned_cutoff_when_today_has_no_activity(monkeypatch) -> None:
+def test_week_outlook_uses_yesterday_planned_cutoff_when_today_has_no_activity(
+    monkeypatch,
+) -> None:
     class FixedDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -103,8 +149,18 @@ def test_week_outlook_uses_yesterday_planned_cutoff_when_today_has_no_activity(m
         "_metrics_for_filters",
         lambda **kwargs: pd.DataFrame(
             [
-                {"start_time_utc": "2026-03-30T10:00:00Z", "tss": 80.0, "rtss": 70.0, "distance_proxy_km": 12.0},
-                {"start_time_utc": "2026-03-31T10:00:00Z", "tss": 70.0, "rtss": 60.0, "distance_proxy_km": 10.0},
+                {
+                    "start_time_utc": "2026-03-30T10:00:00Z",
+                    "tss": 80.0,
+                    "rtss": 70.0,
+                    "distance_proxy_km": 12.0,
+                },
+                {
+                    "start_time_utc": "2026-03-31T10:00:00Z",
+                    "tss": 70.0,
+                    "rtss": 60.0,
+                    "distance_proxy_km": 10.0,
+                },
             ]
         ),
     )
@@ -128,6 +184,11 @@ def test_week_outlook_uses_yesterday_planned_cutoff_when_today_has_no_activity(m
         ),
     )
     monkeypatch.setattr(backend_main, "_load_curve_points", lambda **kwargs: [])
+    monkeypatch.setattr(
+        backend_main,
+        "_blended_weekly_targets_for_day",
+        lambda **kwargs: {"tss": 200.0, "rtss": 180.0, "distance_eqv_km": 50.0},
+    )
     monkeypatch.setattr(backend_main, "datetime", FixedDateTime)
 
     payload = backend_main._build_week_outlook_payload(
@@ -147,7 +208,9 @@ def test_week_outlook_uses_yesterday_planned_cutoff_when_today_has_no_activity(m
     assert payload["today_day"] == "2026-04-01"
 
 
-def test_week_outlook_keeps_today_planned_cutoff_when_today_has_activity(monkeypatch) -> None:
+def test_week_outlook_keeps_today_planned_cutoff_when_today_has_activity(
+    monkeypatch,
+) -> None:
     class FixedDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -159,9 +222,24 @@ def test_week_outlook_keeps_today_planned_cutoff_when_today_has_activity(monkeyp
         "_metrics_for_filters",
         lambda **kwargs: pd.DataFrame(
             [
-                {"start_time_utc": "2026-03-30T10:00:00Z", "tss": 80.0, "rtss": 70.0, "distance_proxy_km": 12.0},
-                {"start_time_utc": "2026-03-31T10:00:00Z", "tss": 70.0, "rtss": 60.0, "distance_proxy_km": 10.0},
-                {"start_time_utc": "2026-04-01T10:00:00Z", "tss": 60.0, "rtss": 50.0, "distance_proxy_km": 8.0},
+                {
+                    "start_time_utc": "2026-03-30T10:00:00Z",
+                    "tss": 80.0,
+                    "rtss": 70.0,
+                    "distance_proxy_km": 12.0,
+                },
+                {
+                    "start_time_utc": "2026-03-31T10:00:00Z",
+                    "tss": 70.0,
+                    "rtss": 60.0,
+                    "distance_proxy_km": 10.0,
+                },
+                {
+                    "start_time_utc": "2026-04-01T10:00:00Z",
+                    "tss": 60.0,
+                    "rtss": 50.0,
+                    "distance_proxy_km": 8.0,
+                },
             ]
         ),
     )
@@ -185,6 +263,11 @@ def test_week_outlook_keeps_today_planned_cutoff_when_today_has_activity(monkeyp
         ),
     )
     monkeypatch.setattr(backend_main, "_load_curve_points", lambda **kwargs: [])
+    monkeypatch.setattr(
+        backend_main,
+        "_blended_weekly_targets_for_day",
+        lambda **kwargs: {"tss": 200.0, "rtss": 180.0, "distance_eqv_km": 50.0},
+    )
     monkeypatch.setattr(backend_main, "datetime", FixedDateTime)
 
     payload = backend_main._build_week_outlook_payload(

@@ -720,13 +720,16 @@ def _activity_start_local_series(activity_df: pd.DataFrame, db_path: Path) -> pd
             timezone_name, _ = _owner_timezone_info(db_path)
         except Exception:
             timezone_name = _normalize_timezone_name(APP_TIMEZONE_NAME)
-    zone = ZoneInfo(timezone_name)
+    # Use the string name for pandas tz operations — ZoneInfo objects are not
+    # supported by pandas < 2.0 (pandas 1.4.x raises AttributeError internally).
     start_local = pd.Series(pd.NaT, index=activity_df.index, dtype="datetime64[ns]")
 
     if "start_local" in activity_df.columns:
         parsed_local = pd.to_datetime(activity_df.get("start_local"), errors="coerce")
         if getattr(parsed_local.dt, "tz", None) is not None:
-            parsed_local = parsed_local.dt.tz_convert(zone).dt.tz_localize(None)
+            parsed_local = parsed_local.dt.tz_convert(timezone_name).dt.tz_localize(
+                None
+            )
         start_local = parsed_local
 
     if "activity_id" in activity_df.columns:
@@ -755,13 +758,15 @@ def _activity_start_local_series(activity_df: pd.DataFrame, db_path: Path) -> pd
                 errors="coerce",
             )
             if getattr(mapped_local.dt, "tz", None) is not None:
-                mapped_local = mapped_local.dt.tz_convert(zone).dt.tz_localize(None)
+                mapped_local = mapped_local.dt.tz_convert(timezone_name).dt.tz_localize(
+                    None
+                )
             start_local = start_local.fillna(mapped_local)
 
     fallback_local = pd.to_datetime(
         activity_df.get("start_time_utc"), utc=True, errors="coerce"
     )
-    fallback_local = fallback_local.dt.tz_convert(zone).dt.tz_localize(None)
+    fallback_local = fallback_local.dt.tz_convert(timezone_name).dt.tz_localize(None)
     return start_local.fillna(fallback_local)
 
 
