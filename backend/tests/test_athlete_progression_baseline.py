@@ -348,6 +348,7 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
             patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=420.0),
             patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=70.0),
             patch("backend.app.main._load_curve_points", return_value=[]),
+            patch("backend.app.main.get_active_merges", return_value=[]),
             patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
         ):
             mock_datetime.now.return_value = datetime(2026, 2, 15, tzinfo=timezone.utc)
@@ -402,6 +403,7 @@ class AthleteProgressionBaselineTest(unittest.TestCase):
             patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=420.0),
             patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=70.0),
             patch("backend.app.main._load_curve_points", return_value=[]),
+            patch("backend.app.main.get_active_merges", return_value=[]),
             patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
         ):
             mock_datetime.now.return_value = datetime(2026, 4, 6, 12, tzinfo=timezone.utc)

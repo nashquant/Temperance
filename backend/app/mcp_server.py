@@ -232,6 +232,12 @@ class DeleteCustomActivitiesArgs(BaseModel):
     keys: list[DeletePlannedActivitiesKey]
 
 
+class MarkActivityInvalidArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    activity_id: str
+    is_invalid: bool = True
+
+
 class TriggerSyncArgs(BaseModel):
     owner: str = DEFAULT_OWNER
     days_back: int = 30
@@ -379,6 +385,7 @@ def _db_helpers() -> dict[str, Any]:
         delete_planned_activities,
         get_last_sync,
         get_setting,
+        set_activity_invalid,
         set_planned_activity_manual_done,
     )
 
@@ -386,6 +393,7 @@ def _db_helpers() -> dict[str, Any]:
         "get_last_sync": get_last_sync,
         "get_setting": get_setting,
         "delete_planned_activities": delete_planned_activities,
+        "set_activity_invalid": set_activity_invalid,
         "set_planned_activity_manual_done": set_planned_activity_manual_done,
         "delete_custom_activities": delete_custom_activities,
     }
@@ -1799,6 +1807,14 @@ def tool_delete_custom_activities(arguments: dict[str, Any]) -> dict[str, Any]:
     return {"owner": args.owner, "db_path": str(db_path), "deleted_count": int(deleted)}
 
 
+def tool_mark_activity_invalid(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = MarkActivityInvalidArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    db = _db_helpers()
+    success = db["set_activity_invalid"](db_path, args.activity_id, args.is_invalid)
+    return {"owner": args.owner, "db_path": str(db_path), "success": success}
+
+
 def tool_trigger_sync(arguments: dict[str, Any]) -> dict[str, Any]:
     args = TriggerSyncArgs.model_validate(arguments or {})
     db_path = _resolve_db_path(args.owner)
@@ -2483,6 +2499,8 @@ def _day_summaries_from_entries(
                 "run_rtss": 0.0,
                 "run_duration_s": 0.0,
                 "support_tss": 0.0,
+                "run_max_if": 0.0,
+                "run_sum_if_dur": 0.0,
                 "threshold_like_run_entries": 0,
                 "specific_like_run_entries": 0,
                 "long_duration_run_entries": 0,
@@ -2503,18 +2521,24 @@ def _day_summaries_from_entries(
                 avg_if=if_proxy,
                 max_if=if_proxy,
             )
-            is_threshold_like_run = if_proxy >= 0.88 or (
-                "threshold" in workout_text.lower()
+            workout_text_lower = workout_text.lower()
+            is_threshold_like_run = (
+                if_proxy >= 0.88
+                or "threshold" in workout_text_lower
+                or re.search(r"@\s*(?:9[0-9]|10[0-5])\s*%", workout_text_lower)
+                is not None
             )
             is_specific_like_run = (
                 not is_long
-                and not is_threshold_like_run
                 and dur_min >= 60.0
                 and if_proxy >= 0.79
             )
             d["run_tss"] += tss
             d["run_rtss"] += rtss
             d["run_duration_s"] += dur_s
+            if dur_s > 0:
+                d["run_sum_if_dur"] += if_proxy * dur_s
+            d["run_max_if"] = max(d["run_max_if"], if_proxy)
             d["threshold_like_run_entries"] += int(is_threshold_like_run)
             d["specific_like_run_entries"] += int(is_specific_like_run)
             d["long_duration_run_entries"] += int(is_long)
@@ -2545,16 +2569,17 @@ def _day_summaries_from_entries(
         )
         run_dur_min = d["run_duration_s"] / 60.0
         run_avg_if = (
-            (d["run_rtss"] / max(d["run_tss"], 1.0)) ** 0.5
-            if d["run_tss"] > 0 and d["run_rtss"] > 0
+            d["run_sum_if_dur"] / d["run_duration_s"]
+            if d["run_duration_s"] > 0
             else 0.0
         )
+        run_max_if = d["run_max_if"]
         run_stress_class = "easy"
         if d["run_duration_s"] > 0:
             run_stress_class_obj, _, _ = classify_session_stress(
                 estimated_tss=d["run_tss"],
                 avg_if=run_avg_if,
-                max_if=run_avg_if,
+                max_if=run_max_if,
                 total_minutes=run_dur_min,
                 modality="running",
                 weekly_baseline_tss=weekly_baseline_tss,
@@ -2566,6 +2591,7 @@ def _day_summaries_from_entries(
             and run_dur_min >= 90.0
             and run_avg_if >= 0.68
             and run_avg_if <= 0.86
+            and run_max_if <= 0.86
             and d["threshold_like_run_entries"] == 0
         )
 
@@ -3284,6 +3310,12 @@ TOOLS: dict[str, ToolSpec] = {
         description="Remove one or more custom activity entries by day_utc and line_no.",
         input_schema=DeleteCustomActivitiesArgs.model_json_schema(),
         handler=tool_delete_custom_activities,
+    ),
+    "mark_activity_invalid": ToolSpec(
+        name="mark_activity_invalid",
+        description="Toggle whether a Garmin activity is excluded from default analytics and dashboard metrics.",
+        input_schema=MarkActivityInvalidArgs.model_json_schema(),
+        handler=tool_mark_activity_invalid,
     ),
     "trigger_sync": ToolSpec(
         name="trigger_sync",

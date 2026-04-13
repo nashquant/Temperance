@@ -80,9 +80,27 @@ When using this doctrine to plan or interpret training:
 
 - Anchor recommendations to the current weekly load budget.
 - Name which phase the build is in and which overlay set is active.
+- Establish projected weekly `total_load`, primary-specific load, and any key duration anchor before judging a single day.
+- Name the limiting constraint, such as durability, recovery, event timing, density, life constraint, or unknown.
 - Explain recommendations through hard-session type, spacing, density, and progression control rather than only intensity labels.
+- Distinguish load role from session subtype; a moderate day can behave like a hard day when it drifts above its structural ceiling.
+- State the rejected or not-chosen alternative when the decision could plausibly go another way.
+- Label the basis of claims as invariant doctrine, active build fact, private/local evidence, or inference.
+- If required inputs are missing, say which layer is missing or lower confidence instead of filling the gap with inference.
 - Preserve some background contact with non-dominant qualities unless the active build explicitly says not to.
 - During Base / Capacity Build, do not collapse the block into one monotone middle intensity lane.
+
+Every substantive recommendation should be auditable back to:
+
+- active phase
+- weekly anchors
+- limiting constraint
+- hard-session type or load role
+- spacing/density rationale
+- rejected or not-chosen alternative
+- evidence-backed confidence and missing inputs
+
+This is a reasoning contract, not user-interface boilerplate. Compress the wording when appropriate, but keep enough of the decision frame visible that a reviewer can tell why the recommendation was chosen.
 
 ## Workout-template behavior
 
