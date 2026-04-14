@@ -249,6 +249,7 @@ export function DashboardPage(): JSX.Element {
     finalize: (() => Promise<void>) | null;
   } | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
+  const [undoBusy, setUndoBusy] = useState(false);
   const [mergePendingId, setMergePendingId] = useState<string | null>(null);
   const [mergeMode, setMergeMode] = useState(false);
   const [mergeSelectedIds, setMergeSelectedIds] = useState<string[]>([]);
@@ -571,10 +572,15 @@ export function DashboardPage(): JSX.Element {
       window.clearTimeout(undoDismissTimerRef.current);
       undoDismissTimerRef.current = null;
     }
-    undoStateRef.current = null;
-    setUndoVisible(false);
-    window.setTimeout(() => setUndoState(null), 180);
-    await pending.action?.();
+    setUndoBusy(true);
+    try {
+      await pending.action?.();
+    } finally {
+      setUndoBusy(false);
+      undoStateRef.current = null;
+      setUndoVisible(false);
+      window.setTimeout(() => setUndoState(null), 180);
+    }
   };
   const plannedDoneMutation = useMutation({
     mutationFn: async ({
@@ -1335,6 +1341,7 @@ export function DashboardPage(): JSX.Element {
                             : null
                         }
                         undoVisible={undoVisible}
+                        undoBusy={undoBusy}
                         onUndoActivity={() => void handleUndo()}
                       />
                     </div>
