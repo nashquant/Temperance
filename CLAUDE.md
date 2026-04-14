@@ -8,24 +8,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Backend (FastAPI + Python)
 
-```bash
-cd backend && source .venv/bin/activate
+The project venv is at `.venv/` in the repo root. All Python/pytest commands run from the repo root without activating the venv — just invoke `.venv/bin/python` or `.venv/bin/pytest` directly, or rely on the shell PATH if the venv is already active. Do NOT `cd backend` or `source .venv/bin/activate`.
 
-# Run dev server
-./run.sh
-# or: python3 -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+```bash
+# Run dev server (from repo root)
+./backend/run.sh
+# or: .venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 
 # Run MCP server (stdio)
-python3 -m backend.app.mcp_server --stdio
+.venv/bin/python -m backend.app.mcp_server --stdio
 
 # Run all Python tests
-pytest temperance/tests -q
+.venv/bin/pytest temperance/tests -q
 
 # Run a single test file
-pytest temperance/tests/test_activity_parsing.py -v
+.venv/bin/pytest temperance/tests/test_activity_parsing.py -v
 
 # Run backend-specific tests
-python -m unittest backend.tests.test_mcp_server -v
+.venv/bin/python -m unittest backend.tests.test_mcp_server -v
 ```
 
 ### Frontend (React + Vite + TypeScript)

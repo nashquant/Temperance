@@ -124,6 +124,11 @@ function formatLongDate(dayUtc: string): string {
   }).format(parsed);
 }
 
+function activityActionKey(dayUtc: string | undefined, lineNo: number | undefined): string | null {
+  if (!dayUtc || typeof lineNo !== 'number') return null;
+  return `${dayUtc}:${lineNo}`;
+}
+
 function startDayFromPreset(monthsBack: number): string {
   const now = new Date();
   const start = new Date(now);
@@ -199,6 +204,12 @@ export function DashboardPage(): JSX.Element {
   const [mergePendingId, setMergePendingId] = useState<string | null>(null);
   const [mergeMode, setMergeMode] = useState(false);
   const [mergeSelectedIds, setMergeSelectedIds] = useState<string[]>([]);
+  const [mergeSubmittingIds, setMergeSubmittingIds] = useState<string[]>([]);
+  const [unmergingMergeId, setUnmergingMergeId] = useState<number | null>(null);
+  const [markingDoneKey, setMarkingDoneKey] = useState<string | null>(null);
+  const [deletingPlannedKey, setDeletingPlannedKey] = useState<string | null>(null);
+  const [deletingCustomKey, setDeletingCustomKey] = useState<string | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
   const { setHeaderActions } = useAppLayoutContext();
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>('');
@@ -573,12 +584,21 @@ export function DashboardPage(): JSX.Element {
       if (!session?.token) throw new Error('Missing auth token');
       return createActivityMerge({ token: session.token, owner: profile?.owner }, activityIds);
     },
+    onMutate: ({ activityIds }) => {
+      setMergeError(null);
+      setMergeSubmittingIds(activityIds);
+    },
+    onError: (error) => {
+      setMergeError(error instanceof Error ? error.message : 'Unable to merge activities.');
+    },
     onSettled: () => {
       setMergePendingId(null);
+      setMergeSubmittingIds([]);
     },
     onSuccess: async () => {
       setMergeMode(false);
       setMergeSelectedIds([]);
+      setMergeError(null);
       await refreshDashboardViews();
     },
   });
@@ -587,12 +607,24 @@ export function DashboardPage(): JSX.Element {
       if (!session?.token) throw new Error('Missing auth token');
       return deleteActivityMerge({ token: session.token, owner: profile?.owner }, mergeId);
     },
+    onMutate: ({ mergeId }) => {
+      setMergeError(null);
+      setUnmergingMergeId(mergeId);
+    },
+    onError: (error) => {
+      setMergeError(error instanceof Error ? error.message : 'Unable to unmerge activities.');
+    },
+    onSettled: () => {
+      setUnmergingMergeId(null);
+    },
     onSuccess: async () => {
+      setMergeError(null);
       await refreshDashboardViews();
     },
   });
   const handleMergeActivity = (activityId: string) => {
     if (!mergeMode || createMergeMutation.isPending) return;
+    setMergeError(null);
     setMergeSelectedIds((current) =>
       current.includes(activityId)
         ? current.filter((selectedId) => selectedId !== activityId)
@@ -607,6 +639,7 @@ export function DashboardPage(): JSX.Element {
     setMergeMode(false);
     setMergeSelectedIds([]);
     setMergePendingId(null);
+    setMergeError(null);
   };
   const generateActivityMutation = useMutation({
     mutationFn: async ({
@@ -781,6 +814,11 @@ export function DashboardPage(): JSX.Element {
 
   const extractRunning = Boolean(extractStatusQuery.data?.extract_progress?.running);
   const reloadButtonBusy = dashboardReloadMutation.isPending || extractRunning || dashboardReloadQueued;
+  const activityActionBusy = createMergeMutation.isPending
+    || deleteMergeMutation.isPending
+    || plannedDoneMutation.isPending
+    || plannedDeleteMutation.isPending
+    || customDeleteMutation.isPending;
   const mergeControls = useMemo(
     () => (
       <>
@@ -795,8 +833,12 @@ export function DashboardPage(): JSX.Element {
               aria-label="Merge selected activities"
               title="Merge selected activities"
             >
-              <Check className="mr-1.5 h-4 w-4" />
-              Merge {mergeSelectedIds.length}
+              {createMergeMutation.isPending ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="mr-1.5 h-4 w-4" />
+              )}
+              {createMergeMutation.isPending ? 'Merging...' : `Merge ${mergeSelectedIds.length}`}
             </Button>
             <Button
               variant="outline"
@@ -819,6 +861,7 @@ export function DashboardPage(): JSX.Element {
               setSelectedActivityId(null);
               setMergeMode(true);
               setMergeSelectedIds([]);
+              setMergeError(null);
             }}
             disabled={!session?.token}
             aria-label="Enter activity merge mode"
@@ -892,11 +935,17 @@ export function DashboardPage(): JSX.Element {
           ) : (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
-                <p className="text-xs text-slate-300/80">
-                  {mergeMode
-                    ? 'Choose same-day efforts for one training record.'
-                    : 'Merge same-day efforts. Undo merged efforts anytime.'}
-                </p>
+                <div className="space-y-1">
+                  <p className="flex items-center gap-1.5 text-xs text-slate-300/80">
+                    {activityActionBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    {activityActionBusy
+                      ? 'Updating activity...'
+                      : mergeMode
+                        ? 'Choose same-day efforts for one training record.'
+                        : 'Merge same-day efforts. Undo merged efforts anytime.'}
+                  </p>
+                  {mergeError ? <p className="text-xs text-rose-300">{mergeError}</p> : null}
+                </div>
                 <div className="flex items-center gap-2">{mergeControls}</div>
               </div>
               {dashboardReloadResult ? (
@@ -935,6 +984,8 @@ export function DashboardPage(): JSX.Element {
                       }}
                       onMarkPlannedDone={(activity, index) =>
                         (() => {
+                          const actionKey = activityActionKey(activity.day_utc, activity.line_no);
+                          setMarkingDoneKey(actionKey);
                           markPlannedDoneLocally(activity.day_utc, activity.line_no);
                           showUndo({
                             lane: 'planned',
@@ -954,11 +1005,19 @@ export function DashboardPage(): JSX.Element {
                               await refreshDashboardViews();
                             },
                           });
-                          plannedDoneMutation.mutate({ dayUtc: activity.day_utc, lineNo: activity.line_no }, { onError: () => void refreshDashboardViews() });
+                          plannedDoneMutation.mutate(
+                            { dayUtc: activity.day_utc, lineNo: activity.line_no },
+                            {
+                              onError: () => void refreshDashboardViews(),
+                              onSettled: () => setMarkingDoneKey((current) => (current === actionKey ? null : current)),
+                            },
+                          );
                         })()
                       }
                       onDeletePlannedActivity={(activity, index) =>
                         (() => {
+                          const actionKey = activityActionKey(activity.day_utc, activity.line_no);
+                          setDeletingPlannedKey(actionKey);
                           removePlannedActivityLocally(activity.day_utc, activity.line_no);
                           showUndo({
                             lane: 'planned',
@@ -967,14 +1026,19 @@ export function DashboardPage(): JSX.Element {
                             slotIndex: index,
                             label: 'Deleted',
                             action: async () => {
+                              setDeletingPlannedKey((current) => (current === actionKey ? null : current));
                               await refreshDashboardViews();
                             },
                             finalize: async () => {
                               if (!session?.token) throw new Error('Missing auth token');
-                              await plannedDeleteMutation.mutateAsync(
-                                { dayUtc: activity.day_utc, lineNo: activity.line_no },
-                                { onError: () => void refreshDashboardViews() },
-                              );
+                              try {
+                                await plannedDeleteMutation.mutateAsync(
+                                  { dayUtc: activity.day_utc, lineNo: activity.line_no },
+                                  { onError: () => void refreshDashboardViews() },
+                                );
+                              } finally {
+                                setDeletingPlannedKey((current) => (current === actionKey ? null : current));
+                              }
                             },
                           });
                         })()
@@ -984,7 +1048,9 @@ export function DashboardPage(): JSX.Element {
                           ? (() => {
                               const dayUtc = activity.day_utc;
                               const lineNo = activity.line_no;
+                              const actionKey = activityActionKey(dayUtc, lineNo);
                               const activityText = String(activity.activity_text ?? '').trim();
+                              setDeletingCustomKey(actionKey);
                               removeCustomActivityLocally(dayUtc, lineNo);
                               showUndo({
                                 lane: 'actual',
@@ -993,15 +1059,20 @@ export function DashboardPage(): JSX.Element {
                                 slotIndex: index,
                                 label: 'Deleted',
                                 action: async () => {
+                                  setDeletingCustomKey((current) => (current === actionKey ? null : current));
                                   insertCustomActivityLocally(dayUtc, activity, index);
                                   await refreshDashboardViews();
                                 },
                                 finalize: async () => {
                                   if (!session?.token) throw new Error('Missing auth token');
-                                  await customDeleteMutation.mutateAsync(
-                                    { dayUtc, lineNo },
-                                    { onError: () => void refreshDashboardViews() },
-                                  );
+                                  try {
+                                    await customDeleteMutation.mutateAsync(
+                                      { dayUtc, lineNo },
+                                      { onError: () => void refreshDashboardViews() },
+                                    );
+                                  } finally {
+                                    setDeletingCustomKey((current) => (current === actionKey ? null : current));
+                                  }
                                 },
                               });
                             })()
@@ -1023,6 +1094,11 @@ export function DashboardPage(): JSX.Element {
                       onUnmergeActivity={(mergeId) => deleteMergeMutation.mutate({ mergeId })}
                       mergeMode={mergeMode}
                       mergeSelectedIds={mergeSelectedIds}
+                      mergeSubmittingIds={mergeSubmittingIds}
+                      unmergingMergeId={unmergingMergeId}
+                      markingDoneKey={markingDoneKey}
+                      deletingPlannedKey={deletingPlannedKey}
+                      deletingCustomKey={deletingCustomKey}
                       mergePendingId={mergePendingId}
                       mergingActivity={createMergeMutation.isPending || deleteMergeMutation.isPending}
                       userTimeZone={userTimeZone}

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Activity, Check, Clock3, Flame, Gauge, Heart, HeartPulse, Link2, Moon, Plus, Route, RotateCcw, Unlink, Zap, X } from 'lucide-react';
+import { Activity, Check, Clock3, Flame, Gauge, Heart, HeartPulse, Link2, Loader2, Moon, Plus, Route, RotateCcw, Unlink, Zap, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,6 +20,11 @@ interface DashboardDayColumnProps {
   onUnmergeActivity?: (mergeId: number) => void;
   mergeMode?: boolean;
   mergeSelectedIds?: string[];
+  mergeSubmittingIds?: string[];
+  unmergingMergeId?: number | null;
+  markingDoneKey?: string | null;
+  deletingPlannedKey?: string | null;
+  deletingCustomKey?: string | null;
   mergePendingId?: string | null;
   mergingActivity?: boolean;
   addingPlannedActivity?: boolean;
@@ -146,6 +151,11 @@ function fmtMeta(day: DashboardDayColumnType): DayMetaItem[] {
 
 function metricByKey(items: DayMetaItem[], key: DayMetaItem['key']): DayMetaItem | null {
   return items.find((item) => item.key === key) ?? null;
+}
+
+function activityActionKey(dayUtc: string | undefined, lineNo: number | undefined): string | null {
+  if (!dayUtc || typeof lineNo !== 'number') return null;
+  return `${dayUtc}:${lineNo}`;
 }
 
 function formatActivityTitle(raw: string): string {
@@ -406,6 +416,11 @@ function DashboardDayColumnComponent({
   onUnmergeActivity,
   mergeMode = false,
   mergeSelectedIds = [],
+  mergeSubmittingIds = [],
+  unmergingMergeId,
+  markingDoneKey,
+  deletingPlannedKey,
+  deletingCustomKey,
   mergePendingId,
   mergingActivity,
   addingPlannedActivity,
@@ -617,6 +632,9 @@ function DashboardDayColumnComponent({
                 ].filter((pill): pill is MetricBadgeItem => Boolean(pill));
                 const isMergePending = mergePendingId === activity.activity_id;
                 const isMergeSelected = mergeSelectedIds.includes(activity.activity_id);
+                const isMergeSubmitting = mergeSubmittingIds.includes(activity.activity_id);
+                const isUnmerging = activity.merge_id != null && activity.merge_id === unmergingMergeId;
+                const isDeletingCustom = activity.is_custom && activityActionKey(activity.day_utc, activity.line_no) === deletingCustomKey;
                 const canSelectForMerge = !activity.is_custom && !activity.is_merged;
                 return (
                   <div
@@ -627,7 +645,7 @@ function DashboardDayColumnComponent({
                       activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
                       isInvalid ? invalidActivityCardClasses : undefined,
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
-                      isMergeSelected || isMergePending ? 'ring-2 ring-sky-400/70' : undefined,
+                      isMergeSelected || isMergePending || isMergeSubmitting || isUnmerging || isDeletingCustom ? 'ring-2 ring-sky-400/70' : undefined,
                     )}
                     style={isInvalid ? undefined : activityCardToneStyle(activity.intensity, false)}
                     onClick={() => {
@@ -653,10 +671,15 @@ function DashboardDayColumnComponent({
                           event.stopPropagation();
                           onDeleteCustomActivity?.(activity, item.index);
                         }}
-                      disabled={deletingCustomActivity}
-                      aria-label="Delete custom activity"
+                      disabled={deletingCustomActivity || isDeletingCustom}
+                      aria-label={isDeletingCustom ? 'Deleting activity' : 'Delete custom activity'}
+                      title={isDeletingCustom ? 'Deleting activity' : 'Delete custom activity'}
                     >
-                      <X className={dashboardScaleClassNames.actionButtonGlyph} />
+                      {isDeletingCustom ? (
+                        <Loader2 className={cn(dashboardScaleClassNames.actionButtonGlyph, 'animate-spin')} />
+                      ) : (
+                        <X className={dashboardScaleClassNames.actionButtonGlyph} />
+                      )}
                     </Button>
                     ) : activity.is_merged ? (
                       <Button
@@ -667,11 +690,15 @@ function DashboardDayColumnComponent({
                           event.stopPropagation();
                           if (activity.merge_id != null) onUnmergeActivity?.(activity.merge_id);
                         }}
-                        disabled={mergingActivity}
-                        aria-label="Unmerge activities"
-                        title="Unmerge activities"
+                        disabled={mergingActivity || isUnmerging}
+                        aria-label={isUnmerging ? 'Unmerging activities' : 'Unmerge activities'}
+                        title={isUnmerging ? 'Unmerging activities' : 'Unmerge activities'}
                       >
-                        <Unlink className={dashboardScaleClassNames.actionButtonGlyph} />
+                        {isUnmerging ? (
+                          <Loader2 className={cn(dashboardScaleClassNames.actionButtonGlyph, 'animate-spin')} />
+                        ) : (
+                          <Unlink className={dashboardScaleClassNames.actionButtonGlyph} />
+                        )}
                       </Button>
                     ) : mergeMode ? (
                       <Button
@@ -685,10 +712,15 @@ function DashboardDayColumnComponent({
                           event.stopPropagation();
                           onMergeActivity?.(activity.activity_id);
                         }}
-                        disabled={mergingActivity}
-                        aria-label={isMergeSelected || isMergePending ? 'Deselect activity for merge' : 'Select activity for merge'}
+                        disabled={mergingActivity || isMergeSubmitting}
+                        aria-label={isMergeSubmitting ? 'Merging activity' : isMergeSelected || isMergePending ? 'Deselect activity for merge' : 'Select activity for merge'}
+                        title={isMergeSubmitting ? 'Merging activity' : undefined}
                       >
-                        <Link2 className={dashboardScaleClassNames.actionButtonGlyph} />
+                        {isMergeSubmitting ? (
+                          <Loader2 className={cn(dashboardScaleClassNames.actionButtonGlyph, 'animate-spin')} />
+                        ) : (
+                          <Link2 className={dashboardScaleClassNames.actionButtonGlyph} />
+                        )}
                       </Button>
                     ) : null}
                     <div className="min-w-0 pr-6">
@@ -720,6 +752,9 @@ function DashboardDayColumnComponent({
               }
               const isMergePendingDesktop = mergePendingId === activity.activity_id;
               const isMergeSelectedDesktop = mergeSelectedIds.includes(activity.activity_id);
+              const isMergeSubmittingDesktop = mergeSubmittingIds.includes(activity.activity_id);
+              const isUnmergingDesktop = activity.merge_id != null && activity.merge_id === unmergingMergeId;
+              const isDeletingCustomDesktop = activity.is_custom && activityActionKey(activity.day_utc, activity.line_no) === deletingCustomKey;
               const canSelectForMergeDesktop = !activity.is_custom && !activity.is_merged;
               return (
                 <div
@@ -730,7 +765,7 @@ function DashboardDayColumnComponent({
                       activity.is_custom || isInvalid ? 'border-[1.5px] border-dashed' : undefined,
                       isInvalid ? invalidActivityCardClasses : undefined,
                       activity.is_custom ? customBorderAccentClasses[activity.intensity] : undefined,
-                      isMergeSelectedDesktop || isMergePendingDesktop ? 'ring-2 ring-sky-400/70' : undefined,
+                      isMergeSelectedDesktop || isMergePendingDesktop || isMergeSubmittingDesktop || isUnmergingDesktop || isDeletingCustomDesktop ? 'ring-2 ring-sky-400/70' : undefined,
                   )}
                   style={isInvalid ? undefined : activityCardToneStyle(activity.intensity, false)}
                   onClick={() => {
@@ -756,10 +791,15 @@ function DashboardDayColumnComponent({
                         event.stopPropagation();
                         onDeleteCustomActivity?.(activity, item.index);
                       }}
-                      disabled={deletingCustomActivity}
-                      aria-label="Delete custom activity"
+                      disabled={deletingCustomActivity || isDeletingCustomDesktop}
+                      aria-label={isDeletingCustomDesktop ? 'Deleting activity' : 'Delete custom activity'}
+                      title={isDeletingCustomDesktop ? 'Deleting activity' : 'Delete custom activity'}
                     >
-                      <X className={dashboardScaleClassNames.actionButtonGlyph} />
+                      {isDeletingCustomDesktop ? (
+                        <Loader2 className={cn(dashboardScaleClassNames.actionButtonGlyph, 'animate-spin')} />
+                      ) : (
+                        <X className={dashboardScaleClassNames.actionButtonGlyph} />
+                      )}
                     </Button>
                   ) : activity.is_merged ? (
                     <Button
@@ -770,11 +810,15 @@ function DashboardDayColumnComponent({
                         event.stopPropagation();
                         if (activity.merge_id != null) onUnmergeActivity?.(activity.merge_id);
                       }}
-                      disabled={mergingActivity}
-                      aria-label="Unmerge activities"
-                      title="Unmerge activities"
+                      disabled={mergingActivity || isUnmergingDesktop}
+                      aria-label={isUnmergingDesktop ? 'Unmerging activities' : 'Unmerge activities'}
+                      title={isUnmergingDesktop ? 'Unmerging activities' : 'Unmerge activities'}
                     >
-                      <Unlink className={dashboardScaleClassNames.actionButtonGlyph} />
+                      {isUnmergingDesktop ? (
+                        <Loader2 className={cn(dashboardScaleClassNames.actionButtonGlyph, 'animate-spin')} />
+                      ) : (
+                        <Unlink className={dashboardScaleClassNames.actionButtonGlyph} />
+                      )}
                     </Button>
                   ) : mergeMode ? (
                     <Button
@@ -788,10 +832,15 @@ function DashboardDayColumnComponent({
                         event.stopPropagation();
                         onMergeActivity?.(activity.activity_id);
                       }}
-                      disabled={mergingActivity}
-                      aria-label={isMergeSelectedDesktop || isMergePendingDesktop ? 'Deselect activity for merge' : 'Select activity for merge'}
+                      disabled={mergingActivity || isMergeSubmittingDesktop}
+                      aria-label={isMergeSubmittingDesktop ? 'Merging activity' : isMergeSelectedDesktop || isMergePendingDesktop ? 'Deselect activity for merge' : 'Select activity for merge'}
+                      title={isMergeSubmittingDesktop ? 'Merging activity' : undefined}
                     >
-                      <Link2 className={dashboardScaleClassNames.actionButtonGlyph} />
+                      {isMergeSubmittingDesktop ? (
+                        <Loader2 className={cn(dashboardScaleClassNames.actionButtonGlyph, 'animate-spin')} />
+                      ) : (
+                        <Link2 className={dashboardScaleClassNames.actionButtonGlyph} />
+                      )}
                     </Button>
                   ) : null}
                   <div className="flex min-w-0 items-center pr-5 lg:pr-0">
@@ -854,10 +903,13 @@ function DashboardDayColumnComponent({
               </div>
             ) : (
               compactMobile && mobileFullWidth ? (
-                (() => {
-                  const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
-                  const runningLike = isRunningLikeSport(item.activity.activity);
-                  const metricPills: MetricBadgeItem[] = [
+	                (() => {
+	                  const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
+	                  const runningLike = isRunningLikeSport(item.activity.activity);
+	                  const plannedKey = activityActionKey(item.activity.day_utc, item.activity.line_no);
+	                  const isMarkingDone = plannedKey === markingDoneKey;
+	                  const isDeletingPlanned = plannedKey === deletingPlannedKey;
+	                  const metricPills: MetricBadgeItem[] = [
                     metricPillLabel(durationLabel) ? { tone: 'duration', label: metricPillLabel(durationLabel)! } : null,
                     metricPillLabel(formatEquivalentDistance(item.activity.distance_eqv_km, runningLike))
                       ? { tone: 'distance', label: metricPillLabel(formatEquivalentDistance(item.activity.distance_eqv_km, runningLike))! }
@@ -896,11 +948,16 @@ function DashboardDayColumnComponent({
                         event.stopPropagation();
                         onMarkPlannedDone?.(item.activity, item.index);
                       }}
-                      disabled={markingPlannedDone}
-                      aria-label="Mark planned activity as done"
-                    >
-                      <Check className={dashboardScaleClassNames.actionButtonGlyph} />
-                    </Button>
+	                      disabled={markingPlannedDone || isMarkingDone}
+	                      aria-label={isMarkingDone ? 'Marking activity as done' : 'Mark planned activity as done'}
+	                      title={isMarkingDone ? 'Marking activity as done' : 'Mark planned activity as done'}
+	                    >
+	                      {isMarkingDone ? (
+	                        <Loader2 className={cn(dashboardScaleClassNames.actionButtonGlyph, 'animate-spin')} />
+	                      ) : (
+	                        <Check className={dashboardScaleClassNames.actionButtonGlyph} />
+	                      )}
+	                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -909,11 +966,16 @@ function DashboardDayColumnComponent({
                         event.stopPropagation();
                         onDeletePlannedActivity?.(item.activity, item.index);
                       }}
-                      disabled={deletingPlannedActivity}
-                      aria-label="Delete planned activity"
-                    >
-                      <X className={dashboardScaleClassNames.actionButtonGlyph} />
-                    </Button>
+	                      disabled={deletingPlannedActivity || isDeletingPlanned}
+	                      aria-label={isDeletingPlanned ? 'Deleting planned activity' : 'Delete planned activity'}
+	                      title={isDeletingPlanned ? 'Deleting planned activity' : 'Delete planned activity'}
+	                    >
+	                      {isDeletingPlanned ? (
+	                        <Loader2 className={cn(dashboardScaleClassNames.actionButtonGlyph, 'animate-spin')} />
+	                      ) : (
+	                        <X className={dashboardScaleClassNames.actionButtonGlyph} />
+	                      )}
+	                    </Button>
                   </div>
                   <div className="min-w-0 pr-7">
                     <div className="flex min-w-0 items-center">
@@ -935,10 +997,13 @@ function DashboardDayColumnComponent({
                   );
                 })()
               ) : (
-                (() => {
-                  const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
-                  const runningLike = isRunningLikeSport(item.activity.activity);
-                  return (
+	                (() => {
+	                  const durationLabel = normalizeCompactDurationLabel(item.activity.duration_label);
+	                  const runningLike = isRunningLikeSport(item.activity.activity);
+	                  const plannedKey = activityActionKey(item.activity.day_utc, item.activity.line_no);
+	                  const isMarkingDone = plannedKey === markingDoneKey;
+	                  const isDeletingPlanned = plannedKey === deletingPlannedKey;
+	                  return (
                     <div
                       key={`${item.activity.day_utc}-${item.activity.line_no}`}
                       className={cn(
@@ -964,11 +1029,16 @@ function DashboardDayColumnComponent({
                           event.stopPropagation();
                           onMarkPlannedDone?.(item.activity, item.index);
                         }}
-                      disabled={markingPlannedDone}
-                      aria-label="Mark planned activity as done"
-                    >
-                        <Check className={dashboardScaleClassNames.actionButtonGlyph} />
-                      </Button>
+	                      disabled={markingPlannedDone || isMarkingDone}
+	                      aria-label={isMarkingDone ? 'Marking activity as done' : 'Mark planned activity as done'}
+	                      title={isMarkingDone ? 'Marking activity as done' : 'Mark planned activity as done'}
+	                    >
+	                        {isMarkingDone ? (
+	                          <Loader2 className={cn(dashboardScaleClassNames.actionButtonGlyph, 'animate-spin')} />
+	                        ) : (
+	                          <Check className={dashboardScaleClassNames.actionButtonGlyph} />
+	                        )}
+	                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -977,11 +1047,16 @@ function DashboardDayColumnComponent({
                           event.stopPropagation();
                           onDeletePlannedActivity?.(item.activity, item.index);
                         }}
-                      disabled={deletingPlannedActivity}
-                      aria-label="Delete planned activity"
-                    >
-                        <X className={dashboardScaleClassNames.actionButtonGlyph} />
-                      </Button>
+	                      disabled={deletingPlannedActivity || isDeletingPlanned}
+	                      aria-label={isDeletingPlanned ? 'Deleting planned activity' : 'Delete planned activity'}
+	                      title={isDeletingPlanned ? 'Deleting planned activity' : 'Delete planned activity'}
+	                    >
+	                        {isDeletingPlanned ? (
+	                          <Loader2 className={cn(dashboardScaleClassNames.actionButtonGlyph, 'animate-spin')} />
+	                        ) : (
+	                          <X className={dashboardScaleClassNames.actionButtonGlyph} />
+	                        )}
+	                      </Button>
                       <div className="flex min-w-0 items-center pr-5 lg:pr-6">
                         <p className={cn('truncate font-semibold text-foreground', compactMobile ? 'text-[12.5px] leading-4.5' : 'text-[12px] leading-4 lg:text-[14.5px] lg:leading-5')}>
                           {formatActivityTitle(item.activity.activity)} <span className="text-muted-foreground">(P)</span>
@@ -1036,6 +1111,11 @@ export const DashboardDayColumn = memo(DashboardDayColumnComponent, (prev, next)
   && prev.deletingCustomActivity === next.deletingCustomActivity
   && prev.mergeMode === next.mergeMode
   && prev.mergeSelectedIds === next.mergeSelectedIds
+  && prev.mergeSubmittingIds === next.mergeSubmittingIds
+  && prev.unmergingMergeId === next.unmergingMergeId
+  && prev.markingDoneKey === next.markingDoneKey
+  && prev.deletingPlannedKey === next.deletingPlannedKey
+  && prev.deletingCustomKey === next.deletingCustomKey
   && prev.mergePendingId === next.mergePendingId
   && prev.mergingActivity === next.mergingActivity
   && prev.userTimeZone === next.userTimeZone

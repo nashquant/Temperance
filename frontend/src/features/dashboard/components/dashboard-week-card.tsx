@@ -19,6 +19,11 @@ interface DashboardWeekCardProps {
   onUnmergeActivity?: (mergeId: number) => void;
   mergeMode?: boolean;
   mergeSelectedIds?: string[];
+  mergeSubmittingIds?: string[];
+  unmergingMergeId?: number | null;
+  markingDoneKey?: string | null;
+  deletingPlannedKey?: string | null;
+  deletingCustomKey?: string | null;
   mergePendingId?: string | null;
   mergingActivity?: boolean;
   addingPlannedActivity?: boolean;
@@ -161,6 +166,11 @@ function DashboardWeekCardComponent({
   onUnmergeActivity,
   mergeMode,
   mergeSelectedIds,
+  mergeSubmittingIds,
+  unmergingMergeId,
+  markingDoneKey,
+  deletingPlannedKey,
+  deletingCustomKey,
   mergePendingId,
   mergingActivity,
   addingPlannedActivity,
@@ -207,6 +217,11 @@ function DashboardWeekCardComponent({
                       onUnmergeActivity={onUnmergeActivity}
                       mergeMode={mergeMode}
                       mergeSelectedIds={mergeSelectedIds}
+                      mergeSubmittingIds={mergeSubmittingIds}
+                      unmergingMergeId={unmergingMergeId}
+                      markingDoneKey={markingDoneKey}
+                      deletingPlannedKey={deletingPlannedKey}
+                      deletingCustomKey={deletingCustomKey}
                       mergePendingId={mergePendingId}
                       mergingActivity={mergingActivity}
                       addingPlannedActivity={addingPlannedActivity}
@@ -239,6 +254,11 @@ function DashboardWeekCardComponent({
                     onUnmergeActivity={onUnmergeActivity}
                     mergeMode={mergeMode}
                     mergeSelectedIds={mergeSelectedIds}
+                    mergeSubmittingIds={mergeSubmittingIds}
+                    unmergingMergeId={unmergingMergeId}
+                    markingDoneKey={markingDoneKey}
+                    deletingPlannedKey={deletingPlannedKey}
+                    deletingCustomKey={deletingCustomKey}
                     mergePendingId={mergePendingId}
                     mergingActivity={mergingActivity}
                     addingPlannedActivity={addingPlannedActivity}
@@ -270,6 +290,11 @@ export const DashboardWeekCard = memo(DashboardWeekCardComponent, (prev, next) =
   && prev.deletingCustomActivity === next.deletingCustomActivity
   && prev.mergeMode === next.mergeMode
   && prev.mergeSelectedIds === next.mergeSelectedIds
+  && prev.mergeSubmittingIds === next.mergeSubmittingIds
+  && prev.unmergingMergeId === next.unmergingMergeId
+  && prev.markingDoneKey === next.markingDoneKey
+  && prev.deletingPlannedKey === next.deletingPlannedKey
+  && prev.deletingCustomKey === next.deletingCustomKey
   && prev.mergePendingId === next.mergePendingId
   && prev.mergingActivity === next.mergingActivity
   && prev.userTimeZone === next.userTimeZone
