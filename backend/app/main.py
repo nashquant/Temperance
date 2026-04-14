@@ -8627,6 +8627,7 @@ def _build_activity_dashboard_payload(
             daily_tss_target=daily_tss_target,
             db_path=db_path,
         )
+    today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
     weekly_baseline_lookup: dict[pd.Timestamp, float] = {}
     if not model_df.empty:
         weekly_progression_df = _rollup_athlete_progression_weekly_baseline_fields(
@@ -8640,6 +8641,18 @@ def _build_activity_dashboard_payload(
                 pd.Timestamp(period_start).normalize()
             ] = _safe_float(row.get("baseline_tss"))
 
+    # Forward-fill the baseline into future weeks that have no recorded activities.
+    # This ensures the current (in-progress) week shows a baseline even before
+    # any activity is logged.
+    if weekly_baseline_lookup:
+        last_baseline_week = max(weekly_baseline_lookup)
+        last_baseline_value = weekly_baseline_lookup[last_baseline_week]
+        fill_week = last_baseline_week + pd.Timedelta(weeks=1)
+        while fill_week <= today_local:
+            if fill_week not in weekly_baseline_lookup:
+                weekly_baseline_lookup[fill_week] = last_baseline_value
+            fill_week += pd.Timedelta(weeks=1)
+
     day_stats_lookup: dict[pd.Timestamp, dict[str, float]] = {}
     for _, row in day_agg.iterrows():
         d = pd.Timestamp(row["day"]).normalize()
@@ -8651,7 +8664,6 @@ def _build_activity_dashboard_payload(
             "rtss": _safe_float(row.get("rtss")),
         }
 
-    today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
     render_max_day = max(
         pd.Timestamp(max_day).normalize(), today_local + pd.Timedelta(days=28)
     )
