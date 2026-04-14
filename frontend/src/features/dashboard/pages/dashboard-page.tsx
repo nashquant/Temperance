@@ -268,6 +268,7 @@ export function DashboardPage(): JSX.Element {
   const lastAnchoredWeekRef = useRef<string>("");
   const undoTimerRef = useRef<number | null>(null);
   const undoDismissTimerRef = useRef<number | null>(null);
+  const undoBusyRef = useRef(false);
   const undoStateRef = useRef<{
     id: number;
     lane: "planned" | "actual";
@@ -562,6 +563,7 @@ export function DashboardPage(): JSX.Element {
     extractStatusQuery.data?.extract_progress,
   ]);
   const handleUndo = async () => {
+    if (undoBusyRef.current) return; // synchronous guard — immune to render batching
     const pending = undoState;
     if (!pending) return;
     if (undoTimerRef.current) {
@@ -572,10 +574,12 @@ export function DashboardPage(): JSX.Element {
       window.clearTimeout(undoDismissTimerRef.current);
       undoDismissTimerRef.current = null;
     }
+    undoBusyRef.current = true;
     setUndoBusy(true);
     try {
       await pending.action?.();
     } finally {
+      undoBusyRef.current = false;
       setUndoBusy(false);
       undoStateRef.current = null;
       setUndoVisible(false);
