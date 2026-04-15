@@ -5313,11 +5313,52 @@ def _generated_activity_planning_state(
         observed_days_365d=_observed_actual_days(365),
         blend_profile=baseline_blend_profile,
     )
+    # baseline_rtss: run-specific durability baseline with weak cross-train carryover.
+    # Mirrors _apply_athlete_progression_baseline_fields logic for scalar planning use.
+    _CROSS_TRAIN_CARRYOVER = 0.10
+    _raw_rtss_21d = _sum_actual(21, "rtss")
+    _raw_rtss_63d = _sum_actual(63, "rtss")
+    _raw_rtss_365d = _sum_actual(365, "rtss")
+    _no_run_data = (_raw_rtss_21d + _raw_rtss_63d + _raw_rtss_365d) <= 0.0
+    _run_equiv_21d = (
+        recent_load_21d
+        if _no_run_data
+        else _raw_rtss_21d
+        + _CROSS_TRAIN_CARRYOVER * max(recent_load_21d - _raw_rtss_21d, 0.0)
+    )
+    _run_equiv_63d = (
+        recent_load_63d
+        if _no_run_data
+        else _raw_rtss_63d
+        + _CROSS_TRAIN_CARRYOVER * max(recent_load_63d - _raw_rtss_63d, 0.0)
+    )
+    _run_equiv_365d = (
+        recent_load_365d
+        if _no_run_data
+        else _raw_rtss_365d
+        + _CROSS_TRAIN_CARRYOVER * max(recent_load_365d - _raw_rtss_365d, 0.0)
+    )
+    capacity_baseline_rtss = (
+        _weekly_tss_target_from_lt_pace(threshold_pace_sec_per_km) * 0.90
+        if threshold_pace_sec_per_km > 0
+        else capacity_baseline * (0.90 / 1.10)
+    )
+    weekly_baseline_rtss = _blend_baseline_tss(
+        capacity_baseline_rtss,
+        _run_equiv_21d,
+        _run_equiv_63d,
+        _run_equiv_365d,
+        observed_days_21d=_observed_actual_days(21),
+        observed_days_63d=_observed_actual_days(63),
+        observed_days_365d=_observed_actual_days(365),
+        blend_profile=baseline_blend_profile,
+    )
     methodology = get_methodology(methodology_id)
 
     planning_state = build_user_planning_state(
         target_day_utc=selected_day.date().isoformat(),
         weekly_baseline_tss=float(weekly_baseline_tss),
+        weekly_baseline_rtss=float(weekly_baseline_rtss),
         recent_activity_rows=recent_activity_rows,
         planned_activity_rows=_aggregate_planned_days_for_planning(
             db_path=db_path,
@@ -5578,6 +5619,31 @@ def _weekly_baseline_tss_for_day(db_path: Path, day_utc: str, owner: str = "") -
     return 0.0
 
 
+def _weekly_baseline_rtss_for_day(
+    db_path: Path, day_utc: str, owner: str = ""
+) -> float:
+    target_ts = pd.to_datetime(day_utc, errors="coerce")
+    if pd.isna(target_ts):
+        raise ValueError(f"Invalid target_day_utc: {day_utc}")
+    target_week_start = (
+        _week_start_monday(pd.Timestamp(target_ts).normalize()).date().isoformat()
+    )
+    payload = _build_athlete_progression_payload(
+        db_path=db_path,
+        days=400,
+        activity_filter="all",
+        aggregation="weekly",
+        owner=owner,
+    )
+    points = list(payload.get("points") or [])
+    for point in points:
+        if str(point.get("period_start") or "") == target_week_start:
+            return _safe_float(point.get("baseline_rtss"))
+    if points:
+        return _safe_float(points[-1].get("baseline_rtss"))
+    return 0.0
+
+
 def _mcp_preview_intents_payload(horizon: tuple[Any, ...]) -> list[dict[str, Any]]:
     return [
         {
@@ -5600,6 +5666,7 @@ def _mcp_preview_intents_payload(horizon: tuple[Any, ...]) -> list[dict[str, Any
 def _mcp_planning_state_summary(planning_state: Any) -> dict[str, Any]:
     return {
         "weekly_baseline_tss": planning_state.weekly_baseline_tss,
+        "weekly_baseline_rtss": planning_state.weekly_baseline_rtss,
         "recent_load_7d": planning_state.recent_load_7d,
         "recent_load_28d": planning_state.recent_load_28d,
         "recent_load_ratio": planning_state.recent_load_ratio,
@@ -7190,6 +7257,7 @@ def _build_daily_vdot_series(activity_df: pd.DataFrame, db_path: Path) -> pd.Dat
 
 _ATHLETE_PROGRESSION_WEEKLY_BASELINE_FIELDS = (
     "baseline_tss",
+    "baseline_rtss",
     "baseline_distance_km",
     "lt_target_tss",
     "lt_target_distance_km",
@@ -7301,6 +7369,71 @@ def _apply_athlete_progression_baseline_fields(
         "blended_baseline_tss_before_smoothing"
     ] = blended_baseline_tss_before_smoothing_series
     model_df["smoothed_baseline_tss"] = smoothed_baseline_tss_series
+
+    # --- baseline_rtss: running-specific durability baseline ---
+    # Principle: cross-training builds aerobic engine (counted in baseline_tss) but
+    # contributes only weakly to running durability. A small carryover (~10%) lets
+    # genuine mixed-training weeks leave a trace without letting x-train-heavy
+    # months mechanically inflate run targets.
+    _CROSS_TRAIN_CARRYOVER = 0.10
+    cross_train_series = (tss_series - rtss_series).clip(lower=0.0)
+    run_equiv_series = rtss_series + _CROSS_TRAIN_CARRYOVER * cross_train_series
+    recent_rtss_load_21d = (
+        run_equiv_series.shift(1, fill_value=0.0)
+        .rolling(window=21, min_periods=1)
+        .sum()
+    )
+    recent_rtss_load_63d = (
+        run_equiv_series.shift(1, fill_value=0.0)
+        .rolling(window=63, min_periods=1)
+        .sum()
+    )
+    recent_rtss_load_365d = (
+        run_equiv_series.shift(1, fill_value=0.0)
+        .rolling(window=365, min_periods=1)
+        .sum()
+    )
+    # LT-derived run capacity: the pace-curve target is split ~90/110 run vs total
+    lt_rtss_capacity_series = lt_daily_tss_target_series * (0.90 / 1.10)
+    rtss_blended_values: list[float] = []
+    for (
+        rtss_cap,
+        rtss_load_21d,
+        rtss_load_63d,
+        rtss_load_365d,
+        days_21d,
+        days_63d,
+        days_365d,
+    ) in zip(
+        (lt_rtss_capacity_series * 7.0).tolist(),
+        recent_rtss_load_21d.tolist(),
+        recent_rtss_load_63d.tolist(),
+        recent_rtss_load_365d.tolist(),
+        observed_days_21d.tolist(),
+        observed_days_63d.tolist(),
+        observed_days_365d.tolist(),
+    ):
+        rtss_components = _baseline_history_components(
+            recent_load_21d=_safe_float(rtss_load_21d),
+            recent_load_63d=_safe_float(rtss_load_63d),
+            recent_load_365d=_safe_float(rtss_load_365d),
+            observed_days_21d=int(days_21d),
+            observed_days_63d=int(days_63d),
+            observed_days_365d=int(days_365d),
+            blend_profile=blend_profile,
+        )
+        rtss_blended_values.append(
+            float(
+                _baseline_tss_from_components(
+                    capacity_baseline=_safe_float(rtss_cap),
+                    components=rtss_components,
+                )
+            )
+        )
+    model_df["baseline_rtss"] = (
+        pd.Series(rtss_blended_values, index=model_df.index, dtype=float) / 7.0
+    ).fillna(0.0)
+
     return model_df
 
 
@@ -7712,6 +7845,12 @@ def _build_athlete_progression_payload(
     daily_tss_target_series = pd.to_numeric(
         model_df.get("baseline_tss"), errors="coerce"
     ).fillna(0.0)
+    # baseline_rtss is the run-specific durability baseline; use it as the
+    # denominator floor for rTSS ACWR and injury load-scale so that x-train-heavy
+    # weeks cannot suppress injury-risk signals driven by running load.
+    daily_rtss_target_series = pd.to_numeric(
+        model_df.get("baseline_rtss"), errors="coerce"
+    ).fillna(0.0)
 
     tss_emas = ema_multi(tss_series, [42, 28, 7])
     rtss_emas = ema_multi(rtss_series, [42, 28, 7])
@@ -7721,12 +7860,12 @@ def _build_athlete_progression_payload(
         tss_emas[7], tss_emas[28], daily_tss_target_series
     )
     _rtss_acwr = _acwr_with_baseline_floor(
-        rtss_emas[7], rtss_emas[28], daily_tss_target_series
+        rtss_emas[7], rtss_emas[28], daily_rtss_target_series
     )
     overreach_base = (1.0 / (1.0 + np.exp(-4.0 * (_tss_acwr - 1.8)))) * 100.0
     injury_base = (1.0 / (1.0 + np.exp(-4.0 * (_rtss_acwr - 1.8)))) * 100.0
     overreach_scale = _baseline_load_scale(tss_emas[7], daily_tss_target_series)
-    injury_scale = _baseline_load_scale(rtss_emas[7], daily_tss_target_series)
+    injury_scale = _baseline_load_scale(rtss_emas[7], daily_rtss_target_series)
     model_df["raw_overreach_signal"] = (overreach_base * overreach_scale).clip(
         lower=0.0, upper=100.0
     )
@@ -7881,6 +8020,7 @@ def _build_athlete_progression_payload(
                     else None
                 ),
                 "baseline_tss": round(_safe_float(row.get("baseline_tss")), 3),
+                "baseline_rtss": round(_safe_float(row.get("baseline_rtss")), 3),
                 "baseline_distance_km": round(
                     _safe_float(row.get("baseline_distance_km")), 3
                 ),

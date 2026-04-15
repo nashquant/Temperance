@@ -100,8 +100,8 @@ export function DashboardWeekSummaryCard({ weekNumber, weekStart, weekEnd, summa
           <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.equivalent.value}`}>{fmtNumber(summary.distance_eqv_km)} km</p>
           <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.calories.label}`}><Flame className={`${summaryRowClassNames.icon} ${summaryToneClassNames.calories.icon}`} />kcal</p>
           <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.calories.value}`}>{fmtNumber(summary.calories)}</p>
-          <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.stress.label}`}><Activity className={`${summaryRowClassNames.icon} ${summaryToneClassNames.stress.icon}`} />Base</p>
-          <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.baseline_tss)}</p>
+          <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.stress.label}`}><Activity className={`${summaryRowClassNames.icon} ${summaryToneClassNames.stress.icon}`} />Base TSS|rTSS</p>
+          <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.baseline_tss)} | {fmtNumber(summary.baseline_rtss)}</p>
           <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.stress.label}`}><Activity className={`${summaryRowClassNames.icon} ${summaryToneClassNames.stress.icon}`} />TSS|rTSS</p>
           <p className={`text-right ${summaryRowClassNames.value} font-medium ${summaryToneClassNames.stress.value}`}>{fmtNumber(summary.tss)} | {fmtNumber(summary.rtss)}</p>
           <p className={`inline-flex items-center gap-1 ${summaryRowClassNames.label} ${summaryToneClassNames.risk.label}`}><AlertTriangle className={`${summaryRowClassNames.icon} ${summaryToneClassNames.risk.icon}`} />Ovr|Risk</p>

@@ -5,7 +5,10 @@ from dataclasses import replace
 from datetime import date, timedelta
 import random
 
-from temperance.planning.day_type_sampler import compute_target_day_tss, sample_day_tss_share
+from temperance.planning.day_type_sampler import (
+    compute_target_day_tss,
+    sample_day_tss_share,
+)
 from temperance.planning.methodologies import get_methodology
 from temperance.planning.models import (
     CycleStep,
@@ -30,7 +33,12 @@ def _constraint_for_day(state: UserPlanningState, day_utc: str):
     return None
 
 
-def _find_matching_cycle_step(methodology: MethodologyConfig, *, day_type: DayType | None, hard_subtype: HardSubtype | None) -> int | None:
+def _find_matching_cycle_step(
+    methodology: MethodologyConfig,
+    *,
+    day_type: DayType | None,
+    hard_subtype: HardSubtype | None,
+) -> int | None:
     if day_type is None:
         return None
     exact_matches = [
@@ -40,7 +48,11 @@ def _find_matching_cycle_step(methodology: MethodologyConfig, *, day_type: DayTy
     ]
     if exact_matches:
         return exact_matches[0]
-    loose_matches = [idx for idx, step in enumerate(methodology.cycle_steps) if step.day_type == day_type]
+    loose_matches = [
+        idx
+        for idx, step in enumerate(methodology.cycle_steps)
+        if step.day_type == day_type
+    ]
     return loose_matches[0] if loose_matches else None
 
 
@@ -53,7 +65,8 @@ def infer_cycle_position(
         [
             item
             for item in (*state.recent_activities, *state.planned_activities)
-            if item.stress_class is not None and date.fromisoformat(item.day_utc) < target_day
+            if item.stress_class is not None
+            and date.fromisoformat(item.day_utc) < target_day
         ],
         key=lambda item: item.day_utc,
     )
@@ -71,7 +84,11 @@ def infer_cycle_position(
     )
     if previous_index is None:
         return 0, previous.source, None
-    return (previous_index + 1) % len(methodology.cycle_steps), previous.source, methodology.cycle_steps[previous_index]
+    return (
+        (previous_index + 1) % len(methodology.cycle_steps),
+        previous.source,
+        methodology.cycle_steps[previous_index],
+    )
 
 
 def _build_naive_horizon(
@@ -127,7 +144,8 @@ def _days_since_last_h2(state: UserPlanningState, day_utc: str) -> int | None:
         [
             item
             for item in (*state.recent_activities, *state.planned_activities)
-            if item.hard_subtype == HardSubtype.H2 and date.fromisoformat(item.day_utc) < current_day
+            if item.hard_subtype == HardSubtype.H2
+            and date.fromisoformat(item.day_utc) < current_day
         ],
         key=lambda item: item.day_utc,
     )
@@ -142,14 +160,17 @@ def _last_hard_subtype(state: UserPlanningState, day_utc: str) -> HardSubtype | 
         [
             item
             for item in (*state.recent_activities, *state.planned_activities)
-            if item.hard_subtype is not None and date.fromisoformat(item.day_utc) < current_day
+            if item.hard_subtype is not None
+            and date.fromisoformat(item.day_utc) < current_day
         ],
         key=lambda item: item.day_utc,
     )
     return history[-1].hard_subtype if history else None
 
 
-def _compute_target_long_run_minutes(state: UserPlanningState, methodology: MethodologyConfig) -> tuple[float, str]:
+def _compute_target_long_run_minutes(
+    state: UserPlanningState, methodology: MethodologyConfig
+) -> tuple[float, str]:
     profile = methodology.stress_profile
     last_minutes = state.last_long_run_minutes
     if last_minutes is None:
@@ -165,7 +186,9 @@ def _compute_target_long_run_minutes(state: UserPlanningState, methodology: Meth
         if target >= previous:
             target = min(target + 5.0, profile.long_run_max_minutes)
             return target, "long_run_progressed_from_recent_history"
-    target = min(max(target, profile.long_run_min_minutes) + 5.0, profile.long_run_max_minutes)
+    target = min(
+        max(target, profile.long_run_min_minutes) + 5.0, profile.long_run_max_minutes
+    )
     return target, "long_run_progressed_from_last_long_run"
 
 
@@ -179,14 +202,26 @@ def _apply_friday_exception(
         day_value = date.fromisoformat(intent.day_utc)
         if day_value.weekday() != 4 or intent.day_type != DayType.HARD:
             continue
-        saturday_idx = idx + 1 if idx + 1 < len(intents) and date.fromisoformat(intents[idx + 1].day_utc).weekday() == 5 else None
-        sunday_idx = idx + 2 if idx + 2 < len(intents) and date.fromisoformat(intents[idx + 2].day_utc).weekday() == 6 else None
+        saturday_idx = (
+            idx + 1
+            if idx + 1 < len(intents)
+            and date.fromisoformat(intents[idx + 1].day_utc).weekday() == 5
+            else None
+        )
+        sunday_idx = (
+            idx + 2
+            if idx + 2 < len(intents)
+            and date.fromisoformat(intents[idx + 2].day_utc).weekday() == 6
+            else None
+        )
         weekend_idx = saturday_idx if saturday_idx is not None else sunday_idx
         if weekend_idx is None:
             continue
         weekend_day = intents[weekend_idx].day_utc
         days_since_last_h2 = _days_since_last_h2(state, weekend_day)
-        if state.mechanical_risk.prefer_low_impact or (days_since_last_h2 is not None and days_since_last_h2 < 8):
+        if state.mechanical_risk.prefer_low_impact or (
+            days_since_last_h2 is not None and days_since_last_h2 < 8
+        ):
             continue
         if idx > 0 and date.fromisoformat(intents[idx - 1].day_utc).weekday() == 3:
             intents[idx - 1].day_type = DayType.HARD
@@ -204,13 +239,19 @@ def _apply_friday_exception(
                 intents,
                 methodology=methodology,
                 start_index=weekend_idx + 1,
-                next_cycle_step_index=(intents[weekend_idx].cycle_step_index + 1) % len(methodology.cycle_steps),
+                next_cycle_step_index=(intents[weekend_idx].cycle_step_index + 1)
+                % len(methodology.cycle_steps),
             )
         return "friday_rest_to_preserve_weekend_long_run"
     return None
 
 
-def _assign_hard_subtypes(intents: list[DayIntent], *, methodology: MethodologyConfig, state: UserPlanningState) -> list[str]:
+def _assign_hard_subtypes(
+    intents: list[DayIntent],
+    *,
+    methodology: MethodologyConfig,
+    state: UserPlanningState,
+) -> list[str]:
     reasons: list[str] = []
     last_subtype = _last_hard_subtype(state, state.target_day_utc)
     for intent in intents:
@@ -219,11 +260,17 @@ def _assign_hard_subtypes(intents: list[DayIntent], *, methodology: MethodologyC
         step = methodology.cycle_steps[intent.cycle_step_index]
         if step.hard_subtype is not None:
             intent.hard_subtype = step.hard_subtype
-            reasons.append(f"{intent.day_utc}:{step.hard_subtype.value}_from_methodology_step")
+            reasons.append(
+                f"{intent.day_utc}:{step.hard_subtype.value}_from_methodology_step"
+            )
             last_subtype = step.hard_subtype
             continue
         days_since_last_h2 = _days_since_last_h2(state, intent.day_utc)
-        if intent.is_weekend and not state.mechanical_risk.prefer_low_impact and (days_since_last_h2 is None or days_since_last_h2 >= 8):
+        if (
+            intent.is_weekend
+            and not state.mechanical_risk.prefer_low_impact
+            and (days_since_last_h2 is None or days_since_last_h2 >= 8)
+        ):
             if last_subtype != HardSubtype.H2:
                 intent.hard_subtype = HardSubtype.H2
                 reasons.append(f"{intent.day_utc}:weekend_h2_long_run")
@@ -235,7 +282,45 @@ def _assign_hard_subtypes(intents: list[DayIntent], *, methodology: MethodologyC
     return reasons
 
 
-def _modality_bias_for_intent(intent: DayIntent, state: UserPlanningState) -> tuple[str | None, str | None]:
+def _use_rtss_anchor(intent: DayIntent, state: UserPlanningState) -> bool:
+    """
+    Return True when this intent should be sized from weekly_baseline_rtss rather
+    than weekly_baseline_tss.
+
+    The rule is conservative by design: only apply the run-specific ceiling when
+    the session is confirmed or very likely to be a run.  This prevents
+    cross-training-heavy weeks from mechanically inflating run targets (the
+    early-January / early-June failure mode).
+
+    Confirmed running:
+      - H2 (long run) is always running.
+      - Any intent where the modality bias is already forced to "running".
+
+    Likely running:
+      - H1 or undecided sessions when the athlete's recent 14-day mix is ≥ 50%
+        running.  At that point undecided hard sessions are more likely to be
+        runs than cross-training, so we size them conservatively.
+
+    Confirmed cross-training:
+      - Elliptical bias (set by mechanical fragility or schedule constraint)
+        → keep TSS anchor so x-train load is not artificially squeezed.
+    """
+    if intent.day_type == DayType.REST or intent.planned_rest:
+        return False
+    if intent.modality_bias == "elliptical":
+        return False
+    if intent.hard_subtype == HardSubtype.H2:
+        return True
+    if intent.modality_bias == "running":
+        return True
+    # For undecided sessions: apply the run ceiling when the athlete is
+    # predominantly a runner — this is exactly the high-risk scenario.
+    return state.modality_mix_running >= 0.5
+
+
+def _modality_bias_for_intent(
+    intent: DayIntent, state: UserPlanningState
+) -> tuple[str | None, str | None]:
     constraint = _constraint_for_day(state, intent.day_utc)
     if constraint and constraint.preferred_modality:
         return constraint.preferred_modality, "schedule_constraint_preferred_modality"
@@ -251,7 +336,9 @@ def _enforce_constraints(intent: DayIntent, state: UserPlanningState) -> DayInte
     if not constraint:
         return intent
     if constraint.blocked:
-        return replace(intent, day_type=DayType.REST, planned_rest=True, hard_subtype=None)
+        return replace(
+            intent, day_type=DayType.REST, planned_rest=True, hard_subtype=None
+        )
     if constraint.allow_long_run is False and intent.hard_subtype == HardSubtype.H2:
         return replace(intent, hard_subtype=HardSubtype.H1)
     return intent
@@ -266,7 +353,9 @@ def preview_horizon(
 ) -> tuple[tuple[DayIntent, ...], dict[str, str | None]]:
     methodology = get_methodology(methodology_id)
     rng = random.Random(seed)
-    first_step_index, inferred_from, previous_step = infer_cycle_position(state, methodology)
+    first_step_index, inferred_from, previous_step = infer_cycle_position(
+        state, methodology
+    )
     start_day = date.fromisoformat(state.target_day_utc)
     horizon_size = int(horizon_days or methodology.horizon_days_default)
     intents = _build_naive_horizon(
@@ -275,9 +364,20 @@ def preview_horizon(
         first_step_index=first_step_index,
         horizon_days=horizon_size,
     )
-    weekend_adjustment = _apply_friday_exception(intents, methodology=methodology, state=state)
+    weekend_adjustment = _apply_friday_exception(
+        intents, methodology=methodology, state=state
+    )
     _assign_hard_subtypes(intents, methodology=methodology, state=state)
-    long_run_target_minutes, long_run_reason = _compute_target_long_run_minutes(state, methodology)
+    long_run_target_minutes, long_run_reason = _compute_target_long_run_minutes(
+        state, methodology
+    )
+
+    # Weekly rTSS target is anchored to the run-specific baseline, not the total
+    # aerobic baseline.  This prevents cross-training fitness from inflating run
+    # session sizes — the failure mode behind early-January / early-June injuries.
+    # baseline_rtss already adapts from recent run load, so no extra multiplier is
+    # needed: the baseline itself IS the progression signal.
+    weekly_rtss_target = float(state.weekly_baseline_rtss)
 
     for intent in intents:
         bias, _ = _modality_bias_for_intent(intent, state)
@@ -286,10 +386,19 @@ def preview_horizon(
         intent.day_type = adjusted_intent.day_type
         intent.hard_subtype = adjusted_intent.hard_subtype
         intent.planned_rest = adjusted_intent.planned_rest
-        share, was_clamped = sample_day_tss_share(intent.day_type, rng, methodology.sampler_config)
+        share, was_clamped = sample_day_tss_share(
+            intent.day_type, rng, methodology.sampler_config
+        )
         intent.sampled_tss_share = share
         intent.share_was_clamped = was_clamped
-        intent.target_tss = compute_target_day_tss(state.weekly_baseline_tss, share)
+        # Use the run-specific baseline for confirmed or likely running sessions so
+        # that x-train load cannot justify oversized run targets.
+        tss_anchor = (
+            weekly_rtss_target
+            if _use_rtss_anchor(intent, state)
+            else state.weekly_baseline_tss
+        )
+        intent.target_tss = compute_target_day_tss(tss_anchor, share)
         if intent.day_type == DayType.HARD and intent.hard_subtype == HardSubtype.H2:
             intent.target_duration_min = long_run_target_minutes
             intent.min_duration_min = methodology.stress_profile.long_run_min_minutes
@@ -298,10 +407,15 @@ def preview_horizon(
             intent.max_avg_if = methodology.stress_profile.long_run_max_avg_if
     return tuple(intents), {
         "inferred_from": inferred_from,
-        "previous_step_id": previous_step.step_id if previous_step is not None else None,
-        "previous_day_type": previous_step.day_type.value if previous_step is not None else None,
+        "previous_step_id": previous_step.step_id
+        if previous_step is not None
+        else None,
+        "previous_day_type": previous_step.day_type.value
+        if previous_step is not None
+        else None,
         "weekend_adjustment": weekend_adjustment,
         "long_run_progression_reason": long_run_reason,
+        "weekly_rtss_target": weekly_rtss_target,
     }
 
 
@@ -352,8 +466,13 @@ def plan_day(
         weekend_adjustment=str(horizon_meta.get("weekend_adjustment") or "") or None,
         hard_subtype_reason=hard_reason,
         modality_bias_reason=modality_bias_reason,
-        long_run_progression_reason=str(horizon_meta.get("long_run_progression_reason") or "") or None,
-        reasons=tuple(intent.explanation_tags[0] for intent in intents if intent.explanation_tags),
+        long_run_progression_reason=str(
+            horizon_meta.get("long_run_progression_reason") or ""
+        )
+        or None,
+        reasons=tuple(
+            intent.explanation_tags[0] for intent in intents if intent.explanation_tags
+        ),
         candidate_rejections=candidate_rejections,
     )
     return PlanningDecision(

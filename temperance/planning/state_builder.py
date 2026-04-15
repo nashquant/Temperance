@@ -27,15 +27,21 @@ def infer_hard_subtype(
     workout_text: str = "",
     stress_profile: StressProfile | None = None,
 ) -> HardSubtype | None:
-    if stress_class is None or str(getattr(stress_class, "value", stress_class)) != "hard":
+    if (
+        stress_class is None
+        or str(getattr(stress_class, "value", stress_class)) != "hard"
+    ):
         return None
-    if is_long_run_candidate(
-        modality=modality,
-        total_minutes=total_minutes,
-        avg_if=avg_if,
-        max_if=max_if,
-        stress_profile=stress_profile,
-    ) or "long" in str(workout_text or "").strip().lower():
+    if (
+        is_long_run_candidate(
+            modality=modality,
+            total_minutes=total_minutes,
+            avg_if=avg_if,
+            max_if=max_if,
+            stress_profile=stress_profile,
+        )
+        or "long" in str(workout_text or "").strip().lower()
+    ):
         return HardSubtype.H2
     return HardSubtype.H1
 
@@ -147,14 +153,21 @@ def _build_planned_activity(
     )
 
 
-def _build_schedule_constraints(rows: Iterable[Mapping[str, object]] | None) -> tuple[ScheduleConstraint, ...]:
+def _build_schedule_constraints(
+    rows: Iterable[Mapping[str, object]] | None
+) -> tuple[ScheduleConstraint, ...]:
     out: list[ScheduleConstraint] = []
     for row in rows or ():
         out.append(
             ScheduleConstraint(
                 day_utc=str(row.get("day_utc") or ""),
-                allow_long_run=None if row.get("allow_long_run") is None else bool(row.get("allow_long_run")),
-                preferred_modality=str(row.get("preferred_modality") or "").strip().lower() or None,
+                allow_long_run=None
+                if row.get("allow_long_run") is None
+                else bool(row.get("allow_long_run")),
+                preferred_modality=str(row.get("preferred_modality") or "")
+                .strip()
+                .lower()
+                or None,
                 blocked=bool(row.get("blocked")),
             )
         )
@@ -197,6 +210,7 @@ def build_user_planning_state(
     *,
     target_day_utc: str,
     weekly_baseline_tss: float,
+    weekly_baseline_rtss: float = 0.0,
     recent_activity_rows: Iterable[Mapping[str, object]],
     planned_activity_rows: Iterable[Mapping[str, object]],
     fatigue_payload: Mapping[str, object] | None = None,
@@ -209,12 +223,16 @@ def build_user_planning_state(
 ) -> UserPlanningState:
     profile = stress_profile or StressProfile()
     recent_activities = tuple(
-        _build_recent_activity(row, weekly_baseline_tss=weekly_baseline_tss, stress_profile=profile)
+        _build_recent_activity(
+            row, weekly_baseline_tss=weekly_baseline_tss, stress_profile=profile
+        )
         for row in recent_activity_rows
         if str(row.get("day_utc") or "").strip()
     )
     planned_activities = tuple(
-        _build_planned_activity(row, weekly_baseline_tss=weekly_baseline_tss, stress_profile=profile)
+        _build_planned_activity(
+            row, weekly_baseline_tss=weekly_baseline_tss, stress_profile=profile
+        )
         for row in planned_activity_rows
         if str(row.get("day_utc") or "").strip()
     )
@@ -233,10 +251,18 @@ def build_user_planning_state(
 
     recent_14d = [item for item in recent_activities if item.duration_s > 0.0][-14:]
     total_14d_duration = sum(item.duration_s for item in recent_14d)
-    running_duration = sum(item.duration_s for item in recent_14d if item.modality == "running")
-    elliptical_duration = sum(item.duration_s for item in recent_14d if item.modality == "elliptical")
-    running_share_14d = (running_duration / total_14d_duration) if total_14d_duration > 0 else 0.0
-    elliptical_share_14d = (elliptical_duration / total_14d_duration) if total_14d_duration > 0 else 0.0
+    running_duration = sum(
+        item.duration_s for item in recent_14d if item.modality == "running"
+    )
+    elliptical_duration = sum(
+        item.duration_s for item in recent_14d if item.modality == "elliptical"
+    )
+    running_share_14d = (
+        (running_duration / total_14d_duration) if total_14d_duration > 0 else 0.0
+    )
+    elliptical_share_14d = (
+        (elliptical_duration / total_14d_duration) if total_14d_duration > 0 else 0.0
+    )
 
     injury_labels: list[str] = []
     injury_window_active = False
@@ -261,8 +287,12 @@ def build_user_planning_state(
         1.0,
         max(
             (1.0 if injury_window_active else 0.0) * 0.45
-            + min(float(fatigue.injury_risk) / max(float(weekly_baseline_tss), 1.0), 1.0) * 0.25
-            + min(float(fatigue.overreach) / max(float(weekly_baseline_tss), 1.0), 1.0) * 0.10
+            + min(
+                float(fatigue.injury_risk) / max(float(weekly_baseline_tss), 1.0), 1.0
+            )
+            * 0.25
+            + min(float(fatigue.overreach) / max(float(weekly_baseline_tss), 1.0), 1.0)
+            * 0.10
             + float(running_share_14d) * 0.20
             + (0.15 if fatigue.recovery_alert else 0.0),
             0.0,
@@ -275,9 +305,15 @@ def build_user_planning_state(
         elliptical_share_14d=elliptical_share_14d,
         mechanical_load_7d=float(recent_load_7d),
         fragility_score=fragility_score,
-        prefer_low_impact=bool(injury_window_active or fragility_score >= 0.55 or fatigue.recovery_alert),
+        prefer_low_impact=bool(
+            injury_window_active or fragility_score >= 0.55 or fatigue.recovery_alert
+        ),
     )
-    recent_long_runs, last_long_run_minutes, last_long_run_day_utc = _extract_long_run_history(
+    (
+        recent_long_runs,
+        last_long_run_minutes,
+        last_long_run_day_utc,
+    ) = _extract_long_run_history(
         recent_activities=recent_activities,
         planned_activities=planned_activities,
     )
@@ -285,6 +321,7 @@ def build_user_planning_state(
     return UserPlanningState(
         target_day_utc=target_day_utc,
         weekly_baseline_tss=float(weekly_baseline_tss),
+        weekly_baseline_rtss=float(weekly_baseline_rtss),
         recent_activities=recent_activities,
         planned_activities=planned_activities,
         recent_long_runs=recent_long_runs,

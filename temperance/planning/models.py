@@ -131,13 +131,16 @@ class ScheduleConstraint:
 class UserPlanningState:
     target_day_utc: str
     weekly_baseline_tss: float
+    weekly_baseline_rtss: float = 0.0
     recent_activities: tuple[RecentActivity, ...] = ()
     planned_activities: tuple[PlannedActivity, ...] = ()
     recent_long_runs: tuple[LongRunHistoryEntry, ...] = ()
     last_long_run_minutes: float | None = None
     last_long_run_day_utc: str | None = None
     fatigue: FatigueSnapshot = field(default_factory=FatigueSnapshot)
-    mechanical_risk: MechanicalRiskSnapshot = field(default_factory=MechanicalRiskSnapshot)
+    mechanical_risk: MechanicalRiskSnapshot = field(
+        default_factory=MechanicalRiskSnapshot
+    )
     schedule_constraints: tuple[ScheduleConstraint, ...] = ()
     recent_load_ratio: float = 1.0
     recent_load_7d: float = 0.0

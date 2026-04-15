@@ -13,6 +13,7 @@ export interface DashboardWeekSummary {
   tss: number;
   rtss: number;
   baseline_tss: number | null;
+  baseline_rtss: number | null;
   fitness: number | null;
   fatigue: number | null;
   overreach: number | null;

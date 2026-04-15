@@ -66,11 +66,14 @@ export function AthleteProgressionPage(): JSX.Element {
   const normalizedChartData = useMemo(() => {
     return chartData.map((row) => {
       const rawTarget = Number(row.baseline_tss ?? row.target_tss ?? 0);
+      const rawRtssTarget = Number(row.baseline_rtss ?? 0);
       const rawDistanceTarget = Number(row.baseline_distance_km ?? row.target_distance_km ?? 0);
       return {
         ...row,
         stress_target_tss: rawTarget,
+        stress_target_rtss: rawRtssTarget,
         daily_baseline_tss: aggregation === 'weekly' ? rawTarget / 7 : rawTarget,
+        daily_baseline_rtss: aggregation === 'weekly' ? rawRtssTarget / 7 : rawRtssTarget,
         distance_target_km: rawDistanceTarget,
       };
     });
@@ -114,7 +117,9 @@ export function AthleteProgressionPage(): JSX.Element {
                 data={deferredNormalizedChartData}
                 yLabel={aggregation === 'weekly' ? 'Weekly Stress' : 'Daily Stress'}
                 targetKey="stress_target_tss"
-                targetLabel={aggregation === 'weekly' ? 'Weekly Baseline' : 'Daily Baseline'}
+                targetLabel={aggregation === 'weekly' ? 'Base TSS' : 'Base TSS'}
+                targetKey2="stress_target_rtss"
+                targetLabel2={aggregation === 'weekly' ? 'Base rTSS' : 'Base rTSS'}
                 series={[
                   { key: 'tss', label: 'TSS', color: PROGRESSION_CHART_COLORS.blue },
                   { key: 'rtss', label: 'rTSS', color: PROGRESSION_CHART_COLORS.gray },
@@ -126,7 +131,9 @@ export function AthleteProgressionPage(): JSX.Element {
                 data={deferredNormalizedChartData}
                 yLabel="rTSS"
                 targetKey="daily_baseline_tss"
-                targetLabel="Daily Baseline"
+                targetLabel="Base (total)"
+                targetKey2="daily_baseline_rtss"
+                targetLabel2="Base (run)"
                 series={[
                   { key: 'durability', label: 'Durability', color: PROGRESSION_CHART_COLORS.blueAlt },
                   { key: 'pounding', label: 'Pounding', color: PROGRESSION_CHART_COLORS.redMuted },
