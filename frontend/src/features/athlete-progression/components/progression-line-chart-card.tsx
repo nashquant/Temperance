@@ -33,6 +33,8 @@ interface Props {
   series: SeriesConfig[];
   targetKey?: string;
   targetLabel?: string;
+  targetKey2?: string;
+  targetLabel2?: string;
   rightAxisLabel?: string;
   className?: string;
 }
@@ -41,8 +43,12 @@ const INTEGER_LIKE_KEYS = new Set([
   'tss',
   'rtss',
   'baseline_tss',
+  'baseline_rtss',
   'lt_target_tss',
   'stress_target_tss',
+  'stress_target_rtss',
+  'daily_baseline_tss',
+  'daily_baseline_rtss',
   'pounding_target_tss',
   'sleep_score',
   'training_readiness',
@@ -118,12 +124,20 @@ function ProgressionTooltip({
   label,
   payload,
   targetKey,
-}: TooltipProps<ValueType, NameType> & { targetKey?: string; targetLabel?: string }): JSX.Element | null {
+  targetLabel,
+  targetKey2,
+  targetLabel2,
+}: TooltipProps<ValueType, NameType> & { targetKey?: string; targetLabel?: string; targetKey2?: string; targetLabel2?: string }): JSX.Element | null {
   const visiblePayload = (payload ?? []).filter((entry) => entry.value != null);
   if (!active || visiblePayload.length === 0) return null;
+  function resolveLabel(dataKey: string, name: string): string {
+    if (targetKey && dataKey === targetKey) return targetLabel ?? 'Base';
+    if (targetKey2 && dataKey === targetKey2) return targetLabel2 ?? 'Base rTSS';
+    return name;
+  }
   return (
     <div
-      className="pointer-events-none inline-block w-fit max-w-[120px] rounded-lg border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] px-2 py-1.5 shadow-[0_10px_26px_rgba(2,6,23,0.26)] backdrop-blur"
+      className="pointer-events-none inline-block w-fit max-w-[140px] rounded-lg border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] px-2 py-1.5 shadow-[0_10px_26px_rgba(2,6,23,0.26)] backdrop-blur"
       style={{ transform: 'translate(calc(-50% - 20px), calc(-100% - 32px))' }}
     >
       <p className="mb-1 whitespace-nowrap text-[10px] font-semibold text-slate-100">{formatTooltipDateLabel(String(label || ''))}</p>
@@ -131,7 +145,7 @@ function ProgressionTooltip({
         {visiblePayload.map((entry) => (
           <div key={`${entry.name}-${entry.dataKey}`} className="flex items-center justify-between gap-2 text-[9px] leading-3.5">
             <span className="truncate font-medium" style={{ color: String(entry.color || '#cbd5e1') }}>
-              {String(entry.dataKey || '') === String(targetKey || '') ? 'Base' : entry.name}
+              {resolveLabel(String(entry.dataKey || ''), String(entry.name || ''))}
             </span>
             <span className="shrink-0 font-semibold" style={{ color: String(entry.color || '#e2e8f0') }}>
               {formatProgressionValue(entry.value, String(entry.dataKey || ''))}
@@ -150,13 +164,16 @@ export function ProgressionLineChartCard({
   series,
   targetKey,
   targetLabel,
+  targetKey2,
+  targetLabel2,
   rightAxisLabel,
   className,
 }: Props): JSX.Element {
   const leftAxisUsesIntegers = series
     .filter((item) => (item.yAxisId ?? 'left') === 'left')
     .every((item) => shouldUseIntegerFormat(item.key))
-    && (!targetKey || shouldUseIntegerFormat(targetKey));
+    && (!targetKey || shouldUseIntegerFormat(targetKey))
+    && (!targetKey2 || shouldUseIntegerFormat(targetKey2));
   const rightAxisUsesIntegers = rightAxisLabel
     ? series
         .filter((item) => item.yAxisId === 'right')
@@ -176,6 +193,12 @@ export function ProgressionLineChartCard({
         return Number.isFinite(candidate) && candidate > 0;
       })
     : false;
+  const hasTargetSeries2 = targetKey2
+    ? data.some((row) => {
+        const candidate = Number(row?.[targetKey2] ?? 0);
+        return Number.isFinite(candidate) && candidate > 0;
+      })
+    : false;
   const chartData = data.map((row) => {
     const nextRow: Record<string, number | string | null | undefined> = {
       ...row,
@@ -190,13 +213,14 @@ export function ProgressionLineChartCard({
       const parsed = Number(raw);
       nextRow[item.key] = Number.isFinite(parsed) ? parsed : null;
     }
-    if (targetKey) {
-      const rawTarget = nextRow[targetKey];
+    for (const key of [targetKey, targetKey2]) {
+      if (!key) continue;
+      const rawTarget = nextRow[key];
       if (rawTarget == null || rawTarget === '') {
-        nextRow[targetKey] = null;
+        nextRow[key] = null;
       } else {
         const parsedTarget = Number(rawTarget);
-        nextRow[targetKey] = Number.isFinite(parsedTarget) ? parsedTarget : null;
+        nextRow[key] = Number.isFinite(parsedTarget) ? parsedTarget : null;
       }
     }
     return nextRow;
@@ -247,7 +271,7 @@ export function ProgressionLineChartCard({
                 />
               ) : null}
               <Tooltip
-                content={<ProgressionTooltip targetKey={targetKey} targetLabel={targetLabel} />}
+                content={<ProgressionTooltip targetKey={targetKey} targetLabel={targetLabel} targetKey2={targetKey2} targetLabel2={targetLabel2} />}
                 labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
                 cursor={{ stroke: '#38bdf8', strokeOpacity: 0.3 }}
                 allowEscapeViewBox={{ x: true, y: true }}
@@ -278,6 +302,22 @@ export function ProgressionLineChartCard({
                   strokeOpacity={0.92}
                   strokeWidth={1.4}
                   strokeDasharray="5 5"
+                  dot={false}
+                  activeDot={false}
+                  isAnimationActive={false}
+                  legendType="none"
+                  connectNulls
+                />
+              ) : null}
+              {targetKey2 && hasTargetSeries2 ? (
+                <Line
+                  type="monotone"
+                  dataKey={targetKey2}
+                  yAxisId="left"
+                  stroke="#fda4af"
+                  strokeOpacity={0.80}
+                  strokeWidth={1.4}
+                  strokeDasharray="3 4"
                   dot={false}
                   activeDot={false}
                   isAnimationActive={false}
