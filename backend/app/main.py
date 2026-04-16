@@ -119,6 +119,7 @@ from temperance.db import (
     get_settings_cache_key,
     get_wellness_cache_key,
     get_merges_cache_key,
+    get_dashboard_cache_components,
 )
 from temperance.garmin_client import (
     GarminActivityChunk,
@@ -153,14 +154,18 @@ def _dashboard_cache_key(
     week_offset: int,
     weeks: int,
 ) -> str:
-    acts = get_activities_cache_key(db_path)
-    planned = get_planned_activities_cache_key(db_path)
-    custom = get_custom_activities_cache_key(db_path)
-    settings = get_settings_cache_key(db_path)
-    wellness = get_wellness_cache_key(db_path)
-    merges = get_merges_cache_key(db_path)
+    components = get_dashboard_cache_components(db_path)
     today = datetime.now().astimezone().date().isoformat()
-    raw = f"{db_path}|{sport}|{week_offset}|{weeks}|{acts}|{planned}|{custom}|{settings}|{wellness}|{merges}|{today}"
+    raw = (
+        f"{db_path}|{sport}|{week_offset}|{weeks}"
+        f"|{components['activities']}"
+        f"|{components['planned_activities']}"
+        f"|{components['custom_activities']}"
+        f"|{components['settings']}"
+        f"|{components['wellness']}"
+        f"|{components['merges']}"
+        f"|{today}"
+    )
     return hashlib.sha1(raw.encode()).hexdigest()
 
 

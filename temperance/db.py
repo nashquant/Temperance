@@ -989,8 +989,11 @@ def _activity_ids_for_merge_row(
         return activity_ids
     return [str(row["activity_id_1"] or ""), str(row["activity_id_2"] or "")]
 
+
 def create_activity_merge(
-    db_path: Path, activity_id_1: str | list[str] | tuple[str, ...], activity_id_2: str | None = None
+    db_path: Path,
+    activity_id_1: str | list[str] | tuple[str, ...],
+    activity_id_2: str | None = None,
 ) -> int:
     """Create a merge group and member rows.
 
@@ -1027,7 +1030,9 @@ def create_activity_merge(
 def delete_activity_merge(db_path: Path, merge_id: int) -> bool:
     """Delete a merge group by id. Returns True if a row was deleted."""
     with closing(get_conn(db_path)) as conn:
-        conn.execute("DELETE FROM activity_merge_members WHERE merge_id = ?", (merge_id,))
+        conn.execute(
+            "DELETE FROM activity_merge_members WHERE merge_id = ?", (merge_id,)
+        )
         cur = conn.execute("DELETE FROM activity_merges WHERE id = ?", (merge_id,))
         conn.commit()
         return cur.rowcount > 0
@@ -1488,6 +1493,84 @@ def get_merges_cache_key(db_path: Path) -> str:
     if not row:
         return "0:none"
     return f"{int(row['n'] or 0)}:{row['max_merged_at'] or 'none'}:{int(row['member_n'] or 0)}"
+
+
+def get_dashboard_cache_components(db_path: Path) -> dict[str, str]:
+    """
+    Returns all six cache-key components for the dashboard in a single
+    SQLite connection, avoiding six separate connect/pragma/close cycles.
+    """
+    with closing(get_conn(db_path)) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at, MAX(start_time_utc) AS max_start_time FROM activities"
+        ).fetchone()
+        acts = (
+            f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}:{row['max_start_time'] or 'none'}"
+            if row
+            else "0:none:none"
+        )
+
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at, MAX(day_utc) AS max_day FROM custom_activities"
+        ).fetchone()
+        custom = (
+            f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}:{row['max_day'] or 'none'}"
+            if row
+            else "0:none:none"
+        )
+
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at, MAX(day_utc) AS max_day FROM planned_activities"
+        ).fetchone()
+        planned = (
+            f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}:{row['max_day'] or 'none'}"
+            if row
+            else "0:none:none"
+        )
+
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at FROM settings"
+        ).fetchone()
+        settings = (
+            f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}"
+            if row
+            else "0:none"
+        )
+
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at, MAX(day_utc) AS max_day FROM wellness_daily"
+        ).fetchone()
+        wellness = (
+            f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}:{row['max_day'] or 'none'}"
+            if row
+            else "0:none:none"
+        )
+
+        row = conn.execute(
+            """
+            SELECT
+                COUNT(DISTINCT activity_merges.id) AS n,
+                MAX(activity_merges.merged_at) AS max_merged_at,
+                COUNT(activity_merge_members.activity_id) AS member_n
+            FROM activity_merges
+            LEFT JOIN activity_merge_members
+              ON activity_merge_members.merge_id = activity_merges.id
+            """
+        ).fetchone()
+        merges = (
+            f"{int(row['n'] or 0)}:{row['max_merged_at'] or 'none'}:{int(row['member_n'] or 0)}"
+            if row
+            else "0:none:0"
+        )
+
+    return {
+        "activities": acts,
+        "custom_activities": custom,
+        "planned_activities": planned,
+        "settings": settings,
+        "wellness": wellness,
+        "merges": merges,
+    }
 
 
 def get_table_counts(db_path: Path) -> dict[str, int]:
