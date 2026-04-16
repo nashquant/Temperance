@@ -176,10 +176,11 @@ function MobileWeekSummary({ week }: { week: DashboardWeekRow }): JSX.Element {
           <div className="mt-2 grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-[11px]">
             <p className="inline-flex items-center gap-1 text-blue-200/92">
               <Activity className="h-3 w-3 text-blue-300/90" />
-              Base TSS | rTSS
+              Baseline
             </p>
             <p className="text-right font-medium text-blue-100/92">
-              {fmtNumber(summary.baseline_tss)} | {fmtNumber(summary.baseline_rtss)}
+              {fmtNumber(summary.baseline_tss)} |{" "}
+              {fmtNumber(summary.baseline_rtss)}
             </p>
             <p className="inline-flex items-center gap-1 text-blue-200/92">
               <Activity className="h-3 w-3 text-blue-300/90" />
