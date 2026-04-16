@@ -449,9 +449,29 @@ async def _rewrite_flat_api_prefix(request: Request, call_next):
     return await call_next(request)
 
 
+def _prewarm_caches() -> None:
+    """Pre-warm auth and dashboard caches on startup so the first request is fast."""
+    try:
+        _auth_users()
+    except Exception:
+        pass
+    try:
+        db_path = _default_db_path()
+        if db_path.exists():
+            _build_activity_dashboard_payload(
+                db_path=db_path,
+                visible_weeks=26,
+                week_offset=0,
+                sport=None,
+            )
+    except Exception:
+        pass
+
+
 @app.on_event("startup")
 def _startup_auto_sync() -> None:
     _start_auto_sync_thread()
+    threading.Thread(target=_prewarm_caches, daemon=True).start()
 
 
 @app.on_event("shutdown")
