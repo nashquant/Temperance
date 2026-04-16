@@ -1,9 +1,12 @@
-import { useMemo, useRef, useState } from 'react';
-import { Gauge, Moon, Sparkles, Target, Waves } from 'lucide-react';
+import { useMemo, useRef, useState } from "react";
+import { Gauge, Moon, Sparkles, Target, Waves } from "lucide-react";
 
-import { Card, CardContent } from '@/components/ui/card';
-import { formatDurationMS } from '@/features/dashboard/utils/format-duration';
-import { intensityHexFromKey, intensityHexFromThreshold } from '@/features/dashboard/utils/intensity-palette';
+import { Card, CardContent } from "@/components/ui/card";
+import { formatDurationMS } from "@/features/dashboard/utils/format-duration";
+import {
+  intensityHexFromKey,
+  intensityHexFromThreshold,
+} from "@/features/dashboard/utils/intensity-palette";
 
 type ActivitySplitsBarChartRow = {
   label: string;
@@ -32,64 +35,107 @@ type TooltipState = {
 } | null;
 
 function getBarFill(type: string, ifPct: number): string {
-  const normalizedType = String(type || '').trim().toLowerCase();
+  const normalizedType = String(type || "")
+    .trim()
+    .toLowerCase();
 
   if (
-    normalizedType.includes('vo2') ||
-    normalizedType.includes('v02') ||
-    normalizedType.includes('vo2max') ||
-    normalizedType.includes('anaerobic')
+    normalizedType.includes("vo2") ||
+    normalizedType.includes("v02") ||
+    normalizedType.includes("vo2max") ||
+    normalizedType.includes("anaerobic")
   ) {
-    return intensityHexFromKey('purple');
+    return intensityHexFromKey("purple");
   }
-  if (normalizedType.includes('threshold') || normalizedType.includes('tempo hard') || normalizedType.includes('hard')) {
-    return intensityHexFromKey('red');
+  if (
+    normalizedType.includes("threshold") ||
+    normalizedType.includes("tempo hard") ||
+    normalizedType.includes("hard")
+  ) {
+    return intensityHexFromKey("red");
   }
-  if (normalizedType.includes('steady') || normalizedType.includes('tempo') || normalizedType.includes('mod')) {
-    return intensityHexFromKey('orange');
+  if (
+    normalizedType.includes("steady") ||
+    normalizedType.includes("tempo") ||
+    normalizedType.includes("mod")
+  ) {
+    return intensityHexFromKey("orange");
   }
-  if (normalizedType.includes('easy') || normalizedType.includes('endurance') || normalizedType.includes('aerobic')) {
-    return intensityHexFromKey('blue');
+  if (
+    normalizedType.includes("easy") ||
+    normalizedType.includes("endurance") ||
+    normalizedType.includes("aerobic")
+  ) {
+    return intensityHexFromKey("blue");
   }
-  if (normalizedType.includes('recovery') || normalizedType.includes('recover') || normalizedType.includes('rest')) {
-    return intensityHexFromKey('green');
+  if (
+    normalizedType.includes("recovery") ||
+    normalizedType.includes("recover") ||
+    normalizedType.includes("rest")
+  ) {
+    return intensityHexFromKey("green");
   }
 
   return intensityHexFromThreshold(ifPct);
 }
 
-function getTypeVisual(type: string, ifPct: number): {
+function getTypeVisual(
+  type: string,
+  ifPct: number,
+): {
   icon: typeof Moon;
   color: string;
 } {
-  const normalizedType = String(type || '').trim().toLowerCase();
+  const normalizedType = String(type || "")
+    .trim()
+    .toLowerCase();
 
   if (
-    normalizedType.includes('vo2') ||
-    normalizedType.includes('v02') ||
-    normalizedType.includes('vo2max') ||
-    normalizedType.includes('anaerobic')
+    normalizedType.includes("vo2") ||
+    normalizedType.includes("v02") ||
+    normalizedType.includes("vo2max") ||
+    normalizedType.includes("anaerobic")
   ) {
-    return { icon: Sparkles, color: intensityHexFromKey('purple') };
+    return { icon: Sparkles, color: intensityHexFromKey("purple") };
   }
-  if (normalizedType.includes('threshold') || normalizedType.includes('tempo hard') || normalizedType.includes('hard')) {
-    return { icon: Target, color: intensityHexFromKey('red') };
+  if (
+    normalizedType.includes("threshold") ||
+    normalizedType.includes("tempo hard") ||
+    normalizedType.includes("hard")
+  ) {
+    return { icon: Target, color: intensityHexFromKey("red") };
   }
-  if (normalizedType.includes('steady') || normalizedType.includes('tempo') || normalizedType.includes('mod')) {
-    return { icon: Gauge, color: intensityHexFromKey('orange') };
+  if (
+    normalizedType.includes("steady") ||
+    normalizedType.includes("tempo") ||
+    normalizedType.includes("mod")
+  ) {
+    return { icon: Gauge, color: intensityHexFromKey("orange") };
   }
-  if (normalizedType.includes('easy') || normalizedType.includes('endurance') || normalizedType.includes('aerobic')) {
-    return { icon: Waves, color: intensityHexFromKey('blue') };
+  if (
+    normalizedType.includes("easy") ||
+    normalizedType.includes("endurance") ||
+    normalizedType.includes("aerobic")
+  ) {
+    return { icon: Waves, color: intensityHexFromKey("blue") };
   }
-  if (normalizedType.includes('recovery') || normalizedType.includes('recover') || normalizedType.includes('rest')) {
-    return { icon: Moon, color: intensityHexFromKey('green') };
+  if (
+    normalizedType.includes("recovery") ||
+    normalizedType.includes("recover") ||
+    normalizedType.includes("rest")
+  ) {
+    return { icon: Moon, color: intensityHexFromKey("green") };
   }
 
   const fallbackColor = intensityHexFromThreshold(ifPct);
-  if (fallbackColor === intensityHexFromKey('purple')) return { icon: Sparkles, color: fallbackColor };
-  if (fallbackColor === intensityHexFromKey('red')) return { icon: Target, color: fallbackColor };
-  if (fallbackColor === intensityHexFromKey('orange')) return { icon: Gauge, color: fallbackColor };
-  if (fallbackColor === intensityHexFromKey('blue')) return { icon: Waves, color: fallbackColor };
+  if (fallbackColor === intensityHexFromKey("purple"))
+    return { icon: Sparkles, color: fallbackColor };
+  if (fallbackColor === intensityHexFromKey("red"))
+    return { icon: Target, color: fallbackColor };
+  if (fallbackColor === intensityHexFromKey("orange"))
+    return { icon: Gauge, color: fallbackColor };
+  if (fallbackColor === intensityHexFromKey("blue"))
+    return { icon: Waves, color: fallbackColor };
   return { icon: Moon, color: fallbackColor };
 }
 
@@ -97,18 +143,23 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-
 function formatElapsedTick(seconds: number): string {
   const roundedMinutes = Math.max(0, Math.round((Number(seconds) || 0) / 60));
   return `${roundedMinutes}'`;
 }
 
-function buildElapsedTicks(totalSeconds: number, splitCount: number): Array<{ ratio: number; label: string }> {
+function buildElapsedTicks(
+  totalSeconds: number,
+  splitCount: number,
+): Array<{ ratio: number; label: string }> {
   const total = Math.max(0, Number(totalSeconds) || 0);
   if (total <= 0) return [];
   const safeSplitCount = Math.max(1, Math.floor(Number(splitCount) || 0));
 
-  const segmentCount = Math.min(safeSplitCount, total >= 45 * 60 ? 4 : total >= 20 * 60 ? 3 : 2);
+  const segmentCount = Math.min(
+    safeSplitCount,
+    total >= 45 * 60 ? 4 : total >= 20 * 60 ? 3 : 2,
+  );
   const ticks: Array<{ ratio: number; label: string }> = [];
   const seen = new Set<string>();
 
@@ -145,13 +196,17 @@ function buildIfGuides(values: number[]): number[] {
   }
 
   if (guides.length === 0) {
-    const midpoint = Math.round(((minValue + maxValue) / 2) / step) * step;
+    const midpoint = Math.round((minValue + maxValue) / 2 / step) * step;
     return midpoint > minValue && midpoint < maxValue ? [midpoint] : [];
   }
 
   if (guides.length <= 3) return guides;
 
-  const picked = [guides[0], guides[Math.floor((guides.length - 1) / 2)], guides[guides.length - 1]];
+  const picked = [
+    guides[0],
+    guides[Math.floor((guides.length - 1) / 2)],
+    guides[guides.length - 1],
+  ];
   return [...new Set(picked)];
 }
 function buildChartData(data: ActivitySplitsBarChartRow[]): ChartDatum[] {
@@ -160,7 +215,7 @@ function buildChartData(data: ActivitySplitsBarChartRow[]): ChartDatum[] {
       ...row,
       duration_s: Math.max(0, Number(row.duration_s) || 0),
       ifPct: Math.max(0, Number(row.ifPct) || 0),
-      type: String(row.type || ''),
+      type: String(row.type || ""),
     }))
     .filter((row) => row.duration_s > 0);
 
@@ -181,10 +236,14 @@ function buildChartData(data: ActivitySplitsBarChartRow[]): ChartDatum[] {
   });
 }
 
-function ActivitySplitsBarTooltip({ tooltip }: { tooltip: TooltipState }): JSX.Element | null {
+function ActivitySplitsBarTooltip({
+  tooltip,
+}: {
+  tooltip: TooltipState;
+}): JSX.Element | null {
   if (!tooltip) return null;
   const { datum, x, y } = tooltip;
-  const title = String(datum.type || datum.label || '-').trim() || '-';
+  const title = String(datum.type || datum.label || "-").trim() || "-";
 
   return (
     <div
@@ -192,29 +251,39 @@ function ActivitySplitsBarTooltip({ tooltip }: { tooltip: TooltipState }): JSX.E
       style={{
         left: x,
         top: y,
-        transform: 'translate(-50%, calc(-100% - 6px))',
+        transform: "translate(-50%, calc(-100% - 6px))",
       }}
     >
-      <p className="mb-1.5 truncate text-[10px] font-semibold text-foreground">{title}</p>
+      <p className="mb-1.5 truncate text-[10px] font-semibold text-foreground">
+        {title}
+      </p>
       <div className="space-y-1 text-[9px]">
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-300/80">Duration</span>
-          <span className="font-semibold text-foreground">{formatDurationMS(datum.duration_s)}</span>
+          <span className="font-semibold text-foreground">
+            {formatDurationMS(datum.duration_s)}
+          </span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-300/80">Dist</span>
-          <span className="font-semibold text-foreground">{datum.distanceLabel || '-'}</span>
+          <span className="font-semibold text-foreground">
+            {datum.distanceLabel || "-"}
+          </span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-slate-300/80">Pace</span>
-          <span className="font-semibold text-foreground">{datum.paceLabel || '-'}</span>
+          <span className="font-semibold text-foreground">
+            {datum.paceLabel || "-"}
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
-export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): JSX.Element | null {
+export function ActivitySplitsBarChart({
+  data,
+}: ActivitySplitsBarChartProps): JSX.Element | null {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [tooltip, setTooltip] = useState<TooltipState>(null);
   const chartData = useMemo(() => buildChartData(data), [data]);
@@ -225,7 +294,10 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   const perLapWidth = 82;
   const minSvgWidth = 720;
   const sideMargin = Math.max(36, Math.min(150, 180 - lapCount * 11));
-  const svgWidth = Math.max(minSvgWidth, lapCount * perLapWidth + sideMargin * 2);
+  const svgWidth = Math.max(
+    minSvgWidth,
+    lapCount * perLapWidth + sideMargin * 2,
+  );
   const svgHeight = 100;
   const margin = { top: 3, right: sideMargin, bottom: 3, left: sideMargin };
   const innerWidth = svgWidth - margin.left - margin.right;
@@ -236,8 +308,11 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   const ifValues = chartData.map((row) => row.ifPct);
   const rawMinIf = Math.min(...ifValues);
   const rawMaxIf = Math.max(...ifValues);
-  const yMin = Math.min(rawMinIf, 45);
-  const yMax = Math.max(rawMaxIf, 100);
+  const dataRange = Math.max(rawMaxIf - rawMinIf, 8);
+  const padBelow = Math.max(10, dataRange * 0.4);
+  const padAbove = Math.max(6, dataRange * 0.2);
+  const yMin = Math.max(0, rawMinIf - padBelow);
+  const yMax = rawMaxIf + padAbove;
   const axisY = margin.top + innerHeight;
   const axisRenderY = (axisY / svgHeight) * svgRenderHeightPx;
   const labelHeightPx = 11;
@@ -245,7 +320,10 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
   const desiredLabelGapPx = lapCount >= 16 ? 0 : 1;
   const maxLabelGapPx = 1;
   const labelTopPx = axisRenderY + Math.min(desiredLabelGapPx, maxLabelGapPx);
-  const containerHeightPx = Math.max(chartHeightPx, Math.ceil(labelTopPx + labelHeightPx));
+  const containerHeightPx = Math.max(
+    chartHeightPx,
+    Math.ceil(labelTopPx + labelHeightPx),
+  );
   const totalDuration = chartData.at(-1)?.cumulativeDuration_s ?? 0;
   const elapsedTicks = buildElapsedTicks(totalDuration, chartData.length);
 
@@ -255,13 +333,25 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
         <div className="mb-1 px-0.5">
           <p className="text-sm font-semibold text-foreground">Splits</p>
         </div>
-        <div ref={containerRef} className="relative w-full" style={{ height: `${containerHeightPx}px` }} onMouseLeave={() => setTooltip(null)}>
-          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="absolute inset-x-0 top-0 w-full" style={{ height: `${svgRenderHeightPx}px` }} role="img" aria-label="Splits bar chart">
+        <div
+          ref={containerRef}
+          className="relative w-full"
+          style={{ height: `${containerHeightPx}px` }}
+          onMouseLeave={() => setTooltip(null)}
+        >
+          <svg
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            className="absolute inset-x-0 top-0 w-full"
+            style={{ height: `${svgRenderHeightPx}px` }}
+            role="img"
+            aria-label="Splits bar chart"
+          >
             {chartData.map((row) => {
               const x = margin.left + innerWidth * row.x0;
               const rawWidth = innerWidth * (row.x1 - row.x0);
               const width = Math.max(rawWidth - 4, 0);
-              const barHeight = ((row.ifPct - yMin) / Math.max(yMax - yMin, 1)) * innerHeight;
+              const barHeight =
+                ((row.ifPct - yMin) / Math.max(yMax - yMin, 1)) * innerHeight;
               const y = axisY - barHeight;
               const active = tooltip?.datum.label === row.label;
 
@@ -275,15 +365,28 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
                     rx="14"
                     fill={getBarFill(row.type, row.ifPct)}
                     opacity={1}
-                    stroke={active ? 'rgba(226,232,240,0.9)' : 'rgba(255,255,255,0.08)'}
+                    stroke={
+                      active
+                        ? "rgba(226,232,240,0.9)"
+                        : "rgba(255,255,255,0.08)"
+                    }
                     strokeWidth={active ? 1.5 : 1}
                     onMouseMove={(event) => {
-                      const bounds = containerRef.current?.getBoundingClientRect();
+                      const bounds =
+                        containerRef.current?.getBoundingClientRect();
                       if (!bounds) return;
                       setTooltip({
                         datum: row,
-                        x: clamp(event.clientX - bounds.left, 90, bounds.width - 90),
-                        y: clamp(event.clientY - bounds.top, 20, bounds.height - 20),
+                        x: clamp(
+                          event.clientX - bounds.left,
+                          90,
+                          bounds.width - 90,
+                        ),
+                        y: clamp(
+                          event.clientY - bounds.top,
+                          20,
+                          bounds.height - 20,
+                        ),
                       });
                     }}
                   />
@@ -308,7 +411,10 @@ export function ActivitySplitsBarChart({ data }: ActivitySplitsBarChartProps): J
                   className="absolute top-0 text-[11px] font-semibold leading-[11px] text-slate-50"
                   style={{
                     left: `${leftPct}%`,
-                    transform: tick.ratio > 0.98 ? 'translateX(-100%)' : 'translateX(-50%)',
+                    transform:
+                      tick.ratio > 0.98
+                        ? "translateX(-100%)"
+                        : "translateX(-50%)",
                   }}
                 >
                   {tick.label}
