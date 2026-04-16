@@ -4,6 +4,8 @@ from pathlib import Path
 import sys
 import types
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -134,3 +136,14 @@ except ModuleNotFoundError:
     dotenv_module = types.ModuleType("dotenv")
     dotenv_module.load_dotenv = lambda *args, **kwargs: None
     sys.modules["dotenv"] = dotenv_module
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_users_cache() -> None:
+    """Reset the auth user cache between tests so monkeypatch env changes take effect."""
+    try:
+        import backend.app.main as _main
+
+        _main._AUTH_USERS_CACHE = None
+    except Exception:
+        pass

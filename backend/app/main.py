@@ -143,6 +143,9 @@ _DASHBOARD_PAYLOAD_CACHE_MAXSIZE = 32
 _dashboard_payload_cache: _OrderedDict[str, dict] = _OrderedDict()
 _dashboard_payload_cache_lock = threading.Lock()
 
+_AUTH_USERS_CACHE: dict[str, dict[str, str]] | None = None
+_AUTH_USERS_CACHE_LOCK = threading.Lock()
+
 
 def _dashboard_cache_key(
     db_path: Path,
@@ -461,16 +464,22 @@ def _auth_enabled() -> bool:
 
 
 def _auth_users() -> dict[str, dict[str, str]]:
-    return build_users(
-        admin_user=os.getenv("TEMPERANCE_ADMIN_USER", "admin"),
-        admin_pass=os.getenv("TEMPERANCE_ADMIN_PASSWORD", ""),
-        admin_pass_hash=os.getenv("TEMPERANCE_ADMIN_PASSWORD_SHA256", ""),
-        viewer_user=os.getenv("TEMPERANCE_VIEWER_USER", ""),
-        viewer_pass=os.getenv("TEMPERANCE_VIEWER_PASSWORD", ""),
-        viewer_pass_hash=os.getenv("TEMPERANCE_VIEWER_PASSWORD_SHA256", ""),
-        viewer_users=os.getenv("TEMPERANCE_VIEWER_USERS", ""),
-        viewer_users_hash=os.getenv("TEMPERANCE_VIEWER_USERS_SHA256", ""),
-    )
+    global _AUTH_USERS_CACHE
+    if _AUTH_USERS_CACHE is not None:
+        return _AUTH_USERS_CACHE
+    with _AUTH_USERS_CACHE_LOCK:
+        if _AUTH_USERS_CACHE is None:
+            _AUTH_USERS_CACHE = build_users(
+                admin_user=os.getenv("TEMPERANCE_ADMIN_USER", "admin"),
+                admin_pass=os.getenv("TEMPERANCE_ADMIN_PASSWORD", ""),
+                admin_pass_hash=os.getenv("TEMPERANCE_ADMIN_PASSWORD_SHA256", ""),
+                viewer_user=os.getenv("TEMPERANCE_VIEWER_USER", ""),
+                viewer_pass=os.getenv("TEMPERANCE_VIEWER_PASSWORD", ""),
+                viewer_pass_hash=os.getenv("TEMPERANCE_VIEWER_PASSWORD_SHA256", ""),
+                viewer_users=os.getenv("TEMPERANCE_VIEWER_USERS", ""),
+                viewer_users_hash=os.getenv("TEMPERANCE_VIEWER_USERS_SHA256", ""),
+            )
+    return _AUTH_USERS_CACHE
 
 
 def _auth_is_enforced() -> bool:
