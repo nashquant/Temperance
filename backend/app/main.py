@@ -8769,6 +8769,7 @@ def _build_activity_dashboard_payload(
         )
     today_local = pd.Timestamp(datetime.now().astimezone().date()).normalize()
     weekly_baseline_lookup: dict[pd.Timestamp, float] = {}
+    weekly_baseline_rtss_lookup: dict[pd.Timestamp, float] = {}
     if not model_df.empty:
         weekly_progression_df = _rollup_athlete_progression_weekly_baseline_fields(
             model_df
@@ -8777,9 +8778,9 @@ def _build_activity_dashboard_payload(
             period_start = pd.to_datetime(row.get("period_start"), errors="coerce")
             if pd.isna(period_start):
                 continue
-            weekly_baseline_lookup[
-                pd.Timestamp(period_start).normalize()
-            ] = _safe_float(row.get("baseline_tss"))
+            ts = pd.Timestamp(period_start).normalize()
+            weekly_baseline_lookup[ts] = _safe_float(row.get("baseline_tss"))
+            weekly_baseline_rtss_lookup[ts] = _safe_float(row.get("baseline_rtss"))
 
     # Forward-fill the baseline into future weeks that have no recorded activities.
     # This ensures the current (in-progress) week shows a baseline even before
@@ -8787,10 +8788,14 @@ def _build_activity_dashboard_payload(
     if weekly_baseline_lookup:
         last_baseline_week = max(weekly_baseline_lookup)
         last_baseline_value = weekly_baseline_lookup[last_baseline_week]
+        last_baseline_rtss_value = weekly_baseline_rtss_lookup.get(
+            last_baseline_week, 0.0
+        )
         fill_week = last_baseline_week + pd.Timedelta(weeks=1)
         while fill_week <= today_local:
             if fill_week not in weekly_baseline_lookup:
                 weekly_baseline_lookup[fill_week] = last_baseline_value
+                weekly_baseline_rtss_lookup[fill_week] = last_baseline_rtss_value
             fill_week += pd.Timedelta(weeks=1)
 
     day_stats_lookup: dict[pd.Timestamp, dict[str, float]] = {}
@@ -9080,6 +9085,14 @@ def _build_activity_dashboard_payload(
     ) -> float | None:
         if week_start in weekly_baseline_lookup:
             return round(_safe_float(weekly_baseline_lookup.get(week_start)), 1)
+        return None
+
+    def _week_summary_baseline_rtss(
+        *,
+        week_start: pd.Timestamp,
+    ) -> float | None:
+        if week_start in weekly_baseline_rtss_lookup:
+            return round(_safe_float(weekly_baseline_rtss_lookup.get(week_start)), 1)
         return None
 
     weeks_out: list[dict[str, Any]] = []
@@ -9393,6 +9406,9 @@ def _build_activity_dashboard_payload(
                     "tss": round(week_tss, 1),
                     "rtss": round(week_rtss, 1),
                     "baseline_tss": _week_summary_baseline_tss(
+                        week_start=ws,
+                    ),
+                    "baseline_rtss": _week_summary_baseline_rtss(
                         week_start=ws,
                     ),
                     "fitness": (
