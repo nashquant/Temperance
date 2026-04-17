@@ -176,10 +176,8 @@ export function AthleteProgressionPage(): JSX.Element {
                   title="Durability vs Pounding"
                   data={deferredNormalizedChartData}
                   yLabel="rTSS"
-                  targetKey="daily_baseline_tss"
-                  targetLabel="Base (total)"
-                  targetKey2="daily_baseline_rtss"
-                  targetLabel2="Base (run)"
+                  targetKey="daily_baseline_rtss"
+                  targetLabel="Baseline"
                   series={[
                     {
                       key: "durability",
