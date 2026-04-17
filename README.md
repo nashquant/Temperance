@@ -1,8 +1,32 @@
 # Temperance
 
-Temperance is a local-first training and recovery app for endurance athletes. It turns a Garmin-backed SQLite archive into a daily view of what you did, how ready you look, what is planned next, and whether the structure of the week still makes sense.
+Temperance is a local-first training and recovery app for endurance athletes. It turns a Garmin-backed SQLite archive into a practical answer to four daily questions:
 
-The app is built for an athlete who wants coaching-quality context without giving up local control of the data. Garmin provides the activity and wellness archive, SQLite keeps it local, the backend computes training signals and planning state, and the frontend gives you a practical dashboard for day-to-day decisions.
+- What did I actually do?
+- How recovered do I look?
+- What is planned next?
+- Does this week still make sense?
+
+The app is built for an athlete who wants coaching-quality context without giving up local control of the data. Garmin provides the activity and wellness archive, SQLite keeps it local, the backend computes training signals and planning state, and the frontend gives you the day-to-day interface.
+
+## Who This Is For
+
+Use Temperance when you want more than a training log but less than a black-box coach. It is useful when you are balancing running with support modalities, watching durability and injury-risk pressure, or trying to keep a weekly plan coherent after real life changes the day.
+
+Temperance is not a social app, marketplace, or cloud coaching platform. The default workflow is local: your activity archive, wellness data, owner-scoped databases, generated plans, and private guideline overlays stay on your machine unless you deliberately move them elsewhere.
+
+## First Run Checklist
+
+1. Start the backend.
+2. Start the frontend.
+3. Open `http://127.0.0.1:5173`.
+4. Log in and choose the owner scope you want to inspect.
+5. Run Data Extract if you need fresh Garmin activity or wellness data.
+6. Review Dashboard, Wellness, Athlete Progression, and Weekly Outlook before editing the plan.
+7. Add or adjust planned workouts in Plan Activities or Week Planner.
+8. Re-run Data Extract after new Garmin activity is available.
+
+If the app opens but looks empty, the usual cause is that no Garmin data has been synced for the selected owner. If activities are present but sleep, HRV, or body battery are blank, run a comprehensive Data Extract; the lightweight background sync focuses on activity updates.
 
 ## What You Can Do
 
@@ -13,6 +37,36 @@ The app is built for an athlete who wants coaching-quality context without givin
 - Track fitness, fatigue, form, durability, pounding, overreach, injury-risk burden, and weekly baseline.
 - Use doctrine-aware MCP coaching tools to inspect the active build, judge recent history, plan tomorrow, and critique proposed changes.
 - Keep multiple owner-scoped local databases while still running a single local app.
+
+## Main Screens
+
+**Dashboard**
+
+Use this first. It shows the current week with completed and planned training side by side, plus the day-level signals that explain whether a workout is landing as intended.
+
+**Athlete Progression**
+
+Use this to understand trend, not just today's score. It shows fitness, fatigue, form, weekly baseline, durability, pounding, overreach burden, and injury-risk burden over time.
+
+**Weekly Outlook**
+
+Use this when the question is structure. It helps spot a week that has too much load, poor spacing, or a mismatch between intended training and actual training.
+
+**Plan Activities and Week Planner**
+
+Use these to write or edit future workouts. Workout text is compact on purpose, because the same text is displayed to you, parsed by the backend, compared with actuals, and reused by planning tools.
+
+**Wellness**
+
+Use this to check sleep, HRV, resting HR, body battery, and other recovery context imported from Garmin.
+
+**Data Extract**
+
+Use this to connect Garmin, run comprehensive or incremental syncs, and see which connection mode is active.
+
+**Settings**
+
+Use this to adjust owner scope, thresholds, and display preferences.
 
 ## The Mental Model
 
@@ -68,16 +122,14 @@ See the guideline docs for the deeper model:
 - [Durability-first threshold/support philosophy](temperance/guidelines/temperance-guidelines/training-philosophy-durability-threshold-support.md)
 - [Workout quick reference](temperance/guidelines/temperance-workouts/quick-reference.md)
 
-## Daily Use
+## A Normal Day
 
-1. Start the backend and frontend locally.
-2. Open the frontend at `http://127.0.0.1:5173`.
-3. Log in and choose the owner scope you want to inspect.
-4. Sync Garmin from Data Extract, or keep working with already-synced data.
-5. Review dashboard, wellness, athlete progression, and weekly outlook.
-6. Add or edit planned activities in the planner surfaces.
-7. Use Data Extract again when you need a deeper activity/wellness refresh.
-8. Optionally connect MCP coaching tools for a doctrine-aware brief, next-day plan, history judgment, or plan critique.
+1. Sync Garmin if new activity or wellness data is missing.
+2. Check Dashboard for the week as executed so far.
+3. Check Wellness if recovery or sleep may change the plan.
+4. Check Weekly Outlook before moving hard sessions or adding load.
+5. Edit planned activities only after looking at actuals and recovery.
+6. Use MCP coaching tools when you want a doctrine-aware brief, next-day plan, history judgment, or plan critique.
 
 Main frontend surfaces are documented in [frontend/README.md](frontend/README.md).
 

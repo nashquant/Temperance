@@ -1739,7 +1739,7 @@ def tool_save_planned_activities(arguments: dict[str, Any]) -> dict[str, Any]:
     args = SavePlannedActivitiesArgs.model_validate(arguments or {})
     db_path = _resolve_db_path(args.owner)
     backend_main = _backend_main_module()
-    entry_lines = [f"[{e.day_utc}]: {e.workout_text}" for e in args.entries]
+    entry_lines = [f"{e.day_utc}: {e.workout_text}" for e in args.entries]
     entry_text = "\n".join(entry_lines)
     result = backend_main._ingest_planned_entries_core(db_path, entry_text)
     result["owner"] = args.owner
@@ -1790,7 +1790,7 @@ def tool_save_custom_activities(arguments: dict[str, Any]) -> dict[str, Any]:
     args = SaveCustomActivitiesArgs.model_validate(arguments or {})
     db_path = _resolve_db_path(args.owner)
     backend_main = _backend_main_module()
-    entry_lines = [f"[{e.day_utc}]: {e.workout_text}" for e in args.entries]
+    entry_lines = [f"{e.day_utc}: {e.workout_text}" for e in args.entries]
     entry_text = "\n".join(entry_lines)
     result = backend_main._ingest_custom_entries_core(db_path, entry_text)
     result["owner"] = args.owner

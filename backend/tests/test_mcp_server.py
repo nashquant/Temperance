@@ -94,6 +94,35 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertIsInstance(result["decisions"], list)
         self.assertEqual(result["count"], 0)  # empty DB
 
+    def test_save_planned_activities_accepts_plain_date_prefixes(self):
+        from temperance.db import get_planned_activities_df, init_db
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            init_db(db_path)
+
+            with patch.object(mcp_server, "_resolve_db_path", return_value=db_path):
+                result = mcp_server.tool_save_planned_activities(
+                    {
+                        "owner": "test",
+                        "entries": [
+                            {
+                                "day_utc": "2026-04-17",
+                                "workout_text": "60min elliptical @ 70%",
+                            },
+                            {
+                                "day_utc": "T+2",
+                                "workout_text": "75min run @ 72%",
+                            },
+                        ],
+                    }
+                )
+
+            self.assertEqual(result["saved_count"], 2)
+            self.assertEqual(result["errors"], [])
+            planned = get_planned_activities_df(db_path=db_path)
+            self.assertEqual(len(planned), 2)
+
     def test_tools_list_returns_all_registered_tools(self):
         response = mcp_server.handle_message(
             {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}

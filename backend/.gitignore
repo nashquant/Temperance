@@ -1,0 +1,25 @@
+# Local backend Python environment.
+# The repo may keep a tracked backend/.venv symlink for local launcher compatibility;
+# this file still protects real virtualenv contents if one is created here.
+.venv/
+venv/
+env/
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local server logs and scratch output
+*.log
+*.pid
+
+# Backend-local secrets; commit only explicit examples.
+.env
+.env.*
+!.env.example
+!.env.sample

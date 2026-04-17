@@ -1,18 +1,62 @@
+# macOS and editor noise
 .DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Local agent/runtime state
+.omx/
+.claude/settings.local.json
+.claude/worktrees/
 .worktrees/
+docs/superpowers/
+
+# Python caches and local environments
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.python-version
 .venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environment files and secrets
 .env
+.env.*
+!.env.example
+!.env.sample
+
+# Local databases, private Garmin exports, and generated sync data
 *.db
 *.sqlite
 *.sqlite3
-.omx/
 temperance/data/private/
 temperance/data/imports/
-temperance/guidelines/temperance-guidelines/*.local.md
-docs/**
+temperance/data/exports/
 
-# v2 frontend artifacts
+# Local athlete/build notes that should not be committed
+temperance/guidelines/temperance-guidelines/*.local.md
+
+# JavaScript/TypeScript build artifacts
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Logs and process output
+*.log
+logs/
+*.pid
+
+# Legacy or sibling app artifacts
 v2/frontend/node_modules/
 v2/frontend/dist/

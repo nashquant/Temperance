@@ -1,0 +1,30 @@
+# Local Python environment for shared scripts.
+.venv/
+venv/
+env/
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local credentials and Garmin/session config.
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Private training archive, imports, exports, and logs.
+data/private/
+data/imports/
+data/exports/
+*.db
+*.sqlite
+*.sqlite3
+
+# Athlete-specific local overlays.
+guidelines/temperance-guidelines/*.local.md
