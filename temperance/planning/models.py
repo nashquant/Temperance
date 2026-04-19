@@ -185,7 +185,7 @@ class SessionCandidate:
     stress_class: DayType | None = None
     hard_subtype: HardSubtype | None = None
     threshold_like: bool = False
-    mechanical_load: bool = False
+    high_run_stress: bool = False
     toughness_score: float = 0.0
     is_long_run: bool = False
     long_run_duration_min: float = 0.0

@@ -154,7 +154,6 @@ class MCPServerHelpersTest(unittest.TestCase):
                 "rtss": 74.61,
                 "if_proxy": 0.8871,
                 "avg_hr": 151.3,
-                "mechanical_load": 88.812,
             },
             include_extended_metrics=False,
         )
@@ -170,7 +169,6 @@ class MCPServerHelpersTest(unittest.TestCase):
                 "rtss": 74.6,
                 "if_proxy": 0.887,
                 "avg_hr": 151.3,
-                "mechanical_load": 88.81,
             },
         )
 
@@ -1317,9 +1315,7 @@ class MCPServerHelpersTest(unittest.TestCase):
                 "max_hr": 172.0,
                 "avg_pace_s_per_km": 280,
                 "elevation_gain_m": 95.5,
-                "mechanical_load": 88.812,
                 "distance_proxy_km": 12.35,
-                "training_load_garmin": 45.2,
                 "avg_cadence": 178.0,
                 "hr_zone_1_pct": 10.0,
                 "hr_zone_2_pct": 40.0,

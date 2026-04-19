@@ -36,9 +36,7 @@ def test_dashboard_metrics_frames_filter_invalid_rows_without_second_metrics_pas
     )
 
     def fake_metrics_for_filters(**kwargs):
-        calls.append(
-            (bool(kwargs["include_invalid"]), bool(kwargs["include_mechanical_load"]))
-        )
+        calls.append(bool(kwargs["include_invalid"]))
         return source_df.copy()
 
     monkeypatch.setattr(backend_main, "_metrics_for_filters", fake_metrics_for_filters)
@@ -56,7 +54,7 @@ def test_dashboard_metrics_frames_filter_invalid_rows_without_second_metrics_pas
         sport=None,
     )
 
-    assert calls == [(True, False)]
+    assert calls == [True]
     assert set(actual_metrics_df["activity_id"]) == {
         "run-1",
         "run-2",

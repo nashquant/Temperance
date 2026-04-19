@@ -10,7 +10,11 @@ from temperance.planning.models import (
     StressProfile,
     UserPlanningState,
 )
-from temperance.planning.stress import classify_session_stress, is_long_run_candidate, is_threshold_like
+from temperance.planning.stress import (
+    classify_session_stress,
+    is_long_run_candidate,
+    is_threshold_like,
+)
 
 
 def _normalized_modality(value: str) -> str:
@@ -91,7 +95,9 @@ def build_session_candidates(
             max_if=max_if,
             stress_profile=profile,
         )
-        mechanical_load = bool(modality == "running" and (is_long_run or total_minutes >= 75.0))
+        high_run_stress = bool(
+            modality == "running" and (is_long_run or total_minutes >= 75.0)
+        )
         out.append(
             SessionCandidate(
                 activity_text=str(raw.get("activity_text") or "").strip(),
@@ -105,7 +111,7 @@ def build_session_candidates(
                 stress_class=stress_class,
                 hard_subtype=hard_subtype,
                 threshold_like=threshold_like,
-                mechanical_load=mechanical_load,
+                high_run_stress=high_run_stress,
                 toughness_score=toughness_score,
                 is_long_run=is_long_run,
                 long_run_duration_min=total_minutes if is_long_run else 0.0,
@@ -137,14 +143,21 @@ def select_session_candidate(
         reasons: list[str] = []
         score = abs(float(candidate.estimated_tss) - float(intent.target_tss))
 
-        if candidate.stress_override_reason == "stress_class_too_low_for_if" and intent.day_type == DayType.EASY:
+        if (
+            candidate.stress_override_reason == "stress_class_too_low_for_if"
+            and intent.day_type == DayType.EASY
+        ):
             reasons.append("stress_class_too_low_for_if")
         if candidate.hard_subtype == HardSubtype.H2 and not intent.is_weekend:
             reasons.append("weekday_long_run_not_allowed")
         if intent.day_type == DayType.EASY and candidate.stress_class == DayType.HARD:
             reasons.append("easy_day_excludes_hard_candidate")
         if intent.day_type == DayType.MODERATE:
-            if candidate.threshold_like or candidate.avg_if > profile.moderate_max_avg_if or candidate.max_if > profile.moderate_max_max_if:
+            if (
+                candidate.threshold_like
+                or candidate.avg_if > profile.moderate_max_avg_if
+                or candidate.max_if > profile.moderate_max_max_if
+            ):
                 reasons.append("moderate_day_excludes_intensity_drift")
             elif candidate.stress_class == DayType.HARD:
                 reasons.append("moderate_day_excludes_hard_candidate")
@@ -154,28 +167,49 @@ def select_session_candidate(
                 reasons.append("metabolic_hard_day_excludes_non_long_run")
             if candidate.total_minutes < intent.min_duration_min:
                 reasons.append("long_run_too_short")
-            if intent.max_duration_min > 0 and candidate.total_minutes > intent.max_duration_min:
+            if (
+                intent.max_duration_min > 0
+                and candidate.total_minutes > intent.max_duration_min
+            ):
                 reasons.append("long_run_too_long")
-            if candidate.avg_if > intent.max_avg_if or candidate.max_if > profile.long_run_max_max_if:
+            if (
+                candidate.avg_if > intent.max_avg_if
+                or candidate.max_if > profile.long_run_max_max_if
+            ):
                 reasons.append("long_run_too_intense")
             if intent.target_duration_min > 0:
                 score += abs(candidate.total_minutes - intent.target_duration_min) * 0.6
-        elif intent.day_type == DayType.HARD and intent.hard_subtype == HardSubtype.H1 and candidate.hard_subtype == HardSubtype.H2:
+        elif (
+            intent.day_type == DayType.HARD
+            and intent.hard_subtype == HardSubtype.H1
+            and candidate.hard_subtype == HardSubtype.H2
+        ):
             reasons.append("metabolic_hard_day_excludes_long_run")
 
         if intent.modality_bias == "elliptical" and candidate.modality != "elliptical":
             score += 9.0
         if intent.modality_bias == "running" and candidate.modality != "running":
             score += 6.0
-        if prefer_low_impact and intent.day_type != DayType.HARD and candidate.modality == "running":
+        if (
+            prefer_low_impact
+            and intent.day_type != DayType.HARD
+            and candidate.modality == "running"
+        ):
             score += 10.0
-        if prefer_low_impact and candidate.mechanical_load and intent.day_type != DayType.HARD:
+        if (
+            prefer_low_impact
+            and candidate.high_run_stress
+            and intent.day_type != DayType.HARD
+        ):
             score += 14.0
         if previous_text and previous_text == candidate.activity_text.lower():
             score += 12.0
 
         if candidate.stress_class != intent.day_type:
-            if intent.day_type == DayType.MODERATE and candidate.stress_class == DayType.EASY:
+            if (
+                intent.day_type == DayType.MODERATE
+                and candidate.stress_class == DayType.EASY
+            ):
                 score += 5.0
             else:
                 score += 18.0
@@ -187,5 +221,7 @@ def select_session_candidate(
 
     if not scored:
         return None, tuple(dict.fromkeys(rejections))
-    scored.sort(key=lambda pair: (pair[0], -pair[1].estimated_tss, pair[1].activity_text))
+    scored.sort(
+        key=lambda pair: (pair[0], -pair[1].estimated_tss, pair[1].activity_text)
+    )
     return scored[0][1], tuple(dict.fromkeys(rejections))

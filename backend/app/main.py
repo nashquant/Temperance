@@ -2437,8 +2437,6 @@ def _apply_specificity_factor(
         "distance_m",
         "rtss",
         "tss",
-        "mechanical_load",
-        "training_load_garmin",
         "intensity_minutes_vigorous",
         "intensity_minutes_moderate",
         "hr_time_in_zone_1",
@@ -5845,7 +5843,6 @@ def _mcp_history_snapshot_components(
         end_day=normalized_end_day_utc,
         sport=None,
         include_invalid=False,
-        include_mechanical_load=True,
     )
     selected_day = pd.Timestamp(
         date.fromisoformat(normalized_end_day_utc) + timedelta(days=1)
@@ -6593,7 +6590,6 @@ def _metrics_for_filters(
     end_day: str | None,
     sport: str | None,
     include_invalid: bool = False,
-    include_mechanical_load: bool = True,
 ) -> pd.DataFrame:
     if not db_path.exists():
         return pd.DataFrame()
@@ -6642,7 +6638,6 @@ def _metrics_for_filters(
             threshold_pace_curve_points=pace_curve,
             lthr_curve_frame=lthr_curve_frame,
             threshold_pace_curve_frame=pace_curve_frame,
-            include_mechanical_load=include_mechanical_load,
         )
         if not runs_metrics_df.empty:
             runs_metrics_df = _apply_specificity_factor(
@@ -6886,7 +6881,6 @@ def _dashboard_metrics_frames(
         end_day=None,
         sport=sport,
         include_invalid=True,
-        include_mechanical_load=False,
     )
     if actual_metrics_df.empty:
         return pd.DataFrame(), pd.DataFrame()

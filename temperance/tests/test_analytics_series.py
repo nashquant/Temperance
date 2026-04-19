@@ -57,34 +57,6 @@ def test_parse_ma_windows_supports_mixed_and_dedupes() -> None:
     assert pairs == [(20, 100)]
 
 
-def test_mechanical_load_only_for_running_like() -> None:
-    runs_df = pd.DataFrame(
-        [
-            {
-                "activity_id": "1",
-                "start_time_utc": "2026-01-01T10:00:00Z",
-                "sport_type": "running",
-                "distance_m": 5000.0,
-                "duration_s": 1500.0,
-                "avg_pace_s_per_km": 300.0,
-            },
-            {
-                "activity_id": "2",
-                "start_time_utc": "2026-01-01T12:00:00Z",
-                "sport_type": "cycling",
-                "distance_m": 20000.0,
-                "duration_s": 3600.0,
-                "avg_pace_s_per_km": None,
-            },
-        ]
-    )
-    out = compute_metrics(runs_df, resting_hr=45.0, max_hr=200.0)
-    run_ml = out.loc[out["activity_id"] == "1", "mechanical_load"].iloc[0]
-    bike_ml = out.loc[out["activity_id"] == "2", "mechanical_load"].iloc[0]
-    assert pd.notna(run_ml)
-    assert pd.isna(bike_ml)
-
-
 def test_compute_metrics_includes_rtss_and_tss() -> None:
     runs_df = pd.DataFrame(
         [

@@ -533,7 +533,6 @@ def _recent_metrics_df(
         end_day=None,
         sport=sport,
         include_invalid=False,
-        include_mechanical_load=True,
     )
     if not metrics_df.empty:
         metrics_df = metrics_df.sort_values("start_time_utc", ascending=False).copy()
@@ -2528,11 +2527,7 @@ def _day_summaries_from_entries(
                 or re.search(r"@\s*(?:9[0-9]|10[0-5])\s*%", workout_text_lower)
                 is not None
             )
-            is_specific_like_run = (
-                not is_long
-                and dur_min >= 60.0
-                and if_proxy >= 0.79
-            )
+            is_specific_like_run = not is_long and dur_min >= 60.0 and if_proxy >= 0.79
             d["run_tss"] += tss
             d["run_rtss"] += rtss
             d["run_duration_s"] += dur_s

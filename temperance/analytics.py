@@ -7,8 +7,6 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
-from temperance.models import mechanical_load
-
 
 def compute_metrics(
     runs_df: pd.DataFrame,
@@ -19,7 +17,6 @@ def compute_metrics(
     lthr_bpm: float = 178.0,
     threshold_pace_curve_points: list[tuple[datetime, float]] | None = None,
     lthr_curve_points: list[tuple[datetime, float]] | None = None,
-    include_mechanical_load: bool = True,
     threshold_pace_curve_frame: pd.DataFrame | None = None,
     lthr_curve_frame: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
@@ -94,11 +91,6 @@ def compute_metrics(
     df.loc[missing_pace, "avg_pace_s_per_km"] = df.loc[missing_pace, "duration_s"] / (
         df.loc[missing_pace, "distance_m"] / 1000.0
     )
-
-    # TRIMP-based models are disabled in curve-first v1.
-    df["aerobic_load"] = 0.0
-    df["trimp"] = 0.0
-    df["edwards_trimp"] = 0.0
 
     tp_series = _piecewise_series(
         df["start_time_utc"],
@@ -218,60 +210,6 @@ def compute_metrics(
         tp_series[non_run_if_valid] / solved_pace[non_run_if_valid]
     )
 
-    df["mechanical_load"] = pd.NA
-    if include_mechanical_load and running_idx.any():
-        df.loc[running_idx, "mechanical_load"] = df.loc[running_idx].apply(
-            lambda r: mechanical_load(
-                distance_m=float(r.get("distance_m") or 0),
-                duration_s=float(r.get("duration_s") or 0),
-                elevation_gain_m=(
-                    float(r.get("elevation_gain_m"))
-                    if pd.notna(r.get("elevation_gain_m"))
-                    else None
-                ),
-                avg_cadence=float(r.get("avg_cadence"))
-                if pd.notna(r.get("avg_cadence"))
-                else None,
-                avg_stride_length=(
-                    float(r.get("avg_stride_length"))
-                    if pd.notna(r.get("avg_stride_length"))
-                    else None
-                ),
-                running_power_avg=(
-                    float(r.get("running_power_avg"))
-                    if pd.notna(r.get("running_power_avg"))
-                    else None
-                ),
-                hr_zone_1_s=(
-                    float(r.get("hr_time_in_zone_1"))
-                    if pd.notna(r.get("hr_time_in_zone_1"))
-                    else None
-                ),
-                hr_zone_2_s=(
-                    float(r.get("hr_time_in_zone_2"))
-                    if pd.notna(r.get("hr_time_in_zone_2"))
-                    else None
-                ),
-                hr_zone_3_s=(
-                    float(r.get("hr_time_in_zone_3"))
-                    if pd.notna(r.get("hr_time_in_zone_3"))
-                    else None
-                ),
-                hr_zone_4_s=(
-                    float(r.get("hr_time_in_zone_4"))
-                    if pd.notna(r.get("hr_time_in_zone_4"))
-                    else None
-                ),
-                hr_zone_5_s=(
-                    float(r.get("hr_time_in_zone_5"))
-                    if pd.notna(r.get("hr_time_in_zone_5"))
-                    else None
-                ),
-                rtss=float(r.get("rtss")) if pd.notna(r.get("rtss")) else None,
-            ),
-            axis=1,
-        )
-
     duration = pd.to_numeric(df.get("duration_s"), errors="coerce").replace(0, pd.NA)
     for zone_col, pct_col in (
         ("hr_time_in_zone_1", "hr_zone_1_pct"),
@@ -295,10 +233,8 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
                 "distance_km",
                 "distance_proxy_km",
                 "duration_s_total",
-                "mechanical_load_total",
                 "rtss_total",
                 "tss_total",
-                "training_load_garmin",
                 "calories_active",
                 "calories_total",
                 "intensity_minutes_vigorous",
@@ -329,10 +265,8 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
             distance_km=("distance_km", "sum"),
             distance_proxy_km=("distance_proxy_km", "sum"),
             duration_s_total=("duration_s", "sum"),
-            mechanical_load_total=("mechanical_load", "sum"),
             rtss_total=("rtss", "sum"),
             tss_total=("tss", "sum"),
-            training_load_garmin=("training_load_garmin", "sum"),
             calories_active=("calories_active", "sum"),
             calories_total=("calories_total", "sum"),
             intensity_minutes_vigorous=("intensity_minutes_vigorous", "sum"),
@@ -532,9 +466,7 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
     numeric_cols = [
         "rtss",
         "tss",
-        "mechanical_load",
         "distance_proxy_km",
-        "training_load_garmin",
         "calories_total",
         "distance_m",
     ]
@@ -551,13 +483,10 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
         "total_distance_km": ("distance_km", "sum"),
         "total_rtss": ("rtss", "sum"),
         "total_tss": ("tss", "sum"),
-        "total_mechanical_load": ("mechanical_load", "sum"),
         "runs": ("activity_id", "count"),
     }
     if "distance_proxy_km" in weekly.columns:
         agg_spec["total_distance_proxy_km"] = ("distance_proxy_km", "sum")
-    if "training_load_garmin" in weekly.columns:
-        agg_spec["total_garmin_training_load"] = ("training_load_garmin", "sum")
     if "calories_total" in weekly.columns:
         agg_spec["total_calories"] = ("calories_total", "sum")
 
@@ -631,7 +560,6 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "rtss",
         "tss",
         "avg_pace_display",
-        "mechanical_load",
     ]
     cols = [c for c in cols if c in table.columns]
 
@@ -642,7 +570,6 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
         "distance_proxy_method",
         "avg_cadence",
         "running_power_avg",
-        "training_load_garmin",
         "calories_active",
         "calories_total",
         "intensity_minutes_vigorous",
