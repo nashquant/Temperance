@@ -15,6 +15,13 @@ from urllib.request import Request, urlopen
 
 from cryptography.fernet import Fernet, InvalidToken
 
+# Preferred per-user Garmin connection path. This module owns the OAuth2/PKCE
+# style flow, encrypted token storage, token refresh, and optional OAuth-backed
+# activity/wellness fetches for viewer-owned databases. The legacy
+# email/password client in temperance.garmin_client remains as a fallback for
+# admin/local sync and deployments that do not have Garmin OAuth endpoints
+# configured yet.
+
 
 class GarminOAuthError(RuntimeError):
     pass

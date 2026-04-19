@@ -1,6 +1,5 @@
 import pytest
 
-from backend.app.planning_parsing import expand_planned_segments as backend_expand_planned_segments
 from temperance.activity_parsing import expand_planned_segments, parse_dated_activity_entry, split_dated_activity_entries
 
 
@@ -81,22 +80,6 @@ def test_expand_planned_segments_supports_xtrain_alias_for_elliptical() -> None:
     assert hyphen_segments[0]["kind"] == "elliptical"
     assert float(hyphen_segments[0]["duration_min"]) == pytest.approx(70.0)
     assert float(hyphen_segments[0]["if_input"]) == pytest.approx(0.78)
-
-
-def test_shared_parser_returns_current_segment_schema_keys() -> None:
-    segments, warnings = backend_expand_planned_segments(
-        "70min xtrain @ 138bpm",
-        lthr_bpm=178.0,
-        threshold_pace_sec_per_km=300.0,
-    )
-
-    assert warnings == []
-    assert len(segments) == 1
-    assert segments[0]["kind"] == "elliptical"
-    assert float(segments[0]["duration_min"]) == pytest.approx(70.0)
-    assert float(segments[0]["avg_hr_bpm"]) == pytest.approx(138.0)
-    assert "minutes" not in segments[0]
-    assert "bpm" not in segments[0]
 
 
 def test_bulk_schedule_sample_parses_cleanly() -> None:

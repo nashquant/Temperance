@@ -4,6 +4,8 @@ from pathlib import Path
 import sys
 import types
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -167,3 +169,16 @@ if "cryptography.fernet" not in sys.modules:
     sys.modules["cryptography.hazmat"] = _hazmat
     sys.modules["cryptography.hazmat.bindings"] = _bindings
     sys.modules["cryptography.hazmat.bindings._rust"] = _rust
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_users_cache() -> None:
+    """Reset auth user caches between tests so monkeypatch env changes take effect."""
+    try:
+        import backend.app.auth_service as _auth_service
+        import backend.app.main as _main
+
+        _auth_service._AUTH_USERS_CACHE = None
+        _main._AUTH_USERS_CACHE = None
+    except Exception:
+        pass

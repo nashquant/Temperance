@@ -2,6 +2,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+pytest.importorskip("httpx", reason="FastAPI TestClient requires httpx")
 from fastapi.testclient import TestClient
 
 from backend.app.main import app

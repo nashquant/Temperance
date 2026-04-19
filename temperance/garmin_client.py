@@ -22,6 +22,11 @@ except Exception:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+# Legacy Garmin credential/session client. New per-user connections should use
+# backend.app.garmin_oauth when OAuth is configured. This module remains for
+# admin/local sync, file-style comprehensive extraction, and deployments where
+# Garmin OAuth activity/wellness endpoints are unavailable.
+
 _GARMIN_AUTH_LOCK = threading.RLock()
 _GARMIN_SHARED_CLIENT: Any | None = None
 _GARMIN_SHARED_EMAIL_HASH: str | None = None

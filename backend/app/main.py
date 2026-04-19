@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import base64
 from collections import Counter
 import hashlib
-import hmac
-from http.cookies import SimpleCookie
 import json
 import math
 import os
@@ -23,7 +20,58 @@ import pandas as pd
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+
+from backend.app.auth_service import (
+    auth_context as _auth_context,
+    auth_enabled as _auth_enabled,
+    auth_users as _auth_users,
+    cookie_header_token as _cookie_header_token,
+    request_cookie_token as _request_cookie_token,
+    resolve_owner as _resolve_owner,
+    scope_has_authorization as _scope_has_authorization,
+)
+from backend.app.cache import (
+    _DASHBOARD_PAYLOAD_CACHE_MAXSIZE,
+    _dashboard_payload_cache,
+    _dashboard_payload_cache_lock,
+)
+from backend.app.models import (
+    ComprehensiveExtractRequest,
+    CustomActivityUpdateRequest,
+    CustomIngestRequest,
+    GarminCredentialsRequest,
+    GeneratedActivityRequest,
+    LoginRequest,
+    PlannedIngestRequest,
+    PlannedManualDoneRequest,
+    PlannedWorkoutUpdateRequest,
+    SyncRequest,
+    UpdateSettingsRequest,
+)
+from backend.app.routers.auth import (
+    auth_login,
+    auth_logout,
+    auth_me,
+    auth_owners,
+    router as auth_router,
+)
+from backend.app.routers.activities import router as activities_router
+from backend.app.routers.dashboard import (
+    activity_dashboard,
+    athlete_progression_view,
+    overview,
+    wellness_view,
+    week_outlook_view,
+    router as dashboard_router,
+)
+from backend.app.routers.garmin import router as garmin_router
+from backend.app.routers.planning import router as planning_router
+from backend.app.routers.settings import (
+    settings_update,
+    settings_view,
+    vdot_view,
+    router as settings_router,
+)
 
 from backend.app.date_parsing import parse_supported_day_value
 from backend.app.garmin_oauth import (
@@ -67,11 +115,8 @@ from temperance.planning import (
     preview_horizon,
 )
 from temperance.planning.state_builder import infer_hard_subtype
-from temperance.auth import build_users, password_matches, resolve_user
 from temperance.config import load_config
 from temperance.db import (
-    create_activity_merge,
-    delete_activity_merge,
     delete_custom_activities,
     delete_oauth_connection,
     delete_planned_activities,
@@ -80,7 +125,6 @@ from temperance.db import (
     get_activity_detail_raw,
     get_activity_local_start_map,
     get_activity_merge_by_id,
-    get_activity_meta,
     get_activity_raw,
     get_activity_row,
     get_activity_records_df,
@@ -113,12 +157,6 @@ from temperance.db import (
     upsert_planning_decision,
     upsert_sleep_daily,
     upsert_wellness_daily,
-    get_activities_cache_key,
-    get_planned_activities_cache_key,
-    get_custom_activities_cache_key,
-    get_settings_cache_key,
-    get_wellness_cache_key,
-    get_merges_cache_key,
     get_dashboard_cache_components,
 )
 from temperance.garmin_client import (
@@ -133,20 +171,6 @@ from temperance.garmin_client import (
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
-# ---------------------------------------------------------------------------
-# Process-level cache for _build_activity_dashboard_payload
-# Keyed by content hashes so entries are automatically invalidated when
-# data changes. OrderedDict enforces a maximum size (evicts oldest entries).
-# ---------------------------------------------------------------------------
-from collections import OrderedDict as _OrderedDict
-
-_DASHBOARD_PAYLOAD_CACHE_MAXSIZE = 32
-_dashboard_payload_cache: _OrderedDict[str, dict] = _OrderedDict()
-_dashboard_payload_cache_lock = threading.Lock()
-
-_AUTH_USERS_CACHE: dict[str, dict[str, str]] | None = None
-_AUTH_USERS_CACHE_LOCK = threading.Lock()
-
 
 def _dashboard_cache_key(
     db_path: Path,
@@ -156,21 +180,23 @@ def _dashboard_cache_key(
 ) -> str:
     components = get_dashboard_cache_components(db_path)
     today = datetime.now().astimezone().date().isoformat()
+    component_names = (
+        "activities",
+        "planned_activities",
+        "custom_activities",
+        "settings",
+        "wellness",
+        "merges",
+    )
+    component_fingerprint = "|".join(
+        f"{name}={components.get(name, 'missing')}" for name in component_names
+    )
     raw = (
         f"{db_path}|{sport}|{week_offset}|{weeks}"
-        f"|{components['activities']}"
-        f"|{components['planned_activities']}"
-        f"|{components['custom_activities']}"
-        f"|{components['settings']}"
-        f"|{components['wellness']}"
-        f"|{components['merges']}"
+        f"|{component_fingerprint}"
         f"|{today}"
     )
     return hashlib.sha1(raw.encode()).hexdigest()
-
-
-class AuthConfigurationError(RuntimeError):
-    pass
 
 
 def _default_db_path() -> Path:
@@ -239,9 +265,13 @@ GARMIN_RATE_LIMIT_COOLDOWN_SECONDS = max(
     ),
 )
 AUTO_SYNC_LOCAL_WINDOWS = ((8, 10), (20, 22))
-AUTO_SYNC_TEMPORARILY_DISABLED = True
+AUTO_SYNC_TEMPORARILY_DISABLED = str(
+    os.getenv("TEMPERANCE_AUTO_SYNC_DISABLED", "0")
+).strip().lower() in {"1", "true", "yes", "on"}
 AUTO_SYNC_DISABLED_REASON = (
-    "Temporarily disabled to stop background Garmin sync attempts."
+    "Disabled by TEMPERANCE_AUTO_SYNC_DISABLED."
+    if AUTO_SYNC_TEMPORARILY_DISABLED
+    else None
 )
 
 
@@ -257,10 +287,6 @@ def _now_app_local() -> pd.Timestamp:
 
 SETTINGS_KEY_IF_ZONE_THRESHOLDS = "if_zone_thresholds_v1"
 SETTINGS_KEY_VDOT_LOOKBACK_DAYS = "vdot_lookback_days_v1"
-TOKEN_TTL_S = int(
-    os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60)
-)
-AUTH_COOKIE_NAME = "temperance_session"
 MAX_PLANNED_ENTRY_CHARS = 4000
 MAX_PLANNED_ENTRIES_PER_SAVE = 40
 CUSTOM_ACTIVITIES_LIMIT = 5000
@@ -278,92 +304,13 @@ LT_PACE_TO_WEEKLY_TARGET_POINTS = [
 ]
 
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-
-class PlannedManualDoneRequest(BaseModel):
-    day_utc: str
-    line_no: int
-    manual_done: bool
-
-
-class ActivityMergeRequest(BaseModel):
-    activity_ids: list[str] | None = None
-    activity_id_1: str | None = None
-    activity_id_2: str | None = None
-
-
-class PlannedIngestRequest(BaseModel):
-    entry_text: str
-
-
-class PlannedWorkoutUpdateRequest(BaseModel):
-    day_utc: str
-    line_no: int
-    workout_text: str
-    manual_done: bool | None = None
-
-
-class CustomIngestRequest(BaseModel):
-    entry_text: str
-
-
-class CustomActivityUpdateRequest(BaseModel):
-    day_utc: str
-    line_no: int
-    activity_text: str
-
-
-class GeneratedActivityScheduleConstraintRequest(BaseModel):
-    day_utc: str
-    allow_long_run: bool | None = None
-    preferred_modality: str | None = None
-    blocked: bool = False
-
-
-class GeneratedActivityRequest(BaseModel):
-    day_utc: str
-    mode: str = "planned"
-    activity_type: str | None = None
-    previous_activity_text: str | None = None
-    seed: int | None = None
-    methodology_id: str | None = None
-    schedule_constraints: list[GeneratedActivityScheduleConstraintRequest] | None = None
-
-
-class UpdateSettingsRequest(BaseModel):
-    if_zone_thresholds: dict[str, float] | None = None
-    vdot_lookback_days: int | None = None
-    specificity_profile: dict[str, float] | None = None
-    baseline_blend: dict[str, Any] | None = None
-    lthr_curve: list[dict[str, Any]] | None = None
-    lt_pace_curve: list[dict[str, Any]] | None = None
-    injury_windows: list[dict[str, Any]] | None = None
-    timezone: str | None = None
-
-
-class SyncRequest(BaseModel):
-    days_back: int = 180
-    source: str = "both"  # garmin_api | file_import | both
-    garmin_profile: str = "quick"  # quick | deep
-
-
-class ComprehensiveExtractRequest(BaseModel):
-    start_day: str
-    incremental_only: bool = True
-    include_details: bool = True
-    include_wellness: bool = False
-    verify_raw_integrity: bool = False
-
-
-class GarminCredentialsRequest(BaseModel):
-    email: str
-    password: str
-
-
 app = FastAPI(title="Temperance API", version="0.2.0")
+app.include_router(auth_router)
+app.include_router(activities_router)
+app.include_router(dashboard_router)
+app.include_router(garmin_router)
+app.include_router(planning_router)
+app.include_router(settings_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -372,63 +319,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-def _auth_cookie_secure() -> bool:
-    return str(os.getenv("TEMPERANCE_AUTH_COOKIE_SECURE", "0")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-
-
-def _cookie_header_token(raw_cookie: str | None) -> str:
-    if not raw_cookie:
-        return ""
-    parsed = SimpleCookie()
-    try:
-        parsed.load(str(raw_cookie))
-    except Exception:
-        return ""
-    morsel = parsed.get(AUTH_COOKIE_NAME)
-    return str(morsel.value or "").strip() if morsel else ""
-
-
-def _request_cookie_token(request: Request) -> str:
-    try:
-        cookie_value = getattr(request, "cookies", {}).get(AUTH_COOKIE_NAME)
-        if cookie_value:
-            return str(cookie_value).strip()
-    except Exception:
-        pass
-    for key, value in request.scope.get("headers", []) or []:
-        if key.lower() == b"cookie":
-            return _cookie_header_token(value.decode("latin1"))
-    return ""
-
-
-def _scope_has_authorization(request: Request) -> bool:
-    return any(
-        key.lower() == b"authorization"
-        for key, _value in request.scope.get("headers", []) or []
-    )
-
-
-def _set_auth_cookie(response: Response, token: str) -> None:
-    response.set_cookie(
-        AUTH_COOKIE_NAME,
-        token,
-        max_age=max(int(TOKEN_TTL_S), 60),
-        httponly=True,
-        secure=_auth_cookie_secure(),
-        samesite="lax",
-        path="/",
-    )
-
-
-def _clear_auth_cookie(response: Response) -> None:
-    response.delete_cookie(AUTH_COOKIE_NAME, path="/", samesite="lax")
 
 
 @app.middleware("http")
@@ -500,115 +390,6 @@ def _shutdown_auto_sync() -> None:
     _stop_auto_sync_thread()
 
 
-def _auth_enabled() -> bool:
-    return str(os.getenv("TEMPERANCE_AUTH_ENABLED", "1")).strip().lower() not in {
-        "0",
-        "false",
-        "no",
-        "off",
-    }
-
-
-def _auth_users() -> dict[str, dict[str, str]]:
-    global _AUTH_USERS_CACHE
-    if _AUTH_USERS_CACHE is not None:
-        return _AUTH_USERS_CACHE
-    with _AUTH_USERS_CACHE_LOCK:
-        if _AUTH_USERS_CACHE is None:
-            _AUTH_USERS_CACHE = build_users(
-                admin_user=os.getenv("TEMPERANCE_ADMIN_USER", "admin"),
-                admin_pass=os.getenv("TEMPERANCE_ADMIN_PASSWORD", ""),
-                admin_pass_hash=os.getenv("TEMPERANCE_ADMIN_PASSWORD_SHA256", ""),
-                viewer_user=os.getenv("TEMPERANCE_VIEWER_USER", ""),
-                viewer_pass=os.getenv("TEMPERANCE_VIEWER_PASSWORD", ""),
-                viewer_pass_hash=os.getenv("TEMPERANCE_VIEWER_PASSWORD_SHA256", ""),
-                viewer_users=os.getenv("TEMPERANCE_VIEWER_USERS", ""),
-                viewer_users_hash=os.getenv("TEMPERANCE_VIEWER_USERS_SHA256", ""),
-            )
-    return _AUTH_USERS_CACHE
-
-
-def _auth_is_enforced() -> bool:
-    return _auth_enabled()
-
-
-def _auth_configuration_error() -> str | None:
-    if not _auth_enabled():
-        return None
-    if not _auth_users():
-        return "Authentication is enabled but no users are configured."
-    if not (
-        str(os.getenv("TEMPERANCE_AUTH_COOKIE_SECRET") or "").strip()
-        or str(os.getenv("TEMPERANCE_AUTH_SECRET") or "").strip()
-    ):
-        return "Authentication is enabled but no signing secret is configured."
-    return None
-
-
-def _require_auth_ready() -> None:
-    error = _auth_configuration_error()
-    if error:
-        raise HTTPException(status_code=503, detail=error)
-
-
-def _auth_secret() -> str:
-    secret = (
-        str(os.getenv("TEMPERANCE_AUTH_COOKIE_SECRET") or "").strip()
-        or str(os.getenv("TEMPERANCE_AUTH_SECRET") or "").strip()
-    )
-    if not secret:
-        raise AuthConfigurationError("Authentication signing secret is not configured.")
-    return secret
-
-
-def _auth_sign(payload_b64: str) -> str:
-    secret = _auth_secret().encode("utf-8")
-    return hmac.new(secret, payload_b64.encode("utf-8"), hashlib.sha256).hexdigest()
-
-
-def _build_token(user: str, role: str, ttl_s: int = TOKEN_TTL_S) -> str:
-    exp = int(datetime.now(timezone.utc).timestamp()) + max(60, int(ttl_s))
-    payload = {"u": user, "r": role, "exp": exp}
-    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode(
-        "utf-8"
-    )
-    payload_b64 = base64.urlsafe_b64encode(payload_json).decode("utf-8").rstrip("=")
-    return f"{payload_b64}.{_auth_sign(payload_b64)}"
-
-
-def _parse_token(token: str) -> tuple[str, str] | None:
-    raw = str(token or "").strip()
-    if not raw or "." not in raw:
-        return None
-    payload_b64, sig = raw.split(".", 1)
-    if not hmac.compare_digest(_auth_sign(payload_b64), sig):
-        return None
-    try:
-        padded = payload_b64 + "=" * ((4 - len(payload_b64) % 4) % 4)
-        payload = json.loads(
-            base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8")
-        )
-    except Exception:
-        return None
-    user = str(payload.get("u") or "").strip()
-    role = str(payload.get("r") or "").strip().lower()
-    exp = int(payload.get("exp") or 0)
-    if not user or role not in {"admin", "viewer"}:
-        return None
-    if exp <= int(datetime.now(timezone.utc).timestamp()):
-        return None
-    return user, role
-
-
-def _bearer_token(authorization: str | None) -> str:
-    raw = str(authorization or "").strip()
-    if not raw:
-        return ""
-    if raw.lower().startswith("bearer "):
-        return raw[7:].strip()
-    return raw
-
-
 def _user_slug(value: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(value or "").strip()).strip("._-")
     return cleaned or "default"
@@ -634,38 +415,6 @@ def _db_path_for_owner(owner: str) -> Path:
 
     # Named users always use isolated scoped DBs, created on demand.
     return _ensure_initialized(scoped)
-
-
-def _auth_context(authorization: str | None) -> dict[str, str]:
-    if not _auth_enabled():
-        return {"user": "default", "role": "admin"}
-    _require_auth_ready()
-
-    users = _auth_users()
-    token = _bearer_token(authorization)
-    parsed = _parse_token(token)
-    if not parsed:
-        raise HTTPException(status_code=401, detail="Missing or invalid auth token")
-    user, role = parsed
-
-    resolved_user, user_data = resolve_user(users, user)
-    if not user_data or not resolved_user:
-        raise HTTPException(status_code=401, detail="User no longer exists")
-
-    expected_role = str(user_data.get("role") or "").strip().lower()
-    if expected_role != role:
-        raise HTTPException(status_code=401, detail="Role mismatch")
-
-    return {"user": resolved_user, "role": role}
-
-
-def _resolve_owner(ctx: dict[str, str], requested_owner: str | None) -> str:
-    role = str(ctx.get("role") or "viewer")
-    user = str(ctx.get("user") or "default")
-    candidate = str(requested_owner or "").strip()
-    if role == "admin":
-        return candidate or user
-    return user
 
 
 def _load_curve_points(
@@ -10093,62 +9842,6 @@ def root() -> dict[str, str]:
     return {"name": "Temperance API", "status": "ok"}
 
 
-@app.post("/api/v1/auth/login")
-def auth_login(payload: LoginRequest, response: Response) -> dict[str, Any]:
-    if not _auth_enabled():
-        _clear_auth_cookie(response)
-        return {"token": "auth-disabled", "user": "default", "role": "admin"}
-    _require_auth_ready()
-
-    users = _auth_users()
-    resolved_user, user_data = resolve_user(users, payload.username)
-    if not user_data or not resolved_user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    if not password_matches(
-        payload.password, str(user_data.get("password_hash") or "")
-    ):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    role = str(user_data.get("role") or "viewer").strip().lower()
-    token = _build_token(user=resolved_user, role=role)
-    _set_auth_cookie(response, token)
-    return {"token": token, "user": resolved_user, "role": role}
-
-
-@app.post("/api/v1/auth/logout")
-def auth_logout(response: Response) -> dict[str, bool]:
-    _clear_auth_cookie(response)
-    return {"ok": True}
-
-
-@app.get("/api/v1/auth/me")
-def auth_me(
-    authorization: str | None = Header(default=None, alias="Authorization")
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    owner = _resolve_owner(ctx, None)
-    return {
-        "user": ctx["user"],
-        "role": ctx["role"],
-        "owner": owner,
-        "auth_enabled": _auth_enabled(),
-    }
-
-
-@app.get("/api/v1/auth/owners")
-def auth_owners(
-    authorization: str | None = Header(default=None, alias="Authorization")
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    if str(ctx.get("role")) == "admin":
-        users = _auth_users()
-        options = sorted(users.keys()) if users else [ctx["user"]]
-        return {"owners": options}
-    return {"owners": [ctx["user"]]}
-
-
-@app.post("/api/v1/garmin/oauth/start")
 def garmin_oauth_start(
     owner: str | None = Query(default=None),
     authorization: str | None = Header(default=None, alias="Authorization"),
@@ -10182,7 +9875,6 @@ def garmin_oauth_start(
     }
 
 
-@app.get("/api/v1/garmin/oauth/callback")
 def garmin_oauth_callback(
     code: str | None = Query(default=None),
     state: str | None = Query(default=None),
@@ -10243,7 +9935,6 @@ def garmin_oauth_callback(
         )
 
 
-@app.post("/api/v1/garmin/oauth/disconnect")
 def garmin_oauth_disconnect(
     owner: str | None = Query(default=None),
     authorization: str | None = Header(default=None, alias="Authorization"),
@@ -10272,50 +9963,6 @@ def garmin_oauth_disconnect(
         "owner": resolved_owner,
         "disconnected": deleted,
         "message": message,
-    }
-
-
-@app.get("/api/v1/overview")
-def overview(
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, int | str]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-
-    if not db_path.exists():
-        return {
-            "owner": resolved_owner,
-            "activities": 0,
-            "activity_details": 0,
-            "wellness_daily": 0,
-        }
-
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.cursor()
-        try:
-            activities = cur.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
-        except Exception:
-            activities = 0
-        try:
-            activity_details = cur.execute(
-                "SELECT COUNT(*) FROM activity_details"
-            ).fetchone()[0]
-        except Exception:
-            activity_details = 0
-        try:
-            wellness_daily = cur.execute(
-                "SELECT COUNT(*) FROM wellness_daily"
-            ).fetchone()[0]
-        except Exception:
-            wellness_daily = 0
-
-    return {
-        "owner": resolved_owner,
-        "activities": int(activities),
-        "activity_details": int(activity_details),
-        "wellness_daily": int(wellness_daily),
     }
 
 
@@ -10379,19 +10026,6 @@ def _settings_view_core(db_path: Path) -> dict[str, Any]:
         "injury_windows": injury_rows,
         "timezone": _owner_timezone_info(db_path)[0],
     }
-
-
-@app.get("/api/v1/settings")
-def settings_view(
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    result = _settings_view_core(db_path)
-    result["owner"] = resolved_owner
-    return result
 
 
 def _settings_update_core(db_path: Path, settings: dict[str, Any]) -> dict[str, Any]:
@@ -10458,184 +10092,6 @@ def _settings_update_core(db_path: Path, settings: dict[str, Any]) -> dict[str, 
     return {"updated": updated}
 
 
-@app.put("/api/v1/settings")
-def settings_update(
-    payload: UpdateSettingsRequest,
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    return _settings_update_core(
-        db_path,
-        {
-            "if_zone_thresholds": payload.if_zone_thresholds,
-            "vdot_lookback_days": payload.vdot_lookback_days,
-            "specificity_profile": payload.specificity_profile,
-            "baseline_blend": payload.baseline_blend,
-            "lthr_curve": payload.lthr_curve,
-            "lt_pace_curve": payload.lt_pace_curve,
-            "injury_windows": payload.injury_windows,
-            "timezone": payload.timezone,
-        },
-    )
-
-
-@app.get("/api/v1/vdot")
-def vdot_view(
-    owner: str | None = Query(default=None),
-    as_of: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-
-    lt_pace_curve = _load_curve_points(
-        db_path=db_path,
-        key=SETTINGS_KEY_LT_PACE_CURVE,
-        value_key="lt_pace_sec",
-        fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
-    )
-    if not lt_pace_curve:
-        raise HTTPException(status_code=404, detail="LT pace curve unavailable")
-
-    if as_of:
-        try:
-            as_of_dt = datetime.fromisoformat(str(as_of).strip())
-        except Exception as exc:
-            raise HTTPException(
-                status_code=400, detail="Invalid as_of date. Use YYYY-MM-DD."
-            ) from exc
-        if as_of_dt.tzinfo is None:
-            as_of_dt = as_of_dt.replace(tzinfo=timezone.utc)
-        as_of_ts = as_of_dt.astimezone(timezone.utc)
-        lt_pace = float(
-            _curve_value_at(lt_pace_curve, float(lt_pace_curve[-1][1]), as_of_ts)
-        )
-        source_date = as_of_ts.date().isoformat()
-    else:
-        source_date = lt_pace_curve[-1][0].astimezone(timezone.utc).date().isoformat()
-        lt_pace = float(lt_pace_curve[-1][1])
-
-    payload = _vdot_payload_from_lt_pace(lt_pace)
-
-    observed_max: dict[str, Any] | None = None
-    vdot_lookback_days = _load_vdot_lookback_days(db_path)
-    metrics_df = _metrics_for_filters(
-        db_path=db_path,
-        days=3650,
-        start_day=None,
-        end_day=None,
-        sport=None,
-    )
-    if not metrics_df.empty:
-        metrics_df = metrics_df.copy()
-        metrics_df["distance_m"] = pd.to_numeric(
-            metrics_df.get("distance_m"), errors="coerce"
-        ).fillna(0.0)
-        metrics_df["duration_s"] = pd.to_numeric(
-            metrics_df.get("duration_s"), errors="coerce"
-        ).fillna(0.0)
-        metrics_df["if_proxy"] = pd.to_numeric(
-            metrics_df.get("if_proxy"), errors="coerce"
-        ).fillna(0.0)
-        metrics_df["start_time_utc"] = pd.to_datetime(
-            metrics_df.get("start_time_utc"), utc=True, errors="coerce"
-        )
-        sport_lower = (
-            metrics_df.get(
-                "sport_type", pd.Series(index=metrics_df.index, dtype=object)
-            )
-            .fillna("")
-            .astype(str)
-            .str.lower()
-        )
-        eligible_mask = (
-            (sport_lower.str.contains("run") | sport_lower.str.contains("treadmill"))
-            & (metrics_df["distance_m"] > 0)
-            & (metrics_df["duration_s"] > 0)
-            & (metrics_df["if_proxy"] > 0.90)
-        )
-        observed_candidates = metrics_df.loc[
-            eligible_mask, ["distance_m", "duration_s", "start_time_utc"]
-        ].copy()
-        if not observed_candidates.empty:
-            observed_candidates["vdot"] = observed_candidates.apply(
-                lambda row: _activity_vdot(
-                    distance_m=_safe_float(row.get("distance_m")),
-                    duration_s=_safe_float(row.get("duration_s")),
-                ),
-                axis=1,
-            )
-            observed_candidates["vdot"] = pd.to_numeric(
-                observed_candidates["vdot"], errors="coerce"
-            )
-            observed_candidates = observed_candidates.dropna(subset=["vdot"]).copy()
-            if not observed_candidates.empty:
-                if as_of:
-                    observed_window_end = as_of_ts
-                else:
-                    observed_window_end = pd.to_datetime(
-                        observed_candidates["start_time_utc"], utc=True, errors="coerce"
-                    ).max()
-                if pd.notna(observed_window_end):
-                    window_start = pd.Timestamp(observed_window_end) - pd.Timedelta(
-                        days=max(vdot_lookback_days - 1, 0)
-                    )
-                    observed_candidates = observed_candidates[
-                        (
-                            pd.to_datetime(
-                                observed_candidates["start_time_utc"],
-                                utc=True,
-                                errors="coerce",
-                            )
-                            >= window_start
-                        )
-                        & (
-                            pd.to_datetime(
-                                observed_candidates["start_time_utc"],
-                                utc=True,
-                                errors="coerce",
-                            )
-                            <= observed_window_end
-                        )
-                    ].copy()
-                observed_candidates = observed_candidates.sort_values(
-                    ["vdot", "start_time_utc"], ascending=[False, False]
-                )
-            if not observed_candidates.empty:
-                best = observed_candidates.iloc[0]
-                best_vdot = float(best.get("vdot") or 0.0)
-                best_ts = pd.to_datetime(
-                    best.get("start_time_utc"), utc=True, errors="coerce"
-                )
-                pred_lt_pace_sec = _lt_pace_sec_per_km_from_vdot(best_vdot)
-                observed_max = {
-                    "vdot": round(best_vdot, 2),
-                    "source_date": best_ts.date().isoformat()
-                    if pd.notna(best_ts)
-                    else "",
-                    "window_days": int(vdot_lookback_days),
-                    "pred_lt_pace_sec_per_km": round(pred_lt_pace_sec, 2),
-                    "pred_lt_pace_label": f"{_format_mmss(pred_lt_pace_sec)}/km"
-                    if pred_lt_pace_sec > 0
-                    else "-",
-                    "equivalents": _vdot_equivalents(best_vdot),
-                }
-
-    payload.update(
-        {
-            "owner": resolved_owner,
-            "as_of": source_date,
-            "observed_max": observed_max,
-        }
-    )
-    return payload
-
-
-@app.get("/api/v1/data-extract/status")
 def data_extract_status(
     owner: str | None = Query(default=None),
     authorization: str | None = Header(default=None, alias="Authorization"),
@@ -10697,7 +10153,6 @@ def data_extract_status(
     }
 
 
-@app.post("/api/v1/data-extract/credentials")
 def data_extract_credentials(
     payload: GarminCredentialsRequest,
     owner: str | None = Query(default=None),
@@ -10742,7 +10197,6 @@ def data_extract_credentials(
     }
 
 
-@app.post("/api/v1/data-extract/garmin-auth/reset")
 def data_extract_garmin_auth_reset(
     owner: str | None = Query(default=None),
     authorization: str | None = Header(default=None, alias="Authorization"),
@@ -10773,7 +10227,6 @@ def data_extract_garmin_auth_reset(
     }
 
 
-@app.post("/api/v1/data-extract/sync")
 def data_extract_sync(
     payload: SyncRequest,
     owner: str | None = Query(default=None),
@@ -11012,7 +10465,6 @@ def data_extract_sync(
     }
 
 
-@app.post("/api/v1/data-extract/comprehensive")
 def data_extract_comprehensive(
     payload: ComprehensiveExtractRequest,
     owner: str | None = Query(default=None),
@@ -11125,94 +10577,6 @@ def data_extract_comprehensive(
     }
 
 
-@app.get("/api/v1/week-outlook")
-def week_outlook_view(
-    days: int = Query(default=3000, ge=14, le=10000),
-    metric: str = Query(default="tss"),
-    compare: str = Query(default="planned"),
-    week_start: str | None = Query(default=None),
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    payload = _build_week_outlook_payload(
-        db_path=db_path,
-        days=days,
-        start_day=None,
-        end_day=None,
-        sport=None,
-        metric=metric,
-        compare=compare,
-        week_start=week_start,
-    )
-    payload["owner"] = resolved_owner
-    return payload
-
-
-@app.get("/api/v1/athlete-progression")
-def athlete_progression_view(
-    days: int = Query(default=3000, ge=30, le=10000),
-    activity_filter: str = Query(default="all"),
-    aggregation: str = Query(default="weekly"),
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    payload = _build_athlete_progression_payload(
-        db_path=db_path,
-        days=days,
-        activity_filter=activity_filter,
-        aggregation=aggregation,
-        owner=resolved_owner,
-    )
-    return payload
-
-
-@app.get("/api/v1/wellness")
-def wellness_view(
-    days: int = Query(default=365, ge=30, le=5000),
-    aggregation: str = Query(default="weekly"),
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    payload = _build_wellness_payload(
-        db_path=db_path,
-        days=days,
-        aggregation=aggregation,
-        owner=resolved_owner,
-    )
-    return payload
-
-
-@app.get("/api/v1/dashboard")
-def activity_dashboard(
-    weeks: int = Query(default=6, ge=1, le=52),
-    week_offset: int = Query(default=0, ge=0, le=5200),
-    sport: str | None = Query(default=None),
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    payload = _build_activity_dashboard_payload(
-        db_path=db_path,
-        visible_weeks=weeks,
-        week_offset=week_offset,
-        sport=sport,
-    )
-    payload["owner"] = resolved_owner
-    return payload
-
-
-@app.get("/api/v1/planned-activities")
 def planned_activities_view(
     weeks: int = Query(default=4, ge=1, le=12),
     owner: str | None = Query(default=None),
@@ -11229,7 +10593,6 @@ def planned_activities_view(
     return payload
 
 
-@app.patch("/api/v1/planned-activities/manual-done")
 def planned_activity_manual_done(
     payload: PlannedManualDoneRequest,
     owner: str | None = Query(default=None),
@@ -11249,7 +10612,6 @@ def planned_activity_manual_done(
     return {"updated": True}
 
 
-@app.delete("/api/v1/planned-activities")
 def planned_activity_delete(
     day_utc: str = Query(...),
     line_no: int = Query(..., ge=1),
@@ -11389,7 +10751,6 @@ def _ingest_planned_entries_core(db_path: Path, entry_text: str) -> dict[str, An
     }
 
 
-@app.post("/api/v1/planned-activities/ingest")
 def planned_activities_ingest(
     payload: PlannedIngestRequest,
     owner: str | None = Query(default=None),
@@ -11491,7 +10852,6 @@ def _update_planned_workout_core(
     return {"updated": True}
 
 
-@app.patch("/api/v1/planned-activities/workout")
 def planned_activity_workout_update(
     payload: PlannedWorkoutUpdateRequest,
     owner: str | None = Query(default=None),
@@ -11514,7 +10874,6 @@ def planned_activity_workout_update(
     return {"updated": True}
 
 
-@app.get("/api/v1/custom-activities")
 def custom_activities_view(
     weeks: int | None = Query(default=None, ge=1, le=5200),
     owner: str | None = Query(default=None),
@@ -11643,7 +11002,6 @@ def custom_activities_view(
     return {"owner": resolved_owner, "rows": rows_out, "weeks": weeks_out}
 
 
-@app.post("/api/v1/generated-activity")
 def generated_activity(
     payload: GeneratedActivityRequest,
     owner: str | None = Query(default=None),
@@ -11794,7 +11152,6 @@ def _ingest_custom_entries_core(db_path: Path, entry_text: str) -> dict[str, Any
     return {"saved_count": int(len(rows_to_upsert)), "errors": errors[:20]}
 
 
-@app.post("/api/v1/custom-activities/ingest")
 def custom_activities_ingest(
     payload: CustomIngestRequest,
     owner: str | None = Query(default=None),
@@ -11816,7 +11173,6 @@ def custom_activities_ingest(
     return result
 
 
-@app.patch("/api/v1/custom-activities/workout")
 def custom_activity_workout_update(
     payload: CustomActivityUpdateRequest,
     owner: str | None = Query(default=None),
@@ -11899,7 +11255,6 @@ def custom_activity_workout_update(
     return {"updated": True}
 
 
-@app.delete("/api/v1/custom-activities")
 def custom_activity_delete(
     day_utc: str = Query(...),
     line_no: int = Query(..., ge=1),
@@ -11918,101 +11273,6 @@ def custom_activity_delete(
     return {"deleted": int(deleted)}
 
 
-@app.post("/api/v1/activity-merges")
-def create_merge(
-    payload: ActivityMergeRequest,
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-
-    raw_ids = (
-        payload.activity_ids
-        if payload.activity_ids is not None
-        else [payload.activity_id_1, payload.activity_id_2]
-    )
-    activity_ids = [
-        _normalize_activity_id(activity_id) for activity_id in raw_ids if activity_id
-    ]
-    if len(activity_ids) < 2:
-        raise HTTPException(
-            status_code=422, detail="At least two activities are required"
-        )
-    if len(set(activity_ids)) != len(activity_ids):
-        raise HTTPException(
-            status_code=422, detail="Duplicate activity ids cannot be merged"
-        )
-
-    metas = {
-        activity_id: get_activity_meta(db_path, activity_id)
-        for activity_id in activity_ids
-    }
-    if any(meta is None for meta in metas.values()):
-        raise HTTPException(status_code=404, detail="One or more activities not found")
-    if any(
-        str(meta["source"]).lower() == "custom"
-        for meta in metas.values()
-        if meta is not None
-    ):
-        raise HTTPException(
-            status_code=422, detail="Custom activities cannot be merged"
-        )
-
-    sport_by_id = {
-        activity_id: str(meta["sport_type"]).strip().lower()
-        for activity_id, meta in metas.items()
-        if meta is not None
-    }
-    base_sport = sport_by_id[activity_ids[0]]
-    for activity_id in activity_ids[1:]:
-        sport = sport_by_id[activity_id]
-        if not _merge_compatible(base_sport, sport):
-            raise HTTPException(
-                status_code=422,
-                detail=f"Incompatible sport types: {base_sport!r} and {sport!r}",
-            )
-
-    local_map = get_activity_local_start_map(db_path=db_path, activity_ids=activity_ids)
-    local_dates = {
-        pd.Timestamp(ts).date()
-        for ts in (local_map.get(activity_id) for activity_id in activity_ids)
-        if ts is not None
-    }
-    if len(local_dates) > 1:
-        raise HTTPException(
-            status_code=422,
-            detail="Activities must be on the same day to be merged",
-        )
-
-    try:
-        merge_id = create_activity_merge(db_path, activity_ids)
-    except sqlite3.IntegrityError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail="One or more activities are already part of a merge",
-        ) from exc
-
-    return {"merge_id": merge_id}
-
-
-@app.delete("/api/v1/activity-merges/{merge_id}")
-def delete_merge(
-    merge_id: int,
-    owner: str | None = Query(default=None),
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> dict[str, Any]:
-    ctx = _auth_context(authorization)
-    resolved_owner = _resolve_owner(ctx, owner)
-    db_path = _db_path_for_owner(resolved_owner)
-    deleted = delete_activity_merge(db_path, merge_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Merge not found")
-    return {"deleted": True}
-
-
-@app.get("/api/v1/activities/{activity_id}")
 def activity_detail(
     activity_id: str,
     owner: str | None = Query(default=None),
