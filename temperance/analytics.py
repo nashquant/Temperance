@@ -20,22 +20,41 @@ def compute_metrics(
     threshold_pace_curve_points: list[tuple[datetime, float]] | None = None,
     lthr_curve_points: list[tuple[datetime, float]] | None = None,
     include_mechanical_load: bool = True,
+    threshold_pace_curve_frame: pd.DataFrame | None = None,
+    lthr_curve_frame: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if runs_df.empty:
         return runs_df
+
+    def _prepare_points_frame(
+        points: list[tuple[datetime, float]] | None,
+        points_frame: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
+        if points_frame is not None:
+            frame = points_frame.copy()
+        elif points:
+            frame = pd.DataFrame(points, columns=["effective_at", "value"])
+        else:
+            return pd.DataFrame(columns=["effective_at", "value"])
+        if "effective_at" not in frame.columns or "value" not in frame.columns:
+            return pd.DataFrame(columns=["effective_at", "value"])
+        frame = frame[["effective_at", "value"]].copy()
+        frame["effective_at"] = pd.to_datetime(
+            frame["effective_at"], utc=True, errors="coerce"
+        )
+        frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
+        return frame.dropna(subset=["effective_at", "value"]).sort_values(
+            "effective_at"
+        )
 
     def _piecewise_series(
         start_ts: pd.Series,
         default_value: float,
         points: list[tuple[datetime, float]] | None,
+        points_frame: pd.DataFrame | None = None,
     ) -> pd.Series:
         out = pd.Series(float(default_value), index=start_ts.index, dtype=float)
-        if not points:
-            return out
-        points_df = pd.DataFrame(points, columns=["effective_at", "value"]).copy()
-        points_df["effective_at"] = pd.to_datetime(points_df["effective_at"], utc=True, errors="coerce")
-        points_df["value"] = pd.to_numeric(points_df["value"], errors="coerce")
-        points_df = points_df.dropna(subset=["effective_at", "value"]).sort_values("effective_at")
+        points_df = _prepare_points_frame(points, points_frame)
         if points_df.empty:
             return out
 
@@ -75,11 +94,13 @@ def compute_metrics(
         df["start_time_utc"],
         default_value=float(threshold_pace_sec_per_km),
         points=threshold_pace_curve_points,
+        points_frame=threshold_pace_curve_frame,
     )
     lthr_series = _piecewise_series(
         df["start_time_utc"],
         default_value=float(lthr_bpm),
         points=lthr_curve_points,
+        points_frame=lthr_curve_frame,
     )
     df["rtss"] = pd.NA
     df["tss"] = pd.NA

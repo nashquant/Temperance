@@ -292,6 +292,8 @@ def _executemany_in_chunks(
 
 def run_migrations(db_path: Path) -> None:
     # v1 canonical schema: no legacy backfill migrations.
+    # Keep this bootstrap order covered by schema tests before moving columns
+    # between SCHEMA_SQL and migration-managed DDL.
     with closing(get_conn(db_path)) as conn:
         conn.execute(
             """

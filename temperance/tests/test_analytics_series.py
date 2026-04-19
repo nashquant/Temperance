@@ -89,6 +89,55 @@ def test_compute_metrics_includes_rtss_and_tss() -> None:
     assert pd.notna(out.loc[0, "tss"])
 
 
+def test_compute_metrics_accepts_prepared_lt_curve_frames() -> None:
+    runs_df = pd.DataFrame(
+        [
+            {
+                "activity_id": "early",
+                "start_time_utc": "2026-01-01T10:00:00Z",
+                "sport_type": "running",
+                "distance_m": 5000.0,
+                "duration_s": 1500.0,
+                "avg_pace_s_per_km": 300.0,
+                "avg_hr": 170.0,
+            },
+            {
+                "activity_id": "late",
+                "start_time_utc": "2026-02-01T10:00:00Z",
+                "sport_type": "running",
+                "distance_m": 5000.0,
+                "duration_s": 1400.0,
+                "avg_pace_s_per_km": 280.0,
+                "avg_hr": 172.0,
+            },
+        ]
+    )
+    pace_points = [
+        (pd.Timestamp("2025-12-01T00:00:00Z").to_pydatetime(), 300.0),
+        (pd.Timestamp("2026-01-15T00:00:00Z").to_pydatetime(), 285.0),
+    ]
+    lthr_points = [
+        (pd.Timestamp("2025-12-01T00:00:00Z").to_pydatetime(), 178.0),
+        (pd.Timestamp("2026-01-15T00:00:00Z").to_pydatetime(), 181.0),
+    ]
+    pace_frame = pd.DataFrame(pace_points, columns=["effective_at", "value"])
+    lthr_frame = pd.DataFrame(lthr_points, columns=["effective_at", "value"])
+
+    from_points = compute_metrics(
+        runs_df,
+        threshold_pace_curve_points=pace_points,
+        lthr_curve_points=lthr_points,
+    )
+    from_frames = compute_metrics(
+        runs_df,
+        threshold_pace_curve_frame=pace_frame,
+        lthr_curve_frame=lthr_frame,
+    )
+
+    pd.testing.assert_series_equal(from_points["rtss"], from_frames["rtss"])
+    pd.testing.assert_series_equal(from_points["tss"], from_frames["tss"])
+
+
 def test_rtss_only_for_running_or_treadmill() -> None:
     runs_df = pd.DataFrame(
         [

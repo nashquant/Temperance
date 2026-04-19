@@ -48,6 +48,7 @@ from backend.app.models import (
     SyncRequest,
     UpdateSettingsRequest,
 )
+from backend.app.owner_paths import db_path_for_owner, user_slug
 from backend.app.routers.auth import (
     auth_login,
     auth_logout,
@@ -391,30 +392,11 @@ def _shutdown_auto_sync() -> None:
 
 
 def _user_slug(value: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(value or "").strip()).strip("._-")
-    return cleaned or "default"
+    return user_slug(value)
 
 
 def _db_path_for_owner(owner: str) -> Path:
-    users_root = DB_PATH.parent / "users"
-    owner_slug = _user_slug(owner)
-    scoped = users_root / f"{owner_slug}.db"
-
-    def _ensure_initialized(path: Path) -> Path:
-        try:
-            # Keep schema up-to-date for both new and existing DBs.
-            init_db(path)
-        except Exception:
-            # Best effort; callers may still handle DB errors explicitly.
-            pass
-        return path
-
-    # Keep legacy behavior only for the synthetic/default owner.
-    if owner_slug == "default" and DB_PATH.exists():
-        return _ensure_initialized(DB_PATH)
-
-    # Named users always use isolated scoped DBs, created on demand.
-    return _ensure_initialized(scoped)
+    return db_path_for_owner(owner, base_db_path=DB_PATH, initializer=init_db)
 
 
 def _load_curve_points(
@@ -6628,6 +6610,8 @@ def _metrics_for_filters(
         value_key="lt_pace_sec",
         fallback_value=DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
     )
+    lthr_curve_frame = pd.DataFrame(lthr_curve, columns=["effective_at", "value"])
+    pace_curve_frame = pd.DataFrame(pace_curve, columns=["effective_at", "value"])
     if_thresholds = _load_if_zone_thresholds(db_path)
 
     specificity_profile = _load_specificity_profile(
@@ -6656,6 +6640,8 @@ def _metrics_for_filters(
             else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
             lthr_curve_points=lthr_curve,
             threshold_pace_curve_points=pace_curve,
+            lthr_curve_frame=lthr_curve_frame,
+            threshold_pace_curve_frame=pace_curve_frame,
             include_mechanical_load=include_mechanical_load,
         )
         if not runs_metrics_df.empty:
@@ -11778,6 +11764,8 @@ def activity_detail(
     if runs_df.empty:
         raise HTTPException(status_code=404, detail="No activities found")
 
+    lthr_curve_frame = pd.DataFrame(lthr_curve, columns=["effective_at", "value"])
+    pace_curve_frame = pd.DataFrame(pace_curve, columns=["effective_at", "value"])
     metrics_df = compute_metrics(
         runs_df=runs_df,
         lthr_bpm=float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR,
@@ -11786,6 +11774,8 @@ def activity_detail(
         else DEFAULT_THRESHOLD_PACE_SEC_PER_KM,
         lthr_curve_points=lthr_curve,
         threshold_pace_curve_points=pace_curve,
+        lthr_curve_frame=lthr_curve_frame,
+        threshold_pace_curve_frame=pace_curve_frame,
     )
     selected = metrics_df[
         metrics_df["activity_id"].astype(str).map(_normalize_activity_id)
