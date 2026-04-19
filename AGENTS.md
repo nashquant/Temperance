@@ -13,23 +13,20 @@ Temperance is a local-first training and recovery app for endurance athletes, ba
 ### Backend (FastAPI + Python)
 
 ```bash
-cd backend && source .venv/bin/activate
-
-# Run dev server
-./run.sh
-# or: python3 -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+# Run dev server (from repo root — never cd backend or activate venv)
+./backend/run.sh
 
 # Run MCP server (stdio)
-python3 -m backend.app.mcp_server --stdio
+.venv/bin/python -m backend.app.mcp_server --stdio
 
 # Run all Python tests
-pytest temperance/tests -q
+.venv/bin/pytest temperance/tests -q
 
 # Run a single test file
-pytest temperance/tests/test_activity_parsing.py -v
+.venv/bin/pytest temperance/tests/test_activity_parsing.py -v
 
 # Run backend-specific tests
-python -m unittest backend.tests.test_mcp_server -v
+.venv/bin/python -m unittest backend.tests.test_mcp_server -v
 ```
 
 ### Frontend (React + Vite + TypeScript)
