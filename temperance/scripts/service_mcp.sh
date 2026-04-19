@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_DIR="$(cd "${ROOT_DIR}/.." && pwd)"
 
-PYTHON_BIN="${BACKEND_PYTHON_BIN:-${V2_PYTHON_BIN:-${REPO_DIR}/backend/.venv/bin/python}}"
+PYTHON_BIN="${BACKEND_PYTHON_BIN:-${V2_PYTHON_BIN:-${REPO_DIR}/.venv/bin/python}}"
 USE_CAFFEINATE="${TEMPERANCE_USE_CAFFEINATE:-1}"
 CAFFEINATE_BIN="${CAFFEINATE_BIN:-}"
 
