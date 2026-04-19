@@ -1086,7 +1086,7 @@ function DashboardDayColumnComponent({
                       <div
                         key={activity.activity_id}
                         className={cn(
-                          "relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all hover:brightness-110",
+                          "relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                           "px-2 py-1.5",
                           activity.is_custom || isInvalid
                             ? "border-[1.5px] border-dashed"
