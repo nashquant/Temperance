@@ -1,7 +1,13 @@
 import pandas as pd
 import pytest
 
-from temperance.analytics import compute_metrics, ema, ema_alpha_from_days, parse_ma_windows, sma
+from temperance.analytics import (
+    compute_metrics,
+    ema,
+    ema_alpha_from_days,
+    parse_ma_windows,
+    sma,
+)
 
 
 def test_sma_basic() -> None:
@@ -11,14 +17,23 @@ def test_sma_basic() -> None:
 
 
 def test_ema_basic() -> None:
+    import math
+
     s = pd.Series([10.0, 10.0, 20.0])
     out = ema(s, 2)
-    # alpha = 2/(2+1)=0.666..., third value = 0.666*20 + 0.333*10 = 16.666...
-    assert round(float(out.iloc[2]), 3) == 16.667
+    # Coggan alpha for window=2: 1 - exp(-1/2) ≈ 0.3935
+    # third value = alpha*20 + (1-alpha)*10
+    alpha = 1.0 - math.exp(-0.5)
+    expected = alpha * 20.0 + (1.0 - alpha) * 10.0
+    assert round(float(out.iloc[2]), 3) == round(expected, 3)
 
 
 def test_ema_alpha_from_days() -> None:
-    assert round(ema_alpha_from_days(14), 6) == round(2.0 / 15.0, 6)
+    import math
+
+    assert round(ema_alpha_from_days(14), 6) == round(1.0 - math.exp(-1.0 / 14), 6)
+    # Coggan formula is strictly smaller than the old 2/(N+1)
+    assert ema_alpha_from_days(42) < 2.0 / 43.0
 
 
 def test_sma_invalid_window() -> None:

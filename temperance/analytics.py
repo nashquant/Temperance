@@ -58,7 +58,12 @@ def compute_metrics(
         if points_df.empty:
             return out
 
-        ts_df = pd.DataFrame({"idx": start_ts.index, "ts": pd.to_datetime(start_ts, utc=True, errors="coerce")})
+        ts_df = pd.DataFrame(
+            {
+                "idx": start_ts.index,
+                "ts": pd.to_datetime(start_ts, utc=True, errors="coerce"),
+            }
+        )
         ts_df = ts_df.dropna(subset=["ts"]).sort_values("ts")
         if ts_df.empty:
             return out
@@ -69,20 +74,25 @@ def compute_metrics(
             on="ts",
             direction="backward",
         )
-        out.loc[merged["idx"].to_numpy()] = pd.to_numeric(merged["value"], errors="coerce").fillna(float(default_value)).to_numpy()
+        out.loc[merged["idx"].to_numpy()] = (
+            pd.to_numeric(merged["value"], errors="coerce")
+            .fillna(float(default_value))
+            .to_numpy()
+        )
         return out
 
     df = runs_df.copy()
-    df["start_time_utc"] = pd.to_datetime(df["start_time_utc"], utc=True, errors="coerce")
+    df["start_time_utc"] = pd.to_datetime(
+        df["start_time_utc"], utc=True, errors="coerce"
+    )
 
     # Fill pace where missing from duration and distance for running-like activities only.
-    is_running_like = (
-        df["sport_type"].fillna("").astype(str).str.lower().str.contains("run")
-        | df["sport_type"].fillna("").astype(str).str.lower().str.contains("treadmill")
-    )
+    is_running_like = df["sport_type"].fillna("").astype(str).str.lower().str.contains(
+        "run"
+    ) | df["sport_type"].fillna("").astype(str).str.lower().str.contains("treadmill")
     missing_pace = df["avg_pace_s_per_km"].isna() & is_running_like
-    df.loc[missing_pace, "avg_pace_s_per_km"] = (
-        df.loc[missing_pace, "duration_s"] / (df.loc[missing_pace, "distance_m"] / 1000.0)
+    df.loc[missing_pace, "avg_pace_s_per_km"] = df.loc[missing_pace, "duration_s"] / (
+        df.loc[missing_pace, "distance_m"] / 1000.0
     )
 
     # TRIMP-based models are disabled in curve-first v1.
@@ -107,7 +117,11 @@ def compute_metrics(
 
     running_idx = is_running_like.fillna(False)
     duration_s = pd.to_numeric(df["duration_s"], errors="coerce")
-    avg_hr = pd.to_numeric(df["avg_hr"], errors="coerce") if "avg_hr" in df.columns else pd.Series(float("nan"), index=df.index)
+    avg_hr = (
+        pd.to_numeric(df["avg_hr"], errors="coerce")
+        if "avg_hr" in df.columns
+        else pd.Series(float("nan"), index=df.index)
+    )
     avg_pace = (
         pd.to_numeric(df["avg_pace_s_per_km"], errors="coerce")
         if "avg_pace_s_per_km" in df.columns
@@ -117,7 +131,10 @@ def compute_metrics(
     # hrTSS from LTHR curve.
     tss_mask = (duration_s > 0) & (avg_hr > 0) & (avg_hr <= 260) & (lthr_series > 0)
     df.loc[tss_mask, "tss"] = (
-        duration_s[tss_mask] * ((avg_hr[tss_mask] / lthr_series[tss_mask]) ** 2) / 3600.0 * 100.0
+        duration_s[tss_mask]
+        * ((avg_hr[tss_mask] / lthr_series[tss_mask]) ** 2)
+        / 3600.0
+        * 100.0
     )
 
     # rTSS for running/treadmill only.
@@ -145,21 +162,34 @@ def compute_metrics(
     run_distance = distance_m_num / 1000.0
     df.loc[run_mask, "distance_proxy_km"] = run_distance[run_mask]
     run_pace_valid = run_mask & (avg_pace_num > 0)
-    df.loc[run_pace_valid, "pace_proxy_sec_per_km"] = avg_pace_num[run_pace_valid].round()
+    df.loc[run_pace_valid, "pace_proxy_sec_per_km"] = avg_pace_num[
+        run_pace_valid
+    ].round()
     df.loc[run_mask, "distance_proxy_method"] = "none_running"
     run_if_valid = run_mask & (tp_series > 0) & (avg_pace_num > 0)
-    df.loc[run_if_valid, "if_proxy"] = tp_series[run_if_valid] / avg_pace_num[run_if_valid]
+    df.loc[run_if_valid, "if_proxy"] = (
+        tp_series[run_if_valid] / avg_pace_num[run_if_valid]
+    )
 
     # Non-running:
     # - IF proxy should represent raw intensity (HR/LTHR) when HR is available.
     # - Distance/pace proxy is solved from TSS parity with fixed specificity_ratio 0.8.
     non_run_mask = (~run_mask) & (~is_strength)
-    non_run_if_hr_valid = non_run_mask & (avg_hr > 0) & (avg_hr <= 260) & (lthr_series > 0)
-    df.loc[non_run_if_hr_valid, "if_proxy"] = avg_hr[non_run_if_hr_valid] / lthr_series[non_run_if_hr_valid]
+    non_run_if_hr_valid = (
+        non_run_mask & (avg_hr > 0) & (avg_hr <= 260) & (lthr_series > 0)
+    )
+    df.loc[non_run_if_hr_valid, "if_proxy"] = (
+        avg_hr[non_run_if_hr_valid] / lthr_series[non_run_if_hr_valid]
+    )
 
     spec = 0.8
     effective_rtss_target = (tss_num * spec).clip(lower=0.0)
-    common_valid = non_run_mask & (duration_num > 0) & (tp_series > 0) & np.isfinite(tss_num.to_numpy(dtype=float, na_value=np.nan))
+    common_valid = (
+        non_run_mask
+        & (duration_num > 0)
+        & (tp_series > 0)
+        & np.isfinite(tss_num.to_numpy(dtype=float, na_value=np.nan))
+    )
     zero_target = common_valid & (effective_rtss_target <= 0)
     df.loc[zero_target, "distance_proxy_km"] = 0.0
     df.loc[zero_target, "distance_proxy_method"] = "tss_parity_root_solve"
@@ -176,11 +206,17 @@ def compute_metrics(
         & (solved_pace <= max_pace)
     )
     df.loc[parity_valid, "pace_proxy_sec_per_km"] = solved_pace[parity_valid].round()
-    df.loc[parity_valid, "distance_proxy_km"] = duration_num[parity_valid] / solved_pace[parity_valid]
+    df.loc[parity_valid, "distance_proxy_km"] = (
+        duration_num[parity_valid] / solved_pace[parity_valid]
+    )
     df.loc[parity_valid, "distance_proxy_method"] = "tss_parity_root_solve"
     # Fallback IF for non-running only when HR-derived IF is missing.
-    non_run_if_valid = parity_valid & (solved_pace > 0) & (tp_series > 0) & df["if_proxy"].isna()
-    df.loc[non_run_if_valid, "if_proxy"] = tp_series[non_run_if_valid] / solved_pace[non_run_if_valid]
+    non_run_if_valid = (
+        parity_valid & (solved_pace > 0) & (tp_series > 0) & df["if_proxy"].isna()
+    )
+    df.loc[non_run_if_valid, "if_proxy"] = (
+        tp_series[non_run_if_valid] / solved_pace[non_run_if_valid]
+    )
 
     df["mechanical_load"] = pd.NA
     if include_mechanical_load and running_idx.any():
@@ -193,7 +229,9 @@ def compute_metrics(
                     if pd.notna(r.get("elevation_gain_m"))
                     else None
                 ),
-                avg_cadence=float(r.get("avg_cadence")) if pd.notna(r.get("avg_cadence")) else None,
+                avg_cadence=float(r.get("avg_cadence"))
+                if pd.notna(r.get("avg_cadence"))
+                else None,
                 avg_stride_length=(
                     float(r.get("avg_stride_length"))
                     if pd.notna(r.get("avg_stride_length"))
@@ -314,11 +352,31 @@ def build_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
         + pd.to_numeric(grouped["hr_time_in_zone_4"], errors="coerce").fillna(0.0)
         + pd.to_numeric(grouped["hr_time_in_zone_5"], errors="coerce").fillna(0.0)
     ).replace(0, np.nan)
-    grouped["hr_zone_1_pct"] = (pd.to_numeric(grouped["hr_time_in_zone_1"], errors="coerce") / zone_total * 100.0).fillna(0.0)
-    grouped["hr_zone_2_pct"] = (pd.to_numeric(grouped["hr_time_in_zone_2"], errors="coerce") / zone_total * 100.0).fillna(0.0)
-    grouped["hr_zone_3_pct"] = (pd.to_numeric(grouped["hr_time_in_zone_3"], errors="coerce") / zone_total * 100.0).fillna(0.0)
-    grouped["hr_zone_4_pct"] = (pd.to_numeric(grouped["hr_time_in_zone_4"], errors="coerce") / zone_total * 100.0).fillna(0.0)
-    grouped["hr_zone_5_pct"] = (pd.to_numeric(grouped["hr_time_in_zone_5"], errors="coerce") / zone_total * 100.0).fillna(0.0)
+    grouped["hr_zone_1_pct"] = (
+        pd.to_numeric(grouped["hr_time_in_zone_1"], errors="coerce")
+        / zone_total
+        * 100.0
+    ).fillna(0.0)
+    grouped["hr_zone_2_pct"] = (
+        pd.to_numeric(grouped["hr_time_in_zone_2"], errors="coerce")
+        / zone_total
+        * 100.0
+    ).fillna(0.0)
+    grouped["hr_zone_3_pct"] = (
+        pd.to_numeric(grouped["hr_time_in_zone_3"], errors="coerce")
+        / zone_total
+        * 100.0
+    ).fillna(0.0)
+    grouped["hr_zone_4_pct"] = (
+        pd.to_numeric(grouped["hr_time_in_zone_4"], errors="coerce")
+        / zone_total
+        * 100.0
+    ).fillna(0.0)
+    grouped["hr_zone_5_pct"] = (
+        pd.to_numeric(grouped["hr_time_in_zone_5"], errors="coerce")
+        / zone_total
+        * 100.0
+    ).fillna(0.0)
     return grouped
 
 
@@ -331,7 +389,7 @@ def sma(series: pd.Series, window: int) -> pd.Series:
 def ema_alpha_from_days(window: int) -> float:
     if window <= 0:
         raise ValueError("window must be > 0")
-    return 2.0 / (window + 1.0)
+    return 1.0 - math.exp(-1.0 / window)
 
 
 def ema(series: pd.Series, window: int) -> pd.Series:
@@ -372,7 +430,9 @@ def ema_multi(series: pd.Series, windows: list[int]) -> dict[int, pd.Series]:
     values = pd.to_numeric(series, errors="coerce").fillna(0.0)
     out: dict[int, pd.Series] = {}
     for w in uniq_windows:
-        out[w] = values.ewm(alpha=ema_alpha_from_days(w), adjust=False).mean().astype(float)
+        out[w] = (
+            values.ewm(alpha=ema_alpha_from_days(w), adjust=False).mean().astype(float)
+        )
     return out
 
 
@@ -501,7 +561,11 @@ def weekly_summary(df: pd.DataFrame) -> pd.DataFrame:
     if "calories_total" in weekly.columns:
         agg_spec["total_calories"] = ("calories_total", "sum")
 
-    grouped = weekly.groupby("week_start", as_index=False).agg(**agg_spec).sort_values("week_start")
+    grouped = (
+        weekly.groupby("week_start", as_index=False)
+        .agg(**agg_spec)
+        .sort_values("week_start")
+    )
     return grouped
 
 
