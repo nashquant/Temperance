@@ -262,6 +262,7 @@ class UpdateSettingsArgs(BaseModel):
     timezone: Optional[str] = None
     specificity_profile: Optional[dict[str, Any]] = None
     injury_windows: Optional[list[dict[str, str]]] = None
+    training_philosophy_id: Optional[str] = None
     if_zone_thresholds: Optional[dict[str, Any]] = None
     vdot_lookback_days: Optional[int] = None
 
@@ -557,8 +558,6 @@ def _compute_fitness_metrics(db_path: Any, owner: str) -> dict[str, Any]:
       acwr       — fatigue / fitness (acute:chronic workload ratio)
       overreach  — accumulated burden from excess TSS load above daily target
       injury_risk— accumulated burden from excess rTSS load above daily target (running-specific)
-      durability — 100-day rTSS EMA (long-term running robustness)
-      pounding   — 7-day rTSS EMA (acute running mechanical load)
     """
     _require_pandas()
     try:
@@ -585,10 +584,8 @@ def _compute_fitness_metrics(db_path: Any, owner: str) -> dict[str, Any]:
             "acwr": round(fatigue / fitness, 2) if fitness > 0 else None,
             "overreach": round(_safe_float(last.get("overreach")), 1),
             "injury_risk": round(_safe_float(last.get("injury_risk")), 1),
-            "durability": round(_safe_float(last.get("durability")), 1),
-            "pounding": round(_safe_float(last.get("pounding")), 1),
             "_note": (
-                "fitness\u2248CTL (42-day TSS EMA), fatigue\u2248ATL (7-day TSS EMA); "
+                "fitness≈CTL (42-day TSS EMA), fatigue≈ATL (7-day TSS EMA); "
                 "overreach and injury_risk measure accumulated burden from excess load above daily target"
             ),
         }
@@ -618,16 +615,10 @@ def _activity_row_summary(
                 "distance_equivalent_km": round(
                     _safe_float(row.get("distance_proxy_km")), 2
                 ),
-                "training_load_garmin": round(
-                    _safe_float(row.get("training_load_garmin")), 1
-                ),
-                "mechanical_load": round(_safe_float(row.get("mechanical_load")), 2),
                 "avg_cadence": round(_safe_float(row.get("avg_cadence")), 0) or None,
                 "hr_zones": _hr_zone_dict(row),
             }
         )
-    else:
-        payload["mechanical_load"] = round(_safe_float(row.get("mechanical_load")), 2)
     return _clean_mapping(payload)
 
 
@@ -854,12 +845,9 @@ def tool_get_load_trend(arguments: dict[str, Any]) -> dict[str, Any]:
 
     # Use shared ema_multi (same function as Athlete Progression dashboard)
     tss_emas = ema_multi(grouped["tss"], [42, 7])
-    rtss_emas = ema_multi(grouped["rtss"], [100, 7])
     grouped["fitness"] = tss_emas[42]  # 42-day TSS EMA (≈ CTL)
     grouped["fatigue"] = tss_emas[7]  # 7-day TSS EMA (≈ ATL)
     grouped["form"] = grouped["fitness"] - grouped["fatigue"]
-    grouped["durability"] = rtss_emas[100]  # 100-day rTSS EMA
-    grouped["pounding"] = rtss_emas[7]  # 7-day rTSS EMA
 
     daily_rows: list[dict[str, Any]] = []
     for _, row in grouped.tail(21).iterrows():
@@ -884,8 +872,6 @@ def tool_get_load_trend(arguments: dict[str, Any]) -> dict[str, Any]:
                     "fatigue": round(fatigue, 1),
                     "form": round(_safe_float(row.get("form")), 1),
                     "acwr": acwr,
-                    "durability": round(_safe_float(row.get("durability")), 1),
-                    "pounding": round(_safe_float(row.get("pounding")), 1),
                     # backward-compat aliases
                     "ctl_42_tss": round(fitness, 1),
                     "atl_7_tss": round(fatigue, 1),
@@ -896,8 +882,6 @@ def tool_get_load_trend(arguments: dict[str, Any]) -> dict[str, Any]:
 
     latest_fitness = _safe_float(grouped["fitness"].iloc[-1])
     latest_fatigue = _safe_float(grouped["fatigue"].iloc[-1])
-    latest_durability = _safe_float(grouped["durability"].iloc[-1])
-    latest_pounding = _safe_float(grouped["pounding"].iloc[-1])
     summary = {
         "days": int(max(args.days, 14)),
         "total_tss": round(_safe_float(grouped["tss"].sum()), 1),
@@ -910,15 +894,12 @@ def tool_get_load_trend(arguments: dict[str, Any]) -> dict[str, Any]:
         "latest_acwr": round(latest_fatigue / latest_fitness, 2)
         if latest_fitness > 0
         else None,
-        "latest_durability": round(latest_durability, 1),
-        "latest_pounding": round(latest_pounding, 1),
         # backward-compat aliases
         "latest_ctl_42_tss": round(latest_fitness, 1),
         "latest_atl_7_tss": round(latest_fatigue, 1),
         "latest_tsb_proxy": round(latest_fitness - latest_fatigue, 1),
         "_note": (
-            "fitness\u2248CTL (42-day TSS EMA), fatigue\u2248ATL (7-day TSS EMA); "
-            "durability=100-day rTSS EMA, pounding=7-day rTSS EMA; "
+            "fitness≈CTL (42-day TSS EMA), fatigue≈ATL (7-day TSS EMA); "
             "for overreach/injury_risk use get_fitness_form"
         ),
     }
@@ -1958,6 +1939,8 @@ def tool_update_settings(arguments: dict[str, Any]) -> dict[str, Any]:
         settings_dict["specificity_profile"] = args.specificity_profile
     if args.injury_windows is not None:
         settings_dict["injury_windows"] = args.injury_windows
+    if args.training_philosophy_id is not None:
+        settings_dict["training_philosophy_id"] = args.training_philosophy_id
     if args.if_zone_thresholds is not None:
         settings_dict["if_zone_thresholds"] = args.if_zone_thresholds
     if args.vdot_lookback_days is not None:
@@ -1966,6 +1949,44 @@ def tool_update_settings(arguments: dict[str, Any]) -> dict[str, Any]:
     result["owner"] = args.owner
     result["db_path"] = str(db_path)
     return result
+
+
+def _serialize_training_philosophy(philosophy: Any) -> dict[str, Any]:
+    return {
+        "philosophy_id": philosophy.philosophy_id,
+        "label": philosophy.label,
+        "description": philosophy.description,
+        "distribution": {
+            "easy_pct": philosophy.distribution.easy_pct,
+            "moderate_pct": philosophy.distribution.moderate_pct,
+            "hard_pct": philosophy.distribution.hard_pct,
+        },
+        "preferred_hard_subtypes": list(philosophy.preferred_hard_subtypes),
+        "preferred_session_families": list(philosophy.preferred_session_families),
+    }
+
+
+def tool_get_training_philosophy(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = OwnerArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+    from temperance.planning.philosophy import CORE_PRINCIPLES, get_philosophy
+
+    philosophy_id = backend_main._load_active_philosophy_id(db_path)
+    philosophy = get_philosophy(philosophy_id)
+    return {
+        "owner": args.owner,
+        "db_path": str(db_path),
+        "active_philosophy": _serialize_training_philosophy(philosophy),
+        "core_principles": [
+            {
+                "principle_id": principle.principle_id,
+                "label": principle.label,
+                "rule": principle.rule,
+            }
+            for principle in CORE_PRINCIPLES
+        ],
+    }
 
 
 def tool_search_workouts(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -2030,8 +2051,6 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
       acwr       — fatigue / fitness
       overreach  — accumulated burden from excess TSS load above daily target
       injury_risk— accumulated burden from excess rTSS above daily target (running-specific)
-      durability — 100-day rTSS EMA (long-term running robustness)
-      pounding   — 7-day rTSS EMA (acute running mechanical load)
     """
     _require_pandas()
     args = FitnessFormArgs.model_validate(arguments or {})
@@ -2118,8 +2137,9 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
                     "acwr": acwr,
                     "overreach": round(_safe_float(pt.get("overreach")), 1),
                     "injury_risk": round(_safe_float(pt.get("injury_risk")), 1),
-                    "durability": round(_safe_float(pt.get("durability")), 1),
-                    "pounding": round(_safe_float(pt.get("pounding")), 1),
+                    "racwr": round(_safe_float(pt.get("racwr")), 3)
+                    if pt.get("racwr") is not None
+                    else None,
                     # backward-compat aliases
                     "ctl": round(fitness, 1),
                     "atl": round(fatigue, 1),
@@ -2156,8 +2176,7 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
                 else None,
                 "current_overreach": current.get("overreach"),
                 "current_injury_risk": current.get("injury_risk"),
-                "current_durability": current.get("durability"),
-                "current_pounding": current.get("pounding"),
+                "current_racwr": current.get("racwr"),
                 "peak_fitness": round(peak_fitness, 1),
                 "total_days": len(daily_out),
                 # backward-compat aliases
@@ -2368,6 +2387,20 @@ def tool_get_coaching_brief(arguments: dict[str, Any]) -> dict[str, Any]:
     if sleep_score is not None and _safe_float(sleep_score) < 60:
         flags.append("poor_sleep")
 
+    from temperance.planning.philosophy import CORE_PRINCIPLES, get_philosophy
+
+    backend_main = _backend_main_module()
+    active_philosophy = get_philosophy(backend_main._load_active_philosophy_id(db_path))
+    training_philosophy = _serialize_training_philosophy(active_philosophy)
+    core_principles = [
+        {
+            "principle_id": principle.principle_id,
+            "label": principle.label,
+            "rule": principle.rule,
+        }
+        for principle in CORE_PRINCIPLES
+    ]
+
     return {
         "owner": args.owner,
         "db_path": str(db_path),
@@ -2375,6 +2408,8 @@ def tool_get_coaching_brief(arguments: dict[str, Any]) -> dict[str, Any]:
         "fitness_form": fitness_form or None,
         "recovery_snapshot": recovery_snapshot or None,
         "active_build_summary": guideline_ctx or None,
+        "training_philosophy": training_philosophy,
+        "core_principles": core_principles,
         "week_progress": week_progress or None,
         "recent_pattern": recent_pattern or None,
         "flags": flags or None,
@@ -3238,7 +3273,7 @@ TOOLS: dict[str, ToolSpec] = {
         description=(
             "Summarize recent load trend with daily TSS/rTSS and specificity-aware training metrics. "
             "Returns fitness (42-day TSS EMA \u2248CTL), fatigue (7-day TSS EMA \u2248ATL), form (fitness\u2212fatigue), "
-            "ACWR, durability (100-day rTSS EMA), and pounding (7-day rTSS EMA). "
+            "ACWR (TSS-based), rACWR (rTSS-based). "
             "For overreach and injury_risk use get_fitness_form."
         ),
         input_schema=RecentActivitiesArgs.model_json_schema(),
@@ -3329,7 +3364,7 @@ TOOLS: dict[str, ToolSpec] = {
         name="get_settings",
         description=(
             "View athlete configuration: LTHR curve, threshold pace curve, timezone, specificity profile, "
-            "injury windows, IF zone thresholds, vdot_lookback_days, and baseline_blend. "
+            "injury windows, training_philosophy_id, IF zone thresholds, vdot_lookback_days, and baseline_blend. "
             "baseline_blend controls how weekly TSS targets are blended from three sources: "
             "history_influence_pct (weight for load-based history), and within that: "
             "short_history_pct (21-day), medium_history_pct (63-day), long_history_pct (365-day)."
@@ -3339,9 +3374,19 @@ TOOLS: dict[str, ToolSpec] = {
     ),
     "update_settings": ToolSpec(
         name="update_settings",
-        description="Modify athlete configuration. Partial update: only provided fields change. Supports lthr_curve, lt_pace_curve, timezone, specificity_profile, injury_windows, if_zone_thresholds, vdot_lookback_days.",
+        description="Modify athlete configuration. Partial update: only provided fields change. Supports lthr_curve, lt_pace_curve, timezone, specificity_profile, injury_windows, training_philosophy_id, if_zone_thresholds, vdot_lookback_days.",
         input_schema=UpdateSettingsArgs.model_json_schema(),
         handler=tool_update_settings,
+    ),
+    "get_training_philosophy": ToolSpec(
+        name="get_training_philosophy",
+        description=(
+            "Return the active training philosophy plus invariant core principles. "
+            "The philosophy declares easy/moderate/hard intensity distribution targets "
+            "and preferred session families; core principles apply regardless of philosophy."
+        ),
+        input_schema=OwnerArgs.model_json_schema(),
+        handler=tool_get_training_philosophy,
     ),
     "search_workouts": ToolSpec(
         name="search_workouts",
@@ -3354,11 +3399,10 @@ TOOLS: dict[str, ToolSpec] = {
         description=(
             "Full daily fitness model time series using the same rTSS/specificity-aware computation "
             "as the Athlete Progression dashboard. Returns per-day: fitness (42-day TSS EMA \u2248CTL), "
-            "fatigue (7-day TSS EMA \u2248ATL), form (\u2248TSB), ACWR, overreach (accumulated burden from "
-            "excess TSS above daily target), injury_risk (accumulated burden from excess rTSS above daily "
-            "target, running-specific), "
-            "durability (100-day rTSS EMA), and pounding (7-day rTSS EMA). Also includes "
-            "weekly baseline history (baseline, LT target, and blended baseline components by week). "
+            "fatigue (7-day TSS EMA \u2248ATL), form (\u2248TSB), acwr (TSS-based ACWR), racwr (rTSS-based ACWR), "
+            "overreach (accumulated burden from excess TSS above daily target), "
+            "injury_risk (accumulated burden from excess rTSS above daily target, running-specific). "
+            "Also includes weekly baseline history (baseline, LT target, and blended baseline components by week). "
             "ctl/atl/tsb fields are included as backward-compat aliases."
         ),
         input_schema=FitnessFormArgs.model_json_schema(),
@@ -3377,8 +3421,8 @@ TOOLS: dict[str, ToolSpec] = {
         name="get_coaching_brief",
         description=(
             "Single-call coaching situational awareness. Returns current fitness metrics (fitness\u2248CTL, "
-            "fatigue\u2248ATL, form\u2248TSB, ACWR, overreach, injury_risk, durability, pounding), "
-            "recovery snapshot, active build context with guideline refs, week progress, recent 7-day stress "
+            "fatigue\u2248ATL, form\u2248TSB, acwr, racwr, overreach, injury_risk), "
+            "recovery snapshot, active training philosophy, invariant core principles, active build context with guideline refs, week progress, recent 7-day stress "
             "pattern, and actionable flags (including overreaching and elevated_injury_risk). "
             "Start here for coaching conversations."
         ),

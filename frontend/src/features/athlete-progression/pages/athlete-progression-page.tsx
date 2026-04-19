@@ -173,20 +173,18 @@ export function AthleteProgressionPage(): JSX.Element {
                 />
 
                 <ProgressionLineChartCard
-                  title="Durability vs Pounding"
+                  title="ACWR"
                   data={deferredNormalizedChartData}
-                  yLabel="rTSS"
-                  targetKey="daily_baseline_rtss"
-                  targetLabel="Baseline"
+                  yLabel="ratio"
                   series={[
                     {
-                      key: "durability",
-                      label: "Durability",
+                      key: "acwr",
+                      label: "ACWR",
                       color: PROGRESSION_CHART_COLORS.blueAlt,
                     },
                     {
-                      key: "pounding",
-                      label: "Pounding",
+                      key: "racwr",
+                      label: "rACWR",
                       color: PROGRESSION_CHART_COLORS.redMuted,
                     },
                   ]}

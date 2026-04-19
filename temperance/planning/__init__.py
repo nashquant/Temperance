@@ -5,6 +5,14 @@ from temperance.planning.methodologies import (
     get_methodology,
     register_methodology,
 )
+from temperance.planning.philosophy import (
+    CORE_PRINCIPLES,
+    PHILOSOPHIES,
+    CorePrinciple,
+    IntensityDistribution,
+    TrainingPhilosophy,
+    get_philosophy,
+)
 from temperance.planning.models import (
     CycleStep,
     DayIntent,
@@ -31,12 +39,14 @@ from temperance.planning.stress import classify_session_stress, compute_toughnes
 
 __all__ = [
     "DEFAULT_SAMPLER_CONFIG",
+    "CORE_PRINCIPLES",
     "CycleStep",
     "DayIntent",
     "DayType",
     "FatigueSnapshot",
     "GeneratedWorkout",
     "HardSubtype",
+    "PHILOSOPHIES",
     "LongRunHistoryEntry",
     "MechanicalRiskSnapshot",
     "MethodologyConfig",
@@ -49,6 +59,9 @@ __all__ = [
     "SessionCandidate",
     "StressProfile",
     "UserPlanningState",
+    "CorePrinciple",
+    "IntensityDistribution",
+    "TrainingPhilosophy",
     "build_session_candidates",
     "build_user_planning_state",
     "classify_session_stress",
@@ -56,6 +69,7 @@ __all__ = [
     "compute_toughness_score",
     "get_default_methodology",
     "get_methodology",
+    "get_philosophy",
     "is_long_run_candidate",
     "is_threshold_like",
     "plan_day",

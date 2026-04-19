@@ -231,6 +231,7 @@ SETTINGS_KEY_LT_PACE_CURVE = "lt_pace_curve_v1"
 SETTINGS_KEY_ACTIVITY_SPECIFICITY = "activity_specificity_v1"
 SETTINGS_KEY_BASELINE_BLEND = "baseline_blend_v2"
 SETTINGS_KEY_INJURY_WINDOWS = "injury_windows_v1"
+SETTINGS_KEY_TRAINING_PHILOSOPHY = "training_philosophy_id"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_USER_TIMEZONE = "user_timezone_v1"
 SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL = "garmin_rate_limit_until_v1"
@@ -4966,6 +4967,24 @@ def _load_injury_windows_for_planning(db_path: Path) -> list[dict[str, str]]:
     return _normalize_injury_windows(payload)
 
 
+def _load_active_philosophy_id(db_path: Path) -> str:
+    from temperance.planning.philosophy import _DEFAULT_PHILOSOPHY_ID
+
+    raw = get_setting(db_path, SETTINGS_KEY_TRAINING_PHILOSOPHY)
+    if not raw:
+        return _DEFAULT_PHILOSOPHY_ID
+    raw_text = str(raw).strip()
+    if not raw_text:
+        return _DEFAULT_PHILOSOPHY_ID
+    try:
+        payload = json.loads(raw_text)
+    except Exception:
+        payload = raw_text
+    if isinstance(payload, dict):
+        return str(payload.get("philosophy_id") or _DEFAULT_PHILOSOPHY_ID)
+    return raw_text
+
+
 def _generated_activity_planning_state(
     *,
     db_path: Path,
@@ -7243,6 +7262,8 @@ def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.Data
             zone_total_h=("zone_total_h", "sum"),
             fitness=("fitness", "mean"),
             fatigue=("fatigue", "mean"),
+            acwr=("acwr", "last"),
+            racwr=("racwr", "last"),
             overreach=("overreach", "mean"),
             injury_risk=("injury_risk", "mean"),
             raw_overreach_signal=("raw_overreach_signal", "mean"),
@@ -7464,7 +7485,6 @@ def _build_athlete_progression_payload(
         "duration_s",
         "tss",
         "rtss",
-        "training_load_garmin",
         "calories_total",
         "hr_time_in_zone_1",
         "hr_time_in_zone_2",
@@ -7539,7 +7559,6 @@ def _build_athlete_progression_payload(
             duration_s=("duration_s", "sum"),
             tss=("tss", "sum"),
             rtss=("rtss", "sum"),
-            training_load_garmin=("training_load_garmin", "sum"),
             calories_total=("calories_total", "sum"),
             hr_time_in_zone_1=("hr_time_in_zone_1", "sum"),
             hr_time_in_zone_2=("hr_time_in_zone_2", "sum"),
@@ -7640,9 +7659,11 @@ def _build_athlete_progression_payload(
     _tss_acwr = _acwr_with_baseline_floor(
         tss_emas[7], tss_emas[28], daily_tss_target_series
     )
+    model_df["acwr"] = _tss_acwr
     _rtss_acwr = _acwr_with_baseline_floor(
         rtss_emas[7], rtss_emas[28], daily_rtss_target_series
     )
+    model_df["racwr"] = _rtss_acwr
     overreach_base = (1.0 / (1.0 + np.exp(-4.0 * (_tss_acwr - 1.8)))) * 100.0
     injury_base = (1.0 / (1.0 + np.exp(-4.0 * (_rtss_acwr - 1.8)))) * 100.0
     overreach_scale = _baseline_load_scale(tss_emas[7], daily_tss_target_series)
@@ -7747,9 +7768,6 @@ def _build_athlete_progression_payload(
                 "duration_h": round(_safe_float(row.get("duration_s")) / 3600.0, 2),
                 "tss": round(_safe_float(row.get("tss")), 2),
                 "rtss": round(_safe_float(row.get("rtss")), 2),
-                "training_load_garmin": round(
-                    _safe_float(row.get("training_load_garmin")), 2
-                ),
                 "calories_total": round(_safe_float(row.get("calories_total")), 2),
                 "zone_low_aerobic_h": round(
                     _safe_float(row.get("zone_low_aerobic_h")), 3
@@ -7763,6 +7781,12 @@ def _build_athlete_progression_payload(
                 "zone_total_h": round(_safe_float(row.get("zone_total_h")), 3),
                 "fitness": round(_safe_float(row.get("fitness")), 3),
                 "fatigue": round(_safe_float(row.get("fatigue")), 3),
+                "acwr": round(_safe_float(row.get("acwr")), 3)
+                if row.get("acwr") is not None
+                else None,
+                "racwr": round(_safe_float(row.get("racwr")), 3)
+                if row.get("racwr") is not None
+                else None,
                 "overreach": round(_safe_float(row.get("overreach")), 3),
                 "injury_risk": round(_safe_float(row.get("injury_risk")), 3),
                 "raw_overreach_signal": round(
@@ -7775,8 +7799,6 @@ def _build_athlete_progression_payload(
                 "injury_risk_state": round(
                     _safe_float(row.get("injury_risk_state")), 3
                 ),
-                "durability": round(_safe_float(row.get("durability")), 3),
-                "pounding": round(_safe_float(row.get("pounding")), 3),
                 "vdot": (
                     int(round(_safe_float(row.get("vdot"))))
                     if pd.notna(
@@ -9998,6 +10020,7 @@ def _settings_view_core(db_path: Path) -> dict[str, Any]:
         "lthr_curve": lthr_rows,
         "lt_pace_curve": pace_rows,
         "injury_windows": injury_rows,
+        "training_philosophy_id": _load_active_philosophy_id(db_path),
         "timezone": _owner_timezone_info(db_path)[0],
     }
 
@@ -10055,6 +10078,18 @@ def _settings_update_core(db_path: Path, settings: dict[str, Any]) -> dict[str, 
         normalized = _normalize_injury_windows(settings["injury_windows"])
         save_setting(db_path, SETTINGS_KEY_INJURY_WINDOWS, _settings_json(normalized))
         updated.append("injury_windows")
+
+    if settings.get("training_philosophy_id") is not None:
+        from temperance.planning.philosophy import PHILOSOPHIES
+
+        philosophy_id = str(settings["training_philosophy_id"] or "").strip()
+        if philosophy_id not in PHILOSOPHIES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown philosophy_id: {philosophy_id!r}",
+            )
+        save_setting(db_path, SETTINGS_KEY_TRAINING_PHILOSOPHY, philosophy_id)
+        updated.append("training_philosophy_id")
 
     if settings.get("timezone") is not None:
         normalized_timezone = str(settings["timezone"] or "").strip()

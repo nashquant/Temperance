@@ -63,10 +63,42 @@ class MCPServerHelpersTest(unittest.TestCase):
             "get_sync_status",
             "get_settings",
             "update_settings",
+            "get_training_philosophy",
             "search_workouts",
             "get_fitness_form",
         ]:
             self.assertIn(tool_name, mcp_server.TOOLS, f"Missing tool: {tool_name}")
+
+    def test_training_philosophy_tool_returns_default_and_core_principles(self):
+        from temperance.db import init_db
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            init_db(db_path)
+
+            with patch.object(mcp_server, "_resolve_db_path", return_value=db_path):
+                result = mcp_server.tool_get_training_philosophy({"owner": "test"})
+
+        self.assertEqual(result["active_philosophy"]["philosophy_id"], "polarized")
+        self.assertGreaterEqual(len(result["core_principles"]), 5)
+
+    def test_update_settings_accepts_training_philosophy_id(self):
+        from temperance.db import get_setting, init_db
+        from backend.app import main as backend_main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            init_db(db_path)
+
+            with patch.object(mcp_server, "_resolve_db_path", return_value=db_path):
+                result = mcp_server.tool_update_settings(
+                    {"owner": "test", "training_philosophy_id": "pyramidal"}
+                )
+
+            stored = get_setting(db_path, backend_main.SETTINGS_KEY_TRAINING_PHILOSOPHY)
+
+        self.assertIn("training_philosophy_id", result["updated"])
+        self.assertEqual(stored, "pyramidal")
 
     def test_planning_history_tool_registered(self):
         self.assertIn("get_planning_history", mcp_server.TOOLS)

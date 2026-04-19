@@ -29,10 +29,9 @@ export interface ActivityDetailResponse {
     max_hr: number;
     tss: number;
     rtss: number;
-    training_load_garmin: number;
   };
   details: Record<string, unknown> & {
-    source?: 'planned' | 'custom' | string;
+    source?: "planned" | "custom" | string;
   };
   raw?: {
     day_utc?: string;
@@ -45,14 +44,18 @@ export interface ActivityDetailResponse {
     lap_count?: number | null;
     total_duration_s?: number | null;
     total_distance_m?: number | null;
-    split?: {
-      lapDTOs?: ActivityDetailLapRow[];
-      [key: string]: unknown;
-    } | Record<string, unknown>;
-    split_summaries?: {
-      splitSummaries?: Array<Record<string, unknown>>;
-      [key: string]: unknown;
-    } | Record<string, unknown>;
+    split?:
+      | {
+          lapDTOs?: ActivityDetailLapRow[];
+          [key: string]: unknown;
+        }
+      | Record<string, unknown>;
+    split_summaries?:
+      | {
+          splitSummaries?: Array<Record<string, unknown>>;
+          [key: string]: unknown;
+        }
+      | Record<string, unknown>;
   };
   zone_summary?: ActivityDetailZoneRow[];
   split_rows?: Array<{
@@ -66,6 +69,6 @@ export interface ActivityDetailResponse {
     distance_eqv_km: number;
     pace_label: string;
     pace_eqv_label: string;
-    display_mode: 'running' | 'eqv';
+    display_mode: "running" | "eqv";
   }>;
 }

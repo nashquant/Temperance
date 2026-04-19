@@ -9,17 +9,20 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from 'recharts';
-import type { TooltipProps } from 'recharts';
-import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
+} from "recharts";
+import type { TooltipProps } from "recharts";
+import type {
+  NameType,
+  ValueType,
+} from "recharts/types/component/DefaultTooltipContent";
 
-import { ChartCard } from '@/components/ui/chart-card';
+import { ChartCard } from "@/components/ui/chart-card";
 
 interface SeriesConfig {
   key: string;
   label: string;
   color: string;
-  yAxisId?: 'left' | 'right';
+  yAxisId?: "left" | "right";
   dashed?: boolean;
   strokeOpacity?: number;
   dotOpacity?: number;
@@ -40,59 +43,61 @@ interface Props {
 }
 
 const INTEGER_LIKE_KEYS = new Set([
-  'tss',
-  'rtss',
-  'baseline_tss',
-  'baseline_rtss',
-  'lt_target_tss',
-  'stress_target_tss',
-  'stress_target_rtss',
-  'daily_baseline_tss',
-  'daily_baseline_rtss',
-  'pounding_target_tss',
-  'sleep_score',
-  'training_readiness',
-  'resting_hr',
-  'hrv_status',
-  'stress_avg',
-  'stress_max',
-  'body_battery_start',
-  'body_battery_end',
-  'body_battery_avg',
-  'respiration_avg',
-  'steps',
-  'intensity_minutes',
-  'fitness',
-  'fatigue',
-  'overreach',
-  'injury_risk',
-  'durability',
-  'pounding',
-  'vdot',
-  'vdot_max',
-  'training_load_garmin',
-  'calories_total',
-  '__target',
+  "tss",
+  "rtss",
+  "baseline_tss",
+  "baseline_rtss",
+  "lt_target_tss",
+  "stress_target_tss",
+  "stress_target_rtss",
+  "daily_baseline_tss",
+  "daily_baseline_rtss",
+  "sleep_score",
+  "training_readiness",
+  "resting_hr",
+  "hrv_status",
+  "stress_avg",
+  "stress_max",
+  "body_battery_start",
+  "body_battery_end",
+  "body_battery_avg",
+  "respiration_avg",
+  "steps",
+  "intensity_minutes",
+  "fitness",
+  "fatigue",
+  "overreach",
+  "injury_risk",
+  "vdot",
+  "vdot_max",
+  "calories_total",
+  "__target",
 ]);
 
 const HOUR_LIKE_KEYS = new Set([
-  'zone_low_aerobic_h',
-  'zone_moderate_aerobic_h',
-  'zone_high_aerobic_h',
-  'zone_total_h',
-  'sleep_duration_h',
-  'deep_sleep_h',
-  'rem_sleep_h',
-  'light_sleep_h',
-  'awake_h',
+  "zone_low_aerobic_h",
+  "zone_moderate_aerobic_h",
+  "zone_high_aerobic_h",
+  "zone_total_h",
+  "sleep_duration_h",
+  "deep_sleep_h",
+  "rem_sleep_h",
+  "light_sleep_h",
+  "awake_h",
 ]);
 
+const RATIO_LIKE_KEYS = new Set(["acwr", "racwr"]);
+
 function shouldUseIntegerFormat(dataKey: string): boolean {
-  return INTEGER_LIKE_KEYS.has(String(dataKey || ''));
+  return INTEGER_LIKE_KEYS.has(String(dataKey || ""));
 }
 
 function shouldUseHourFormat(dataKey: string): boolean {
-  return HOUR_LIKE_KEYS.has(String(dataKey || ''));
+  return HOUR_LIKE_KEYS.has(String(dataKey || ""));
+}
+
+function shouldUseRatioFormat(dataKey: string): boolean {
+  return RATIO_LIKE_KEYS.has(String(dataKey || ""));
 }
 
 function formatHourLikeValue(value: number): string {
@@ -102,20 +107,22 @@ function formatHourLikeValue(value: number): string {
 
 function formatProgressionValue(value: unknown, dataKey?: string): string {
   const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return String(value ?? '-');
-  if (shouldUseHourFormat(String(dataKey || ''))) return formatHourLikeValue(numeric);
+  if (!Number.isFinite(numeric)) return String(value ?? "-");
+  if (shouldUseHourFormat(String(dataKey || "")))
+    return formatHourLikeValue(numeric);
+  if (shouldUseRatioFormat(String(dataKey || ""))) return numeric.toFixed(2);
   return String(Math.round(numeric));
 }
 
 function formatTooltipDateLabel(value: string): string {
-  const raw = String(value || '');
+  const raw = String(value || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
   const date = new Date(`${raw}T00:00:00`);
   if (Number.isNaN(date.getTime())) return raw;
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   }).format(date);
 }
 
@@ -127,28 +134,48 @@ function ProgressionTooltip({
   targetLabel,
   targetKey2,
   targetLabel2,
-}: TooltipProps<ValueType, NameType> & { targetKey?: string; targetLabel?: string; targetKey2?: string; targetLabel2?: string }): JSX.Element | null {
+}: TooltipProps<ValueType, NameType> & {
+  targetKey?: string;
+  targetLabel?: string;
+  targetKey2?: string;
+  targetLabel2?: string;
+}): JSX.Element | null {
   const visiblePayload = (payload ?? []).filter((entry) => entry.value != null);
   if (!active || visiblePayload.length === 0) return null;
   function resolveLabel(dataKey: string, name: string): string {
-    if (targetKey && dataKey === targetKey) return targetLabel ?? 'Base';
-    if (targetKey2 && dataKey === targetKey2) return targetLabel2 ?? 'Base rTSS';
+    if (targetKey && dataKey === targetKey) return targetLabel ?? "Base";
+    if (targetKey2 && dataKey === targetKey2)
+      return targetLabel2 ?? "Base rTSS";
     return name;
   }
   return (
     <div
       className="pointer-events-none inline-block w-fit max-w-[140px] rounded-lg border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] px-2 py-1.5 shadow-[0_10px_26px_rgba(2,6,23,0.26)] backdrop-blur"
-      style={{ transform: 'translate(calc(-50% - 20px), calc(-100% - 32px))' }}
+      style={{ transform: "translate(calc(-50% - 20px), calc(-100% - 32px))" }}
     >
-      <p className="mb-1 whitespace-nowrap text-[10px] font-semibold text-slate-100">{formatTooltipDateLabel(String(label || ''))}</p>
+      <p className="mb-1 whitespace-nowrap text-[10px] font-semibold text-slate-100">
+        {formatTooltipDateLabel(String(label || ""))}
+      </p>
       <div className="space-y-1">
         {visiblePayload.map((entry) => (
-          <div key={`${entry.name}-${entry.dataKey}`} className="flex items-center justify-between gap-2 text-[9px] leading-3.5">
-            <span className="truncate font-medium" style={{ color: String(entry.color || '#cbd5e1') }}>
-              {resolveLabel(String(entry.dataKey || ''), String(entry.name || ''))}
+          <div
+            key={`${entry.name}-${entry.dataKey}`}
+            className="flex items-center justify-between gap-2 text-[9px] leading-3.5"
+          >
+            <span
+              className="truncate font-medium"
+              style={{ color: String(entry.color || "#cbd5e1") }}
+            >
+              {resolveLabel(
+                String(entry.dataKey || ""),
+                String(entry.name || ""),
+              )}
             </span>
-            <span className="shrink-0 font-semibold" style={{ color: String(entry.color || '#e2e8f0') }}>
-              {formatProgressionValue(entry.value, String(entry.dataKey || ''))}
+            <span
+              className="shrink-0 font-semibold"
+              style={{ color: String(entry.color || "#e2e8f0") }}
+            >
+              {formatProgressionValue(entry.value, String(entry.dataKey || ""))}
             </span>
           </div>
         ))}
@@ -169,22 +196,23 @@ export function ProgressionLineChartCard({
   rightAxisLabel,
   className,
 }: Props): JSX.Element {
-  const leftAxisUsesIntegers = series
-    .filter((item) => (item.yAxisId ?? 'left') === 'left')
-    .every((item) => shouldUseIntegerFormat(item.key))
-    && (!targetKey || shouldUseIntegerFormat(targetKey))
-    && (!targetKey2 || shouldUseIntegerFormat(targetKey2));
+  const leftAxisUsesIntegers =
+    series
+      .filter((item) => (item.yAxisId ?? "left") === "left")
+      .every((item) => shouldUseIntegerFormat(item.key)) &&
+    (!targetKey || shouldUseIntegerFormat(targetKey)) &&
+    (!targetKey2 || shouldUseIntegerFormat(targetKey2));
   const rightAxisUsesIntegers = rightAxisLabel
     ? series
-        .filter((item) => item.yAxisId === 'right')
+        .filter((item) => item.yAxisId === "right")
         .every((item) => shouldUseIntegerFormat(item.key))
     : false;
   const leftAxisUsesHourFormat = series
-    .filter((item) => (item.yAxisId ?? 'left') === 'left')
+    .filter((item) => (item.yAxisId ?? "left") === "left")
     .every((item) => shouldUseHourFormat(item.key));
   const rightAxisUsesHourFormat = rightAxisLabel
     ? series
-        .filter((item) => item.yAxisId === 'right')
+        .filter((item) => item.yAxisId === "right")
         .every((item) => shouldUseHourFormat(item.key))
     : false;
   const hasTargetSeries = targetKey
@@ -202,11 +230,11 @@ export function ProgressionLineChartCard({
   const chartData = data.map((row) => {
     const nextRow: Record<string, number | string | null | undefined> = {
       ...row,
-      _x: String(row.period_start ?? row.label ?? ''),
+      _x: String(row.period_start ?? row.label ?? ""),
     };
     for (const item of series) {
       const raw = nextRow[item.key];
-      if (raw == null || raw === '') {
+      if (raw == null || raw === "") {
         nextRow[item.key] = null;
         continue;
       }
@@ -216,7 +244,7 @@ export function ProgressionLineChartCard({
     for (const key of [targetKey, targetKey2]) {
       if (!key) continue;
       const rawTarget = nextRow[key];
-      if (rawTarget == null || rawTarget === '') {
+      if (rawTarget == null || rawTarget === "") {
         nextRow[key] = null;
       } else {
         const parsedTarget = Number(rawTarget);
@@ -225,108 +253,160 @@ export function ProgressionLineChartCard({
     }
     return nextRow;
   }) as Array<Record<string, number | string | null | undefined>>;
-  const labelMap = new Map(chartData.map((row) => [String(row._x ?? ''), String(row['label'] ?? row._x ?? '')]));
+  const labelMap = new Map(
+    chartData.map((row) => [
+      String(row._x ?? ""),
+      String(row["label"] ?? row._x ?? ""),
+    ]),
+  );
   return (
     <ChartCard title={title} heightClassName="h-[280px]" className={className}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 14, right: 14, bottom: 6, left: 2 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(125,211,252,0.14)" />
-              <XAxis
-                dataKey="_x"
-                type="category"
-                tick={{ fontSize: 12, fill: '#cbd5e1' }}
-                axisLine={{ stroke: 'rgba(148,163,184,0.18)' }}
-                tickLine={false}
-                tickFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
-              />
-              <YAxis
-                yAxisId="left"
-                tick={{ fontSize: 12, fill: '#cbd5e1' }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(value) => {
-                  const numeric = Number(value);
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={chartData}
+          margin={{ top: 14, right: 14, bottom: 6, left: 2 }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            vertical={false}
+            stroke="rgba(125,211,252,0.14)"
+          />
+          <XAxis
+            dataKey="_x"
+            type="category"
+            tick={{ fontSize: 12, fill: "#cbd5e1" }}
+            axisLine={{ stroke: "rgba(148,163,184,0.18)" }}
+            tickLine={false}
+            tickFormatter={(value) =>
+              labelMap.get(String(value)) ?? String(value)
+            }
+          />
+          <YAxis
+            yAxisId="left"
+            tick={{ fontSize: 12, fill: "#cbd5e1" }}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={(value) => {
+              const numeric = Number(value);
                   if (!Number.isFinite(numeric)) return String(value);
                   if (leftAxisUsesHourFormat) return formatHourLikeValue(numeric);
                   if (leftAxisUsesIntegers) return String(Math.round(numeric));
+                  if (
+                    series
+                      .filter((item) => (item.yAxisId ?? "left") === "left")
+                      .every((item) => shouldUseRatioFormat(item.key))
+                  )
+                    return numeric.toFixed(2);
                   return String(value);
                 }}
-              >
-                <Label value={yLabel} angle={-90} position="insideLeft" style={{ textAnchor: 'middle', fill: '#94a3b8' }} />
-              </YAxis>
-              {rightAxisLabel ? (
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fontSize: 12, fill: '#cbd5e1' }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(value) => {
-                    const numeric = Number(value);
-                    if (!Number.isFinite(numeric)) return String(value);
-                    if (rightAxisUsesHourFormat) return formatHourLikeValue(numeric);
-                    if (rightAxisUsesIntegers) return String(Math.round(numeric));
-                    return String(value);
-                  }}
-                />
-              ) : null}
-              <Tooltip
-                content={<ProgressionTooltip targetKey={targetKey} targetLabel={targetLabel} targetKey2={targetKey2} targetLabel2={targetLabel2} />}
-                labelFormatter={(value) => labelMap.get(String(value)) ?? String(value)}
-                cursor={{ stroke: '#38bdf8', strokeOpacity: 0.3 }}
-                allowEscapeViewBox={{ x: true, y: true }}
+          >
+            <Label
+              value={yLabel}
+              angle={-90}
+              position="insideLeft"
+              style={{ textAnchor: "middle", fill: "#94a3b8" }}
+            />
+          </YAxis>
+          {rightAxisLabel ? (
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              tick={{ fontSize: 12, fill: "#cbd5e1" }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={(value) => {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric)) return String(value);
+                if (rightAxisUsesHourFormat)
+                  return formatHourLikeValue(numeric);
+                if (rightAxisUsesIntegers) return String(Math.round(numeric));
+                if (
+                  series
+                    .filter((item) => item.yAxisId === "right")
+                    .every((item) => shouldUseRatioFormat(item.key))
+                )
+                  return numeric.toFixed(2);
+                return String(value);
+              }}
+            />
+          ) : null}
+          <Tooltip
+            content={
+              <ProgressionTooltip
+                targetKey={targetKey}
+                targetLabel={targetLabel}
+                targetKey2={targetKey2}
+                targetLabel2={targetLabel2}
               />
-              <Legend wrapperStyle={{ color: '#cbd5e1' }} />
-              {series.map((item) => (
-                <Line
-                  key={item.key}
-                  type="monotone"
-                  dataKey={item.key}
-                  name={item.label}
-                  stroke={item.color}
-                  strokeWidth={item.strokeWidth ?? 2}
-                  yAxisId={item.yAxisId ?? 'left'}
-                  strokeDasharray={item.dashed ? '5 5' : undefined}
-                  strokeOpacity={item.strokeOpacity}
-                  dot={{ r: 2.5, strokeWidth: 1, fill: item.color, fillOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1, strokeOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1 }}
-                  activeDot={{ r: 4, fill: item.color, fillOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1, strokeOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1 }}
-                  connectNulls
-                />
-              ))}
-              {targetKey && hasTargetSeries ? (
-                <Line
-                  type="monotone"
-                  dataKey={targetKey}
-                  yAxisId="left"
-                  stroke="#cbd5e1"
-                  strokeOpacity={0.92}
-                  strokeWidth={1.4}
-                  strokeDasharray="5 5"
-                  dot={false}
-                  activeDot={false}
-                  isAnimationActive={false}
-                  legendType="none"
-                  connectNulls
-                />
-              ) : null}
-              {targetKey2 && hasTargetSeries2 ? (
-                <Line
-                  type="monotone"
-                  dataKey={targetKey2}
-                  yAxisId="left"
-                  stroke="#fda4af"
-                  strokeOpacity={0.80}
-                  strokeWidth={1.4}
-                  strokeDasharray="3 4"
-                  dot={false}
-                  activeDot={false}
-                  isAnimationActive={false}
-                  legendType="none"
-                  connectNulls
-                />
-              ) : null}
-            </LineChart>
-          </ResponsiveContainer>
+            }
+            labelFormatter={(value) =>
+              labelMap.get(String(value)) ?? String(value)
+            }
+            cursor={{ stroke: "#38bdf8", strokeOpacity: 0.3 }}
+            allowEscapeViewBox={{ x: true, y: true }}
+          />
+          <Legend wrapperStyle={{ color: "#cbd5e1" }} />
+          {series.map((item) => (
+            <Line
+              key={item.key}
+              type="monotone"
+              dataKey={item.key}
+              name={item.label}
+              stroke={item.color}
+              strokeWidth={item.strokeWidth ?? 2}
+              yAxisId={item.yAxisId ?? "left"}
+              strokeDasharray={item.dashed ? "5 5" : undefined}
+              strokeOpacity={item.strokeOpacity}
+              dot={{
+                r: 2.5,
+                strokeWidth: 1,
+                fill: item.color,
+                fillOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1,
+                strokeOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1,
+              }}
+              activeDot={{
+                r: 4,
+                fill: item.color,
+                fillOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1,
+                strokeOpacity: item.dotOpacity ?? item.strokeOpacity ?? 1,
+              }}
+              connectNulls
+            />
+          ))}
+          {targetKey && hasTargetSeries ? (
+            <Line
+              type="monotone"
+              dataKey={targetKey}
+              yAxisId="left"
+              stroke="#cbd5e1"
+              strokeOpacity={0.92}
+              strokeWidth={1.4}
+              strokeDasharray="5 5"
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
+              legendType="none"
+              connectNulls
+            />
+          ) : null}
+          {targetKey2 && hasTargetSeries2 ? (
+            <Line
+              type="monotone"
+              dataKey={targetKey2}
+              yAxisId="left"
+              stroke="#fda4af"
+              strokeOpacity={0.8}
+              strokeWidth={1.4}
+              strokeDasharray="3 4"
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
+              legendType="none"
+              connectNulls
+            />
+          ) : null}
+        </LineChart>
+      </ResponsiveContainer>
     </ChartCard>
   );
 }

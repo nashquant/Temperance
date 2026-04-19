@@ -1,5 +1,11 @@
-export type ProgressionAggregation = 'daily' | 'weekly';
-export type ProgressionActivityFilter = 'all' | 'all_running' | 'running' | 'treadmill' | 'cycling' | 'elliptical';
+export type ProgressionAggregation = "daily" | "weekly";
+export type ProgressionActivityFilter =
+  | "all"
+  | "all_running"
+  | "running"
+  | "treadmill"
+  | "cycling"
+  | "elliptical";
 
 export interface AthleteProgressionPoint {
   period_start: string;
@@ -9,7 +15,6 @@ export interface AthleteProgressionPoint {
   duration_h: number;
   tss: number;
   rtss: number;
-  training_load_garmin: number;
   calories_total: number;
   zone_low_aerobic_h: number;
   zone_moderate_aerobic_h: number;
@@ -17,10 +22,10 @@ export interface AthleteProgressionPoint {
   zone_total_h: number;
   fitness: number;
   fatigue: number;
+  acwr: number | null;
+  racwr: number | null;
   overreach: number;
   injury_risk: number;
-  durability: number;
-  pounding: number;
   vdot: number | null;
   vdot_max: number | null;
   baseline_tss: number;

@@ -79,7 +79,7 @@ const aboutBlocks: AboutBlock[] = [
       {
         type: 'paragraph',
         content:
-          'rTSS narrows the lens to running. Because it is anchored to pace relative to threshold pace, it captures the cost of run-specific work more directly than a generic load number. It is not a literal measure of tissue damage or mechanical force, but it is a useful proxy for how much running-specific demand you are accumulating - and therefore a useful complement when thinking about economy, durability, and injury risk.',
+          'rTSS narrows the lens to running. Because it is anchored to pace relative to threshold pace, it captures the cost of run-specific work more directly than a generic load number. It is not a literal measure of tissue damage or mechanical force, but it is a useful proxy for how much running-specific demand you are accumulating - and therefore a useful complement when thinking about economy and injury risk.',
       },
       {
         type: 'paragraph',
@@ -94,7 +94,7 @@ const aboutBlocks: AboutBlock[] = [
       {
         type: 'paragraph',
         content:
-          'That distinction matters because tolerance is not only aerobic. Running load is constrained by mechanical durability as well, and injury risk rises when loading outpaces tissue capacity or progresses too aggressively. Temperance is designed to make that balance easier to see, so higher targets are treated as context-sensitive rather than universally safe.',
+          'That distinction matters because tolerance is not only aerobic. Injury risk rises when running load outpaces tissue capacity or progresses too aggressively. Temperance is designed to make that balance easier to see, so higher targets are treated as context-sensitive rather than universally safe.',
       },
       {
         type: 'paragraph',
