@@ -5469,7 +5469,7 @@ def _mcp_planning_state_summary(planning_state: Any) -> dict[str, Any]:
             "injury_labels": list(planning_state.mechanical_risk.injury_labels),
             "running_share_14d": planning_state.mechanical_risk.running_share_14d,
             "elliptical_share_14d": planning_state.mechanical_risk.elliptical_share_14d,
-            "mechanical_load_7d": planning_state.mechanical_risk.mechanical_load_7d,
+            "recent_load_7d": planning_state.mechanical_risk.recent_load_7d,
             "fragility_score": planning_state.mechanical_risk.fragility_score,
             "prefer_low_impact": planning_state.mechanical_risk.prefer_low_impact,
         },
@@ -7236,7 +7236,6 @@ def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.Data
             duration_s=("duration_s", "sum"),
             tss=("tss", "sum"),
             rtss=("rtss", "sum"),
-            training_load_garmin=("training_load_garmin", "sum"),
             calories_total=("calories_total", "sum"),
             zone_low_aerobic_h=("zone_low_aerobic_h", "sum"),
             zone_moderate_aerobic_h=("zone_moderate_aerobic_h", "sum"),
@@ -7250,8 +7249,6 @@ def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.Data
             raw_injury_signal=("raw_injury_signal", "mean"),
             overreach_state=("overreach_state", "mean"),
             injury_risk_state=("injury_risk_state", "mean"),
-            durability=("durability", "mean"),
-            pounding=("pounding", "mean"),
             vdot=("vdot", "max"),
             vdot_max=("vdot_max", "max"),
         )
@@ -7637,7 +7634,7 @@ def _build_athlete_progression_payload(
     ).fillna(0.0)
 
     tss_emas = ema_multi(tss_series, [42, 28, 7])
-    rtss_emas = ema_multi(rtss_series, [42, 28, 7])
+    rtss_emas = ema_multi(rtss_series, [28, 7])
     model_df["fitness"] = tss_emas[42]
     model_df["fatigue"] = tss_emas[7]
     _tss_acwr = _acwr_with_baseline_floor(
@@ -7676,9 +7673,6 @@ def _build_athlete_progression_payload(
         activation_floor=4.0,
         upper_bound=100.0,
     )
-    model_df["durability"] = rtss_emas[42]
-    model_df["pounding"] = rtss_emas[7]
-
     model_df["zone_low_aerobic_h"] = model_df["hr_time_in_zone_1"] / 3600.0
     model_df["zone_moderate_aerobic_h"] = model_df["hr_time_in_zone_2"] / 3600.0
     model_df["zone_high_aerobic_h"] = (
