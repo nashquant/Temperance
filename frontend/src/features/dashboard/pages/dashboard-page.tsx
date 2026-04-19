@@ -1101,7 +1101,7 @@ export function DashboardPage(): JSX.Element {
   return (
     <section className="space-y-6">
       <QueryShell
-        isLoading={query.isLoading}
+        isLoading={query.isLoading || query.isPending || (!query.isError && !query.data)}
         isError={query.isError}
         error={query.error}
         errorTitle="Unable to load dashboard"

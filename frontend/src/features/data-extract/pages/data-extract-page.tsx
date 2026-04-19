@@ -351,7 +351,7 @@ export function DataExtractPage(): JSX.Element {
     && (!garminCapabilities?.activities || (includeWellness && !garminCapabilities?.wellness) || !garminCapabilities?.comprehensive);
 
   return (
-    <QueryShell isLoading={statusQuery.isLoading} isError={statusQuery.isError} error={statusQuery.error} errorTitle="Unable to load data extract status" skeleton="compact">
+    <QueryShell isLoading={statusQuery.isLoading || statusQuery.isPending || (!statusQuery.isError && !statusQuery.data)} isError={statusQuery.isError} error={statusQuery.error} errorTitle="Unable to load data extract status" skeleton="compact">
     <section className="space-y-4 sm:space-y-6">
       <SecondaryPageSectionCard contentClassName="space-y-3 sm:space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Garmin Sync</h2>

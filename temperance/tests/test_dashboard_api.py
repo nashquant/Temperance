@@ -135,6 +135,41 @@ def test_dashboard_metrics_frames_uses_owner_timezone_for_late_evening_activitie
     )
 
 
+def test_prewarm_caches_targets_owner_scoped_dashboard_db(monkeypatch, tmp_path):
+    admin_db = tmp_path / "users" / "admin.db"
+    admin_db.parent.mkdir(parents=True)
+    admin_db.touch()
+    default_db = tmp_path / "temperance.db"
+    default_db.touch()
+    warmed_paths: list[Path] = []
+
+    monkeypatch.setattr(backend_main, "DB_PATH", default_db)
+    monkeypatch.setattr(backend_main, "_auth_enabled", lambda: True)
+    monkeypatch.setattr(
+        backend_main,
+        "_auth_users",
+        lambda: {"admin": {"role": "admin"}},
+    )
+    monkeypatch.setenv("TEMPERANCE_AUTO_SYNC_OWNER", "admin")
+    monkeypatch.setattr(
+        backend_main,
+        "_db_path_for_owner",
+        lambda owner: admin_db if owner == "admin" else default_db,
+    )
+    monkeypatch.setattr(backend_main, "_default_db_path", lambda: default_db)
+    monkeypatch.setattr(
+        backend_main,
+        "_build_activity_dashboard_payload",
+        lambda *, db_path, visible_weeks, week_offset, sport: warmed_paths.append(
+            db_path
+        ),
+    )
+
+    backend_main._prewarm_caches()
+
+    assert warmed_paths == [admin_db]
+
+
 def test_week_outlook_uses_yesterday_planned_cutoff_when_today_has_no_activity(
     monkeypatch,
 ) -> None:

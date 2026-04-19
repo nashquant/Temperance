@@ -258,7 +258,7 @@ export function SettingsPage(): JSX.Element {
     baselineBlendSplitTotal !== 100 ? 'Short, medium, and long history must sum to exactly 100%.' : null;
 
   return (
-    <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load settings">
+    <QueryShell isLoading={query.isLoading || query.isPending || (!query.isError && !query.data)} isError={query.isError} error={query.error} errorTitle="Unable to load settings">
     <section className="space-y-4 sm:space-y-6">
       {saveMsg ? <p className="text-sm text-muted-foreground">{saveMsg}</p> : null}
 

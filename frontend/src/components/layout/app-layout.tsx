@@ -312,7 +312,7 @@ export function AppLayout(): JSX.Element {
           )}
         >
           <header className="sticky top-0 z-30 border-b bg-background/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4">
-            <div className={cn('mx-auto flex w-full items-center justify-between gap-3', pageWidthClassName)}>
+            <div className={cn('mx-auto flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between', pageWidthClassName)}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   variant="outline"
@@ -325,12 +325,17 @@ export function AppLayout(): JSX.Element {
                   {desktopNavExpanded ? <ChevronLeft className="h-5 w-5" aria-hidden="true" /> : <ChevronRight className="h-5 w-5" aria-hidden="true" />}
                 </Button>
                 <div className="min-w-0">
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">{headerMeta.section}</p>
-                  <h2 className="truncate text-lg font-semibold sm:text-xl">{headerMeta.title}</h2>
+                  <p className="truncate text-xs uppercase tracking-wider text-muted-foreground">
+                    <span className="lg:hidden">
+                      Temperance{profile?.owner ? ` · ${profile.owner}` : ''}
+                    </span>
+                    <span className="hidden lg:inline">{headerMeta.section}</span>
+                  </p>
+                  <h2 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">{headerMeta.title}</h2>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
+              <div className="flex min-w-0 items-center justify-end gap-2 overflow-x-auto">
+                {headerActions ? <div className="flex min-w-0 items-center gap-2">{headerActions}</div> : null}
                 <Button
                   variant="outline"
                   size="icon"

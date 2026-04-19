@@ -451,21 +451,42 @@ async def _rewrite_flat_api_prefix(request: Request, call_next):
 
 def _prewarm_caches() -> None:
     """Pre-warm auth and dashboard caches on startup so the first request is fast."""
+    dashboard_db_paths: list[Path] = []
     try:
-        _auth_users()
+        users = _auth_users()
+        if _auth_enabled() and users:
+            owners = list(users.keys())
+            auto_sync_owner = str(
+                os.getenv("TEMPERANCE_AUTO_SYNC_OWNER", "admin") or "admin"
+            ).strip()
+            if auto_sync_owner:
+                owners.append(auto_sync_owner)
+            seen_owners: set[str] = set()
+            for owner in owners:
+                owner_slug = _user_slug(owner)
+                if owner_slug in seen_owners:
+                    continue
+                seen_owners.add(owner_slug)
+                owner_db_path = DB_PATH.parent / "users" / f"{owner_slug}.db"
+                if owner_db_path.exists():
+                    dashboard_db_paths.append(_db_path_for_owner(owner))
+        elif not _auth_enabled():
+            dashboard_db_paths.append(_default_db_path())
     except Exception:
         pass
-    try:
-        db_path = _default_db_path()
-        if db_path.exists():
+
+    for db_path in dashboard_db_paths:
+        try:
+            if not db_path.exists():
+                continue
             _build_activity_dashboard_payload(
                 db_path=db_path,
                 visible_weeks=26,
                 week_offset=0,
                 sport=None,
             )
-    except Exception:
-        pass
+        except Exception:
+            pass
 
 
 @app.on_event("startup")

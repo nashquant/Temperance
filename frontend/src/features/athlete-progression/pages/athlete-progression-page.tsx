@@ -123,7 +123,7 @@ export function AthleteProgressionPage(): JSX.Element {
       </div>
 
       <QueryShell
-        isLoading={query.isLoading}
+        isLoading={query.isLoading || query.isPending || (!query.isError && !query.data)}
         isError={query.isError}
         error={query.error}
         errorTitle="Unable to load athlete progression"

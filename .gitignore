@@ -60,3 +60,4 @@ logs/
 # Legacy or sibling app artifacts
 v2/frontend/node_modules/
 v2/frontend/dist/
+.gstack/

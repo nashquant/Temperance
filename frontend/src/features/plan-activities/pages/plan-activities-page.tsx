@@ -969,7 +969,7 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
         </div>
       </SecondaryPageSectionCard>
 
-      <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load planned activities" skeleton="compact">
+      <QueryShell isLoading={query.isLoading || query.isPending || (!query.isError && !query.data)} isError={query.isError} error={query.error} errorTitle="Unable to load planned activities" skeleton="compact">
         {deleteResult ? (
           <Alert className="border-white/15 bg-white/[0.03] text-slate-100">
             <AlertTitle>Delete status</AlertTitle>

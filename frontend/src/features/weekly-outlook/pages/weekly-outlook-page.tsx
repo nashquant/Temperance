@@ -66,7 +66,7 @@ export function WeeklyOutlookSection({ embedded = false }: WeeklyOutlookSectionP
         ) : null}
       </div>
 
-      <QueryShell isLoading={activeQuery.isLoading} isError={activeQuery.isError} error={activeQuery.error} errorTitle="Unable to load weekly outlook">
+      <QueryShell isLoading={activeQuery.isLoading || activeQuery.isPending || (!activeQuery.isError && !displayedData)} isError={activeQuery.isError} error={activeQuery.error} errorTitle="Unable to load weekly outlook">
       {displayedData ? (
         <>
           {isEmpty ? (

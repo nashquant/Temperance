@@ -32,27 +32,27 @@ const aboutBlocks: AboutBlock[] = [
       {
         type: 'paragraph',
         content:
-          'Built for runners who also rely on cross-training, Temperance makes training load easier to interpret and more coherent across modalities.',
+          'Temperance helps runners who cross-train read total load without confusing aerobic work with running-specific stress.',
       },
       {
         type: 'paragraph',
         content:
-          'Adaptation depends on sufficient load, but injury risk rises when mechanical stress outpaces tissue capacity. For endurance athletes, the challenge is not simply to do more, but to regulate load intelligently.',
+          'Adaptation needs load. Injury risk rises when mechanical stress outpaces tissue capacity. The job is not simply to do more, but to regulate load intelligently.',
       },
       {
         type: 'paragraph',
         content:
-          'Most training systems measure load through physiological signals such as heart rate, pace, power, or perceived exertion, capturing the aerobic stimulus of training. But runners are constrained by more than metabolism alone. They are also limited by mechanical tolerance - the capacity of bones, tendons, muscles, and connective tissue to absorb and adapt to stress on a slower and often less forgiving timeline.',
+          'Most systems capture the aerobic stimulus through heart rate, pace, power, or perceived exertion. Temperance also keeps mechanical tolerance in view: the slower-adapting capacity of bones, tendons, muscles, and connective tissue.',
       },
       {
         type: 'paragraph',
         content:
-          'By measuring intensity relative to your personal thresholds, Temperance gives context to the work you do. And by separating total stress from running-specific stress, it recognizes a simple truth: not all load is created equal.',
+          'By separating total stress from running-specific stress, it recognizes a simple truth: not all load is created equal.',
       },
       {
         type: 'paragraph',
         content:
-          'The result is a clearer view of training - one that helps you push adaptation while staying in control of durability.',
+          'The result is a clearer view of what to push, what to protect, and why.',
       },
     ],
   },
@@ -136,7 +136,7 @@ const aboutBlocks: AboutBlock[] = [
       {
         type: 'paragraph',
         content:
-          'Weekly Planner: is where planning becomes more precise. It is built for shaping the week ahead, adjusting details at session level, and making bulk changes when the structure of the week needs to move. Activity inputs follow a compact string-based syntax, documented separately.',
+          'Weekly Planner: where planning becomes more precise. Shape the week ahead, adjust session details, and make bulk changes when the structure of the week needs to move. Activity inputs follow a compact string-based syntax, documented separately.',
       },
       {
         type: 'paragraph',
@@ -241,7 +241,10 @@ export function AboutTemperancePage(): JSX.Element {
 
   return (
     <section className="space-y-6">
-      <SecondaryPageSectionCard contentClassName="p-0">
+      <SecondaryPageSectionCard
+        className="border-white/8 bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(2,6,23,0.78))] shadow-none"
+        contentClassName="p-0"
+      >
           <div className="divide-y divide-white/8">
             {aboutBlocks.map((block, index) => {
               const isOpen = openSections.has(block.id);
@@ -280,9 +283,9 @@ export function AboutTemperancePage(): JSX.Element {
                   </button>
 
                   {isOpen ? (
-                    <div className="pb-4 pl-10 sm:pl-12">
-                      <div className="rounded-2xl border border-white/8 bg-black/15 px-5 py-4">
-                        <div className="space-y-4 text-[15px] leading-7 text-slate-300/80">
+                    <div className="pb-4 pl-0 sm:pl-12">
+                      <div className="px-0 py-1 sm:rounded-2xl sm:border sm:border-white/8 sm:bg-black/15 sm:px-5 sm:py-4">
+                        <div className="space-y-4 text-[15px] leading-7 text-slate-300/80 sm:max-w-4xl">
                           {block.body.map((item, itemIndex) => (
                             item.type === 'paragraph' ? (
                               <p

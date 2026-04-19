@@ -75,7 +75,7 @@ export function WellnessPage(): JSX.Element {
         />
       </div>
 
-      <QueryShell isLoading={query.isLoading} isError={query.isError} error={query.error} errorTitle="Unable to load wellness">
+      <QueryShell isLoading={query.isLoading || query.isPending || (!query.isError && !query.data)} isError={query.isError} error={query.error} errorTitle="Unable to load wellness">
       {query.data ? (
         <>
           <SurfaceCard contentClassName="p-4">
