@@ -58,6 +58,7 @@ interface DashboardWeekCardProps {
   undoVisible?: boolean;
   undoBusy?: boolean;
   onUndoActivity?: () => void;
+  isCurrentWeek?: boolean;
 }
 
 function shortDay(iso: string): string {
@@ -237,6 +238,7 @@ function DashboardWeekCardComponent({
   undoVisible,
   undoBusy,
   onUndoActivity,
+  isCurrentWeek = false,
 }: DashboardWeekCardProps): JSX.Element {
   const isDesktop = useIsDesktop();
 
@@ -256,6 +258,7 @@ function DashboardWeekCardComponent({
                   weekStart={shortDay(week.week_start)}
                   weekEnd={shortDayWithYear(week.week_end)}
                   summary={week.summary}
+                  isCurrentWeek={isCurrentWeek}
                 />
               </div>
               <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-2 touch-pan-x snap-x snap-mandatory scroll-pl-0">
