@@ -324,6 +324,11 @@ def _modality_bias_for_intent(
     constraint = _constraint_for_day(state, intent.day_utc)
     if constraint and constraint.preferred_modality:
         return constraint.preferred_modality, "schedule_constraint_preferred_modality"
+    if (
+        intent.day_type in (DayType.EASY, DayType.MODERATE)
+        and state.support_modality_preference in {"elliptical", "bike"}
+    ):
+        return state.support_modality_preference, "athlete_support_modality_preference"
     if intent.day_type == DayType.EASY and state.mechanical_risk.prefer_low_impact:
         return "elliptical", "mechanical_fragility_easy_day_bias"
     if intent.day_type == DayType.HARD and intent.hard_subtype == HardSubtype.H2:
@@ -342,6 +347,130 @@ def _enforce_constraints(intent: DayIntent, state: UserPlanningState) -> DayInte
     if constraint.allow_long_run is False and intent.hard_subtype == HardSubtype.H2:
         return replace(intent, hard_subtype=HardSubtype.H1)
     return intent
+
+
+def _has_48h_hard_gap(idx: int, hard_indices: list[int]) -> bool:
+    return all(abs(idx - hard_idx) >= 2 for hard_idx in hard_indices)
+
+
+def _respects_weekly_hard_cap(
+    idx: int, hard_indices: list[int], horizon_len: int, cap: int = 2
+) -> bool:
+    merged = sorted({*hard_indices, idx})
+    if horizon_len < 7:
+        return len(merged) <= cap
+    for start in range(0, horizon_len - 6):
+        end = start + 6
+        in_window = sum(start <= item <= end for item in merged)
+        if in_window > cap:
+            return False
+    return True
+
+
+def _apply_workout_minimum_preferences(intents: list[DayIntent], state: UserPlanningState) -> None:
+    target_quality_min = max(0, min(int(state.weekly_quality_workouts_min), 4))
+    target_long_run_min = max(0, min(int(state.weekly_long_run_min), 1))
+    hard_cap = max(2, target_quality_min)
+    if target_quality_min <= 0 and target_long_run_min <= 0:
+        return
+    hard_indices = [idx for idx, item in enumerate(intents) if item.day_type == DayType.HARD]
+    quality_indices = list(hard_indices)
+    long_run_indices = [
+        idx
+        for idx, item in enumerate(intents)
+        if item.day_type == DayType.HARD and item.hard_subtype == HardSubtype.H2
+    ]
+
+    if len(long_run_indices) < target_long_run_min:
+        weekend_candidates = [
+            idx
+            for idx, item in enumerate(intents)
+            if item.is_weekend and item.day_type in (DayType.EASY, DayType.MODERATE, DayType.HARD)
+            and not item.planned_rest
+        ]
+        for idx in weekend_candidates:
+            if len(long_run_indices) >= target_long_run_min:
+                break
+            if intents[idx].day_type == DayType.HARD:
+                intents[idx].hard_subtype = HardSubtype.H2
+                intents[idx].explanation_tags = tuple(
+                    [*intents[idx].explanation_tags, "long_run_minimum_preference"]
+                )
+                long_run_indices.append(idx)
+                continue
+            hard_reference = [hard_idx for hard_idx in hard_indices if hard_idx != idx]
+            if not _has_48h_hard_gap(idx, hard_reference):
+                continue
+            if not _respects_weekly_hard_cap(
+                idx, hard_reference, len(intents), cap=hard_cap
+            ):
+                continue
+            intents[idx].day_type = DayType.HARD
+            intents[idx].hard_subtype = HardSubtype.H2
+            intents[idx].explanation_tags = tuple(
+                [*intents[idx].explanation_tags, "long_run_minimum_preference"]
+            )
+            if idx not in hard_indices:
+                hard_indices.append(idx)
+            quality_indices.append(idx)
+            long_run_indices.append(idx)
+
+    if len(quality_indices) >= target_quality_min:
+        return
+
+    preferred_days = tuple(
+        int(day) for day in state.quality_day_preference_weekdays if 0 <= int(day) <= 6
+    )
+    weekday_priority: dict[int, int] = {}
+    for idx, weekday in enumerate(preferred_days):
+        weekday_priority[weekday] = idx
+    fallback_order = [1, 3, 2, 4, 0, 5, 6]
+    cursor = len(weekday_priority)
+    for weekday in fallback_order:
+        if weekday in weekday_priority:
+            continue
+        weekday_priority[weekday] = cursor
+        cursor += 1
+    candidates = [
+        idx
+        for idx, item in enumerate(intents)
+        if item.day_type in (DayType.EASY, DayType.MODERATE)
+        and not item.planned_rest
+    ]
+    candidates = sorted(
+        candidates,
+        key=lambda idx: (
+            weekday_priority.get(date.fromisoformat(intents[idx].day_utc).weekday(), 7),
+            idx,
+        ),
+    )
+    for idx in candidates:
+        if len(quality_indices) >= target_quality_min:
+            break
+        if not _has_48h_hard_gap(idx, hard_indices):
+            continue
+        if not _respects_weekly_hard_cap(idx, hard_indices, len(intents), cap=hard_cap):
+            continue
+        intents[idx].day_type = DayType.HARD
+        intents[idx].hard_subtype = HardSubtype.H1
+        intents[idx].explanation_tags = tuple(
+            [*intents[idx].explanation_tags, "quality_workout_minimum_preference"]
+        )
+        hard_indices.append(idx)
+        quality_indices.append(idx)
+
+    if not state.prefer_doubles_on_quality_days:
+        return
+    for intent in intents:
+        if intent.day_type != DayType.HARD or intent.planned_rest:
+            continue
+        weekday = date.fromisoformat(intent.day_utc).weekday()
+        if preferred_days and weekday not in preferred_days:
+            continue
+        if "double_preferred_quality_day" not in intent.explanation_tags:
+            intent.explanation_tags = tuple(
+                [*intent.explanation_tags, "double_preferred_quality_day"]
+            )
 
 
 def preview_horizon(
@@ -368,6 +497,7 @@ def preview_horizon(
         intents, methodology=methodology, state=state
     )
     _assign_hard_subtypes(intents, methodology=methodology, state=state)
+    _apply_workout_minimum_preferences(intents, state)
     long_run_target_minutes, long_run_reason = _compute_target_long_run_minutes(
         state, methodology
     )
@@ -399,6 +529,19 @@ def preview_horizon(
             else state.weekly_baseline_tss
         )
         intent.target_tss = compute_target_day_tss(tss_anchor, share)
+        if intent.day_type == DayType.EASY:
+            # Keep easy days constrained unless baseline load is notably high.
+            # Approximate easy-day TSS ceiling from duration at ~0.75 IF.
+            easy_cap_min = max(60, int(state.easy_day_max_duration_min))
+            easy_tss_cap = (easy_cap_min / 60.0) * (0.75 * 0.75) * 100.0
+            if state.weekly_baseline_tss >= 620.0:
+                easy_tss_cap *= 1.15
+            if intent.target_tss > easy_tss_cap:
+                intent.target_tss = float(easy_tss_cap)
+                if "easy_day_duration_cap_applied" not in intent.explanation_tags:
+                    intent.explanation_tags = tuple(
+                        [*intent.explanation_tags, "easy_day_duration_cap_applied"]
+                    )
         if intent.day_type == DayType.HARD and intent.hard_subtype == HardSubtype.H2:
             intent.target_duration_min = long_run_target_minutes
             intent.min_duration_min = methodology.stress_profile.long_run_min_minutes

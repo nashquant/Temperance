@@ -21,6 +21,11 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - optional in pure-helper tests
+    yaml = None
+
 from backend.app.auth_service import (
     auth_context as _auth_context,
     auth_enabled as _auth_enabled,
@@ -171,6 +176,7 @@ from temperance.garmin_client import (
 )
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+WORKOUTS_DIR = ROOT_DIR / "temperance" / "guidelines" / "temperance-workouts"
 
 
 def _dashboard_cache_key(
@@ -235,6 +241,7 @@ SETTINGS_KEY_TRAINING_PHILOSOPHY = "training_philosophy_id"
 SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_USER_TIMEZONE = "user_timezone_v1"
 SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL = "garmin_rate_limit_until_v1"
+SETTINGS_KEY_COACH_PREFERENCES = "coach_preferences_v1"
 GARMIN_OAUTH_PROVIDER = "garmin"
 APP_TIMEZONE_NAME = (
     str(
@@ -2174,6 +2181,195 @@ def _load_specificity_profile(
     except Exception:
         return _default_specificity_profile(fallback_default)
     return _normalize_specificity_profile(payload, fallback_default=fallback_default)
+
+
+def _default_coach_preferences() -> dict[str, Any]:
+    return {
+        "support_modality_preference": "auto",
+        "weekly_quality_workouts_min": 0,
+        "weekly_long_run_min": 0,
+        "quality_day_preference_weekdays": [1, 3, 5],
+        "prefer_doubles_on_quality_days": False,
+        "quality_day_double_modality": "elliptical",
+        "easy_day_max_duration_min": 90,
+        "always_require_race_context": True,
+        "safety_pushback_enabled": True,
+        "week_start_dialogue_required": False,
+        "planning_risk_posture_default": "baseline",
+    }
+
+
+def _normalize_coach_preferences(
+    payload: dict[str, object] | None,
+    *,
+    strict: bool = False,
+) -> dict[str, Any]:
+    base = _default_coach_preferences()
+    if not isinstance(payload, dict):
+        if strict:
+            raise HTTPException(
+                status_code=400, detail="coach_preferences must be an object."
+            )
+        return base
+    out: dict[str, Any] = dict(base)
+
+    modality = str(payload.get("support_modality_preference") or "").strip().lower()
+    if modality:
+        if modality not in {"auto", "elliptical", "bike"}:
+            if strict:
+                raise HTTPException(
+                    status_code=400,
+                    detail="coach_preferences.support_modality_preference must be one of: auto, elliptical, bike.",
+                )
+        else:
+            out["support_modality_preference"] = modality
+
+    weekly_quality_key = "weekly_quality_workouts_min"
+    if (
+        weekly_quality_key not in payload
+        and "weekly_threshold_days_min" in payload
+    ):
+        weekly_quality_key = "weekly_threshold_days_min"
+    if weekly_quality_key in payload:
+        try:
+            weekly_quality_workouts_min = int(payload.get(weekly_quality_key))
+        except Exception:
+            if strict:
+                raise HTTPException(
+                    status_code=400,
+                    detail="coach_preferences.weekly_quality_workouts_min must be an integer between 0 and 4.",
+                )
+            weekly_quality_workouts_min = int(base["weekly_quality_workouts_min"])
+        if weekly_quality_workouts_min < 0 or weekly_quality_workouts_min > 4:
+            if strict:
+                raise HTTPException(
+                    status_code=400,
+                    detail="coach_preferences.weekly_quality_workouts_min must be an integer between 0 and 4.",
+                )
+            weekly_quality_workouts_min = int(base["weekly_quality_workouts_min"])
+        out["weekly_quality_workouts_min"] = int(weekly_quality_workouts_min)
+
+    if "weekly_long_run_min" in payload:
+        try:
+            weekly_long_run_min = int(payload.get("weekly_long_run_min"))
+        except Exception:
+            if strict:
+                raise HTTPException(
+                    status_code=400,
+                    detail="coach_preferences.weekly_long_run_min must be an integer between 0 and 1.",
+                )
+            weekly_long_run_min = int(base["weekly_long_run_min"])
+        if weekly_long_run_min < 0 or weekly_long_run_min > 1:
+            if strict:
+                raise HTTPException(
+                    status_code=400,
+                    detail="coach_preferences.weekly_long_run_min must be an integer between 0 and 1.",
+                )
+            weekly_long_run_min = int(base["weekly_long_run_min"])
+        out["weekly_long_run_min"] = int(weekly_long_run_min)
+
+    if "quality_day_preference_weekdays" in payload:
+        raw_days = payload.get("quality_day_preference_weekdays")
+        if not isinstance(raw_days, (list, tuple)):
+            if strict:
+                raise HTTPException(
+                    status_code=400,
+                    detail="coach_preferences.quality_day_preference_weekdays must be an array of weekday integers (0=Mon..6=Sun).",
+                )
+        else:
+            parsed_days: list[int] = []
+            for value in raw_days:
+                try:
+                    day_idx = int(value)
+                except Exception:
+                    if strict:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="coach_preferences.quality_day_preference_weekdays must contain integers between 0 and 6.",
+                        )
+                    continue
+                if day_idx < 0 or day_idx > 6:
+                    if strict:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="coach_preferences.quality_day_preference_weekdays must contain integers between 0 and 6.",
+                        )
+                    continue
+                if day_idx not in parsed_days:
+                    parsed_days.append(day_idx)
+            if parsed_days:
+                out["quality_day_preference_weekdays"] = parsed_days
+
+    if "prefer_doubles_on_quality_days" in payload:
+        out["prefer_doubles_on_quality_days"] = bool(
+            payload.get("prefer_doubles_on_quality_days")
+        )
+
+    double_modality = str(payload.get("quality_day_double_modality") or "").strip().lower()
+    if double_modality:
+        if double_modality not in {"auto", "elliptical", "bike"}:
+            if strict:
+                raise HTTPException(
+                    status_code=400,
+                    detail="coach_preferences.quality_day_double_modality must be one of: auto, elliptical, bike.",
+                )
+        else:
+            out["quality_day_double_modality"] = double_modality
+
+    if "easy_day_max_duration_min" in payload:
+        try:
+            easy_day_max = int(payload.get("easy_day_max_duration_min"))
+        except Exception:
+            if strict:
+                raise HTTPException(
+                    status_code=400,
+                    detail="coach_preferences.easy_day_max_duration_min must be an integer between 60 and 120.",
+                )
+            easy_day_max = int(base["easy_day_max_duration_min"])
+        if easy_day_max < 60 or easy_day_max > 120:
+            if strict:
+                raise HTTPException(
+                    status_code=400,
+                    detail="coach_preferences.easy_day_max_duration_min must be an integer between 60 and 120.",
+                )
+            easy_day_max = int(base["easy_day_max_duration_min"])
+        out["easy_day_max_duration_min"] = int(easy_day_max)
+
+    if "always_require_race_context" in payload:
+        out["always_require_race_context"] = bool(
+            payload.get("always_require_race_context")
+        )
+    if "safety_pushback_enabled" in payload:
+        out["safety_pushback_enabled"] = bool(payload.get("safety_pushback_enabled"))
+
+    if "week_start_dialogue_required" in payload:
+        out["week_start_dialogue_required"] = bool(
+            payload.get("week_start_dialogue_required")
+        )
+
+    posture = str(payload.get("planning_risk_posture_default") or "").strip().lower()
+    if posture:
+        if posture not in {"conservative", "baseline", "aggressive"}:
+            if strict:
+                raise HTTPException(
+                    status_code=400,
+                    detail="coach_preferences.planning_risk_posture_default must be one of: conservative, baseline, aggressive.",
+                )
+        else:
+            out["planning_risk_posture_default"] = posture
+
+    return out
+
+
+def _load_coach_preferences(db_path: Path) -> dict[str, Any]:
+    raw = get_setting(db_path, SETTINGS_KEY_COACH_PREFERENCES)
+    if not raw:
+        return _default_coach_preferences()
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return _default_coach_preferences()
+    return _normalize_coach_preferences(payload if isinstance(payload, dict) else None)
 
 
 def _default_baseline_blend_profile() -> dict[str, int]:
@@ -4732,6 +4928,179 @@ def _generated_activity_fallbacks(activity_type: str | None, mode: str) -> list[
     return suggestions
 
 
+def _split_workout_template_front_matter(markdown: str) -> tuple[dict[str, Any], str]:
+    lines = str(markdown or "").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, str(markdown or "")
+    for index in range(1, len(lines)):
+        if lines[index].strip() != "---":
+            continue
+        if yaml is None:
+            return {}, "\n".join(lines[index + 1 :]).lstrip("\n")
+        payload = yaml.safe_load("\n".join(lines[1:index])) or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        return payload, "\n".join(lines[index + 1 :]).lstrip("\n")
+    return {}, str(markdown or "")
+
+
+def _template_activity_type_matches(
+    front_matter: dict[str, Any], activity_type: str | None
+) -> bool:
+    target = _normalized_generated_activity_modality(activity_type)
+    if not activity_type or target == "unknown":
+        return True
+    modality_pattern = str(front_matter.get("modality_pattern") or "").strip().lower()
+    modality_scope = str(front_matter.get("modality_scope") or "").strip().lower()
+    if modality_pattern in {"generic", "any", ""} or modality_scope in {"any", ""}:
+        return True
+    return _normalized_generated_activity_modality(modality_pattern) == target
+
+
+def _template_candidate_modality(
+    front_matter: dict[str, Any], activity_type: str | None
+) -> str:
+    requested = _normalized_generated_activity_modality(activity_type)
+    if requested != "unknown":
+        return requested
+    modality_pattern = str(front_matter.get("modality_pattern") or "").strip().lower()
+    if modality_pattern and modality_pattern not in {"generic", "any"}:
+        return _normalized_generated_activity_modality(modality_pattern)
+    return "running"
+
+
+def _template_candidate_priority(front_matter: dict[str, Any]) -> int:
+    category = str(front_matter.get("category") or "").strip().lower()
+    load_role = str(front_matter.get("load_role") or "").strip().lower()
+    if "race" in category:
+        return 3
+    if "hard" in category or "primary-hard" in load_role:
+        return 2
+    if "support" in load_role or "moderate" in category:
+        return 1
+    return 0
+
+
+def _template_candidate_from_values(
+    *,
+    front_matter: dict[str, Any],
+    template_id: str,
+    session_family: str,
+    activity_text: str,
+    estimated_tss: float,
+    total_minutes: float,
+    avg_if: float,
+    max_if: float,
+    modality: str,
+    scaling_source: str,
+) -> dict[str, Any] | None:
+    text = str(activity_text or "").strip()
+    if not text:
+        return None
+    return {
+        "activity_text": text,
+        "priority": _template_candidate_priority(front_matter),
+        "bucket": str(front_matter.get("bucket") or "easy").strip().lower(),
+        "estimated_tss": float(estimated_tss),
+        "total_minutes": float(total_minutes),
+        "avg_if": float(avg_if),
+        "max_if": float(max_if),
+        "modality": modality,
+        "source": "template",
+        "template_id": template_id,
+        "session_family": session_family,
+        "load_role": front_matter.get("load_role"),
+        "category": front_matter.get("category"),
+        "scaling_source": scaling_source,
+        "selection_rationale": (
+            f"Template fallback from {session_family}/{template_id}; "
+            f"planned/custom candidate sources were empty."
+        ),
+    }
+
+
+def _generated_activity_template_candidates(
+    *,
+    activity_type: str | None,
+) -> list[dict[str, Any]]:
+    if not WORKOUTS_DIR.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for path in sorted(WORKOUTS_DIR.glob("*/*.md")):
+        try:
+            front_matter, _ = _split_workout_template_front_matter(
+                path.read_text(encoding="utf-8")
+            )
+        except OSError:
+            continue
+        if not front_matter or not _template_activity_type_matches(
+            front_matter, activity_type
+        ):
+            continue
+        template_id = str(front_matter.get("template_id") or path.stem).strip()
+        session_family = str(
+            front_matter.get("session_family") or path.parent.name
+        ).strip()
+        modality = _template_candidate_modality(front_matter, activity_type)
+        variants = front_matter.get("variants") or []
+        if isinstance(variants, list):
+            for variant in variants:
+                if not isinstance(variant, dict):
+                    continue
+                candidate = _template_candidate_from_values(
+                    front_matter=front_matter,
+                    template_id=template_id,
+                    session_family=session_family,
+                    activity_text=str(
+                        variant.get("activity_text")
+                        or front_matter.get("baseline_activity_text")
+                        or ""
+                    ),
+                    estimated_tss=_safe_float(
+                        variant.get("estimated_tss")
+                        or front_matter.get("baseline_estimated_tss")
+                    ),
+                    total_minutes=_safe_float(
+                        variant.get("total_minutes")
+                        or front_matter.get("baseline_total_minutes")
+                    ),
+                    avg_if=_safe_float(
+                        variant.get("avg_if") or front_matter.get("baseline_avg_if")
+                    ),
+                    max_if=_safe_float(
+                        variant.get("max_if") or front_matter.get("baseline_max_if")
+                    ),
+                    modality=modality,
+                    scaling_source=str(variant.get("scale_label") or "variant"),
+                )
+                if candidate is None:
+                    continue
+                key = str(candidate["activity_text"]).lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(candidate)
+        baseline = _template_candidate_from_values(
+            front_matter=front_matter,
+            template_id=template_id,
+            session_family=session_family,
+            activity_text=str(front_matter.get("baseline_activity_text") or ""),
+            estimated_tss=_safe_float(front_matter.get("baseline_estimated_tss")),
+            total_minutes=_safe_float(front_matter.get("baseline_total_minutes")),
+            avg_if=_safe_float(front_matter.get("baseline_avg_if")),
+            max_if=_safe_float(front_matter.get("baseline_max_if")),
+            modality=modality,
+            scaling_source="baseline",
+        )
+        if baseline is not None:
+            key = str(baseline["activity_text"]).lower()
+            if key not in seen:
+                seen.add(key)
+                out.append(baseline)
+    return out
+
+
 def _fallback_activity_total_minutes(text: str) -> float:
     normalized = str(text or "").strip().lower()
     hours_match = re.search(r"(\d+)h(?:(\d+)min)?", normalized)
@@ -5157,6 +5526,7 @@ def _generated_activity_planning_state(
         blend_profile=baseline_blend_profile,
     )
     methodology = get_methodology(methodology_id)
+    coach_preferences = _load_coach_preferences(db_path)
 
     planning_state = build_user_planning_state(
         target_day_utc=selected_day.date().isoformat(),
@@ -5175,6 +5545,7 @@ def _generated_activity_planning_state(
         recent_load_7d=recent_load_7d,
         recent_load_28d=recent_load_28d,
         stress_profile=methodology.stress_profile,
+        coach_preferences=coach_preferences,
     )
     return planning_state
 
@@ -5231,6 +5602,12 @@ def _planning_decision_payload(decision: Any) -> dict[str, Any]:
                     decision.selected_candidate.long_run_duration_min
                 ),
                 "source": str(decision.selected_candidate.source),
+                "template_id": decision.selected_candidate.template_id,
+                "session_family": decision.selected_candidate.session_family,
+                "load_role": decision.selected_candidate.load_role,
+                "category": decision.selected_candidate.category,
+                "scaling_source": decision.selected_candidate.scaling_source,
+                "selection_rationale": decision.selected_candidate.selection_rationale,
             }
             if decision.selected_candidate is not None
             else None
@@ -5283,30 +5660,34 @@ def _planning_decision_for_owner(
         activity_type=activity_type,
     )
     if not suggestions:
-        fallback_suggestions = _generated_activity_fallbacks(
-            activity_type=activity_type, mode=mode
-        )
         suggestions = _generated_activity_candidates(
             db_path=db_path,
             mode="custom",
             day_utc=day_utc,
             activity_type=activity_type,
         )
-        if not suggestions:
-            suggestions = [
-                {
-                    "activity_text": text,
-                    "priority": 0,
-                    "bucket": "easy",
-                    "estimated_tss": 0.0,
-                    "total_minutes": _fallback_activity_total_minutes(text),
-                    "avg_if": 0.0,
-                    "max_if": 0.0,
-                    "modality": activity_type or "running",
-                    "source": "fallback",
-                }
-                for text in fallback_suggestions
-            ]
+    if not suggestions:
+        suggestions = _generated_activity_template_candidates(
+            activity_type=activity_type
+        )
+    if not suggestions:
+        fallback_suggestions = _generated_activity_fallbacks(
+            activity_type=activity_type, mode=mode
+        )
+        suggestions = [
+            {
+                "activity_text": text,
+                "priority": 0,
+                "bucket": "easy",
+                "estimated_tss": 0.0,
+                "total_minutes": _fallback_activity_total_minutes(text),
+                "avg_if": 0.0,
+                "max_if": 0.0,
+                "modality": activity_type or "running",
+                "source": "fallback",
+            }
+            for text in fallback_suggestions
+        ]
     planning_state = _generated_activity_planning_state(
         db_path=db_path,
         day_utc=day_utc,
@@ -5333,6 +5714,8 @@ def _planning_decision_for_owner(
         "mode": mode,
         "activity_text": str(decision.generated_workout.activity_text or ""),
         "total_candidates": len(suggestions),
+        "weekly_total_tss_target": float(planning_state.weekly_baseline_tss),
+        "weekly_rtss_target": float(planning_state.weekly_baseline_rtss),
         "planning": _planning_decision_payload(decision),
     }
     try:
@@ -5470,9 +5853,26 @@ def _mcp_planning_state_summary(planning_state: Any) -> dict[str, Any]:
     return {
         "weekly_baseline_tss": planning_state.weekly_baseline_tss,
         "weekly_baseline_rtss": planning_state.weekly_baseline_rtss,
+        "weekly_total_tss_target": planning_state.weekly_baseline_tss,
+        "weekly_rtss_target": planning_state.weekly_baseline_rtss,
         "recent_load_7d": planning_state.recent_load_7d,
         "recent_load_28d": planning_state.recent_load_28d,
         "recent_load_ratio": planning_state.recent_load_ratio,
+        "coach_preferences": {
+            "support_modality_preference": planning_state.support_modality_preference,
+            "weekly_quality_workouts_min": planning_state.weekly_quality_workouts_min,
+            "weekly_long_run_min": planning_state.weekly_long_run_min,
+            "quality_day_preference_weekdays": list(
+                planning_state.quality_day_preference_weekdays
+            ),
+            "prefer_doubles_on_quality_days": planning_state.prefer_doubles_on_quality_days,
+            "quality_day_double_modality": planning_state.quality_day_double_modality,
+            "easy_day_max_duration_min": planning_state.easy_day_max_duration_min,
+            "always_require_race_context": planning_state.always_require_race_context,
+            "safety_pushback_enabled": planning_state.safety_pushback_enabled,
+            "week_start_dialogue_required": planning_state.week_start_dialogue_required,
+            "planning_risk_posture_default": planning_state.planning_risk_posture_default,
+        },
         "fatigue": {
             "fitness": planning_state.fatigue.fitness,
             "fatigue": planning_state.fatigue.fatigue,
@@ -9973,6 +10373,7 @@ def _settings_view_core(db_path: Path) -> dict[str, Any]:
     vdot_lookback_days = _load_vdot_lookback_days(db_path)
 
     spec_profile = _load_specificity_profile(db_path=db_path, fallback_default=0.8)
+    coach_preferences = _load_coach_preferences(db_path)
     baseline_blend = _load_baseline_blend_profile(db_path)
 
     lthr_curve = _load_curve_points(
@@ -10016,6 +10417,7 @@ def _settings_view_core(db_path: Path) -> dict[str, Any]:
         "if_zone_thresholds": if_thresholds,
         "vdot_lookback_days": vdot_lookback_days,
         "specificity_profile": spec_profile,
+        "coach_preferences": coach_preferences,
         "baseline_blend": baseline_blend,
         "lthr_curve": lthr_rows,
         "lt_pace_curve": pace_rows,
@@ -10056,6 +10458,15 @@ def _settings_update_core(db_path: Path, settings: dict[str, Any]) -> dict[str, 
             f"{float(normalized['non_running']):.4f}",
         )
         updated.append("specificity_profile")
+
+    if settings.get("coach_preferences") is not None:
+        normalized = _normalize_coach_preferences(
+            settings.get("coach_preferences"), strict=True
+        )
+        save_setting(
+            db_path, SETTINGS_KEY_COACH_PREFERENCES, _settings_json(normalized)
+        )
+        updated.append("coach_preferences")
 
     if settings.get("baseline_blend") is not None:
         normalized = _normalize_baseline_blend_profile(

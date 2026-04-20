@@ -41,6 +41,7 @@ def settings_update(
             "if_zone_thresholds": payload.if_zone_thresholds,
             "vdot_lookback_days": payload.vdot_lookback_days,
             "specificity_profile": payload.specificity_profile,
+            "coach_preferences": payload.coach_preferences,
             "baseline_blend": payload.baseline_blend,
             "lthr_curve": payload.lthr_curve,
             "lt_pace_curve": payload.lt_pace_curve,

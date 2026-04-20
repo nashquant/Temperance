@@ -113,6 +113,95 @@ def test_generated_activity_endpoint_uses_policy_for_friday_rest_exception(monke
     assert response["planning"]["selected_intent"]["day_type"] == "rest"
 
 
+def test_template_candidate_conversion_preserves_provenance() -> None:
+    candidates = backend_main._generated_activity_template_candidates(
+        activity_type="running"
+    )
+
+    threshold = next(
+        item
+        for item in candidates
+        if item["template_id"] == "threshold_15min_72_3x10_90_2rec"
+        and item["scaling_source"] == "baseline"
+    )
+    assert threshold["source"] == "template"
+    assert threshold["activity_text"] == "15min @ 72% + 3x10' @ 90% (2' @ 72%)"
+    assert threshold["estimated_tss"] == pytest.approx(56.9)
+    assert threshold["session_family"] == "lt1-threshold"
+    assert threshold["load_role"] == "primary-hard"
+    assert threshold["category"] == "threshold-hard"
+    assert (
+        "planned/custom candidate sources were empty"
+        in threshold["selection_rationale"]
+    )
+
+
+def test_planning_falls_back_to_templates_before_hardcoded_strings(monkeypatch) -> None:
+    monkeypatch.setattr(
+        backend_main,
+        "_db_path_for_owner",
+        lambda owner: backend_main.Path("ignored.db"),
+    )
+    monkeypatch.setattr(backend_main, "_load_curve_points", lambda **kwargs: [])
+    monkeypatch.setattr(
+        backend_main, "_curve_value_at", lambda curve, default, when: 300.0
+    )
+    monkeypatch.setattr(
+        backend_main, "_generated_activity_candidates", lambda **kwargs: []
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "_generated_activity_template_candidates",
+        lambda **kwargs: [
+            {
+                "activity_text": "50min @ 72%",
+                "bucket": "easy",
+                "estimated_tss": 43.2,
+                "avg_if": 0.72,
+                "max_if": 0.72,
+                "total_minutes": 50.0,
+                "modality": "running",
+                "source": "template",
+                "template_id": "easy_test_template",
+                "session_family": "easy",
+                "load_role": "support",
+                "category": "easy-aerobic",
+                "scaling_source": "baseline",
+                "selection_rationale": (
+                    "Template fallback from easy/easy_test_template; "
+                    "planned/custom candidate sources were empty."
+                ),
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "_generated_activity_planning_state",
+        lambda **kwargs: backend_main.build_user_planning_state(
+            target_day_utc="2026-03-30",
+            weekly_baseline_tss=554.0,
+            recent_activity_rows=[],
+            planned_activity_rows=[],
+        ),
+    )
+
+    response, _ = backend_main._planning_decision_for_owner(
+        owner="default",
+        day_utc="2026-03-30",
+        mode="planned",
+        activity_type="running",
+        previous_activity_text=None,
+        seed=19,
+        methodology_id="rolling_3_day_v1",
+    )
+
+    selected = response["planning"]["selected_candidate"]
+    assert selected["source"] == "template"
+    assert selected["template_id"] == "easy_test_template"
+    assert selected["session_family"] == "easy"
+    assert selected["scaling_source"] == "baseline"
+
+
 def test_compute_planned_rows_metrics_reparses_valid_workout_text_when_parsed_json_is_missing() -> None:
     planned_rows = backend_main.pd.DataFrame(
         [

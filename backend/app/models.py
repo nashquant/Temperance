@@ -64,6 +64,7 @@ class UpdateSettingsRequest(BaseModel):
     if_zone_thresholds: dict[str, float] | None = None
     vdot_lookback_days: int | None = None
     specificity_profile: dict[str, float] | None = None
+    coach_preferences: dict[str, Any] | None = None
     baseline_blend: dict[str, Any] | None = None
     lthr_curve: list[dict[str, Any]] | None = None
     lt_pace_curve: list[dict[str, Any]] | None = None

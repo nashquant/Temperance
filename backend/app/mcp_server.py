@@ -38,7 +38,7 @@ STATIC_RESOURCE_MIME_TYPE = "application/json"
 RESOURCE_URI_PREFIX = "temperance://"
 LOCAL_OVERRIDE_SUFFIX = ".local.md"
 MARKDOWN_SUFFIX = ".md"
-ACTIVE_BUILD_DOC_ID = "training-recent-cache"
+ACTIVE_BUILD_DOC_ID = "training-runtime-active"
 HISTORY_DOC_ID = "training-history-memo"
 READ_ORDER_DOC_ID = "training-llm-instructions"
 CORE_BUNDLE_DOC_IDS = (
@@ -261,6 +261,7 @@ class UpdateSettingsArgs(BaseModel):
     lt_pace_curve: Optional[list[dict[str, Any]]] = None
     timezone: Optional[str] = None
     specificity_profile: Optional[dict[str, Any]] = None
+    coach_preferences: Optional[dict[str, Any]] = None
     injury_windows: Optional[list[dict[str, str]]] = None
     training_philosophy_id: Optional[str] = None
     if_zone_thresholds: Optional[dict[str, Any]] = None
@@ -293,6 +294,21 @@ class WeeklyVolumeArgs(BaseModel):
 
 class CoachingBriefArgs(BaseModel):
     owner: str = DEFAULT_OWNER
+
+
+class PrepareWeekDialogueArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    target_day_utc: Optional[str] = None
+
+
+class PlanWeekWithDialogueArgs(BaseModel):
+    owner: str = DEFAULT_OWNER
+    target_day_utc: str
+    methodology_id: Optional[str] = None
+    seed: Optional[int] = None
+    horizon_days: int = 7
+    schedule_constraints: list[dict[str, Any]] = Field(default_factory=list)
+    dialogue: dict[str, Any] = Field(default_factory=dict)
 
 
 # --- Phase 4: Load analysis and estimation models ---
@@ -1083,6 +1099,63 @@ def _keyed_bullets(section_body: str) -> dict[str, str]:
     return out
 
 
+def _first_section(sections: dict[str, str], *names: str) -> str:
+    for name in names:
+        body = sections.get(name)
+        if body:
+            return body
+    return ""
+
+
+def _pseudo_section_from_intro(intro: str, *names: str) -> str:
+    target_names = {name.strip().lower() for name in names if str(name).strip()}
+    collecting = False
+    out: list[str] = []
+    for raw_line in str(intro or "").splitlines():
+        line = raw_line.strip()
+        match = re.match(r"^-\s+(.+?):\s*$", line)
+        if match:
+            heading = match.group(1).strip().lower()
+            if collecting and heading not in target_names:
+                break
+            collecting = heading in target_names
+            continue
+        if collecting:
+            out.append(raw_line)
+    return "\n".join(out).strip()
+
+
+def _section_or_pseudo(
+    sections: dict[str, str], markdown: str, *names: str
+) -> str:
+    return _first_section(sections, *names) or _pseudo_section_from_intro(
+        sections.get("_intro", markdown), *names
+    )
+
+
+def _first_matching_bullet(bullets: list[str], *needles: str) -> str | None:
+    lowered_needles = [needle.lower() for needle in needles]
+    for bullet in bullets:
+        lowered = str(bullet or "").lower()
+        if all(needle in lowered for needle in lowered_needles):
+            return bullet
+    return None
+
+
+def _first_number_from_text(value: Any) -> float | None:
+    match = re.search(r"[-+]?\d+(?:\.\d+)?", str(value or "").replace(",", ""))
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def _strip_markdown_value(value: Any) -> str:
+    return re.sub(r"[*_`]+", "", str(value or "")).strip()
+
+
 def _numbered_items(section_body: str) -> list[str]:
     out: list[str] = []
     for raw_line in str(section_body or "").splitlines():
@@ -1280,7 +1353,9 @@ def _build_read_order_payload() -> dict[str, Any]:
     sections = _parse_markdown_sections(doc.markdown)
     return {
         "doc": _resolved_doc_payload(doc),
-        "read_order": _numbered_items(sections.get("Read order", "")),
+        "read_order": _numbered_items(
+            _first_section(sections, "Read order", "Default load")
+        ),
         "local_private_resolution": _section_bullets(
             sections.get("Local/private resolution", "")
         ),
@@ -1309,48 +1384,85 @@ def _build_core_bundle_payload() -> dict[str, Any]:
 def _build_active_build_payload() -> dict[str, Any]:
     active_doc = _resolve_guideline_doc(ACTIVE_BUILD_DOC_ID)
     sections = _parse_markdown_sections(active_doc.markdown)
-    overlay_entries = _keyed_bullets(sections.get("Active overlay set", ""))
+    overlay_entries = _keyed_bullets(
+        _section_or_pseudo(
+            sections, active_doc.markdown, "Active overlay set", "Active overlays"
+        )
+    )
     overlay_profiles: dict[str, Any] = {}
     for label, value in overlay_entries.items():
         normalized_key = _slugify_label(label)
         doc_id = _normalize_doc_reference(value)
         try:
-            overlay_profiles[normalized_key] = _resolved_doc_payload(
-                _resolve_guideline_doc(doc_id)
-            )
+            profile_payload = _resolved_doc_payload(_resolve_guideline_doc(doc_id))
         except ValueError:
-            overlay_profiles[normalized_key] = {
+            profile_payload = {
                 "doc_id": doc_id,
                 "requested_value": value,
                 "resource_uri": _resource_uri_for_doc_id(doc_id),
             }
+        overlay_profiles[normalized_key] = profile_payload
+        if not normalized_key.endswith("_profile"):
+            overlay_profiles[f"{normalized_key}_profile"] = profile_payload
     return {
         "active_build_doc": _resolved_doc_payload(active_doc),
         "overlay_set": overlay_entries,
         "selected_profiles": overlay_profiles,
         "active_anchor_mapping": _keyed_bullets(
-            sections.get("Active anchor mapping", "")
+            _section_or_pseudo(
+                sections, active_doc.markdown, "Active anchor mapping", "Metric mapping"
+            )
         ),
         "current_planning_anchors": _section_bullets(
-            sections.get("Current planning anchors", "")
+            _section_or_pseudo(
+                sections,
+                active_doc.markdown,
+                "Current planning anchors",
+                "Weekly anchors",
+            )
         ),
         "current_phase_and_immediate_objective": _section_bullets(
-            sections.get("Current phase and immediate objective", "")
+            _section_or_pseudo(
+                sections,
+                active_doc.markdown,
+                "Current phase and immediate objective",
+                "Phase and objective",
+            )
         ),
         "temporary_constraints": _section_bullets(
-            sections.get("Temporary exceptions / current constraints", "")
+            _section_or_pseudo(
+                sections,
+                active_doc.markdown,
+                "Temporary exceptions / current constraints",
+                "Constraints and interpretation",
+            )
         ),
         "near_term_interpretation": _section_bullets(
             sections.get("Near-term interpretation", "")
         ),
         "near_term_hard_session_emphasis": _section_bullets(
-            sections.get("Near-term hard-session emphasis", "")
+            _section_or_pseudo(
+                sections,
+                active_doc.markdown,
+                "Near-term hard-session emphasis",
+                "Hard-session emphasis and watchouts",
+            )
         ),
         "recommendation_style_preferences": _section_bullets(
             sections.get("Current recommendation style preferences", "")
         ),
-        "watchouts": _section_bullets(sections.get("Current watchouts", "")),
+        "watchouts": _section_bullets(
+            _section_or_pseudo(
+                sections,
+                active_doc.markdown,
+                "Current watchouts",
+                "Hard-session emphasis and watchouts",
+            )
+        ),
         "history_memo_ref": _resource_uri_for_doc_id(HISTORY_DOC_ID),
+        "supplemental_active_build_ref": _resource_uri_for_doc_id(
+            "training-recent-cache"
+        ),
     }
 
 
@@ -1361,31 +1473,160 @@ def _active_build_brief() -> dict[str, Any]:
     except Exception:
         return {}
     phase_bullets = active_build.get("current_phase_and_immediate_objective") or []
-    phase = phase_bullets[0] if phase_bullets else None
+    anchor_bullets = active_build.get("current_planning_anchors") or []
+    constraint_bullets = active_build.get("temporary_constraints") or []
+    phase = _strip_markdown_value(
+        _first_matching_bullet(phase_bullets, "generic phase")
+        or (phase_bullets[0] if phase_bullets else "")
+    )
     overlays = list((active_build.get("overlay_set") or {}).values())
-    anchors = active_build.get("active_anchor_mapping") or {}
-    weekly_baseline = None
-    for key, value in anchors.items():
-        if "weekly" in key.lower() and "tss" in key.lower():
-            try:
-                weekly_baseline = float(
-                    "".join(c for c in str(value) if c.isdigit() or c == ".")
-                )
-            except (ValueError, TypeError):
-                pass
-            break
+    weekly_total = _first_matching_bullet(anchor_bullets, "weekly", "total")
+    weekly_rtss = _first_matching_bullet(anchor_bullets, "weekly", "rtss")
+    specificity = (
+        _first_matching_bullet(anchor_bullets, "run_ratio")
+        or _first_matching_bullet(anchor_bullets, "run-ratio")
+        or _first_matching_bullet(anchor_bullets, "specificity")
+    )
+    long_run = (
+        _first_matching_bullet(anchor_bullets, "long-run")
+        or _first_matching_bullet(anchor_bullets, "key duration")
+    )
+    limiter = (
+        _first_matching_bullet(constraint_bullets, "limiter")
+        or _first_matching_bullet(constraint_bullets, "durability")
+        or (constraint_bullets[0] if constraint_bullets else None)
+    )
+    resource_refs = [
+        _resource_uri("guidelines/active-build"),
+        _resource_uri("guidelines/read-order"),
+    ]
+    if active_build.get("supplemental_active_build_ref"):
+        resource_refs.append(str(active_build["supplemental_active_build_ref"]))
     return _clean_mapping(
         {
-            "phase": phase,
+            "active_phase": phase or None,
+            "phase": phase or None,
             "overlays": overlays if overlays else None,
-            "weekly_baseline_tss": weekly_baseline,
+            "active_overlays": overlays if overlays else None,
+            "weekly_total_tss_anchor": _first_number_from_text(weekly_total),
+            "weekly_baseline_tss": _first_number_from_text(weekly_total),
+            "weekly_rtss_anchor": _first_number_from_text(weekly_rtss),
+            "run_ratio_or_specificity_anchor": _strip_markdown_value(specificity)
+            if specificity
+            else None,
+            "long_run_anchor": _strip_markdown_value(long_run) if long_run else None,
+            "limiting_constraint": _strip_markdown_value(limiter) if limiter else None,
             "watchouts": active_build.get("watchouts") or None,
-            "resource_refs": [
-                _resource_uri("guidelines/active-build"),
-                _resource_uri("guidelines/read-order"),
-            ],
+            "guideline_refs": resource_refs,
+            "resource_refs": resource_refs,
         }
     )
+
+
+def _build_cycle_progress_review(
+    *,
+    coach_context: dict[str, Any] | None,
+    week_progress: dict[str, Any] | None,
+    weekly_total_tss_target: float,
+    weekly_rtss_target: float,
+) -> dict[str, Any]:
+    context = dict(coach_context or {})
+    progress = dict(week_progress or {})
+    active_phase = str(
+        context.get("active_phase") or context.get("phase") or ""
+    ).strip() or None
+    wtd_current = _safe_float(progress.get("wtd_current"))
+    goal = _safe_float(progress.get("goal")) or _safe_float(weekly_total_tss_target)
+    remaining = _safe_float(progress.get("remaining_to_go"))
+    remaining_days = int(progress.get("remaining_days") or 0)
+    if goal > 0:
+        completion_pct = max(0.0, min((wtd_current / goal) * 100.0, 200.0))
+    else:
+        completion_pct = 0.0
+    if completion_pct < 60.0 and remaining_days <= 2:
+        status = "behind_phase_load"
+    elif completion_pct > 120.0 and remaining_days >= 2:
+        status = "ahead_phase_load"
+    else:
+        status = "on_phase_track"
+    review_prompt = (
+        "Review active phase and progression to next phase before confirming intensity/load."
+    )
+    return {
+        "active_phase": active_phase,
+        "weekly_total_tss_target": round(_safe_float(weekly_total_tss_target), 1),
+        "weekly_rtss_target": round(_safe_float(weekly_rtss_target), 1),
+        "wtd_total_tss": round(wtd_current, 1),
+        "goal_total_tss": round(goal, 1),
+        "remaining_to_goal_tss": round(remaining, 1),
+        "remaining_days": remaining_days,
+        "phase_progress_pct": round(completion_pct, 1),
+        "phase_progress_status": status,
+        "review_prompt": review_prompt,
+    }
+
+
+def _guideline_philosophy_overlay(active_build: dict[str, Any]) -> dict[str, Any] | None:
+    profiles = active_build.get("selected_profiles") or {}
+    if not isinstance(profiles, dict):
+        return None
+    profile = profiles.get("philosophy_profile") or profiles.get("philosophy")
+    if not isinstance(profile, dict):
+        return None
+    doc_id = str(profile.get("doc_id") or "").strip()
+    return _clean_mapping(
+        {
+            "doc_id": doc_id or None,
+            "resource_uri": profile.get("resource_uri")
+            or (_resource_uri_for_doc_id(doc_id) if doc_id else None),
+            "resolved_path": profile.get("resolved_path"),
+            "is_local_override": profile.get("is_local_override"),
+            "status": profile.get("status"),
+        }
+    )
+
+
+def _philosophy_warning_items(
+    algorithmic_philosophy: dict[str, Any],
+    guideline_overlay: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if not guideline_overlay:
+        return []
+    algorithmic_id = str(algorithmic_philosophy.get("philosophy_id") or "").strip()
+    overlay_doc_id = str(guideline_overlay.get("doc_id") or "").strip()
+    if not algorithmic_id or not overlay_doc_id:
+        return []
+    normalized_overlay = overlay_doc_id.replace("training-philosophy-", "")
+    normalized_overlay = normalized_overlay.replace("-local", "")
+    equivalent = algorithmic_id.replace("_", "-") in normalized_overlay
+    if equivalent:
+        return []
+    return [
+        {
+            "code": "philosophy_layer_mismatch",
+            "severity": "info",
+            "algorithmic_philosophy_id": algorithmic_id,
+            "guideline_philosophy_doc_id": overlay_doc_id,
+            "message": (
+                "Planner scoring uses the DB-backed algorithmic philosophy, while "
+                "coach doctrine should also consider the active guideline philosophy overlay."
+            ),
+        }
+    ]
+
+
+def _recommended_coach_tool_flow() -> list[str]:
+    return [
+        "get_coaching_brief",
+        "prepare_week_dialogue (before week-level planning)",
+        "resources/read:temperance://guidelines/read-order",
+        "resources/read:temperance://guidelines/active-build",
+        "search_workouts",
+        "estimate_workout_tss",
+        "simulate_plan_week",
+        "critique_day_plan",
+        "save_planned_activities or update_planned_activity",
+    ]
 
 
 def _build_workout_overview_payload() -> dict[str, Any]:
@@ -1513,7 +1754,17 @@ def _lthr_for_day(db_path: Path, day_utc: str) -> float:
 
 
 def _weekly_baseline_tss_for_day(db_path: Path, day_utc: str) -> float:
-    return float(_backend_main_module()._weekly_baseline_tss_for_day(db_path, day_utc))
+    backend_main = _backend_main_module()
+    if hasattr(backend_main, "_weekly_baseline_tss_for_day"):
+        return float(backend_main._weekly_baseline_tss_for_day(db_path, day_utc))
+    return 0.0
+
+
+def _weekly_baseline_rtss_for_day(db_path: Path, day_utc: str) -> float:
+    backend_main = _backend_main_module()
+    if hasattr(backend_main, "_weekly_baseline_rtss_for_day"):
+        return float(backend_main._weekly_baseline_rtss_for_day(db_path, day_utc))
+    return 0.0
 
 
 def _build_planning_context_payload(owner: str, target_day_utc: str) -> dict[str, Any]:
@@ -1937,6 +2188,8 @@ def tool_update_settings(arguments: dict[str, Any]) -> dict[str, Any]:
         settings_dict["timezone"] = args.timezone
     if args.specificity_profile is not None:
         settings_dict["specificity_profile"] = args.specificity_profile
+    if args.coach_preferences is not None:
+        settings_dict["coach_preferences"] = args.coach_preferences
     if args.injury_windows is not None:
         settings_dict["injury_windows"] = args.injury_windows
     if args.training_philosophy_id is not None:
@@ -2310,7 +2563,24 @@ def tool_get_coaching_brief(arguments: dict[str, Any]) -> dict[str, Any]:
         else {}
     )
 
+    active_build_payload = _build_active_build_payload()
     guideline_ctx = _active_build_brief()
+    backend_main = _backend_main_module()
+    settings_view = {}
+    if hasattr(backend_main, "_settings_view_core"):
+        try:
+            settings_view = dict(backend_main._settings_view_core(db_path) or {})
+        except Exception:
+            settings_view = {}
+    coach_preferences = dict(settings_view.get("coach_preferences") or {})
+    week_start_dialogue_required = bool(
+        coach_preferences.get("week_start_dialogue_required")
+    )
+    always_require_race_context = bool(
+        coach_preferences.get("always_require_race_context", True)
+    )
+    weekly_total_tss_target = round(_weekly_baseline_tss_for_day(db_path, today_str), 1)
+    weekly_rtss_target = round(_weekly_baseline_rtss_for_day(db_path, today_str), 1)
 
     week_outlook = analytics["_build_week_outlook_payload"](
         db_path=db_path,
@@ -2331,6 +2601,12 @@ def tool_get_coaching_brief(arguments: dict[str, Any]) -> dict[str, Any]:
             ),
             "remaining_days": _remaining_days_in_week(week_outlook),
         }
+    )
+    cycle_progress_review = _build_cycle_progress_review(
+        coach_context=guideline_ctx or None,
+        week_progress=week_progress or None,
+        weekly_total_tss_target=weekly_total_tss_target,
+        weekly_rtss_target=weekly_rtss_target,
     )
 
     recent_pattern: list[dict[str, Any]] = []
@@ -2389,9 +2665,12 @@ def tool_get_coaching_brief(arguments: dict[str, Any]) -> dict[str, Any]:
 
     from temperance.planning.philosophy import CORE_PRINCIPLES, get_philosophy
 
-    backend_main = _backend_main_module()
     active_philosophy = get_philosophy(backend_main._load_active_philosophy_id(db_path))
     training_philosophy = _serialize_training_philosophy(active_philosophy)
+    guideline_philosophy_overlay = _guideline_philosophy_overlay(active_build_payload)
+    context_warnings = _philosophy_warning_items(
+        training_philosophy, guideline_philosophy_overlay
+    )
     core_principles = [
         {
             "principle_id": principle.principle_id,
@@ -2408,17 +2687,283 @@ def tool_get_coaching_brief(arguments: dict[str, Any]) -> dict[str, Any]:
         "fitness_form": fitness_form or None,
         "recovery_snapshot": recovery_snapshot or None,
         "active_build_summary": guideline_ctx or None,
+        "coach_context": guideline_ctx or None,
+        "coach_preferences": coach_preferences or None,
+        "weekly_targets": {
+            "weekly_total_tss_target": weekly_total_tss_target,
+            "weekly_rtss_target": weekly_rtss_target,
+        },
         "training_philosophy": training_philosophy,
+        "algorithmic_philosophy": training_philosophy,
+        "guideline_philosophy_overlay": guideline_philosophy_overlay,
+        "context_warnings": context_warnings or None,
         "core_principles": core_principles,
         "week_progress": week_progress or None,
+        "cycle_progress_review": cycle_progress_review,
         "recent_pattern": recent_pattern or None,
         "flags": flags or None,
+        "required_preplan_questions": (
+            (
+                [
+                    {
+                        "id": "upcoming_events",
+                        "prompt": "Any races/events in the next 10 days (date, distance, effort goal)?",
+                    }
+                ]
+                if always_require_race_context
+                else []
+            )
+            + (
+                [
+                    {
+                        "id": "starting_week_feeling",
+                        "prompt": "How are you starting the week (fresh/normal/fatigued)?",
+                    },
+                    {
+                        "id": "risk_posture",
+                        "prompt": "For this week, do you want more conservative, baseline, or more aggressive load?",
+                        "options": ["conservative", "baseline", "aggressive"],
+                    },
+                    {
+                        "id": "life_constraints",
+                        "prompt": "Any sleep/travel/stress constraints this week?",
+                    },
+                    {
+                        "id": "phase_progress_intent",
+                        "prompt": "Given your current phase progression, should this week prioritize consolidation or progression?",
+                        "options": ["consolidation", "progression"],
+                    },
+                ]
+                if week_start_dialogue_required
+                else []
+            )
+        )
+        or None,
+        "recommended_tool_flow": _recommended_coach_tool_flow(),
         "guideline_refs": [
             _resource_uri("guidelines/read-order"),
             _resource_uri("guidelines/active-build"),
             _resource_uri("workouts/overview"),
         ],
         "last_sync": db["get_last_sync"](db_path),
+    }
+
+
+def tool_prepare_week_dialogue(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = PrepareWeekDialogueArgs.model_validate(arguments or {})
+    target_day_utc = _coerce_day_utc(args.target_day_utc, default=_utc_now().date())
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+    settings_view = {}
+    if hasattr(backend_main, "_settings_view_core"):
+        settings_view = dict(backend_main._settings_view_core(db_path) or {})
+    coach_preferences = dict(settings_view.get("coach_preferences") or {})
+    weekly_total_tss_target = round(_weekly_baseline_tss_for_day(db_path, target_day_utc), 1)
+    weekly_rtss_target = round(_weekly_baseline_rtss_for_day(db_path, target_day_utc), 1)
+    analytics = _analytics_helpers()
+    week_outlook = analytics["_build_week_outlook_payload"](
+        db_path=db_path,
+        days=120,
+        start_day=None,
+        end_day=None,
+        sport=None,
+        metric="tss",
+        compare="planned",
+        week_start=None,
+    )
+    week_progress = _clean_mapping(
+        {
+            "goal": round(_safe_float(week_outlook.get("goal")), 1),
+            "wtd_current": round(_safe_float(week_outlook.get("wtd_current")), 1),
+            "remaining_to_go": round(
+                _safe_float(week_outlook.get("remaining_to_go")), 1
+            ),
+            "remaining_days": _remaining_days_in_week(week_outlook),
+        }
+    )
+    cycle_progress_review = _build_cycle_progress_review(
+        coach_context=_active_build_brief() or None,
+        week_progress=week_progress or None,
+        weekly_total_tss_target=weekly_total_tss_target,
+        weekly_rtss_target=weekly_rtss_target,
+    )
+    week_start = (
+        date.fromisoformat(target_day_utc)
+        - timedelta(days=date.fromisoformat(target_day_utc).weekday())
+    ).isoformat()
+    return {
+        "owner": args.owner,
+        "db_path": str(db_path),
+        "target_day_utc": target_day_utc,
+        "target_week_start_utc": week_start,
+        "coach_preferences": coach_preferences or None,
+        "weekly_targets": {
+            "weekly_total_tss_target": weekly_total_tss_target,
+            "weekly_rtss_target": weekly_rtss_target,
+        },
+        "cycle_progress_review": cycle_progress_review,
+        "required_questions": [
+            {
+                "id": "upcoming_events",
+                "prompt": "Any races/events in the next 10 days (date, distance, effort goal)?",
+            },
+            {
+                "id": "starting_week_feeling",
+                "prompt": "How are you starting the week (fresh/normal/fatigued)?",
+            },
+            {
+                "id": "risk_posture",
+                "prompt": "Do you want this week more conservative, baseline, or aggressive?",
+                "options": ["conservative", "baseline", "aggressive"],
+            },
+            {
+                "id": "life_constraints",
+                "prompt": "Any sleep/travel/stress constraints that should force conservative modulation?",
+            },
+            {
+                "id": "phase_progress_intent",
+                "prompt": "Given current phase progression, should this week prioritize consolidation or progression?",
+                "options": ["consolidation", "progression"],
+            },
+        ],
+    }
+
+
+def tool_plan_week_with_dialogue(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = PlanWeekWithDialogueArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+    settings_view = {}
+    if hasattr(backend_main, "_settings_view_core"):
+        settings_view = dict(backend_main._settings_view_core(db_path) or {})
+    coach_preferences = dict(settings_view.get("coach_preferences") or {})
+    required_dialogue = bool(coach_preferences.get("week_start_dialogue_required"))
+    always_require_race_context = bool(
+        coach_preferences.get("always_require_race_context", True)
+    )
+    dialogue = dict(args.dialogue or {})
+    required_fields = (
+        {"upcoming_events", "starting_week_feeling", "risk_posture"}
+        if required_dialogue
+        else set()
+    )
+    if always_require_race_context:
+        required_fields.add("upcoming_events")
+    missing = sorted(field for field in required_fields if not str(dialogue.get(field) or "").strip())
+    if missing:
+        raise ValueError(
+            f"Missing required dialogue fields: {', '.join(missing)}. Run prepare_week_dialogue first."
+        )
+
+    preview = backend_main._mcp_preview_cycle_payload(
+        owner=args.owner,
+        target_day_utc=_coerce_day_utc(args.target_day_utc),
+        methodology_id=args.methodology_id,
+        seed=args.seed,
+        horizon_days=max(1, min(int(args.horizon_days), 14)),
+        schedule_constraints=_coerce_constraints(arguments),
+    )
+    planning_state_summary = dict(preview.get("planning_state_summary") or {})
+    baseline_tss = float(planning_state_summary.get("weekly_baseline_tss") or 0.0)
+    baseline_rtss = float(planning_state_summary.get("weekly_baseline_rtss") or 0.0)
+    posture = str(dialogue.get("risk_posture") or coach_preferences.get("planning_risk_posture_default") or "baseline").strip().lower()
+    phase_intent = str(dialogue.get("phase_progress_intent") or "").strip().lower()
+    if phase_intent not in {"consolidation", "progression"}:
+        phase_intent = ""
+    if posture not in {"conservative", "baseline", "aggressive"}:
+        posture = "baseline"
+    if posture == "conservative":
+        tss_band = [round(baseline_tss * 0.90, 1), round(baseline_tss * 1.00, 1)]
+        rtss_band = [round(baseline_rtss * 0.90, 1), round(baseline_rtss * 1.00, 1)]
+    elif posture == "aggressive":
+        tss_band = [round(baseline_tss * 1.00, 1), round(baseline_tss * 1.10, 1)]
+        rtss_band = [round(baseline_rtss * 1.00, 1), round(baseline_rtss * 1.10, 1)]
+    else:
+        tss_band = [round(baseline_tss * 0.95, 1), round(baseline_tss * 1.05, 1)]
+        rtss_band = [round(baseline_rtss * 0.95, 1), round(baseline_rtss * 1.05, 1)]
+    if phase_intent == "consolidation":
+        tss_band = [round(baseline_tss * 0.90, 1), round(baseline_tss * 1.00, 1)]
+        rtss_band = [round(baseline_rtss * 0.90, 1), round(baseline_rtss * 1.00, 1)]
+    analytics = _analytics_helpers()
+    week_outlook = analytics["_build_week_outlook_payload"](
+        db_path=db_path,
+        days=120,
+        start_day=None,
+        end_day=None,
+        sport=None,
+        metric="tss",
+        compare="planned",
+        week_start=None,
+    )
+    week_progress = _clean_mapping(
+        {
+            "goal": round(_safe_float(week_outlook.get("goal")), 1),
+            "wtd_current": round(_safe_float(week_outlook.get("wtd_current")), 1),
+            "remaining_to_go": round(
+                _safe_float(week_outlook.get("remaining_to_go")), 1
+            ),
+            "remaining_days": _remaining_days_in_week(week_outlook),
+        }
+    )
+    cycle_progress_review = _build_cycle_progress_review(
+        coach_context=_active_build_brief() or None,
+        week_progress=week_progress or None,
+        weekly_total_tss_target=baseline_tss,
+        weekly_rtss_target=baseline_rtss,
+    )
+
+    safety_pushback: list[str] = []
+    if bool(coach_preferences.get("safety_pushback_enabled", True)):
+        preview_horizon = list(preview.get("preview") or [])
+        hard_indices = [
+            idx
+            for idx, item in enumerate(preview_horizon)
+            if str(item.get("day_type") or "").lower() == "hard"
+        ]
+        if any((b - a) <= 1 for a, b in zip(hard_indices, hard_indices[1:])):
+            safety_pushback.append(
+                "Hard sessions are too compressed; keep at least 48h between hard run stress where possible."
+            )
+        if posture == "aggressive":
+            safety_pushback.append(
+                "Aggressive posture increases injury risk; confirm sleep/recovery readiness before execution."
+            )
+        events_text = str(dialogue.get("upcoming_events") or "").lower()
+        if "race" in events_text and bool(
+            coach_preferences.get("prefer_doubles_on_quality_days")
+        ):
+            safety_pushback.append(
+                "Race week exception: skip doubles on race-effort days or prolonged race-pace efforts."
+            )
+        if (
+            posture == "aggressive"
+            and str(cycle_progress_review.get("phase_progress_status"))
+            == "ahead_phase_load"
+        ):
+            safety_pushback.append(
+                "You are already ahead of phase load progression; aggressive posture is likely unnecessary risk."
+            )
+
+    return {
+        "owner": args.owner,
+        "db_path": str(db_path),
+        "target_day_utc": preview.get("target_day_utc"),
+        "methodology_id": preview.get("methodology_id"),
+        "dialogue": dialogue,
+        "risk_posture_applied": posture,
+        "phase_progress_intent_applied": phase_intent or None,
+        "weekly_total_tss_target": round(baseline_tss, 1),
+        "weekly_rtss_target": round(baseline_rtss, 1),
+        "weekly_target_band": {
+            "tss_min": tss_band[0],
+            "tss_max": tss_band[1],
+            "rtss_min": rtss_band[0],
+            "rtss_max": rtss_band[1],
+        },
+        "cycle_progress_review": cycle_progress_review,
+        "safety_pushback": safety_pushback or None,
+        "preview_horizon": preview.get("preview"),
+        "preview_meta": preview.get("preview_meta"),
     }
 
 
@@ -3306,13 +3851,13 @@ TOOLS: dict[str, ToolSpec] = {
     # --- Planning write tools ---
     "save_planned_activities": ToolSpec(
         name="save_planned_activities",
-        description="Write one or more planned workouts to the database. Entries are parsed and validated using the standard activity text format.",
+        description="Write one or more planned workouts to the database after estimating, simulating, and critiquing proposed entries. Entries are parsed and validated using the standard activity text format.",
         input_schema=SavePlannedActivitiesArgs.model_json_schema(),
         handler=tool_save_planned_activities,
     ),
     "update_planned_activity": ToolSpec(
         name="update_planned_activity",
-        description="Modify the workout text for an existing planned activity entry.",
+        description="Modify the workout text for an existing planned activity entry after estimate/simulate/critique checks when changing training load.",
         input_schema=UpdatePlannedActivityArgs.model_json_schema(),
         handler=tool_update_planned_activity,
     ),
@@ -3364,7 +3909,8 @@ TOOLS: dict[str, ToolSpec] = {
         name="get_settings",
         description=(
             "View athlete configuration: LTHR curve, threshold pace curve, timezone, specificity profile, "
-            "injury windows, training_philosophy_id, IF zone thresholds, vdot_lookback_days, and baseline_blend. "
+            "coach_preferences, injury windows, training_philosophy_id, IF zone thresholds, "
+            "vdot_lookback_days, and baseline_blend. "
             "baseline_blend controls how weekly TSS targets are blended from three sources: "
             "history_influence_pct (weight for load-based history), and within that: "
             "short_history_pct (21-day), medium_history_pct (63-day), long_history_pct (365-day)."
@@ -3374,7 +3920,7 @@ TOOLS: dict[str, ToolSpec] = {
     ),
     "update_settings": ToolSpec(
         name="update_settings",
-        description="Modify athlete configuration. Partial update: only provided fields change. Supports lthr_curve, lt_pace_curve, timezone, specificity_profile, injury_windows, training_philosophy_id, if_zone_thresholds, vdot_lookback_days.",
+        description="Modify athlete configuration. Partial update: only provided fields change. Supports lthr_curve, lt_pace_curve, timezone, specificity_profile, coach_preferences, injury_windows, training_philosophy_id, if_zone_thresholds, vdot_lookback_days.",
         input_schema=UpdateSettingsArgs.model_json_schema(),
         handler=tool_update_settings,
     ),
@@ -3390,7 +3936,7 @@ TOOLS: dict[str, ToolSpec] = {
     ),
     "search_workouts": ToolSpec(
         name="search_workouts",
-        description="Search and filter the workout template catalog by category, load_role, session_family, stress_class, phase_fit, modality_pattern, planning_intent, and/or TSS range.",
+        description="Search and filter the workout template catalog by category, load_role, session_family, stress_class, phase_fit, modality_pattern, planning_intent, and/or TSS range. Use after get_coaching_brief when choosing a concrete coach-auditable workout.",
         input_schema=SearchWorkoutsArgs.model_json_schema(),
         handler=tool_search_workouts,
     ),
@@ -3422,19 +3968,39 @@ TOOLS: dict[str, ToolSpec] = {
         description=(
             "Single-call coaching situational awareness. Returns current fitness metrics (fitness\u2248CTL, "
             "fatigue\u2248ATL, form\u2248TSB, acwr, racwr, overreach, injury_risk), "
-            "recovery snapshot, active training philosophy, invariant core principles, active build context with guideline refs, week progress, recent 7-day stress "
-            "pattern, and actionable flags (including overreaching and elevated_injury_risk). "
-            "Start here for coaching conversations."
+            "recovery snapshot, algorithmic planner philosophy, guideline philosophy overlay, invariant core principles, "
+            "coach_context with active phase/anchors/constraints/refs, week progress, recent 7-day stress pattern, "
+            "context warnings, and actionable flags (including overreaching and elevated_injury_risk). "
+            "Start here for coaching conversations and follow recommended_tool_flow before saving changes."
         ),
         input_schema=CoachingBriefArgs.model_json_schema(),
         handler=tool_get_coaching_brief,
+    ),
+    "prepare_week_dialogue": ToolSpec(
+        name="prepare_week_dialogue",
+        description=(
+            "Prepare the required week-start coaching dialogue payload. Returns required life-context questions "
+            "(upcoming events/race, how the week starts, conservative vs aggressive posture) plus separate weekly "
+            "TSS and rTSS targets."
+        ),
+        input_schema=PrepareWeekDialogueArgs.model_json_schema(),
+        handler=tool_prepare_week_dialogue,
+    ),
+    "plan_week_with_dialogue": ToolSpec(
+        name="plan_week_with_dialogue",
+        description=(
+            "Generate a 7-day planning preview after week-start dialogue inputs are provided. Enforces dialogue "
+            "requirements when enabled in coach_preferences and always returns separate weekly TSS and rTSS targets."
+        ),
+        input_schema=PlanWeekWithDialogueArgs.model_json_schema(),
+        handler=tool_plan_week_with_dialogue,
     ),
     # --- Phase 4: Load analysis and estimation tools ---
     "estimate_workout_tss": ToolSpec(
         name="estimate_workout_tss",
         description=(
             "Parse one or more workout text strings and return predicted TSS, rTSS, distance proxy, IF, and duration. "
-            "Does not save anything. Useful for evaluating planned sessions before committing them."
+            "Does not save anything. Use before simulate_plan_week, critique_day_plan, and save/update tools."
         ),
         input_schema=EstimateWorkoutTSSArgs.model_json_schema(),
         handler=tool_estimate_workout_tss,
@@ -3443,7 +4009,8 @@ TOOLS: dict[str, ToolSpec] = {
         name="simulate_plan_week",
         description=(
             "Given a list of dated planned entries, return projected weekly TSS, rTSS, distance, run share, "
-            "and spacing/density warnings (back-to-back hard days, consecutive loading streaks, 3-day TSS cluster spikes)."
+            "and spacing/density warnings (back-to-back hard days, consecutive loading streaks, 3-day TSS cluster spikes). "
+            "Use after estimating proposed workouts and before critiquing/saving."
         ),
         input_schema=SimulatePlanWeekArgs.model_json_schema(),
         handler=tool_simulate_plan_week,
@@ -3453,7 +4020,8 @@ TOOLS: dict[str, ToolSpec] = {
         description=(
             "Audit a range of existing planned days (optionally blended with extra proposed entries) for hidden density "
             "and spacing problems. Runs both stress-class pattern checks and rolling 3-day TSS cluster analysis. "
-            "Detects patterns like Thu+Fri+Sat+Sun consecutive loading, long run spacing violations, and sustained overload."
+            "Detects patterns like Thu+Fri+Sat+Sun consecutive loading, long run spacing violations, and sustained overload. "
+            "Use before save_planned_activities or update_planned_activity when changing the plan."
         ),
         input_schema=CritiqueDayPlanArgs.model_json_schema(),
         handler=tool_critique_day_plan,

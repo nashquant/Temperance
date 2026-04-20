@@ -66,6 +66,8 @@ class MCPServerHelpersTest(unittest.TestCase):
             "get_training_philosophy",
             "search_workouts",
             "get_fitness_form",
+            "prepare_week_dialogue",
+            "plan_week_with_dialogue",
         ]:
             self.assertIn(tool_name, mcp_server.TOOLS, f"Missing tool: {tool_name}")
 
@@ -99,6 +101,47 @@ class MCPServerHelpersTest(unittest.TestCase):
 
         self.assertIn("training_philosophy_id", result["updated"])
         self.assertEqual(stored, "pyramidal")
+
+    def test_update_settings_accepts_coach_preferences(self):
+        from temperance.db import init_db
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            init_db(db_path)
+
+            with patch.object(mcp_server, "_resolve_db_path", return_value=db_path):
+                result = mcp_server.tool_update_settings(
+                    {
+                        "owner": "test",
+                        "coach_preferences": {
+                            "support_modality_preference": "elliptical",
+                            "weekly_quality_workouts_min": 2,
+                            "weekly_long_run_min": 1,
+                            "quality_day_preference_weekdays": [1, 3, 5],
+                            "prefer_doubles_on_quality_days": True,
+                            "quality_day_double_modality": "elliptical",
+                            "easy_day_max_duration_min": 90,
+                            "always_require_race_context": True,
+                            "safety_pushback_enabled": True,
+                            "week_start_dialogue_required": True,
+                            "planning_risk_posture_default": "baseline",
+                        },
+                    }
+                )
+                settings = mcp_server.tool_get_settings({"owner": "test"})
+
+        self.assertIn("coach_preferences", result["updated"])
+        self.assertEqual(
+            settings["coach_preferences"]["support_modality_preference"], "elliptical"
+        )
+        self.assertEqual(settings["coach_preferences"]["weekly_quality_workouts_min"], 2)
+        self.assertEqual(settings["coach_preferences"]["weekly_long_run_min"], 1)
+        self.assertEqual(
+            settings["coach_preferences"]["quality_day_preference_weekdays"], [1, 3, 5]
+        )
+        self.assertEqual(
+            settings["coach_preferences"]["prefer_doubles_on_quality_days"], True
+        )
 
     def test_planning_history_tool_registered(self):
         self.assertIn("get_planning_history", mcp_server.TOOLS)
@@ -139,7 +182,7 @@ class MCPServerHelpersTest(unittest.TestCase):
                         "owner": "test",
                         "entries": [
                             {
-                                "day_utc": "2026-04-17",
+                                "day_utc": "T+1",
                                 "workout_text": "60min elliptical @ 70%",
                             },
                             {
@@ -326,6 +369,86 @@ class MCPServerHelpersTest(unittest.TestCase):
             payload = json.loads(response["result"]["contents"][0]["text"])
             self.assertTrue(payload["is_local_override"])
             self.assertEqual(payload["status"], "local.")
+
+    def test_active_build_source_matches_default_read_order(self):
+        read_order = mcp_server._build_read_order_payload()
+        active_build = mcp_server._build_active_build_payload()
+
+        self.assertEqual(mcp_server.ACTIVE_BUILD_DOC_ID, "training-runtime-active")
+        self.assertEqual(
+            active_build["active_build_doc"]["doc_id"], "training-runtime-active"
+        )
+        self.assertTrue(
+            any(
+                "training-runtime-active.md" in item
+                for item in read_order["read_order"]
+            )
+        )
+        self.assertIn("philosophy_profile", active_build["selected_profiles"])
+
+    def test_active_build_brief_returns_coach_context_anchors(self):
+        brief = mcp_server._active_build_brief()
+
+        self.assertEqual(brief["weekly_total_tss_anchor"], 550.0)
+        self.assertEqual(brief["weekly_rtss_anchor"], 150.0)
+        self.assertIn("Base / Capacity Build", brief["active_phase"])
+        self.assertIn("durability", brief["limiting_constraint"].lower())
+        self.assertTrue(brief["watchouts"])
+        self.assertIn("temperance://guidelines/active-build", brief["resource_refs"])
+
+    def test_get_coaching_brief_exposes_context_and_philosophy_layers(self):
+        fake_backend = type(
+            "BackendMain",
+            (),
+            {"_load_active_philosophy_id": staticmethod(lambda _db_path: "polarized")},
+        )()
+
+        with (
+            patch.object(
+                mcp_server, "_resolve_db_path", return_value=Path("/tmp/test.db")
+            ),
+            patch.object(
+                mcp_server,
+                "_recent_metrics_df",
+                return_value=(Path("/tmp/test.db"), pd.DataFrame()),
+            ),
+            patch.object(mcp_server, "_compute_fitness_metrics", return_value={}),
+            patch.object(
+                mcp_server,
+                "_analytics_helpers",
+                return_value={
+                    "_build_wellness_payload": lambda **_kwargs: {"points": []},
+                    "_build_week_outlook_payload": lambda **_kwargs: {
+                        "goal": 550.0,
+                        "wtd_current": 100.0,
+                        "remaining_to_go": 450.0,
+                        "points": [],
+                    },
+                },
+            ),
+            patch.object(
+                mcp_server,
+                "_db_helpers",
+                return_value={"get_last_sync": lambda _db_path: None},
+            ),
+            patch.object(mcp_server, "_backend_main_module", return_value=fake_backend),
+        ):
+            result = mcp_server.tool_get_coaching_brief({"owner": "test"})
+
+        context = result["coach_context"]
+        self.assertEqual(context["weekly_total_tss_anchor"], 550.0)
+        self.assertEqual(context["weekly_rtss_anchor"], 150.0)
+        self.assertEqual(
+            result["algorithmic_philosophy"]["philosophy_id"], "polarized"
+        )
+        self.assertEqual(
+            result["guideline_philosophy_overlay"]["doc_id"],
+            "training-philosophy-durability-threshold-support",
+        )
+        self.assertEqual(
+            result["context_warnings"][0]["code"], "philosophy_layer_mismatch"
+        )
+        self.assertIn("search_workouts", result["recommended_tool_flow"])
 
     def test_resources_read_returns_32002_for_unknown_resource(self):
         response = mcp_server.handle_message(

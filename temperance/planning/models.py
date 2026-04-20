@@ -147,6 +147,18 @@ class UserPlanningState:
     recent_load_28d: float = 0.0
     modality_mix_running: float = 0.0
     modality_mix_elliptical: float = 0.0
+    support_modality_preference: str = "auto"
+    weekly_quality_workouts_min: int = 0
+    weekly_long_run_min: int = 0
+    weekly_threshold_days_min: int = 0  # backwards-compat alias
+    quality_day_preference_weekdays: tuple[int, ...] = ()
+    prefer_doubles_on_quality_days: bool = False
+    quality_day_double_modality: str = "elliptical"
+    easy_day_max_duration_min: int = 90
+    always_require_race_context: bool = True
+    safety_pushback_enabled: bool = True
+    week_start_dialogue_required: bool = False
+    planning_risk_posture_default: str = "baseline"
 
 
 @dataclass
@@ -191,6 +203,12 @@ class SessionCandidate:
     long_run_duration_min: float = 0.0
     stress_override_reason: str | None = None
     source: str = ""
+    template_id: str | None = None
+    session_family: str | None = None
+    load_role: str | None = None
+    category: str | None = None
+    scaling_source: str | None = None
+    selection_rationale: str | None = None
 
 
 @dataclass(frozen=True)

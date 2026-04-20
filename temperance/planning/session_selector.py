@@ -117,6 +117,13 @@ def build_session_candidates(
                 long_run_duration_min=total_minutes if is_long_run else 0.0,
                 stress_override_reason=override_reason,
                 source=str(raw.get("source") or ""),
+                template_id=str(raw.get("template_id") or "").strip() or None,
+                session_family=str(raw.get("session_family") or "").strip() or None,
+                load_role=str(raw.get("load_role") or "").strip() or None,
+                category=str(raw.get("category") or "").strip() or None,
+                scaling_source=str(raw.get("scaling_source") or "").strip() or None,
+                selection_rationale=str(raw.get("selection_rationale") or "").strip()
+                or None,
             )
         )
     return out

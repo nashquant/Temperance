@@ -1,3 +1,5 @@
+from datetime import date
+
 from temperance.planning import (
     CycleStep,
     DayType,
@@ -163,3 +165,119 @@ def test_policy_avoids_close_h2_when_recent_mechanical_hard_exists() -> None:
     assert decision.selected_intent.day_type.value == "easy"
     weekend_hard_days = [intent for intent in decision.horizon if intent.day_type.value == "hard" and intent.is_weekend]
     assert all(intent.hard_subtype is None or intent.hard_subtype.value != "h2" for intent in weekend_hard_days[:1])
+
+
+def test_policy_support_modality_preference_biases_easy_day_to_elliptical() -> None:
+    state = build_user_planning_state(
+        target_day_utc="2026-04-06",
+        weekly_baseline_tss=554.0,
+        recent_activity_rows=[],
+        planned_activity_rows=[],
+        coach_preferences={"support_modality_preference": "elliptical"},
+    )
+
+    decision = plan_day(
+        state=state,
+        candidates=_candidates(),
+        methodology_id="rolling_3_day_v1",
+        seed=3,
+    )
+
+    assert decision.selected_intent.day_type.value == "easy"
+    assert decision.selected_intent.modality_bias == "elliptical"
+
+
+def test_policy_schedule_constraint_overrides_support_modality_preference() -> None:
+    state = build_user_planning_state(
+        target_day_utc="2026-04-06",
+        weekly_baseline_tss=554.0,
+        recent_activity_rows=[],
+        planned_activity_rows=[],
+        schedule_constraints=[
+            {"day_utc": "2026-04-06", "preferred_modality": "bike"},
+        ],
+        coach_preferences={"support_modality_preference": "elliptical"},
+    )
+
+    decision = plan_day(
+        state=state,
+        candidates=_candidates(),
+        methodology_id="rolling_3_day_v1",
+        seed=3,
+    )
+
+    assert decision.selected_intent.modality_bias == "bike"
+
+
+def test_policy_long_run_minimum_can_promote_weekend_h2() -> None:
+    state = build_user_planning_state(
+        target_day_utc="2026-04-06",
+        weekly_baseline_tss=554.0,
+        recent_activity_rows=[
+            {"day_utc": "2026-04-04", "tss": 108.0, "duration_s": 7200.0, "modality": "running", "avg_if": 0.79, "max_if": 0.82},
+            {"day_utc": "2026-04-03", "tss": 10.0, "duration_s": 0.0, "modality": "running", "avg_if": 0.0, "max_if": 0.0},
+        ],
+        planned_activity_rows=[],
+        coach_preferences={"weekly_quality_workouts_min": 2, "weekly_long_run_min": 1},
+    )
+
+    decision = plan_day(
+        state=state,
+        candidates=_candidates(),
+        methodology_id="rolling_3_day_v1",
+        seed=3,
+    )
+
+    weekend_h2_days = [
+        intent for intent in decision.horizon if intent.is_weekend and intent.hard_subtype is not None and intent.hard_subtype.value == "h2"
+    ]
+    assert weekend_h2_days
+
+
+def test_policy_double_preference_tags_hard_days_on_preferred_weekdays() -> None:
+    state = build_user_planning_state(
+        target_day_utc="2026-04-06",
+        weekly_baseline_tss=554.0,
+        recent_activity_rows=[],
+        planned_activity_rows=[],
+        coach_preferences={
+            "weekly_quality_workouts_min": 4,
+            "quality_day_preference_weekdays": [1, 3, 5],  # Tue/Thu/Sat
+            "prefer_doubles_on_quality_days": True,
+        },
+    )
+
+    decision = plan_day(
+        state=state,
+        candidates=_candidates(),
+        methodology_id="rolling_3_day_v1",
+        seed=3,
+    )
+
+    tagged = [
+        intent
+        for intent in decision.horizon
+        if "double_preferred_quality_day" in intent.explanation_tags
+    ]
+    assert tagged
+    assert any(date.fromisoformat(intent.day_utc).weekday() == 5 for intent in tagged)
+
+
+def test_policy_easy_day_duration_cap_applies_tag_when_clamped() -> None:
+    state = build_user_planning_state(
+        target_day_utc="2026-04-06",
+        weekly_baseline_tss=700.0,
+        recent_activity_rows=[],
+        planned_activity_rows=[],
+        coach_preferences={"easy_day_max_duration_min": 60},
+    )
+
+    decision = plan_day(
+        state=state,
+        candidates=_candidates(),
+        methodology_id="rolling_3_day_v1",
+        seed=3,
+    )
+
+    easy_intents = [intent for intent in decision.horizon if intent.day_type.value == "easy"]
+    assert any("easy_day_duration_cap_applied" in intent.explanation_tags for intent in easy_intents)

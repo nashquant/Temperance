@@ -220,6 +220,7 @@ def build_user_planning_state(
     recent_load_7d: float = 0.0,
     recent_load_28d: float = 0.0,
     stress_profile: StressProfile | None = None,
+    coach_preferences: Mapping[str, object] | None = None,
 ) -> UserPlanningState:
     profile = stress_profile or StressProfile()
     recent_activities = tuple(
@@ -317,6 +318,60 @@ def build_user_planning_state(
         recent_activities=recent_activities,
         planned_activities=planned_activities,
     )
+    coach_preferences = coach_preferences or {}
+    support_modality_preference = (
+        str(coach_preferences.get("support_modality_preference") or "auto")
+        .strip()
+        .lower()
+    )
+    if support_modality_preference not in {"auto", "elliptical", "bike"}:
+        support_modality_preference = "auto"
+    weekly_quality_raw = coach_preferences.get("weekly_quality_workouts_min")
+    if weekly_quality_raw is None:
+        weekly_quality_raw = coach_preferences.get("weekly_threshold_days_min")
+    try:
+        weekly_quality_workouts_min = int(weekly_quality_raw or 0)
+    except Exception:
+        weekly_quality_workouts_min = 0
+    weekly_quality_workouts_min = max(0, min(weekly_quality_workouts_min, 4))
+    try:
+        weekly_long_run_min = int(coach_preferences.get("weekly_long_run_min") or 0)
+    except Exception:
+        weekly_long_run_min = 0
+    weekly_long_run_min = max(0, min(weekly_long_run_min, 1))
+    raw_quality_days = coach_preferences.get("quality_day_preference_weekdays")
+    quality_days: list[int] = []
+    if isinstance(raw_quality_days, (list, tuple)):
+        for value in raw_quality_days:
+            try:
+                day_idx = int(value)
+            except Exception:
+                continue
+            if 0 <= day_idx <= 6 and day_idx not in quality_days:
+                quality_days.append(day_idx)
+    if not quality_days:
+        quality_days = [1, 3, 5]
+    double_modality = (
+        str(coach_preferences.get("quality_day_double_modality") or "elliptical")
+        .strip()
+        .lower()
+    )
+    if double_modality not in {"auto", "elliptical", "bike"}:
+        double_modality = "elliptical"
+    try:
+        easy_day_max_duration_min = int(
+            coach_preferences.get("easy_day_max_duration_min") or 90
+        )
+    except Exception:
+        easy_day_max_duration_min = 90
+    easy_day_max_duration_min = max(60, min(easy_day_max_duration_min, 120))
+    risk_posture = (
+        str(coach_preferences.get("planning_risk_posture_default") or "baseline")
+        .strip()
+        .lower()
+    )
+    if risk_posture not in {"conservative", "baseline", "aggressive"}:
+        risk_posture = "baseline"
 
     return UserPlanningState(
         target_day_utc=target_day_utc,
@@ -335,4 +390,24 @@ def build_user_planning_state(
         recent_load_28d=float(recent_load_28d),
         modality_mix_running=running_share_14d,
         modality_mix_elliptical=elliptical_share_14d,
+        support_modality_preference=support_modality_preference,
+        weekly_quality_workouts_min=weekly_quality_workouts_min,
+        weekly_long_run_min=weekly_long_run_min,
+        weekly_threshold_days_min=weekly_quality_workouts_min,
+        quality_day_preference_weekdays=tuple(quality_days),
+        prefer_doubles_on_quality_days=bool(
+            coach_preferences.get("prefer_doubles_on_quality_days")
+        ),
+        quality_day_double_modality=double_modality,
+        easy_day_max_duration_min=easy_day_max_duration_min,
+        always_require_race_context=bool(
+            coach_preferences.get("always_require_race_context", True)
+        ),
+        safety_pushback_enabled=bool(
+            coach_preferences.get("safety_pushback_enabled", True)
+        ),
+        week_start_dialogue_required=bool(
+            coach_preferences.get("week_start_dialogue_required")
+        ),
+        planning_risk_posture_default=risk_posture,
     )

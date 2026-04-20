@@ -16,6 +16,23 @@ Load only these files by default:
 
 This default load should be enough for normal planning, recommendation, interpretation, and workout selection logic.
 
+## MCP-first coach flow
+
+When using Temperance through MCP, start with `get_coaching_brief`. Treat its `coach_context` as the compact active runtime packet: active phase, overlay set, weekly total_TSS anchor, weekly rTSS anchor, run-ratio or specificity anchor, long-run anchor, limiting constraint, watchouts, and guideline refs.
+
+Use the returned `recommended_tool_flow` for plan-changing work:
+
+1. `get_coaching_brief`
+2. read `temperance://guidelines/read-order`
+3. read `temperance://guidelines/active-build`
+4. `search_workouts` for concrete template options
+5. `estimate_workout_tss` for proposed workout text
+6. `simulate_plan_week` for projected weekly load
+7. `critique_day_plan` for spacing and density risks
+8. `save_planned_activities` or `update_planned_activity` only after the proposal passes the checks above
+
+The DB-backed `algorithmic_philosophy` is the planner scoring setting. The `guideline_philosophy_overlay` is the coaching doctrine overlay from the active runtime. If `context_warnings` reports a mismatch, name the mismatch instead of silently blending the two layers.
+
 ## On-demand retrieval
 
 Load additional files only when the task requires their extra detail:
