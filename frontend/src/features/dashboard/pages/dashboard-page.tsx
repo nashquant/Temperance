@@ -315,7 +315,11 @@ export function DashboardPage(): JSX.Element {
       setAddActivityMode("custom");
       return;
     }
-    if (!canAddCustomForComposer && addActivityMode === "custom") {
+    if (
+      !isBeforeCurrentWeek &&
+      !canAddCustomForComposer &&
+      addActivityMode === "custom"
+    ) {
       setAddActivityMode("planned");
     }
   }, [
