@@ -411,8 +411,8 @@ const dashboardScaleClassNames = {
   summaryMetaIcon: "h-3 w-3 shrink-0 lg:h-3.5 lg:w-3.5",
   activityMetricIcon: "h-2.5 w-2.5 shrink-0 lg:h-3 lg:w-3",
   footerMetricIcon: "h-2.5 w-2.5 shrink-0 lg:h-3 lg:w-3",
-  actionButtonShell: "h-3.5 w-3.5 shrink-0 lg:h-4 lg:w-4",
-  actionButtonGlyph: "h-1.5 w-1.5 lg:h-2 lg:w-2",
+  actionButtonShell: "h-6 w-6 shrink-0 lg:h-7 lg:w-7",
+  actionButtonGlyph: "h-2.5 w-2.5 lg:h-3 lg:w-3",
   plusButtonShell: "h-6 w-6 shrink-0 lg:h-7 lg:w-7",
   plusButtonGlyph: "h-3.5 w-3.5 lg:h-4 lg:w-4",
   undoButtonGlyph: "h-3 w-3 lg:h-3.5 lg:w-3.5",
@@ -558,7 +558,7 @@ function MetricRow({
 const tabletDesktopCardShellClassName =
   "h-[102px] p-2 text-[12px] lg:h-[112px] lg:p-2.5 lg:text-[12.5px]";
 const tabletDesktopActionButtonClassName = `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-[colors,transform] hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:scale-110 hover:text-white active:scale-95`;
-const tabletDesktopSecondaryActionButtonClassName = `${tabletDesktopActionButtonClassName} top-[22px] lg:top-[24px]`;
+const tabletDesktopSecondaryActionButtonClassName = `${tabletDesktopActionButtonClassName} top-[28px] lg:top-[32px]`;
 
 function DashboardDayColumnComponent({
   day,
