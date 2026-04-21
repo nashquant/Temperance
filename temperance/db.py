@@ -10,6 +10,8 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from temperance.activity_detail_summary import summarize_activity_detail_bundle
+
 UTC_NOW = lambda: datetime.now(timezone.utc).isoformat()
 DB_FILE_MAX_BYTES = int(
     os.getenv("TEMPERANCE_DB_MAX_BYTES", str(1 * 1024 * 1024 * 1024))
@@ -620,7 +622,11 @@ def upsert_activity_details(
     params = [
         {
             "activity_id": row["activity_id"],
-            "details_json": json.dumps(row.get("details", {}), default=str),
+            "details_json": json.dumps(
+                summarize_activity_detail_bundle(row.get("details", {})),
+                default=str,
+                separators=(",", ":"),
+            ),
             "updated_at": now,
         }
         for row in details

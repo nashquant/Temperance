@@ -29,3 +29,53 @@ def test_upsert_activity_details_skips_unchanged_updates(tmp_path: Path) -> None
     assert first == 1
     assert second == 0
     assert third == 1
+
+
+def test_upsert_activity_details_stores_compact_summary(tmp_path: Path) -> None:
+    db_path = tmp_path / "test.db"
+    init_db(db_path)
+    upsert_activities(
+        db_path,
+        [
+            {
+                "activity_id": "a1",
+                "start_time_utc": "2026-01-01T00:00:00+00:00",
+                "sport_type": "running",
+                "distance_m": 1000.0,
+                "duration_s": 300.0,
+                "source": "garmin_api",
+                "raw": {},
+            }
+        ],
+    )
+
+    changed = upsert_activity_details(
+        db_path,
+        [
+            {
+                "activity_id": "a1",
+                "details": {
+                    "details": {
+                        "activityId": "a1",
+                        "metricsCount": 2000,
+                        "metricDescriptors": [{"key": "directHeartRate"}],
+                        "activityDetailMetrics": [{"metrics": [1, 2, 3]}],
+                    },
+                    "weather": {"temp": 20.0, "weatherStationDTO": {"name": "drop"}},
+                },
+            }
+        ],
+    )
+
+    assert changed == 1
+
+    from temperance.db import get_activity_detail_raw
+
+    stored = get_activity_detail_raw(db_path, "a1")
+    assert stored is not None
+    assert stored["storage"] == "summary"
+    assert stored["details"]["activityId"] == "a1"
+    assert stored["details"]["metricsCount"] == 2000
+    assert "metricDescriptors" not in stored["details"]
+    assert "activityDetailMetrics" not in stored["details"]
+    assert stored["weather"] == {"temp": 20.0}
