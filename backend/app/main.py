@@ -242,7 +242,28 @@ SETTINGS_KEY_NON_RUNNING_FACTOR = "non_running_factor_v1"
 SETTINGS_KEY_USER_TIMEZONE = "user_timezone_v1"
 SETTINGS_KEY_GARMIN_RATE_LIMIT_UNTIL = "garmin_rate_limit_until_v1"
 SETTINGS_KEY_COACH_PREFERENCES = "coach_preferences_v1"
+SETTINGS_KEY_RACE_CONTEXT = "race_context_v1"
 GARMIN_OAUTH_PROVIDER = "garmin"
+GENERIC_PHASES = (
+    "Return / Re-entry",
+    "Base / Capacity Build",
+    "Specificity",
+    "Peak",
+    "Taper",
+)
+NEXT_PHASE_BY_CURRENT: dict[str, str] = {
+    "Return / Re-entry": "Base / Capacity Build",
+    "Base / Capacity Build": "Specificity",
+    "Specificity": "Peak",
+    "Peak": "Taper",
+}
+RUNTIME_ACTIVE_GUIDELINE_PATH = (
+    ROOT_DIR
+    / "temperance"
+    / "guidelines"
+    / "temperance-guidelines"
+    / "training-runtime-active.md"
+)
 APP_TIMEZONE_NAME = (
     str(
         os.getenv("TEMPERANCE_TIMEZONE") or os.getenv("TZ") or "America/Sao_Paulo"
@@ -1350,6 +1371,107 @@ def _normalize_injury_windows(rows: list[dict[str, object]]) -> list[dict[str, s
             }
         )
     return out
+
+
+def _normalize_next_phase(value: object, *, strict: bool = False) -> str:
+    phase = str(value or "").strip()
+    if not phase:
+        return ""
+    if phase in GENERIC_PHASES:
+        return phase
+    if strict:
+        raise HTTPException(
+            status_code=400,
+            detail=f"race_context.next_phase must be one of: {', '.join(GENERIC_PHASES)}.",
+        )
+    return ""
+
+
+def _normalize_race_context(
+    payload: object | None, *, strict: bool = False
+) -> dict[str, str]:
+    base = {"next_race_date": "", "next_race_type": "", "next_phase": ""}
+    if payload is None:
+        return base
+    if hasattr(payload, "model_dump"):
+        payload = payload.model_dump()
+    if not isinstance(payload, dict):
+        if strict:
+            raise HTTPException(
+                status_code=400, detail="race_context must be an object."
+            )
+        return base
+
+    out = dict(base)
+    if "next_race_date" in payload:
+        raw_date = str(payload.get("next_race_date") or "").strip()
+        if raw_date:
+            try:
+                raw_date = date.fromisoformat(raw_date).isoformat()
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail="race_context.next_race_date must be a valid YYYY-MM-DD date.",
+                ) from exc
+        out["next_race_date"] = raw_date
+
+    if "next_race_type" in payload:
+        out["next_race_type"] = str(payload.get("next_race_type") or "").strip().lower()
+
+    if "next_phase" in payload:
+        out["next_phase"] = _normalize_next_phase(
+            payload.get("next_phase"), strict=strict
+        )
+    return out
+
+
+def _read_runtime_phase_goal_context() -> dict[str, str]:
+    if not RUNTIME_ACTIVE_GUIDELINE_PATH.exists():
+        return {}
+    try:
+        markdown = RUNTIME_ACTIVE_GUIDELINE_PATH.read_text(encoding="utf-8")
+    except Exception:
+        return {}
+
+    context: dict[str, str] = {}
+    for raw_line in markdown.splitlines():
+        line = raw_line.strip().lstrip("-").strip()
+        if line.lower().startswith("generic phase ="):
+            context["current_phase"] = (
+                line.split("=", 1)[1].strip().strip("`").strip()
+            )
+        elif line.lower().startswith("goal event ="):
+            value = line.split("=", 1)[1].strip().strip("`").strip()
+            match = re.search(r"([A-Za-z]+ \d{1,2}, \d{4})", value)
+            if not match:
+                continue
+            try:
+                parsed_date = datetime.strptime(match.group(1), "%B %d, %Y").date()
+            except Exception:
+                continue
+            context["next_race_date"] = parsed_date.isoformat()
+            race_type = value.replace(match.group(1), "", 1).strip(" ,.-").lower()
+            context["next_race_type"] = race_type or "race"
+    return context
+
+
+def _coach_phase_progress_status(
+    *,
+    wtd_current: float,
+    weekly_goal: float,
+    remaining_days: int,
+) -> tuple[float, str]:
+    if weekly_goal > 0:
+        completion_pct = max(0.0, min((wtd_current / weekly_goal) * 100.0, 200.0))
+    else:
+        completion_pct = 0.0
+    if completion_pct < 60.0 and remaining_days <= 2:
+        status = "behind_phase_load"
+    elif completion_pct > 120.0 and remaining_days >= 2:
+        status = "ahead_phase_load"
+    else:
+        status = "on_phase_track"
+    return round(completion_pct, 1), status
 
 
 def _garmin_credentials_from_env() -> tuple[str, str]:
@@ -5746,7 +5868,7 @@ def _mcp_window_bounds(
 ) -> tuple[str, str]:
     safe_window = max(1, min(int(window_days), 365))
     end_day = date.fromisoformat(
-        _mcp_coerce_day_utc(end_day_utc, default=_utc_now().date())
+        _mcp_coerce_day_utc(end_day_utc, default=datetime.now(timezone.utc).date())
     )
     start_day = end_day - timedelta(days=safe_window - 1)
     return start_day.isoformat(), end_day.isoformat()
@@ -10413,6 +10535,17 @@ def _settings_view_core(db_path: Path) -> dict[str, Any]:
         except Exception:
             injury_rows = []
 
+    race_context: dict[str, str] | None = None
+    raw_race_context = get_setting(db_path, SETTINGS_KEY_RACE_CONTEXT)
+    if raw_race_context:
+        try:
+            payload = json.loads(raw_race_context)
+            normalized = _normalize_race_context(payload)
+            if any(normalized.values()):
+                race_context = normalized
+        except Exception:
+            race_context = None
+
     return {
         "if_zone_thresholds": if_thresholds,
         "vdot_lookback_days": vdot_lookback_days,
@@ -10424,6 +10557,82 @@ def _settings_view_core(db_path: Path) -> dict[str, Any]:
         "injury_windows": injury_rows,
         "training_philosophy_id": _load_active_philosophy_id(db_path),
         "timezone": _owner_timezone_info(db_path)[0],
+        "race_context": race_context,
+    }
+
+
+def _coach_snapshot_view_core(db_path: Path, *, owner: str = "") -> dict[str, Any]:
+    today_utc = datetime.now(timezone.utc).date()
+    today_str = today_utc.isoformat()
+    settings_view = _settings_view_core(db_path)
+    configured_race = _normalize_race_context(settings_view.get("race_context"))
+    runtime_ctx = _read_runtime_phase_goal_context()
+
+    current_phase = (
+        str(runtime_ctx.get("current_phase") or "").strip() or None
+    )
+    next_phase = (
+        configured_race.get("next_phase")
+        or (
+            NEXT_PHASE_BY_CURRENT.get(current_phase or "")
+            if current_phase in NEXT_PHASE_BY_CURRENT
+            else ""
+        )
+        or None
+    )
+    next_race_date = (
+        configured_race.get("next_race_date")
+        or str(runtime_ctx.get("next_race_date") or "").strip()
+        or None
+    )
+    next_race_type = (
+        configured_race.get("next_race_type")
+        or str(runtime_ctx.get("next_race_type") or "").strip()
+        or None
+    )
+
+    days_to_race: int | None = None
+    if next_race_date:
+        try:
+            race_day = date.fromisoformat(next_race_date)
+            days_to_race = (race_day - today_utc).days
+        except Exception:
+            days_to_race = None
+
+    weekly_total_tss_target = round(
+        _weekly_baseline_tss_for_day(db_path, today_str, owner=owner), 1
+    )
+    weekly_rtss_target = round(
+        _weekly_baseline_rtss_for_day(db_path, today_str, owner=owner), 1
+    )
+    week_outlook = _build_week_outlook_payload(
+        db_path=db_path,
+        days=120,
+        start_day=None,
+        end_day=None,
+        sport=None,
+        metric="tss",
+        compare="planned",
+        week_start=None,
+    )
+    wtd_current = _safe_float(week_outlook.get("wtd_current"))
+    weekly_goal = _safe_float(week_outlook.get("goal")) or weekly_total_tss_target
+    remaining_days = max(int(week_outlook.get("remaining_days_in_week") or 0), 0)
+    phase_progress_pct, phase_progress_status = _coach_phase_progress_status(
+        wtd_current=wtd_current, weekly_goal=weekly_goal, remaining_days=remaining_days
+    )
+
+    return {
+        "current_phase": current_phase,
+        "next_phase": next_phase,
+        "next_race_date": next_race_date,
+        "next_race_type": next_race_type,
+        "days_to_race": days_to_race,
+        "weekly_total_tss_target": weekly_total_tss_target,
+        "weekly_rtss_target": weekly_rtss_target,
+        "phase_progress_pct": phase_progress_pct,
+        "phase_progress_status": phase_progress_status,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -10508,6 +10717,11 @@ def _settings_update_core(db_path: Path, settings: dict[str, Any]) -> dict[str, 
             normalized_timezone = _normalize_timezone_name(normalized_timezone)
         save_setting(db_path, SETTINGS_KEY_USER_TIMEZONE, normalized_timezone)
         updated.append("timezone")
+
+    if settings.get("race_context") is not None:
+        normalized = _normalize_race_context(settings["race_context"], strict=True)
+        save_setting(db_path, SETTINGS_KEY_RACE_CONTEXT, _settings_json(normalized))
+        updated.append("race_context")
 
     return {"updated": updated}
 

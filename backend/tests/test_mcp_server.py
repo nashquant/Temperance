@@ -62,6 +62,7 @@ class MCPServerHelpersTest(unittest.TestCase):
             "trigger_sync",
             "get_sync_status",
             "get_settings",
+            "get_coach_snapshot",
             "update_settings",
             "get_training_philosophy",
             "search_workouts",
@@ -70,6 +71,24 @@ class MCPServerHelpersTest(unittest.TestCase):
             "plan_week_with_dialogue",
         ]:
             self.assertIn(tool_name, mcp_server.TOOLS, f"Missing tool: {tool_name}")
+
+    def test_get_coach_snapshot_returns_payload(self):
+        from temperance.db import init_db
+
+        original_backend_main_module = mcp_server._BACKEND_MAIN_MODULE
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            init_db(db_path)
+
+            try:
+                with patch.object(mcp_server, "_resolve_db_path", return_value=db_path):
+                    result = mcp_server.tool_get_coach_snapshot({"owner": "test"})
+            finally:
+                mcp_server._BACKEND_MAIN_MODULE = original_backend_main_module
+
+        self.assertEqual(result["owner"], "test")
+        self.assertIn("current_phase", result)
+        self.assertIn("phase_progress_status", result)
 
     def test_training_philosophy_tool_returns_default_and_core_principles(self):
         from temperance.db import init_db

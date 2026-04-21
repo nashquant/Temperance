@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
   CalendarDays,
@@ -24,6 +25,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/features/auth/hooks/use-auth";
+import { CoachSnapshotChips } from "@/features/coach-snapshot/components/coach-snapshot-chips";
+import { getCoachSnapshot } from "@/features/coach-snapshot/services/coach-snapshot-api";
 import type { AuthSession, MeResponse } from "@/features/auth/types";
 import { setGarminCredentials } from "@/features/data-extract/services/data-extract-api";
 import { cn } from "@/lib/utils";
@@ -270,6 +273,18 @@ export function AppLayout(): JSX.Element {
   const [mainScrollContainer, setMainScrollContainer] =
     useState<HTMLDivElement | null>(null);
   const headerMeta = getHeaderMeta(location.pathname);
+  const showCoachSnapshot =
+    location.pathname.startsWith("/app/dashboard") ||
+    location.pathname.startsWith("/app/week-planner");
+  const coachSnapshotQuery = useQuery({
+    queryKey: ["coach-snapshot", profile?.owner],
+    queryFn: async () => {
+      if (!session?.token) throw new Error("Missing auth token");
+      return getCoachSnapshot({ token: session.token, owner: profile?.owner });
+    },
+    enabled: Boolean(session?.token) && showCoachSnapshot,
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -449,6 +464,9 @@ export function AppLayout(): JSX.Element {
                 </div>
               </div>
               <div className="flex min-w-0 items-center justify-end gap-2 overflow-x-auto">
+                {showCoachSnapshot && coachSnapshotQuery.data ? (
+                  <CoachSnapshotChips snapshot={coachSnapshotQuery.data} />
+                ) : null}
                 {headerActions ? (
                   <div className="flex min-w-0 items-center gap-2">
                     {headerActions}

@@ -1,41 +1,12 @@
 # CLAUDE.md
 
-> Working style, editing conventions, and testing guidelines: [CORE.md](./CORE.md)
+Follow `CORE.md` first; this file only adds Claude-specific operational notes.
+System and Claude runtime instructions still take precedence over repository
+docs.
 
-## Commands
+## Claude Notes
 
-**Backend:** venv at `.venv/`; run from repo root — never `cd backend` or activate venv.
-```bash
-./backend/run.sh                                          # dev server (:8000)
-.venv/bin/pytest temperance/tests -q                      # all tests
-.venv/bin/python -m unittest backend.tests.test_mcp_server -v
-./temperance/scripts/install_keepalive.sh restart         # after backend changes
-python -m temperance.migrate                              # migrations
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm run dev    # http://127.0.0.1:5173, proxies /api/* to :8000
-npm run build  # production + tsc typecheck
-```
-
-## Architecture
-
-Local-first endurance training app; Garmin-synced SQLite backend.
-
-| Layer | Path | Notes |
-|-------|------|-------|
-| Frontend | `frontend/src/features/` | React 18 + TS; modules: auth, dashboard, athlete-progression, weekly-outlook, plan-activities, custom-activities, week-planner, wellness, settings |
-| Backend | `backend/app/main.py` | FastAPI; 30+ endpoints. `mcp_server.py` MCP tools must stay in sync with dashboard analytics |
-| Shared lib | `temperance/` | `db.py` SQLite CRUD, `analytics.py` CTL/ATL/TSB, `activity_parsing.py`, `garmin_client.py`, `planning/`, `guidelines/` |
-
-DBs: `temperance/data/private/temperance.db`; owner-scoped: `users/<owner>.db`. Migrations: `temperance/migrate.py`.  
-API base: `/api`. Session token: localStorage key `temperance.session`.
-
-## Invariants
-
-**Workout strings** are canonical and reparseable — not prose. Round-trip fidelity required on any parsing/generation change.  
-Format: `today: 45min @4:40/km` · `T+1: 6x1km @10k` · `2026-03-26: 1h30m @138bpm`
-
-**Weekly baseline:** MCP `get_fitness_form.weekly_baseline` must match "Athlete Progression" dashboard. Path: LT-derived capacity → 21/63/365-day load blend → modeled baseline → Monday rollup. Divergence is a bug.
+- Shared project commands, migrations, invariants, and validation expectations
+  live in `CORE.md`.
+- In particular, `CORE.md` owns the hard rules for Workout strings and
+  `weekly_baseline` alignment.

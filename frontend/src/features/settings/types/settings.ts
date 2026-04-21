@@ -36,6 +36,19 @@ export interface InjuryWindow {
   severity: 'injury' | 'light_injury';
 }
 
+export type GenericPhase =
+  | 'Return / Re-entry'
+  | 'Base / Capacity Build'
+  | 'Specificity'
+  | 'Peak'
+  | 'Taper';
+
+export interface RaceContext {
+  next_race_date: string;
+  next_race_type: string;
+  next_phase: GenericPhase | '';
+}
+
 export interface VdotEquivalent {
   distance_m: number;
   time_min: number;
@@ -82,6 +95,7 @@ export interface SettingsResponse {
   lthr_curve: LthrCurvePoint[];
   lt_pace_curve: LtPaceCurvePoint[];
   injury_windows: InjuryWindow[];
+  race_context: RaceContext | null;
 }
 
 export interface UpdateSettingsRequest {
@@ -92,4 +106,5 @@ export interface UpdateSettingsRequest {
   lthr_curve?: LthrCurvePoint[];
   lt_pace_curve?: LtPaceCurvePoint[];
   injury_windows?: InjuryWindow[];
+  race_context?: RaceContext;
 }

@@ -266,6 +266,7 @@ class UpdateSettingsArgs(BaseModel):
     training_philosophy_id: Optional[str] = None
     if_zone_thresholds: Optional[dict[str, Any]] = None
     vdot_lookback_days: Optional[int] = None
+    race_context: Optional[dict[str, Any]] = None
 
 
 class SearchWorkoutsArgs(BaseModel):
@@ -2175,6 +2176,16 @@ def tool_get_settings(arguments: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def tool_get_coach_snapshot(arguments: dict[str, Any]) -> dict[str, Any]:
+    args = OwnerArgs.model_validate(arguments or {})
+    db_path = _resolve_db_path(args.owner)
+    backend_main = _backend_main_module()
+    result = backend_main._coach_snapshot_view_core(db_path, owner=args.owner)
+    result["owner"] = args.owner
+    result["db_path"] = str(db_path)
+    return result
+
+
 def tool_update_settings(arguments: dict[str, Any]) -> dict[str, Any]:
     args = UpdateSettingsArgs.model_validate(arguments or {})
     db_path = _resolve_db_path(args.owner)
@@ -2198,6 +2209,8 @@ def tool_update_settings(arguments: dict[str, Any]) -> dict[str, Any]:
         settings_dict["if_zone_thresholds"] = args.if_zone_thresholds
     if args.vdot_lookback_days is not None:
         settings_dict["vdot_lookback_days"] = args.vdot_lookback_days
+    if args.race_context is not None:
+        settings_dict["race_context"] = args.race_context
     result = backend_main._settings_update_core(db_path, settings_dict)
     result["owner"] = args.owner
     result["db_path"] = str(db_path)
@@ -3909,7 +3922,7 @@ TOOLS: dict[str, ToolSpec] = {
         name="get_settings",
         description=(
             "View athlete configuration: LTHR curve, threshold pace curve, timezone, specificity profile, "
-            "coach_preferences, injury windows, training_philosophy_id, IF zone thresholds, "
+            "coach_preferences, injury windows, race_context, training_philosophy_id, IF zone thresholds, "
             "vdot_lookback_days, and baseline_blend. "
             "baseline_blend controls how weekly TSS targets are blended from three sources: "
             "history_influence_pct (weight for load-based history), and within that: "
@@ -3918,9 +3931,18 @@ TOOLS: dict[str, ToolSpec] = {
         input_schema=GetSettingsArgs.model_json_schema(),
         handler=tool_get_settings,
     ),
+    "get_coach_snapshot": ToolSpec(
+        name="get_coach_snapshot",
+        description=(
+            "Return a compact coaching snapshot: current_phase, next_phase, next race date/type, "
+            "days_to_race, weekly TSS/rTSS targets, and phase progress status."
+        ),
+        input_schema=OwnerArgs.model_json_schema(),
+        handler=tool_get_coach_snapshot,
+    ),
     "update_settings": ToolSpec(
         name="update_settings",
-        description="Modify athlete configuration. Partial update: only provided fields change. Supports lthr_curve, lt_pace_curve, timezone, specificity_profile, coach_preferences, injury_windows, training_philosophy_id, if_zone_thresholds, vdot_lookback_days.",
+        description="Modify athlete configuration. Partial update: only provided fields change. Supports lthr_curve, lt_pace_curve, timezone, specificity_profile, coach_preferences, injury_windows, race_context, training_philosophy_id, if_zone_thresholds, vdot_lookback_days.",
         input_schema=UpdateSettingsArgs.model_json_schema(),
         handler=tool_update_settings,
     ),

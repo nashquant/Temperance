@@ -60,6 +60,12 @@ class GeneratedActivityRequest(BaseModel):
     schedule_constraints: list[GeneratedActivityScheduleConstraintRequest] | None = None
 
 
+class RaceContextRequest(BaseModel):
+    next_race_date: str | None = None
+    next_race_type: str | None = None
+    next_phase: str | None = None
+
+
 class UpdateSettingsRequest(BaseModel):
     if_zone_thresholds: dict[str, float] | None = None
     vdot_lookback_days: int | None = None
@@ -70,6 +76,7 @@ class UpdateSettingsRequest(BaseModel):
     lt_pace_curve: list[dict[str, Any]] | None = None
     injury_windows: list[dict[str, Any]] | None = None
     timezone: str | None = None
+    race_context: RaceContextRequest | None = None
 
 
 class SyncRequest(BaseModel):

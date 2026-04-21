@@ -19,8 +19,10 @@ import { useVdotQuery } from '@/features/settings/hooks/use-vdot-query';
 import { updateSettings } from '@/features/settings/services/settings-api';
 import type {
   BaselineBlendProfile,
+  GenericPhase,
   LthrCurvePoint,
   LtPaceCurvePoint,
+  RaceContext,
   SpecificityProfile,
 } from '@/features/settings/types/settings';
 import { queryClient } from '@/lib/query-client';
@@ -97,6 +99,13 @@ function formatBlendLabel(key: keyof BaselineBlendProfile): string {
 }
 
 const mobileCurveFieldLabelClassName = 'text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-300/58 sm:hidden';
+const PHASE_OPTIONS: GenericPhase[] = [
+  'Return / Re-entry',
+  'Base / Capacity Build',
+  'Specificity',
+  'Peak',
+  'Taper',
+];
 
 export function SettingsPage(): JSX.Element {
   const addRowButtonClassName =
@@ -118,6 +127,11 @@ export function SettingsPage(): JSX.Element {
   });
   const [lthrRows, setLthrRows] = useState<LthrDraftRow[]>([]);
   const [paceRows, setPaceRows] = useState<LtPaceDraftRow[]>([]);
+  const [raceContext, setRaceContext] = useState<RaceContext>({
+    next_race_date: '',
+    next_race_type: 'marathon',
+    next_phase: '',
+  });
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [showIfZonesGuide, setShowIfZonesGuide] = useState(true);
 
@@ -137,6 +151,13 @@ export function SettingsPage(): JSX.Element {
         pace_input: secondsToPaceInput(Number(row.lt_pace_sec_per_km) || 0),
       })),
     );
+    setRaceContext(
+      query.data.race_context ?? {
+        next_race_date: '',
+        next_race_type: 'marathon',
+        next_phase: '',
+      },
+    );
   }, [query.data]);
 
   const saveMutation = useMutation({
@@ -150,6 +171,7 @@ export function SettingsPage(): JSX.Element {
     },
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ['settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-snapshot'] });
       setSaveMsg(`Saved: ${result.updated.join(', ') || 'no changes'}`);
     },
     onError: (error) => {
@@ -383,6 +405,70 @@ export function SettingsPage(): JSX.Element {
       </SurfaceCard>
 
       <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+        <SurfaceCard contentClassName="space-y-3 p-3 sm:space-y-4 sm:p-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Race Context</p>
+              <p className="text-xs text-slate-300/68">
+                Drives coach snapshot and phase guidance shown in headers and MCP.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:gap-3 md:grid-cols-3">
+              <div className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
+                <FieldLabel htmlFor="race-next-date">Next Race Date</FieldLabel>
+                <CompactDateInput
+                  value={raceContext.next_race_date}
+                  onChange={(next) =>
+                    setRaceContext((previous) => ({ ...previous, next_race_date: next }))
+                  }
+                  mobileInputClassName="h-9 rounded-md border-white/10 bg-black/10 px-2.5 text-[13px]"
+                  desktopInputClassName="h-10"
+                />
+              </div>
+              <div className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
+                <FieldLabel htmlFor="race-next-type">Race Type</FieldLabel>
+                <Input
+                  id="race-next-type"
+                  type="text"
+                  className={`h-9 sm:h-10 ${secondaryPageInputClassName}`}
+                  value={raceContext.next_race_type}
+                  onChange={(event) =>
+                    setRaceContext((previous) => ({ ...previous, next_race_type: event.target.value }))
+                  }
+                  placeholder="e.g. marathon"
+                />
+              </div>
+              <div className="space-y-1 rounded-xl border border-white/8 bg-black/10 p-2.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
+                <FieldLabel htmlFor="race-next-phase">Next Phase</FieldLabel>
+                <select
+                  id="race-next-phase"
+                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring sm:h-10"
+                  value={raceContext.next_phase}
+                  onChange={(event) =>
+                    setRaceContext((previous) => ({
+                      ...previous,
+                      next_phase: event.target.value as RaceContext['next_phase'],
+                    }))
+                  }
+                >
+                  <option value="">Select phase</option>
+                  {PHASE_OPTIONS.map((phase) => (
+                    <option key={phase} value={phase}>
+                      {phase}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <Button
+              variant="surface"
+              className="w-full sm:w-auto"
+              onClick={() => saveMutation.mutate({ race_context: raceContext })}
+              disabled={saveMutation.isPending}
+            >
+              Save
+            </Button>
+        </SurfaceCard>
+
         <SurfaceCard contentClassName="space-y-3 p-3 sm:space-y-4 sm:p-4">
             <p className="text-sm font-medium">Stress Zones and VDOT</p>
             <div className="grid gap-2 sm:gap-3 lg:grid-cols-5">

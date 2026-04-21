@@ -54,6 +54,7 @@ class TemperanceMCPServerTest(unittest.TestCase):
         self.assertIn("search_workouts", tool_names)
         self.assertIn("get_fitness_form", tool_names)
         self.assertIn("get_settings", tool_names)
+        self.assertIn("get_coach_snapshot", tool_names)
         self.assertIn("update_settings", tool_names)
         self.assertIn("prepare_week_dialogue", tool_names)
         self.assertIn("plan_week_with_dialogue", tool_names)

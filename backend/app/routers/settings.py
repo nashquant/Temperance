@@ -24,6 +24,22 @@ def settings_view(
     return result
 
 
+@router.get("/api/v1/coach-snapshot")
+def coach_snapshot_view(
+    owner: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    from backend.app import main as main_module
+
+    ctx = main_module._auth_context(authorization)
+    resolved_owner = main_module._resolve_owner(ctx, owner)
+    db_path = main_module._db_path_for_owner(resolved_owner)
+    payload = main_module._coach_snapshot_view_core(db_path, owner=resolved_owner)
+    payload["owner"] = resolved_owner
+    payload["db_path"] = str(db_path)
+    return payload
+
+
 @router.put("/api/v1/settings")
 def settings_update(
     payload: UpdateSettingsRequest,
@@ -47,6 +63,7 @@ def settings_update(
             "lt_pace_curve": payload.lt_pace_curve,
             "injury_windows": payload.injury_windows,
             "timezone": payload.timezone,
+            "race_context": payload.race_context,
         },
     )
 
