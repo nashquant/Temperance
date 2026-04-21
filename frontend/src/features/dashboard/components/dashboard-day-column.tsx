@@ -1947,7 +1947,7 @@ function DashboardDayColumnComponent({
                               />
                             )}
                           </Button>
-                          <div className="flex min-w-0 items-center pr-5 lg:pr-6">
+                          <div className="flex min-w-0 items-center pr-8 lg:pr-9">
                             <p
                               className={cn(
                                 "truncate font-semibold text-foreground",
