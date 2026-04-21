@@ -619,11 +619,16 @@ def upsert_activity_details(
         return 0
 
     now = UTC_NOW()
+    store_full_details = str(
+        os.getenv("TEMPERANCE_STORE_FULL_ACTIVITY_DETAILS", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
     params = [
         {
             "activity_id": row["activity_id"],
             "details_json": json.dumps(
-                summarize_activity_detail_bundle(row.get("details", {})),
+                row.get("details", {})
+                if store_full_details
+                else summarize_activity_detail_bundle(row.get("details", {})),
                 default=str,
                 separators=(",", ":"),
             ),
