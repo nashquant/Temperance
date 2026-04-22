@@ -21,20 +21,23 @@ export function CoachSnapshotChips({
 }: {
   snapshot: CoachSnapshotResponse;
 }): JSX.Element {
+  const baseChipClassName =
+    "whitespace-nowrap rounded-full border px-2.5 py-1 text-xs text-muted-foreground";
+
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <span className="whitespace-nowrap rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+      <span className={baseChipClassName}>
         {snapshot.current_phase ?? "-"}
       </span>
-      <span className="whitespace-nowrap rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+      <span className={baseChipClassName}>
         {raceLabel(snapshot)}
       </span>
-      <span className="whitespace-nowrap rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+      <span className={`${baseChipClassName} border-sky-300/30 bg-sky-300/8 font-mono text-sky-100`}>
         {typeof snapshot.days_to_race === "number"
           ? `D-${snapshot.days_to_race}`
           : "D-?"}
       </span>
-      <span className="whitespace-nowrap rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+      <span className={baseChipClassName}>
         {snapshot.next_phase ?? "-"}
       </span>
     </div>
