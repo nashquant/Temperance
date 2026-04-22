@@ -424,70 +424,26 @@ interface MetricBadgeItem {
 }
 
 function metricBadgeIcon(tone: MetricBadgeTone): JSX.Element {
+  const className = cn(
+    dashboardScaleClassNames.metricBadgeIcon,
+    "text-muted-foreground/80",
+  );
+
   switch (tone) {
     case "duration":
-      return (
-        <Clock3
-          className={cn(
-            dashboardScaleClassNames.metricBadgeIcon,
-            "text-cyan-300/80",
-          )}
-        />
-      );
+      return <Clock3 className={className} />;
     case "distance":
-      return (
-        <Route
-          className={cn(
-            dashboardScaleClassNames.metricBadgeIcon,
-            "text-emerald-300/80",
-          )}
-        />
-      );
+      return <Route className={className} />;
     case "pace":
-      return (
-        <Gauge
-          className={cn(
-            dashboardScaleClassNames.metricBadgeIcon,
-            "text-violet-300/80",
-          )}
-        />
-      );
+      return <Gauge className={className} />;
     case "hr":
-      return (
-        <Heart
-          className={cn(
-            dashboardScaleClassNames.metricBadgeIcon,
-            "text-rose-300/80",
-          )}
-        />
-      );
+      return <Heart className={className} />;
     case "load":
-      return (
-        <Activity
-          className={cn(
-            dashboardScaleClassNames.metricBadgeIcon,
-            "text-blue-300/80",
-          )}
-        />
-      );
+      return <Activity className={className} />;
     case "if":
-      return (
-        <Zap
-          className={cn(
-            dashboardScaleClassNames.metricBadgeIcon,
-            "text-amber-300/80",
-          )}
-        />
-      );
+      return <Zap className={className} />;
     case "vdot":
-      return (
-        <Gauge
-          className={cn(
-            dashboardScaleClassNames.metricBadgeIcon,
-            "text-sky-300/80",
-          )}
-        />
-      );
+      return <Gauge className={className} />;
   }
 }
 
@@ -736,7 +692,7 @@ function DashboardDayColumnComponent({
                           dashboardScaleClassNames.summaryMetaIcon,
                           item.muted
                             ? "text-slate-500/65"
-                            : "text-emerald-300/90",
+                            : "text-muted-foreground/75",
                         )}
                       />
                     ) : null}
@@ -744,7 +700,9 @@ function DashboardDayColumnComponent({
                       <Activity
                         className={cn(
                           dashboardScaleClassNames.summaryMetaIcon,
-                          item.muted ? "text-slate-500/65" : "text-cyan-300/90",
+                          item.muted
+                            ? "text-slate-500/65"
+                            : "text-muted-foreground/75",
                         )}
                       />
                     ) : null}
@@ -752,7 +710,9 @@ function DashboardDayColumnComponent({
                       <Gauge
                         className={cn(
                           dashboardScaleClassNames.summaryMetaIcon,
-                          item.muted ? "text-slate-500/65" : "text-sky-300/90",
+                          item.muted
+                            ? "text-slate-500/65"
+                            : "text-muted-foreground/75",
                         )}
                       />
                     ) : null}
@@ -760,7 +720,9 @@ function DashboardDayColumnComponent({
                       <HeartPulse
                         className={cn(
                           dashboardScaleClassNames.summaryMetaIcon,
-                          item.muted ? "text-slate-500/65" : "text-rose-300/90",
+                          item.muted
+                            ? "text-slate-500/65"
+                            : "text-muted-foreground/75",
                         )}
                       />
                     ) : null}
@@ -768,7 +730,9 @@ function DashboardDayColumnComponent({
                       <Heart
                         className={cn(
                           dashboardScaleClassNames.summaryMetaIcon,
-                          item.muted ? "text-slate-500/65" : "text-rose-300/90",
+                          item.muted
+                            ? "text-slate-500/65"
+                            : "text-muted-foreground/75",
                         )}
                       />
                     ) : null}
@@ -778,7 +742,7 @@ function DashboardDayColumnComponent({
                           dashboardScaleClassNames.summaryMetaIcon,
                           item.muted
                             ? "text-slate-500/65"
-                            : "text-fuchsia-300/90",
+                            : "text-muted-foreground/75",
                         )}
                       />
                     ) : null}
@@ -788,7 +752,7 @@ function DashboardDayColumnComponent({
                           dashboardScaleClassNames.summaryMetaIcon,
                           item.muted
                             ? "text-slate-500/65"
-                            : "text-amber-300/90",
+                            : "text-muted-foreground/75",
                         )}
                       />
                     ) : null}
@@ -819,7 +783,7 @@ function DashboardDayColumnComponent({
                             dashboardScaleClassNames.summaryMetaIcon,
                             item.muted
                               ? "text-slate-500/65"
-                              : "text-cyan-300/90",
+                              : "text-muted-foreground/75",
                           )}
                         />
                       ) : null}
@@ -829,7 +793,7 @@ function DashboardDayColumnComponent({
                             dashboardScaleClassNames.summaryMetaIcon,
                             item.muted
                               ? "text-slate-500/65"
-                              : "text-sky-300/90",
+                              : "text-muted-foreground/75",
                           )}
                         />
                       ) : null}
@@ -839,7 +803,7 @@ function DashboardDayColumnComponent({
                             dashboardScaleClassNames.summaryMetaIcon,
                             item.muted
                               ? "text-slate-500/65"
-                              : "text-rose-300/90",
+                              : "text-muted-foreground/75",
                           )}
                         />
                       ) : null}
@@ -1495,7 +1459,7 @@ function DashboardDayColumnComponent({
                             <Clock3
                               className={cn(
                                 dashboardScaleClassNames.activityMetricIcon,
-                                "text-cyan-300/80",
+                                "text-muted-foreground/75",
                               )}
                             />
                           }
@@ -1511,14 +1475,14 @@ function DashboardDayColumnComponent({
                               <Gauge
                                 className={cn(
                                   dashboardScaleClassNames.activityMetricIcon,
-                                  "text-amber-300/80",
+                                  "text-muted-foreground/75",
                                 )}
                               />
                             ) : (
                               <Heart
                                 className={cn(
                                   dashboardScaleClassNames.activityMetricIcon,
-                                  "text-rose-300/80",
+                                  "text-muted-foreground/75",
                                 )}
                               />
                             )
@@ -1547,7 +1511,7 @@ function DashboardDayColumnComponent({
                         <Activity
                           className={cn(
                             dashboardScaleClassNames.footerMetricIcon,
-                            "text-blue-300/80",
+                            "text-muted-foreground/75",
                           )}
                         />
                         <span className="truncate">
@@ -1973,7 +1937,7 @@ function DashboardDayColumnComponent({
                                 <Clock3
                                   className={cn(
                                     dashboardScaleClassNames.activityMetricIcon,
-                                    "text-cyan-300/80",
+                                    "text-muted-foreground/75",
                                   )}
                                 />
                               }
@@ -1992,14 +1956,14 @@ function DashboardDayColumnComponent({
                                   <Gauge
                                     className={cn(
                                       dashboardScaleClassNames.activityMetricIcon,
-                                      "text-amber-300/80",
+                                      "text-muted-foreground/75",
                                     )}
                                   />
                                 ) : (
                                   <Heart
                                     className={cn(
                                       dashboardScaleClassNames.activityMetricIcon,
-                                      "text-rose-300/80",
+                                      "text-muted-foreground/75",
                                     )}
                                   />
                                 )
@@ -2025,7 +1989,7 @@ function DashboardDayColumnComponent({
                             <Activity
                               className={cn(
                                 dashboardScaleClassNames.footerMetricIcon,
-                                "text-blue-300/80",
+                                "text-muted-foreground/75",
                               )}
                             />
                             <span className="truncate">
