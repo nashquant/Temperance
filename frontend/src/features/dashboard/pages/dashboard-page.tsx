@@ -1012,7 +1012,7 @@ export function DashboardPage(): JSX.Element {
             <Button
               variant="outline"
               size="sm"
-              className="h-10 border-white/10 bg-black/20 px-3 text-slate-100"
+              className="h-10 w-10 border-white/10 bg-black/20 px-0 text-slate-100"
               onClick={() => {
                 setSelectedActivityId(null);
                 setMergeMode(true);
@@ -1021,10 +1021,9 @@ export function DashboardPage(): JSX.Element {
               }}
               disabled={!session?.token}
               aria-label="Enter activity merge mode"
-              title="Enter activity merge mode"
+              title="Merge activities"
             >
-              <Link2 className="mr-1.5 h-4 w-4" />
-              Merge
+              <Link2 className="h-4 w-4" />
             </Button>
           )}
         </div>
@@ -1067,9 +1066,9 @@ export function DashboardPage(): JSX.Element {
           )}
         </Button>
         {totalWindows > 1 ? (
-          <div className="w-[180px] max-w-[180px] sm:w-[220px] sm:max-w-[220px]">
+          <div className="w-[160px] max-w-[160px] sm:w-[190px] sm:max-w-[190px]">
             <Select value={selectedWindow} onValueChange={setSelectedWindow}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue placeholder="Select 6-month period">
                   {selectedWindowLabel || "Select 6-month period"}
                 </SelectValue>

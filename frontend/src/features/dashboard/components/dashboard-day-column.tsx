@@ -411,8 +411,8 @@ const dashboardScaleClassNames = {
   summaryMetaIcon: "h-3 w-3 shrink-0 lg:h-3.5 lg:w-3.5",
   activityMetricIcon: "h-2.5 w-2.5 shrink-0 lg:h-3 lg:w-3",
   footerMetricIcon: "h-2.5 w-2.5 shrink-0 lg:h-3 lg:w-3",
-  actionButtonShell: "h-6 w-6 shrink-0 lg:h-7 lg:w-7",
-  actionButtonGlyph: "h-2.5 w-2.5 lg:h-3 lg:w-3",
+  actionButtonShell: "h-4 w-4 shrink-0",
+  actionButtonGlyph: "h-3 w-3",
   plusButtonShell: "h-6 w-6 shrink-0 lg:h-7 lg:w-7",
   plusButtonGlyph: "h-3.5 w-3.5 lg:h-4 lg:w-4",
   undoButtonGlyph: "h-3 w-3 lg:h-3.5 lg:w-3.5",
@@ -557,8 +557,8 @@ function MetricRow({
 
 const tabletDesktopCardShellClassName =
   "h-[102px] p-2 text-[12px] lg:h-[112px] lg:p-2.5 lg:text-[12.5px]";
-const tabletDesktopActionButtonClassName = `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-[colors,transform] hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:scale-110 hover:text-white active:scale-95`;
-const tabletDesktopSecondaryActionButtonClassName = `${tabletDesktopActionButtonClassName} top-[28px] lg:top-[32px]`;
+const tabletDesktopActionButtonClassName = `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded p-0 bg-transparent border-0 shadow-none text-slate-300/50 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-white active:scale-95`;
+const tabletDesktopSecondaryActionButtonClassName = `${tabletDesktopActionButtonClassName} top-[20px]`;
 
 function DashboardDayColumnComponent({
   day,
@@ -1086,7 +1086,7 @@ function DashboardDayColumnComponent({
                       <div
                         key={activity.activity_id}
                         className={cn(
-                          "relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                          "group relative overflow-hidden rounded-[1rem] border shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                           "px-2 py-1.5",
                           activity.is_custom || isInvalid
                             ? "border-[1.5px] border-dashed"
@@ -1126,7 +1126,7 @@ function DashboardDayColumnComponent({
                           <Button
                             variant="ghost"
                             size="icon"
-                            className={`absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
+                            className={`absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded p-0 bg-transparent border-0 shadow-none text-slate-300/50 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-white`}
                             onClick={(event) => {
                               event.stopPropagation();
                               onDeleteCustomActivity?.(activity, item.index);
@@ -1164,7 +1164,7 @@ function DashboardDayColumnComponent({
                           <Button
                             variant="ghost"
                             size="icon"
-                            className={`absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-sky-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
+                            className={`absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded p-0 bg-transparent border-0 shadow-none text-sky-300/60 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-sky-100`}
                             onClick={(event) => {
                               event.stopPropagation();
                               if (activity.merge_id != null)
@@ -1202,10 +1202,10 @@ function DashboardDayColumnComponent({
                             variant="ghost"
                             size="icon"
                             className={cn(
-                              `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`,
+                              `absolute right-1 top-1 ${dashboardScaleClassNames.actionButtonShell} rounded p-0 bg-transparent border-0 shadow-none opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-white`,
                               isMergeSelected || isMergePending
                                 ? "text-sky-400"
-                                : "text-slate-300",
+                                : "text-slate-300/50",
                             )}
                             onClick={(event) => {
                               event.stopPropagation();
@@ -1239,7 +1239,7 @@ function DashboardDayColumnComponent({
                             )}
                           </Button>
                         ) : null}
-                        <div className="min-w-0 pr-6">
+                        <div className="min-w-0 pr-5">
                           <div className="min-w-0 flex-1">
                             <p
                               className={cn(
@@ -1305,7 +1305,7 @@ function DashboardDayColumnComponent({
                     <div
                       key={activity.activity_id}
                       className={cn(
-                        "relative flex cursor-pointer flex-col overflow-hidden rounded-xl border transition-all hover:brightness-110 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.12)]",
+                        "group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border transition-all hover:brightness-110 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.12)]",
                         compactMobile
                           ? "h-[82px] p-1.5 text-[11px]"
                           : tabletDesktopCardShellClassName,
@@ -1708,7 +1708,7 @@ function DashboardDayColumnComponent({
                         <div
                           key={`${item.activity.day_utc}-${item.activity.line_no}`}
                           className={cn(
-                            "relative overflow-hidden rounded-[1rem] border border-dashed bg-[linear-gradient(135deg,rgba(255,255,255,0.025),transparent_60%)] shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all hover:brightness-110",
+                            "group relative overflow-hidden rounded-[1rem] border border-dashed bg-[linear-gradient(135deg,rgba(255,255,255,0.025),transparent_60%)] shadow-[0_10px_22px_rgba(2,6,23,0.18)] transition-all hover:brightness-110",
                             "px-2 py-1.5",
                           )}
                           style={activityCardToneStyle(
@@ -1731,7 +1731,7 @@ function DashboardDayColumnComponent({
                             <Button
                               variant="ghost"
                               size="icon"
-                              className={`${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
+                              className={`${dashboardScaleClassNames.actionButtonShell} rounded p-0 bg-transparent border-0 shadow-none text-slate-300/50 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-white`}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 onMarkPlannedDone?.(item.activity, item.index);
@@ -1766,7 +1766,7 @@ function DashboardDayColumnComponent({
                             <Button
                               variant="ghost"
                               size="icon"
-                              className={`${dashboardScaleClassNames.actionButtonShell} rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(51,65,85,0.38),rgba(15,23,42,0.26))] text-slate-300 shadow-[0_3px_8px_rgba(15,23,42,0.16)] backdrop-blur-sm transition-colors hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(71,85,105,0.42),rgba(30,41,59,0.3))] hover:text-white`}
+                              className={`${dashboardScaleClassNames.actionButtonShell} rounded p-0 bg-transparent border-0 shadow-none text-slate-300/50 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-white`}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 onDeletePlannedActivity?.(
@@ -1849,7 +1849,7 @@ function DashboardDayColumnComponent({
                         <div
                           key={`${item.activity.day_utc}-${item.activity.line_no}`}
                           className={cn(
-                            "relative flex cursor-pointer flex-col overflow-hidden rounded-xl border border-dashed bg-[linear-gradient(135deg,rgba(255,255,255,0.025),transparent_60%)] transition-all hover:brightness-110",
+                            "group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border border-dashed bg-[linear-gradient(135deg,rgba(255,255,255,0.025),transparent_60%)] transition-all hover:brightness-110",
                             compactMobile
                               ? "h-[82px] px-2 pb-1.5 pt-1.5 text-[11px]"
                               : tabletDesktopCardShellClassName,
@@ -1947,7 +1947,7 @@ function DashboardDayColumnComponent({
                               />
                             )}
                           </Button>
-                          <div className="flex min-w-0 items-center pr-8 lg:pr-9">
+                          <div className="flex min-w-0 items-center pr-5">
                             <p
                               className={cn(
                                 "truncate font-semibold text-foreground",
