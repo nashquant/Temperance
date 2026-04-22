@@ -226,12 +226,39 @@ class MCPServerHelpersTest(unittest.TestCase):
         for name in mcp_server.TOOLS:
             self.assertIn(name, tool_names)
 
+    def test_lite_tools_list_returns_everyday_tool_surface(self):
+        response = mcp_server.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            profile="lite",
+        )
+        tool_names = {t["name"] for t in response["result"]["tools"]}
+
+        self.assertEqual(tool_names, mcp_server.LITE_TOOL_NAMES)
+        self.assertIn("get_coaching_brief", tool_names)
+        self.assertIn("save_planned_activities", tool_names)
+        self.assertIn("update_planned_activity", tool_names)
+        self.assertNotIn("get_activity_detail", tool_names)
+        self.assertNotIn("get_fitness_form", tool_names)
+        self.assertNotIn("trigger_sync", tool_names)
+        self.assertNotIn("update_settings", tool_names)
+
     def test_initialize_advertises_tools_and_resources(self):
         response = mcp_server.handle_message(
             {"jsonrpc": "2.0", "id": 1, "method": "initialize"}
         )
         self.assertEqual(response["result"]["protocolVersion"], "2025-03-26")
         self.assertEqual(response["result"]["serverInfo"]["name"], "temperance-mcp")
+        self.assertEqual(
+            response["result"]["capabilities"], {"tools": {}, "resources": {}}
+        )
+
+    def test_lite_initialize_advertises_lite_server_name(self):
+        response = mcp_server.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+            profile="lite",
+        )
+
+        self.assertEqual(response["result"]["serverInfo"]["name"], "temperance-mcp-lite")
         self.assertEqual(
             response["result"]["capabilities"], {"tools": {}, "resources": {}}
         )
@@ -297,6 +324,52 @@ class MCPServerHelpersTest(unittest.TestCase):
             },
         )
 
+    def test_lite_tools_call_reports_full_only_tool_as_unknown(self):
+        response = mcp_server.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "method": "tools/call",
+                "params": {"name": "get_activity_detail", "arguments": {"activity_id": "1"}},
+            },
+            profile="lite",
+        )
+
+        self.assertEqual(
+            response,
+            {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "error": {"code": -32602, "message": "Unknown tool: get_activity_detail"},
+            },
+        )
+
+    def test_full_tools_call_accepts_full_only_tool(self):
+        original = mcp_server.TOOLS["get_activity_detail"].handler
+        try:
+            mcp_server.TOOLS["get_activity_detail"].handler = lambda arguments: {
+                "activity_id": arguments["activity_id"]
+            }
+            response = mcp_server.handle_message(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 10,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "get_activity_detail",
+                        "arguments": {"activity_id": "123"},
+                    },
+                },
+                profile="full",
+            )
+        finally:
+            mcp_server.TOOLS["get_activity_detail"].handler = original
+
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(
+            response["result"]["structuredContent"], {"activity_id": "123"}
+        )
+
     def test_main_defaults_to_stdio(self):
         with patch(
             "backend.app.mcp_server.serve_stdio", return_value=7
@@ -304,7 +377,36 @@ class MCPServerHelpersTest(unittest.TestCase):
             result = mcp_server.main([])
 
         self.assertEqual(result, 7)
-        mock_serve_stdio.assert_called_once_with()
+        mock_serve_stdio.assert_called_once_with("full")
+
+    def test_main_passes_lite_profile_to_stdio(self):
+        with patch(
+            "backend.app.mcp_server.serve_stdio", return_value=7
+        ) as mock_serve_stdio:
+            result = mcp_server.main(["--profile", "lite"])
+
+        self.assertEqual(result, 7)
+        mock_serve_stdio.assert_called_once_with("lite")
+
+    def test_main_uses_profile_env_fallback(self):
+        with (
+            patch.dict("os.environ", {"TEMPERANCE_MCP_PROFILE": "lite"}),
+            patch("backend.app.mcp_server.serve_stdio", return_value=7) as mock_serve_stdio,
+        ):
+            result = mcp_server.main([])
+
+        self.assertEqual(result, 7)
+        mock_serve_stdio.assert_called_once_with("lite")
+
+    def test_main_cli_profile_overrides_env(self):
+        with (
+            patch.dict("os.environ", {"TEMPERANCE_MCP_PROFILE": "lite"}),
+            patch("backend.app.mcp_server.serve_stdio", return_value=7) as mock_serve_stdio,
+        ):
+            result = mcp_server.main(["--profile", "full"])
+
+        self.assertEqual(result, 7)
+        mock_serve_stdio.assert_called_once_with("full")
 
     def test_resources_list_exposes_static_resources(self):
         response = mcp_server.handle_message(

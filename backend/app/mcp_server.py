@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import signal
 import sys
@@ -31,6 +32,9 @@ from temperance.planning.stress import classify_session_stress, is_long_run_cand
 JSONRPC_VERSION = "2.0"
 DEFAULT_OWNER = "admin"
 SERVER_PROTOCOL_VERSION = "2025-03-26"
+MCP_PROFILE_FULL = "full"
+MCP_PROFILE_LITE = "lite"
+MCP_PROFILES = (MCP_PROFILE_FULL, MCP_PROFILE_LITE)
 ROOT_DIR = Path(__file__).resolve().parents[2]
 GUIDELINES_DIR = ROOT_DIR / "temperance" / "guidelines" / "temperance-guidelines"
 WORKOUTS_DIR = ROOT_DIR / "temperance" / "guidelines" / "temperance-workouts"
@@ -3757,9 +3761,40 @@ def tool_estimate_xtrain_tss(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _tool_spec(name: str) -> ToolSpec:
+LITE_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "get_coaching_brief",
+        "get_today_status",
+        "get_recent_activities",
+        "get_planned_activities",
+        "get_week_outlook",
+        "estimate_workout_tss",
+        "simulate_plan_week",
+        "critique_day_plan",
+        "search_workouts",
+        "save_planned_activities",
+        "update_planned_activity",
+    }
+)
+
+
+def _normalize_mcp_profile(profile: Optional[str]) -> str:
+    normalized = str(profile or MCP_PROFILE_FULL).strip().lower()
+    if normalized not in MCP_PROFILES:
+        raise ValueError(f"Unknown MCP profile: {profile}")
+    return normalized
+
+
+def _tool_specs_for_profile(profile: Optional[str]) -> dict[str, ToolSpec]:
+    normalized = _normalize_mcp_profile(profile)
+    if normalized == MCP_PROFILE_FULL:
+        return TOOLS
+    return {name: spec for name, spec in TOOLS.items() if name in LITE_TOOL_NAMES}
+
+
+def _tool_spec(name: str, profile: Optional[str] = MCP_PROFILE_FULL) -> ToolSpec:
     tool_name = str(name or "").strip()
-    spec = TOOLS.get(tool_name)
+    spec = _tool_specs_for_profile(profile).get(tool_name)
     if spec is None:
         raise ValueError(f"Unknown tool: {tool_name}")
     return spec
@@ -4066,6 +4101,14 @@ SERVER_INFO = {
     "version": "0.4.0",
 }
 
+SERVER_INFO_BY_PROFILE = {
+    MCP_PROFILE_FULL: SERVER_INFO,
+    MCP_PROFILE_LITE: {
+        **SERVER_INFO,
+        "name": "temperance-mcp-lite",
+    },
+}
+
 
 RESOURCES: dict[str, ResourceSpec] = {
     _resource_uri("guidelines/read-order"): ResourceSpec(
@@ -4178,12 +4221,16 @@ def _resource_template_listing(spec: ResourceTemplateSpec) -> dict[str, Any]:
     }
 
 
-def _handle_initialize(msg_id: Any) -> dict[str, Any]:
+def _server_info_for_profile(profile: Optional[str]) -> dict[str, str]:
+    return SERVER_INFO_BY_PROFILE[_normalize_mcp_profile(profile)]
+
+
+def _handle_initialize(msg_id: Any, profile: Optional[str] = MCP_PROFILE_FULL) -> dict[str, Any]:
     return _success_response(
         msg_id,
         {
             "protocolVersion": SERVER_PROTOCOL_VERSION,
-            "serverInfo": SERVER_INFO,
+            "serverInfo": _server_info_for_profile(profile),
             "capabilities": {
                 "tools": {},
                 "resources": {},
@@ -4192,8 +4239,8 @@ def _handle_initialize(msg_id: Any) -> dict[str, Any]:
     )
 
 
-def _handle_tools_list(msg_id: Any) -> dict[str, Any]:
-    tools = [_tool_listing(spec) for spec in TOOLS.values()]
+def _handle_tools_list(msg_id: Any, profile: Optional[str] = MCP_PROFILE_FULL) -> dict[str, Any]:
+    tools = [_tool_listing(spec) for spec in _tool_specs_for_profile(profile).values()]
     return _success_response(msg_id, {"tools": tools})
 
 
@@ -4220,11 +4267,13 @@ def _resource_result_content(uri: str, payload: Any) -> list[dict[str, Any]]:
     ]
 
 
-def _handle_tools_call(msg_id: Any, params: dict[str, Any]) -> dict[str, Any]:
+def _handle_tools_call(
+    msg_id: Any, params: dict[str, Any], profile: Optional[str] = MCP_PROFILE_FULL
+) -> dict[str, Any]:
     name = str((params or {}).get("name") or "").strip()
     arguments = (params or {}).get("arguments") or {}
     try:
-        spec = _tool_spec(name)
+        spec = _tool_spec(name, profile=profile)
     except ValueError as exc:
         return _error_response(msg_id, -32602, str(exc))
     try:
@@ -4342,20 +4391,23 @@ def _handle_resources_read(msg_id: Any, params: dict[str, Any]) -> dict[str, Any
     )
 
 
-def _dispatch_request(request: dict[str, Any]) -> dict[str, Any] | None:
+def _dispatch_request(
+    request: dict[str, Any], profile: Optional[str] = MCP_PROFILE_FULL
+) -> dict[str, Any] | None:
+    profile = _normalize_mcp_profile(profile)
     method = str(request.get("method") or "").strip()
     msg_id = request.get("id")
     params = request.get("params") or {}
     if method == "initialize":
-        return _handle_initialize(msg_id)
+        return _handle_initialize(msg_id, profile=profile)
     if method in {"initialized", "notifications/initialized"}:
         return None
     if method == "ping":
         return _success_response(msg_id, {})
     if method == "tools/list":
-        return _handle_tools_list(msg_id)
+        return _handle_tools_list(msg_id, profile=profile)
     if method == "tools/call":
-        return _handle_tools_call(msg_id, params)
+        return _handle_tools_call(msg_id, params, profile=profile)
     if method == "resources/list":
         return _handle_resources_list(msg_id)
     if method == "resources/templates/list":
@@ -4371,15 +4423,22 @@ class TemperanceMCPServer:
     server_name = SERVER_INFO["name"]
     protocol_version = SERVER_PROTOCOL_VERSION
 
+    def __init__(self, profile: Optional[str] = MCP_PROFILE_FULL) -> None:
+        self.profile = _normalize_mcp_profile(profile)
+        self.server_name = _server_info_for_profile(self.profile)["name"]
+
     def handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
-        return _dispatch_request(request)
+        return _dispatch_request(request, profile=self.profile)
 
 
-def handle_message(message: dict[str, Any]) -> Optional[dict[str, Any]]:
-    return _dispatch_request(message)
+def handle_message(
+    message: dict[str, Any], profile: Optional[str] = MCP_PROFILE_FULL
+) -> Optional[dict[str, Any]]:
+    return _dispatch_request(message, profile=profile)
 
 
-def serve_stdio() -> int:
+def serve_stdio(profile: Optional[str] = MCP_PROFILE_FULL) -> int:
+    profile = _normalize_mcp_profile(profile)
     # Exit cleanly when the parent process or terminal dies (e.g. tmux session killed).
     signal.signal(signal.SIGHUP, lambda *_: sys.exit(0))
     for raw_line in sys.stdin:
@@ -4392,7 +4451,7 @@ def serve_stdio() -> int:
             response = _error_response(None, -32700, f"Parse error: {exc}")
             print(json.dumps(response, ensure_ascii=False), flush=True)
             continue
-        response = handle_message(message)
+        response = handle_message(message, profile=profile)
         if response is not None:
             print(
                 json.dumps(response, default=_json_default, ensure_ascii=False),
@@ -4406,8 +4465,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument(
         "--stdio", action="store_true", help="Run the server over stdio (default)."
     )
-    parser.parse_args(argv)
-    return serve_stdio()
+    parser.add_argument(
+        "--profile",
+        choices=MCP_PROFILES,
+        default=None,
+        help="MCP tool profile to expose. Defaults to TEMPERANCE_MCP_PROFILE or full.",
+    )
+    args = parser.parse_args(argv)
+    env_profile = os.environ.get("TEMPERANCE_MCP_PROFILE")
+    profile = args.profile or env_profile or MCP_PROFILE_FULL
+    try:
+        profile = _normalize_mcp_profile(profile)
+    except ValueError as exc:
+        parser.error(str(exc))
+    return serve_stdio(profile)
 
 
 if __name__ == "__main__":
