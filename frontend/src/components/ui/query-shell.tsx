@@ -85,9 +85,50 @@ function CompactSkeleton({
   );
 }
 
+/** Wellness variant: summary snapshot plus chart grid. */
+function WellnessSkeleton({
+  showTimeout,
+  errorTitle,
+}: {
+  showTimeout: boolean;
+  errorTitle: string;
+}): JSX.Element {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-border/70 bg-card/55 p-4">
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div
+              key={index}
+              className="min-h-[104px] rounded-lg border border-border/70 bg-card/55 p-4"
+            >
+              <Skeleton className="h-3 w-24 bg-muted/80" />
+              <Skeleton className="mt-6 h-8 w-16 bg-muted/70" />
+              <Skeleton className="mt-4 h-3 w-28 bg-muted/60" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div
+            key={index}
+            className="min-h-[260px] rounded-xl border border-border/70 bg-card/55 p-4"
+          >
+            <Skeleton className="h-4 w-36 bg-muted/80" />
+            <Skeleton className="mt-8 h-44 w-full bg-muted/60" />
+          </div>
+        ))}
+      </div>
+      {showTimeout ? <LoadingTimeoutNotice title={errorTitle} /> : null}
+    </div>
+  );
+}
+
 const skeletonPresets = {
   page: PageSkeleton,
   compact: CompactSkeleton,
+  wellness: WellnessSkeleton,
 } as const;
 
 export type SkeletonPreset = keyof typeof skeletonPresets;
