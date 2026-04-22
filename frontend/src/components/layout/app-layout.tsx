@@ -23,6 +23,13 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { CoachSnapshotChips } from "@/features/coach-snapshot/components/coach-snapshot-chips";
@@ -230,19 +237,22 @@ function SessionPanel({
           >
             Viewing owner
           </Label>
-          <select
-            id={ownerSelectId}
+          <Select
             value={profile.owner}
-            onChange={(event) => onOwnerChange(event.target.value)}
+            onValueChange={onOwnerChange}
             disabled={switchingOwner}
-            className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {owners.map((owner) => (
-              <option key={owner} value={owner}>
-                {owner}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id={ownerSelectId} className="h-9 w-full text-sm">
+              <SelectValue placeholder="Select owner" />
+            </SelectTrigger>
+            <SelectContent>
+              {owners.map((owner) => (
+                <SelectItem key={owner} value={owner}>
+                  {owner}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       ) : null}
 
