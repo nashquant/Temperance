@@ -411,7 +411,7 @@ const dashboardScaleClassNames = {
   summaryMetaIcon: "h-3 w-3 shrink-0 lg:h-3.5 lg:w-3.5",
   activityMetricIcon: "h-2.5 w-2.5 shrink-0 lg:h-3 lg:w-3",
   footerMetricIcon: "h-2.5 w-2.5 shrink-0 lg:h-3 lg:w-3",
-  actionButtonShell: "h-4 w-4 shrink-0",
+  actionButtonShell: "h-4 w-4 sm:h-4 sm:w-4 shrink-0",
   actionButtonGlyph: "h-3 w-3",
   plusButtonShell: "h-6 w-6 shrink-0 lg:h-7 lg:w-7",
   plusButtonGlyph: "h-3.5 w-3.5 lg:h-4 lg:w-4",
