@@ -1012,7 +1012,7 @@ export function DashboardPage(): JSX.Element {
             <Button
               variant="outline"
               size="sm"
-              className="h-10 w-10 border-white/10 bg-black/20 px-0 text-slate-100"
+              className="h-10 w-10 border-sky-300/20 bg-sky-300/8 px-0 text-sky-100 hover:bg-sky-300/14"
               onClick={() => {
                 setSelectedActivityId(null);
                 setMergeMode(true);
@@ -1068,7 +1068,7 @@ export function DashboardPage(): JSX.Element {
         {totalWindows > 1 ? (
           <div className="w-[160px] max-w-[160px] sm:w-[190px] sm:max-w-[190px]">
             <Select value={selectedWindow} onValueChange={setSelectedWindow}>
-              <SelectTrigger className="h-8 w-full text-xs">
+              <SelectTrigger className="h-10 w-full text-xs">
                 <SelectValue placeholder="Select 6-month period">
                   {selectedWindowLabel || "Select 6-month period"}
                 </SelectValue>
