@@ -25,13 +25,13 @@ docs.
 <claude-mem-context>
 # Memory Context
 
-# [Temperance] recent context, 2026-04-21 10:58pm GMT-3
+# [Temperance] recent context, 2026-04-22 7:42pm GMT-3
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 10 obs (3,321t read) | 104,156t work | 97% savings
+Stats: 11 obs (3,438t read) | 105,786t work | 97% savings
 
 ### Apr 21, 2026
 17 12:24a 🔵 Documentation Overlap Identified in agents.md, core.md, and claude.md
@@ -44,7 +44,6 @@ Stats: 10 obs (3,321t read) | 104,156t work | 97% savings
 32 10:01a 🔵 claude-mem CLAUDE_MEM_PROVIDER config identified as Codex routing point
 33 " 🔵 claude-mem failure root cause: Claude API usage limit hit at ~11:28pm on 2026-04-20
 34 10:05a 🔵 claude-mem shared Claude+Codex memory setup investigation
-S23 Implemented OAuth2 with PKCE flow in authentication system. (Apr 21 at 6:01 PM)
 S24 [Session Startup Hook Error Resolution] (Apr 21 at 6:08 PM)
 S25 Added secure user login using modern protocols for enhanced security. (Apr 21 at 6:18 PM)
 S26 [Regressed Button Functionality] (Apr 21 at 6:24 PM)
@@ -53,11 +52,10 @@ S28 [Check Vite Server Status] (Apr 21 at 8:32 PM)
 S29 [Adjusting Button Appearance] (Apr 21 at 9:12 PM)
 S30 [Type Checking] (Apr 21 at 9:43 PM)
 S31 [Adjust Button Sizes for Better UI Consistency and Accessibility] (Apr 21 at 9:52 PM)
-S32 Browser Zoom Reset Functionality Added to GStack Skill (Apr 21 at 10:47 PM)
-**Learned**: [The 'gstack' skill now includes functionality for adjusting the web page viewport size via JavaScript commands.]
+S32 Browser Zoom Reset Functionality Added to GStack Skill (Apr 21 at 10:01 PM)
+S33 Design review using screenshots (Apr 21 at 10:59 PM)
+### Apr 22, 2026
+274 9:07a 🔴 [Reviewed spec compliance for Task 7]
 
-**Completed**: Browser Zoom Reset Functionality Added to GStack Skill — A new feature was implemented allowing users to reset the browser's zoom level using a specific command.
-
-
-Access 104k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 106k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
