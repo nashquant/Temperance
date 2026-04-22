@@ -413,8 +413,8 @@ const dashboardScaleClassNames = {
   footerMetricIcon: "h-2.5 w-2.5 shrink-0 lg:h-3 lg:w-3",
   actionButtonShell: "h-4 w-4 sm:h-4 sm:w-4 shrink-0",
   actionButtonGlyph: "h-3 w-3",
-  plusButtonShell: "h-6 w-6 shrink-0 lg:h-7 lg:w-7",
-  plusButtonGlyph: "h-3.5 w-3.5 lg:h-4 lg:w-4",
+  plusButtonShell: "h-8 w-8 shrink-0",
+  plusButtonGlyph: "h-4 w-4",
   undoButtonGlyph: "h-3 w-3 lg:h-3.5 lg:w-3.5",
 } as const;
 
@@ -695,7 +695,7 @@ function DashboardDayColumnComponent({
               className={cn(
                 compactMobile
                   ? "text-[12px] font-semibold leading-4"
-                  : "max-w-[calc(100%-1.75rem)] text-[12px] font-semibold leading-4.5 lg:max-w-none lg:text-[14px] lg:leading-5",
+                  : "max-w-[calc(100%-2.25rem)] text-[12px] font-semibold leading-4.5 lg:max-w-none lg:text-[14px] lg:leading-5",
                 day.is_today ? "text-primary" : "text-foreground",
               )}
             >
