@@ -155,4 +155,6 @@ npm run preview
 After backend changes that need a process restart, use the keepalive restart
 command above.
 
-Use the `/browse` skill from the gstack install for web browsing.
+Use the `/browse` skill from the gstack install for web browsing. When browsing
+or logging into the app, agents may refer to the admin username and password
+stored in `.env`.
