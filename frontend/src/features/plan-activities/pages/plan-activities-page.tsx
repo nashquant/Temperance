@@ -946,27 +946,25 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
       ) : null}
 
       <SecondaryPageSectionCard contentClassName="space-y-3 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] p-3 sm:space-y-4 sm:p-5">
-        <h2 className="text-lg font-semibold text-foreground">Add Planned Activity</h2>
+        <h2 className="text-sm font-semibold text-foreground">Plan activity</h2>
         <textarea
           className={`min-h-[104px] ${secondaryPageTextAreaClassName} sm:min-h-[120px]`}
           placeholder="e.g. 3Mar26: 80min elliptical @140bpm; 2026-03-26: 10min run @4:50 + 5x6min @3:40/km"
           value={entryText}
           onChange={(event) => setEntryText(event.target.value)}
         />
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <p className="text-xs text-muted-foreground">Multiple entries are supported with new lines, `;`, or `,`.</p>
-          <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
-            <Button
-              variant="surface"
-              className="w-full sm:w-auto"
-              onClick={() => ingestMutation.mutate({ text: entryText, source: 'composer' })}
-              disabled={ingestMutation.isPending || !entryText.trim()}
-            >
-              {ingestMutation.isPending ? 'Saving...' : 'Save'}
-            </Button>
-            {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
-          </div>
+          <Button
+            variant="surface"
+            className="w-full sm:w-auto"
+            onClick={() => ingestMutation.mutate({ text: entryText, source: 'composer' })}
+            disabled={ingestMutation.isPending || !entryText.trim()}
+          >
+            {ingestMutation.isPending ? 'Saving...' : 'Save'}
+          </Button>
         </div>
+        {ingestResult ? <p className="text-xs text-muted-foreground">{ingestResult}</p> : null}
       </SecondaryPageSectionCard>
 
       <QueryShell isLoading={query.isLoading || query.isPending || (!query.isError && !query.data)} isError={query.isError} error={query.error} errorTitle="Unable to load planned activities" skeleton="compact">
@@ -990,27 +988,36 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
               <SecondaryPageSectionCard contentClassName="p-8 text-sm text-slate-300/72">No planned activities found in this time window.</SecondaryPageSectionCard>
           ) : (
             <>
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-                <PlannedWeekSelector weeks={weeks} value={effectiveWeek} onValueChange={(next) => setSelectedWeek(next)} />
-                <Button
-                  variant="outline"
-                  className="border-white/10 bg-black/15"
-                  onClick={() => void handleCopyWeekToClipboard()}
-                  disabled={copyMode !== null || !selectedWeekClipboardText.trim()}
-                >
-                  {copyMode === 'planned' ? 'Copying planned…' : 'Copy Planned'}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="border-white/10 bg-black/15"
-                  onClick={() => void handleCopyActualWeekToClipboard()}
-                  disabled={copyMode !== null || !effectiveWeek}
-                >
-                  {copyMode === 'actual' ? 'Copying actual…' : 'Copy Actual'}
-                </Button>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <h2 className="text-sm font-semibold text-foreground">Planned activities</h2>
+                  <p className="text-xs text-muted-foreground">Review the selected week and copy planned or completed work.</p>
+                </div>
+
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+                  <PlannedWeekSelector weeks={weeks} value={effectiveWeek} onValueChange={(next) => setSelectedWeek(next)} />
+                  <Button
+                    variant="outline"
+                    className="border-white/10 bg-black/15"
+                    onClick={() => void handleCopyWeekToClipboard()}
+                    disabled={copyMode !== null || !selectedWeekClipboardText.trim()}
+                  >
+                    {copyMode === 'planned' ? 'Copying planned…' : 'Copy Planned'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="border-white/10 bg-black/15"
+                    onClick={() => void handleCopyActualWeekToClipboard()}
+                    disabled={copyMode !== null || !effectiveWeek}
+                  >
+                    {copyMode === 'actual' ? 'Copying actual…' : 'Copy Actual'}
+                  </Button>
+                </div>
               </div>
 
               {selectedWeekMeta ? (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-foreground">Loading summary</h2>
                 <SecondaryPageSectionCard contentClassName="p-4">
                     <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
                       {selectedWeekItems.map((item) => (
@@ -1023,90 +1030,96 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                       ))}
                     </div>
                 </SecondaryPageSectionCard>
+                </div>
               ) : null}
 
               <PlannedWeekChart data={chartRows} metric={metric} onMetricChange={setMetric} />
 
-              <SecondaryPageSectionCard className="md:hidden" contentClassName="space-y-3 p-4">
-                <div>
-                  <h3 className="text-base font-semibold text-foreground">Quick Add</h3>
-                  <p className="mt-1 text-xs text-slate-300/72">Add a planned activity without using the desktop table layout.</p>
-                </div>
-                <QuickAddActivityForm
-                  quickAddDay={quickAddDay}
-                  quickAddActivityType={quickAddActivityType}
-                  quickAddWorkout={quickAddWorkout}
-                  isPending={ingestMutation.isPending}
-                  onQuickAddDayChange={setQuickAddDay}
-                  onQuickAddActivityTypeChange={setQuickAddActivityType}
-                  onQuickAddWorkoutChange={setQuickAddWorkout}
-                  onSubmit={() =>
-                    ingestMutation.mutate({
-                      text: buildQuickAddEntryText(quickAddDay, quickAddWorkout, quickAddActivityType),
-                      source: 'inline-row',
+              <div className="space-y-3 md:hidden">
+                <h2 className="text-sm font-semibold text-foreground">Workout editor</h2>
+                <SecondaryPageSectionCard contentClassName="space-y-3 p-4">
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">Quick Add</h3>
+                    <p className="mt-1 text-xs text-slate-300/72">Add a planned activity without using the desktop table layout.</p>
+                  </div>
+                  <QuickAddActivityForm
+                    quickAddDay={quickAddDay}
+                    quickAddActivityType={quickAddActivityType}
+                    quickAddWorkout={quickAddWorkout}
+                    isPending={ingestMutation.isPending}
+                    onQuickAddDayChange={setQuickAddDay}
+                    onQuickAddActivityTypeChange={setQuickAddActivityType}
+                    onQuickAddWorkoutChange={setQuickAddWorkout}
+                    onSubmit={() =>
+                      ingestMutation.mutate({
+                        text: buildQuickAddEntryText(quickAddDay, quickAddWorkout, quickAddActivityType),
+                        source: 'inline-row',
+                      })
+                    }
+                  />
+                </SecondaryPageSectionCard>
+
+                <SecondaryPageSectionCard contentClassName="space-y-3 p-4">
+                  {selectedRows.length === 0 ? (
+                    <p className="py-2 text-center text-sm text-slate-300/60">No planned activities in the selected week.</p>
+                  ) : (
+                    selectedRows.map((row) => {
+                      const rowKey = `${row.day_utc}-${row.line_no}`;
+                      const workoutText = editValues[rowKey] ?? '';
+                      const isDirty = workoutText !== row.workout_text;
+                      const isPendingDelete =
+                        pendingDelete?.row.day_utc === row.day_utc && pendingDelete.row.line_no === row.line_no;
+                      const isSavingRow =
+                        workoutUpdateMutation.isPending
+                        && workoutUpdateMutation.variables?.dayUtc === row.day_utc
+                        && workoutUpdateMutation.variables?.lineNo === row.line_no;
+
+                      return (
+                        <PlannedActivityCard
+                          key={rowKey}
+                          row={row}
+                          rowKey={rowKey}
+                          workoutText={workoutText}
+                          isDirty={isDirty}
+                          isPendingDelete={isPendingDelete}
+                          isSavingRow={isSavingRow}
+                          saveResult={rowSaveResults[rowKey]}
+                          onWorkoutTextChange={(value) => {
+                            setEditValues((previous) => ({ ...previous, [rowKey]: value }));
+                            setRowSaveResults((previous) => {
+                              if (!(rowKey in previous)) return previous;
+                              const next = { ...previous };
+                              delete next[rowKey];
+                              return next;
+                            });
+                          }}
+                          onManualDoneChange={(checked) =>
+                            manualDoneMutation.mutate({
+                              dayUtc: row.day_utc,
+                              lineNo: row.line_no,
+                              manualDone: checked,
+                            })
+                          }
+                          onSave={() =>
+                            workoutUpdateMutation.mutate({
+                              dayUtc: row.day_utc,
+                              lineNo: row.line_no,
+                              workoutText,
+                              manualDone: row.manual_done,
+                            })
+                          }
+                          onDelete={() => queueDelete(row)}
+                          onUndoDelete={handleUndoDelete}
+                        />
+                      );
                     })
-                  }
-                />
-              </SecondaryPageSectionCard>
+                  )}
+                </SecondaryPageSectionCard>
+              </div>
 
-              <SecondaryPageSectionCard className="md:hidden" contentClassName="space-y-3 p-4">
-                {selectedRows.length === 0 ? (
-                  <p className="py-2 text-center text-sm text-slate-300/60">No planned activities in the selected week.</p>
-                ) : (
-                  selectedRows.map((row) => {
-                    const rowKey = `${row.day_utc}-${row.line_no}`;
-                    const workoutText = editValues[rowKey] ?? '';
-                    const isDirty = workoutText !== row.workout_text;
-                    const isPendingDelete =
-                      pendingDelete?.row.day_utc === row.day_utc && pendingDelete.row.line_no === row.line_no;
-                    const isSavingRow =
-                      workoutUpdateMutation.isPending
-                      && workoutUpdateMutation.variables?.dayUtc === row.day_utc
-                      && workoutUpdateMutation.variables?.lineNo === row.line_no;
-
-                    return (
-                      <PlannedActivityCard
-                        key={rowKey}
-                        row={row}
-                        rowKey={rowKey}
-                        workoutText={workoutText}
-                        isDirty={isDirty}
-                        isPendingDelete={isPendingDelete}
-                        isSavingRow={isSavingRow}
-                        saveResult={rowSaveResults[rowKey]}
-                        onWorkoutTextChange={(value) => {
-                          setEditValues((previous) => ({ ...previous, [rowKey]: value }));
-                          setRowSaveResults((previous) => {
-                            if (!(rowKey in previous)) return previous;
-                            const next = { ...previous };
-                            delete next[rowKey];
-                            return next;
-                          });
-                        }}
-                        onManualDoneChange={(checked) =>
-                          manualDoneMutation.mutate({
-                            dayUtc: row.day_utc,
-                            lineNo: row.line_no,
-                            manualDone: checked,
-                          })
-                        }
-                        onSave={() =>
-                          workoutUpdateMutation.mutate({
-                            dayUtc: row.day_utc,
-                            lineNo: row.line_no,
-                            workoutText,
-                            manualDone: row.manual_done,
-                          })
-                        }
-                        onDelete={() => queueDelete(row)}
-                        onUndoDelete={handleUndoDelete}
-                      />
-                    );
-                  })
-                )}
-              </SecondaryPageSectionCard>
-
-              <SecondaryPageSectionCard className="hidden md:block" contentClassName="p-0">
+              <div className="hidden space-y-3 md:block">
+                <h2 className="text-sm font-semibold text-foreground">Workout editor</h2>
+                <SecondaryPageSectionCard contentClassName="p-0">
                   <div className="overflow-x-auto rounded-2xl pb-1">
                     <table className="min-w-[720px] w-full table-fixed text-sm lg:min-w-[980px]">
                       <colgroup>
@@ -1325,7 +1338,8 @@ export function PlanActivitiesSection({ embedded = false }: PlanActivitiesSectio
                       </tbody>
                     </table>
                   </div>
-              </SecondaryPageSectionCard>
+                </SecondaryPageSectionCard>
+              </div>
             </>
           )}
         </>
