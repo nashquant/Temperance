@@ -8,6 +8,7 @@ set -euo pipefail
 
 TUNNEL_NAME="${CLOUDFLARE_TUNNEL:-temperance}"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-cloudflared}"
+CLOUDFLARED_PROTOCOL="${CLOUDFLARED_PROTOCOL:-http2}"
 CF_CONFIG_PATH="${CF_CONFIG_PATH:-}"
 USE_CAFFEINATE="${TEMPERANCE_USE_CAFFEINATE:-1}"
 CAFFEINATE_BIN="${CAFFEINATE_BIN:-}"
@@ -26,15 +27,20 @@ else
   fi
 fi
 
+cloudflared_args=()
+if [[ -n "${CLOUDFLARED_PROTOCOL}" ]]; then
+  cloudflared_args+=(--protocol "${CLOUDFLARED_PROTOCOL}")
+fi
+
 if [[ -n "${CF_CONFIG_PATH}" ]]; then
   if [[ "${USE_CAFFEINATE}" == "1" && -n "${CAFFEINATE_BIN}" ]]; then
-    exec "${CAFFEINATE_BIN}" -dimsu "${CLOUDFLARED_BIN}" --config "${CF_CONFIG_PATH}" tunnel run "${TUNNEL_NAME}"
+    exec "${CAFFEINATE_BIN}" -dimsu "${CLOUDFLARED_BIN}" "${cloudflared_args[@]}" --config "${CF_CONFIG_PATH}" tunnel run "${TUNNEL_NAME}"
   fi
-  exec "${CLOUDFLARED_BIN}" --config "${CF_CONFIG_PATH}" tunnel run "${TUNNEL_NAME}"
+  exec "${CLOUDFLARED_BIN}" "${cloudflared_args[@]}" --config "${CF_CONFIG_PATH}" tunnel run "${TUNNEL_NAME}"
 fi
 
 if [[ "${USE_CAFFEINATE}" == "1" && -n "${CAFFEINATE_BIN}" ]]; then
-  exec "${CAFFEINATE_BIN}" -dimsu "${CLOUDFLARED_BIN}" tunnel run "${TUNNEL_NAME}"
+  exec "${CAFFEINATE_BIN}" -dimsu "${CLOUDFLARED_BIN}" "${cloudflared_args[@]}" tunnel run "${TUNNEL_NAME}"
 fi
 
-exec "${CLOUDFLARED_BIN}" tunnel run "${TUNNEL_NAME}"
+exec "${CLOUDFLARED_BIN}" "${cloudflared_args[@]}" tunnel run "${TUNNEL_NAME}"

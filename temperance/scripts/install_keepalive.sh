@@ -32,6 +32,7 @@ if [[ -z "${CLOUDFLARED_BIN:-}" ]]; then
   CLOUDFLARED_BIN="$(command -v cloudflared || true)"
 fi
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-cloudflared}"
+CLOUDFLARED_PROTOCOL="${CLOUDFLARED_PROTOCOL:-http2}"
 if [[ -z "${NODE_BIN:-}" ]]; then
   NODE_BIN="$(command -v node || true)"
 fi
@@ -57,6 +58,7 @@ Env overrides:
   CLOUDFLARE_TUNNEL  named tunnel (default: temperance)
   TUNNEL_HOSTNAME    hostname label (default: app.temperance-rtl.work)
   CLOUDFLARED_BIN    cloudflared binary (default: cloudflared)
+  CLOUDFLARED_PROTOCOL cloudflared transport protocol (default: http2)
   NODE_BIN           node binary (default: /opt/homebrew/bin/node)
   TEMPERANCE_USE_CAFFEINATE wrap services with caffeinate when available (default: 1)
   CAFFEINATE_BIN     caffeinate binary (default: /usr/bin/caffeinate)
@@ -238,6 +240,8 @@ write_cloud_plist() {
     <string>${TUNNEL_HOSTNAME}</string>
     <key>CLOUDFLARED_BIN</key>
     <string>${CLOUDFLARED_BIN}</string>
+    <key>CLOUDFLARED_PROTOCOL</key>
+    <string>${CLOUDFLARED_PROTOCOL}</string>
     <key>CF_CONFIG_PATH</key>
     <string>${CF_CONFIG_PATH}</string>
     <key>TEMPERANCE_USE_CAFFEINATE</key>
