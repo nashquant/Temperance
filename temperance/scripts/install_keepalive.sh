@@ -37,6 +37,12 @@ if [[ -z "${NODE_BIN:-}" ]]; then
   NODE_BIN="$(command -v node || true)"
 fi
 NODE_BIN="${NODE_BIN:-/opt/homebrew/bin/node}"
+if [[ -z "${NPM_BIN:-}" ]]; then
+  NPM_BIN="$(command -v npm || true)"
+fi
+NPM_BIN="${NPM_BIN:-/opt/homebrew/bin/npm}"
+FRONTEND_PYTHON_BIN="${FRONTEND_PYTHON_BIN:-${BACKEND_PYTHON_BIN}}"
+FRONTEND_BUILD_ON_START="${FRONTEND_BUILD_ON_START:-0}"
 TEMPERANCE_USE_CAFFEINATE="${TEMPERANCE_USE_CAFFEINATE:-1}"
 if [[ -z "${CAFFEINATE_BIN:-}" ]]; then
   CAFFEINATE_BIN="$(command -v caffeinate || true)"
@@ -60,6 +66,9 @@ Env overrides:
   CLOUDFLARED_BIN    cloudflared binary (default: cloudflared)
   CLOUDFLARED_PROTOCOL cloudflared transport protocol (default: http2)
   NODE_BIN           node binary (default: /opt/homebrew/bin/node)
+  NPM_BIN            npm binary used for frontend builds (default: /opt/homebrew/bin/npm)
+  FRONTEND_PYTHON_BIN python binary used for static frontend serving (default: backend python)
+  FRONTEND_BUILD_ON_START rebuild frontend dist before serving (default: 0)
   TEMPERANCE_USE_CAFFEINATE wrap services with caffeinate when available (default: 1)
   CAFFEINATE_BIN     caffeinate binary (default: /usr/bin/caffeinate)
 EOF
@@ -129,6 +138,12 @@ write_frontend_plist() {
     <string>${FRONTEND_HOST}</string>
     <key>NODE_BIN</key>
     <string>${NODE_BIN}</string>
+    <key>NPM_BIN</key>
+    <string>${NPM_BIN}</string>
+    <key>FRONTEND_PYTHON_BIN</key>
+    <string>${FRONTEND_PYTHON_BIN}</string>
+    <key>FRONTEND_BUILD_ON_START</key>
+    <string>${FRONTEND_BUILD_ON_START}</string>
     <key>TEMPERANCE_USE_CAFFEINATE</key>
     <string>${TEMPERANCE_USE_CAFFEINATE}</string>
     <key>CAFFEINATE_BIN</key>
