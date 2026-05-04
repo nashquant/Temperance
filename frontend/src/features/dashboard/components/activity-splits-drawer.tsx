@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { Clock3, HeartPulse, Route, Target, X } from 'lucide-react';
+import { Clock3, HeartPulse, Navigation, Route, Target, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { QueryShell } from '@/components/ui/query-shell';
@@ -35,6 +35,7 @@ type DrawerLapRow = {
   display_mode: 'running' | 'eqv';
 };
 
+const MIN_VISIBLE_SPLIT_DISTANCE_KM = 0.1;
 
 function formatActivityTitle(raw: string): string {
   const cleaned = String(raw || '').trim();
@@ -190,6 +191,14 @@ function normalizedLapRows(detail: ActivityDetailResponse | undefined): DrawerLa
     .filter((lap) => lap.duration_label !== formatDurationHMS(0) || lap.distance_km > 0);
 }
 
+function visibleLapRows(laps: DrawerLapRow[]): DrawerLapRow[] {
+  return laps.filter((lap) => {
+    const primaryDistance = Number(lap.distance_km) || 0;
+    const eqvDistance = Number(lap.distance_eqv_km) || 0;
+    return Math.max(primaryDistance, eqvDistance) >= MIN_VISIBLE_SPLIT_DISTANCE_KM;
+  });
+}
+
 
 function zoneFromIfPct(ifPct: number): string {
   const value = Number(ifPct) || 0;
@@ -272,7 +281,9 @@ export function ActivitySplitsDrawer({
       ? [activityHeaderTitle, activitySourceLabel].filter(Boolean).join(' ')
       : activityHeaderDateTime;
   const laps = normalizedLapRows(detailQuery.data);
-  const useEqv = laps.length > 0 && laps.some((lap) => lap.display_mode === 'eqv');
+  const displayedLaps = visibleLapRows(laps);
+  const hiddenLapCount = Math.max(0, laps.length - displayedLaps.length);
+  const useEqv = displayedLaps.length > 0 && displayedLaps.some((lap) => lap.display_mode === 'eqv');
   const zoneSummary = resolveZoneSummary(detailQuery.data, laps);
   const updateMutation = useMutation({
     mutationFn: async (nextText: string) => {
@@ -369,21 +380,31 @@ export function ActivitySplitsDrawer({
                   <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{Math.round(activity?.avg_hr ?? 0)} bpm</p>
                 </div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground">Zones</p>
-                  <p className="text-[11px] text-slate-300/60">Time spent</p>
+              <div className="space-y-2">
+                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
+                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Navigation className="h-3 w-3" />Distance</p>
+                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{(activity?.distance_km ?? 0).toFixed(2)} km</p>
                 </div>
-                <div className="space-y-1.5">
-                  {zoneSummary.map((zone) => (
-                    <ZoneBar
-                      key={zone.zone}
-                      zone={zone.zone}
-                      seconds={zone.seconds}
-                      pct={zone.pct}
-                      className="grid grid-cols-[26px_minmax(0,1fr)_34px_24px] items-center gap-1 text-[10.5px] leading-4 text-slate-300/72"
-                    />
-                  ))}
+                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
+                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Clock3 className="h-3 w-3" />Total Time</p>
+                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{formatDurationHMS(Math.round((activity?.duration_min ?? 0) * 60))}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">HR Zones</p>
+                    <p className="text-[11px] text-slate-300/60">Time spent</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    {zoneSummary.map((zone) => (
+                      <ZoneBar
+                        key={zone.zone}
+                        zone={zone.zone}
+                        seconds={zone.seconds}
+                        pct={zone.pct}
+                        className="grid grid-cols-[26px_minmax(0,1fr)_34px_24px] items-center gap-1 text-[10.5px] leading-4 text-slate-300/72"
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -423,14 +444,16 @@ export function ActivitySplitsDrawer({
               </div>
             ) : null}
 
-            {laps.length === 0 ? (
+            {displayedLaps.length === 0 ? (
               <div className="rounded-xl border border-white/10 bg-black/15 p-4 text-sm text-slate-300/72">
-                No split laps available for this activity.
+                {laps.length === 0
+                  ? 'No split laps available for this activity.'
+                  : `All recorded splits are shorter than ${MIN_VISIBLE_SPLIT_DISTANCE_KM.toFixed(1)} km.`}
               </div>
             ) : (
               <div className="space-y-3">
                 <ActivitySplitsBarChart
-                  data={laps.map((lap) => ({
+                  data={displayedLaps.map((lap) => ({
                     label: `L${lap.lap}`,
                     ifPct: Number(lap.if_pct) || 0,
                     type: lap.description || '-',
@@ -446,7 +469,10 @@ export function ActivitySplitsDrawer({
                   </div>
                   <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2 text-xs text-slate-300/72">
                     <Clock3 className="h-3 w-3" />
-                    <span>{laps.length} split{laps.length === 1 ? '' : 's'}</span>
+                    <span>{displayedLaps.length} split{displayedLaps.length === 1 ? '' : 's'}</span>
+                    {hiddenLapCount > 0 ? (
+                      <span>Showing laps ≥ {MIN_VISIBLE_SPLIT_DISTANCE_KM.toFixed(1)} km.</span>
+                    ) : null}
                   </div>
                   <table className="w-full text-sm">
                     <thead className="bg-white/5 text-slate-300/72">
@@ -461,7 +487,7 @@ export function ActivitySplitsDrawer({
                       </tr>
                     </thead>
                     <tbody>
-                      {laps.map((lap, index) => (
+                      {displayedLaps.map((lap, index) => (
                         <tr key={`${lap.lap ?? index}-${index}`} className="border-t border-white/10 text-foreground/94">
                           <td className="px-3 py-2">{lap.lap ?? index + 1}</td>
                           <td className="px-3 py-2">{lap.description || '-'}</td>

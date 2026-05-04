@@ -9,16 +9,19 @@ BACKEND_LABEL="com.temperance.backend"
 FRONTEND_LABEL="com.temperance.frontend"
 CLOUD_LABEL="com.temperance.cloudflared"
 MCP_LABEL="com.temperance.mcp"
+WATCHDOG_LABEL="com.temperance.tunnel-watchdog"
 
 BACKEND_PLIST="${LAUNCH_AGENTS_DIR}/${BACKEND_LABEL}.plist"
 FRONTEND_PLIST="${LAUNCH_AGENTS_DIR}/${FRONTEND_LABEL}.plist"
 CLOUD_PLIST="${LAUNCH_AGENTS_DIR}/${CLOUD_LABEL}.plist"
 MCP_PLIST="${LAUNCH_AGENTS_DIR}/${MCP_LABEL}.plist"
+WATCHDOG_PLIST="${LAUNCH_AGENTS_DIR}/${WATCHDOG_LABEL}.plist"
 
 BACKEND_SCRIPT="${ROOT_DIR}/scripts/service_backend.sh"
 FRONTEND_SCRIPT="${ROOT_DIR}/scripts/service_frontend.sh"
 CLOUD_SCRIPT="${ROOT_DIR}/scripts/service_cloudflared.sh"
 MCP_SCRIPT="${ROOT_DIR}/scripts/service_mcp.sh"
+WATCHDOG_SCRIPT="${ROOT_DIR}/scripts/tunnel_watchdog.py"
 CF_CONFIG_PATH="${ROOT_DIR}/data/private/cloudflared.keepalive.yml"
 
 BACKEND_PORT="${BACKEND_PORT:-8000}"
@@ -69,6 +72,7 @@ Env overrides:
   NPM_BIN            npm binary used for frontend builds (default: /opt/homebrew/bin/npm)
   FRONTEND_PYTHON_BIN python binary used for static frontend serving (default: backend python)
   FRONTEND_BUILD_ON_START rebuild frontend dist before serving (default: 0)
+  TEMPERANCE_WATCHDOG_COOLDOWN seconds between tunnel incident snapshots (default: 60)
   TEMPERANCE_USE_CAFFEINATE wrap services with caffeinate when available (default: 1)
   CAFFEINATE_BIN     caffeinate binary (default: /usr/bin/caffeinate)
 EOF
@@ -279,6 +283,45 @@ write_cloud_plist() {
 EOF
 }
 
+write_watchdog_plist() {
+  cat > "${WATCHDOG_PLIST}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${WATCHDOG_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${BACKEND_PYTHON_BIN}</string>
+    <string>${WATCHDOG_SCRIPT}</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${ROOT_DIR}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>TEMPERANCE_CLOUDFLARED_LOG</key>
+    <string>${LOG_DIR}/cloudflared_launchd.err.log</string>
+    <key>TEMPERANCE_WATCHDOG_EVENTS</key>
+    <string>${LOG_DIR}/tunnel_watchdog_events.jsonl</string>
+    <key>TEMPERANCE_WATCHDOG_COOLDOWN</key>
+    <string>${TEMPERANCE_WATCHDOG_COOLDOWN:-60}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${LOG_DIR}/tunnel_watchdog_launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_DIR}/tunnel_watchdog_launchd.err.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
+EOF
+}
+
 load_jobs() {
   launchctl bootout "gui/$(id -u)" "${BACKEND_PLIST}" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "${BACKEND_PLIST}"
@@ -288,6 +331,8 @@ load_jobs() {
   launchctl bootstrap "gui/$(id -u)" "${MCP_PLIST}"
   launchctl bootout "gui/$(id -u)" "${CLOUD_PLIST}" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "${CLOUD_PLIST}"
+  launchctl bootout "gui/$(id -u)" "${WATCHDOG_PLIST}" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "${WATCHDOG_PLIST}"
 }
 
 restart_jobs() {
@@ -316,13 +361,15 @@ restart_jobs() {
   restart_job "${FRONTEND_LABEL}" "${FRONTEND_PLIST}"
   restart_job "${MCP_LABEL}" "${MCP_PLIST}"
   restart_job "${CLOUD_LABEL}" "${CLOUD_PLIST}"
+  restart_job "${WATCHDOG_LABEL}" "${WATCHDOG_PLIST}"
 }
 
 ensure_service_scripts_executable() {
-  chmod +x "${BACKEND_SCRIPT}" "${FRONTEND_SCRIPT}" "${MCP_SCRIPT}" "${CLOUD_SCRIPT}"
+  chmod +x "${BACKEND_SCRIPT}" "${FRONTEND_SCRIPT}" "${MCP_SCRIPT}" "${CLOUD_SCRIPT}" "${WATCHDOG_SCRIPT}"
 }
 
 unload_jobs() {
+  launchctl bootout "gui/$(id -u)" "${WATCHDOG_PLIST}" >/dev/null 2>&1 || true
   launchctl bootout "gui/$(id -u)" "${CLOUD_PLIST}" >/dev/null 2>&1 || true
   launchctl bootout "gui/$(id -u)" "${MCP_PLIST}" >/dev/null 2>&1 || true
   launchctl bootout "gui/$(id -u)" "${FRONTEND_PLIST}" >/dev/null 2>&1 || true
@@ -345,11 +392,13 @@ status_jobs() {
   echo "Public app URL:      https://${TUNNEL_HOSTNAME}"
   echo "Tunnel config:       ${CF_CONFIG_PATH}"
   echo "Caffeinate:          ${TEMPERANCE_USE_CAFFEINATE} (${CAFFEINATE_BIN})"
+  echo "Watchdog events:     ${LOG_DIR}/tunnel_watchdog_events.jsonl"
   echo
   launchctl print "gui/$(id -u)/${BACKEND_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${BACKEND_LABEL}: not loaded"
   launchctl print "gui/$(id -u)/${FRONTEND_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${FRONTEND_LABEL}: not loaded"
   launchctl print "gui/$(id -u)/${MCP_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${MCP_LABEL}: not loaded"
   launchctl print "gui/$(id -u)/${CLOUD_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${CLOUD_LABEL}: not loaded"
+  launchctl print "gui/$(id -u)/${WATCHDOG_LABEL}" 2>/dev/null | rg "state =|pid =|path =" || echo "${WATCHDOG_LABEL}: not loaded"
 }
 
 logs_jobs() {
@@ -357,6 +406,7 @@ logs_jobs() {
   touch "${LOG_DIR}/frontend_launchd.out.log" "${LOG_DIR}/frontend_launchd.err.log"
   touch "${LOG_DIR}/mcp_launchd.out.log" "${LOG_DIR}/mcp_launchd.err.log"
   touch "${LOG_DIR}/cloudflared_launchd.out.log" "${LOG_DIR}/cloudflared_launchd.err.log"
+  touch "${LOG_DIR}/tunnel_watchdog_launchd.out.log" "${LOG_DIR}/tunnel_watchdog_launchd.err.log" "${LOG_DIR}/tunnel_watchdog_events.jsonl"
   tail -f \
     "${LOG_DIR}/backend_launchd.out.log" \
     "${LOG_DIR}/backend_launchd.err.log" \
@@ -365,7 +415,9 @@ logs_jobs() {
     "${LOG_DIR}/mcp_launchd.out.log" \
     "${LOG_DIR}/mcp_launchd.err.log" \
     "${LOG_DIR}/cloudflared_launchd.out.log" \
-    "${LOG_DIR}/cloudflared_launchd.err.log"
+    "${LOG_DIR}/cloudflared_launchd.err.log" \
+    "${LOG_DIR}/tunnel_watchdog_launchd.out.log" \
+    "${LOG_DIR}/tunnel_watchdog_launchd.err.log"
 }
 
 cmd="${1:-}"
@@ -377,6 +429,7 @@ case "${cmd}" in
     write_frontend_plist
     write_mcp_plist
     write_cloud_plist
+    write_watchdog_plist
     unload_jobs
     load_jobs
     echo "Installed KeepAlive services."
@@ -384,7 +437,7 @@ case "${cmd}" in
     ;;
   uninstall)
     unload_jobs
-    rm -f "${BACKEND_PLIST}" "${FRONTEND_PLIST}" "${MCP_PLIST}" "${CLOUD_PLIST}"
+    rm -f "${BACKEND_PLIST}" "${FRONTEND_PLIST}" "${MCP_PLIST}" "${CLOUD_PLIST}" "${WATCHDOG_PLIST}"
     echo "Uninstalled KeepAlive services."
     ;;
   start)
@@ -394,6 +447,7 @@ case "${cmd}" in
     write_frontend_plist
     write_mcp_plist
     write_cloud_plist
+    write_watchdog_plist
     load_jobs
     status_jobs
     ;;
@@ -408,6 +462,7 @@ case "${cmd}" in
     write_frontend_plist
     write_mcp_plist
     write_cloud_plist
+    write_watchdog_plist
     restart_jobs
     status_jobs
     ;;

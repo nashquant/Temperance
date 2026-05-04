@@ -12,13 +12,19 @@ class SpaStaticHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, directory: str, **kwargs):
         super().__init__(*args, directory=directory, **kwargs)
 
-    def do_GET(self) -> None:
+    def _serve_with_spa_fallback(self, method_name: str) -> None:
         request_path = Path(self.translate_path(self.path))
         if request_path.exists() and request_path.is_file():
-            return super().do_GET()
+            return getattr(super(), method_name)()
 
         self.path = "/index.html"
-        return super().do_GET()
+        return getattr(super(), method_name)()
+
+    def do_GET(self) -> None:
+        self._serve_with_spa_fallback("do_GET")
+
+    def do_HEAD(self) -> None:
+        self._serve_with_spa_fallback("do_HEAD")
 
     def end_headers(self) -> None:
         if self.path == "/index.html":

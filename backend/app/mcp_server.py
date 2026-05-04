@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import re
@@ -13,10 +14,32 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import unquote, urlsplit
 
-try:
-    import pandas as pd
-except ModuleNotFoundError:  # pragma: no cover - optional in pure-helper test environments
-    pd = None
+# Pydantic discovers installed plugins during import. In this local stdio MCP
+# process that can pull in telemetry stacks before the client can list tools.
+os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "1")
+
+
+class _LazyOptionalModule:
+    def __init__(self, module_name: str) -> None:
+        self._module_name = module_name
+        self._module: Any | None = None
+
+    def _load(self) -> Any:
+        if self._module is None:
+            self._module = importlib.import_module(self._module_name)
+        return self._module
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._load(), name)
+
+
+pd = _LazyOptionalModule("pandas")
+
+
+def ema_multi(*args: Any, **kwargs: Any) -> Any:
+    from temperance.analytics import ema_multi as ema_multi_impl
+
+    return ema_multi_impl(*args, **kwargs)
 
 try:
     import yaml
@@ -24,7 +47,6 @@ except ModuleNotFoundError:  # pragma: no cover - optional in pure-helper test e
     yaml = None
 
 from pydantic import BaseModel, Field
-from temperance.analytics import ema_multi
 from temperance.planning import get_methodology, preview_horizon
 from temperance.planning.state_builder import infer_hard_subtype
 from temperance.planning.stress import classify_session_stress, is_long_run_candidate
