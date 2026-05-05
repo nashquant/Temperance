@@ -111,6 +111,7 @@ from temperance.analytics import (
     ema_multi,
     weekly_summary,
 )
+from temperance.progression_metrics import build_derived_progression_metrics
 from temperance.planning import (
     build_session_candidates,
     build_user_planning_state,
@@ -4615,7 +4616,10 @@ def _generated_activity_context(
         model_lookup.get(latest_model_day, {}) if latest_model_day is not None else {}
     )
     latest_wellness: dict[str, float] = {}
-    wellness_df = get_wellness_df(db_path=db_path)
+    try:
+        wellness_df = get_wellness_df(db_path=db_path)
+    except Exception:
+        wellness_df = pd.DataFrame()
     if not wellness_df.empty:
         wellness_df = wellness_df.copy()
         wellness_df["day"] = pd.to_datetime(
@@ -5523,7 +5527,10 @@ def _generated_activity_planning_state(
     )
 
     latest_wellness: dict[str, float] = {}
-    wellness_df = get_wellness_df(db_path=db_path)
+    try:
+        wellness_df = get_wellness_df(db_path=db_path)
+    except Exception:
+        wellness_df = pd.DataFrame()
     if not wellness_df.empty:
         wellness_df = wellness_df.copy()
         wellness_df["day"] = pd.to_datetime(
@@ -7794,6 +7801,46 @@ def _rollup_athlete_progression_weekly_points(model_df: pd.DataFrame) -> pd.Data
             injury_risk_state=("injury_risk_state", "mean"),
             vdot=("vdot", "max"),
             vdot_max=("vdot_max", "max"),
+            performance_trend=("performance_trend", "mean"),
+            performance_confidence=("performance_confidence", "mean"),
+            performance_efficiency=("performance_efficiency", "mean"),
+            performance_threshold=("performance_threshold", "mean"),
+            performance_quality_confirmation=(
+                "performance_quality_confirmation",
+                "mean",
+            ),
+            performance_durability_support=(
+                "performance_durability_support",
+                "mean",
+            ),
+            readiness=("readiness", "mean"),
+            readiness_confidence=("readiness_confidence", "mean"),
+            readiness_acute_strain=("readiness_acute_strain", "mean"),
+            readiness_carryover_friction=(
+                "readiness_carryover_friction",
+                "mean",
+            ),
+            readiness_recovery_response=("readiness_recovery_response", "mean"),
+            tissue_load_risk=("tissue_load_risk", "mean"),
+            tissue_load_risk_confidence=("tissue_load_risk_confidence", "mean"),
+            tissue_run_ramp=("tissue_run_ramp", "mean"),
+            tissue_single_run_spike=("tissue_single_run_spike", "mean"),
+            tissue_load_concentration=("tissue_load_concentration", "mean"),
+            tissue_wellness_friction=("tissue_wellness_friction", "mean"),
+            durability=("durability", "mean"),
+            durability_confidence=("durability_confidence", "mean"),
+            durability_single_run_tolerance=(
+                "durability_single_run_tolerance",
+                "mean",
+            ),
+            durability_weekly_specific_tolerance=(
+                "durability_weekly_specific_tolerance",
+                "mean",
+            ),
+            durability_specific_load_consistency=(
+                "durability_specific_load_consistency",
+                "mean",
+            ),
         )
         .sort_values("period_start")
     )
@@ -7911,6 +7958,170 @@ def _format_athlete_progression_weekly_baseline_point(
     }
     row["deviation_reason"] = _athlete_progression_weekly_baseline_deviation_reason(row)
     return row
+
+
+def _build_progression_evidence_frame(
+    filtered: pd.DataFrame,
+    model_df: pd.DataFrame,
+    db_path: Path,
+) -> pd.DataFrame:
+    activity_df = filtered.copy()
+    activity_df["day"] = pd.to_datetime(activity_df.get("day"), errors="coerce")
+    activity_df["if_proxy"] = pd.to_numeric(
+        activity_df.get("if_proxy"), errors="coerce"
+    ).fillna(0.0)
+    activity_df["rtss"] = pd.to_numeric(activity_df.get("rtss"), errors="coerce").fillna(
+        0.0
+    )
+    activity_df["tss"] = pd.to_numeric(activity_df.get("tss"), errors="coerce").fillna(
+        0.0
+    )
+    activity_df["duration_s"] = pd.to_numeric(
+        activity_df.get("duration_s"), errors="coerce"
+    ).fillna(0.0)
+    activity_df["distance_m"] = pd.to_numeric(
+        activity_df.get("distance_m"), errors="coerce"
+    ).fillna(0.0)
+    if "avg_hr_bpm" in activity_df.columns:
+        avg_hr_source = activity_df["avg_hr_bpm"]
+    elif "avg_hr" in activity_df.columns:
+        avg_hr_source = activity_df["avg_hr"]
+    else:
+        avg_hr_source = pd.Series(0.0, index=activity_df.index, dtype=float)
+    activity_df["avg_hr_bpm"] = pd.to_numeric(avg_hr_source, errors="coerce").fillna(0.0)
+
+    sport_lower = activity_df["sport_type"].fillna("").astype(str).str.lower()
+    running_like = sport_lower.str.contains("run") | sport_lower.str.contains(
+        "treadmill"
+    )
+    hard_run = running_like & (
+        (activity_df["if_proxy"] >= 0.90) | (activity_df["rtss"] >= 80.0)
+    )
+    long_run = running_like & (
+        (activity_df["duration_s"] >= 5400.0) | (activity_df["distance_m"] >= 18000.0)
+    )
+    eligible_vdot = running_like & (activity_df["distance_m"] > 0) & (
+        activity_df["duration_s"] > 0
+    ) & (activity_df["if_proxy"] > 0.90)
+
+    lthr_curve = _load_curve_points(
+        db_path=db_path,
+        key=SETTINGS_KEY_LTHR_CURVE,
+        value_key="lthr_bpm",
+        fallback_value=DEFAULT_LTHR,
+    )
+    lthr_default = float(lthr_curve[-1][1]) if lthr_curve else DEFAULT_LTHR
+    activity_df["lthr_bpm"] = activity_df["day"].map(
+        lambda day: float(
+            _curve_value_at(lthr_curve, lthr_default, pd.Timestamp(day).to_pydatetime())
+        )
+        if pd.notna(day)
+        else lthr_default
+    )
+    activity_df["activity_vdot"] = activity_df.apply(
+        lambda row: _activity_vdot(
+            distance_m=_safe_float(row.get("distance_m")),
+            duration_s=_safe_float(row.get("duration_s")),
+        )
+        if bool(eligible_vdot.loc[row.name])
+        else None,
+        axis=1,
+    )
+    activity_df["efficiency_evidence"] = activity_df.apply(
+        lambda row: float(row["activity_vdot"])
+        / max(
+            float(_safe_float(row.get("avg_hr_bpm")) / max(_safe_float(row.get("lthr_bpm")), 1.0)),
+            0.70,
+        )
+        if pd.notna(row.get("activity_vdot")) and _safe_float(row.get("avg_hr_bpm")) > 0
+        else np.nan,
+        axis=1,
+    )
+    activity_df["quality_session_rtss"] = activity_df["rtss"].where(hard_run, 0.0)
+    activity_df["long_run_rtss"] = activity_df["rtss"].where(long_run, 0.0)
+    activity_df["running_rtss"] = activity_df["rtss"].where(running_like, 0.0)
+    activity_df["running_day"] = running_like.astype(float)
+    activity_df["hard_run_count"] = hard_run.astype(float)
+    activity_df["vdot_eligible_runs"] = eligible_vdot.astype(float)
+
+    daily_activity = (
+        activity_df.groupby("day", as_index=False)
+        .agg(
+            efficiency_evidence=("efficiency_evidence", "mean"),
+            quality_session_load=("quality_session_rtss", "sum"),
+            vdot_eligible_runs=("vdot_eligible_runs", "sum"),
+            hard_run_count=("hard_run_count", "sum"),
+            single_run_rtss_max=("rtss", "max"),
+            long_run_load=("long_run_rtss", "sum"),
+            running_rtss=("running_rtss", "sum"),
+            running_day=("running_day", "max"),
+        )
+        .sort_values("day")
+    )
+    daily_activity["long_run_share"] = pd.to_numeric(
+        daily_activity["long_run_load"], errors="coerce"
+    ).fillna(0.0) / pd.to_numeric(
+        daily_activity["running_rtss"], errors="coerce"
+    ).fillna(0.0).clip(
+        lower=1.0
+    )
+
+    evidence = model_df[
+        ["day", "tss", "rtss", "baseline_rtss", "lt_pace_target_sec_per_km"]
+    ].copy()
+    evidence["threshold_pace_index"] = (
+        DEFAULT_THRESHOLD_PACE_SEC_PER_KM
+        / pd.to_numeric(
+            evidence["lt_pace_target_sec_per_km"], errors="coerce"
+        ).fillna(DEFAULT_THRESHOLD_PACE_SEC_PER_KM).clip(lower=1.0)
+    )
+    evidence = evidence.merge(daily_activity, on="day", how="left")
+
+    try:
+        wellness_df = get_wellness_df(db_path=db_path)
+    except Exception:
+        wellness_df = pd.DataFrame()
+    if not wellness_df.empty:
+        wellness = wellness_df.copy()
+        wellness["day"] = pd.to_datetime(wellness.get("day_utc"), errors="coerce")
+        resting_hr_series = pd.to_numeric(
+            wellness.get("resting_hr"), errors="coerce"
+        ).fillna(0.0)
+        wellness["resting_hr_delta"] = (
+            resting_hr_series - resting_hr_series.rolling(21, min_periods=1).median()
+        )
+        evidence = evidence.merge(
+            wellness[
+                [
+                    "day",
+                    "training_readiness",
+                    "hrv_status",
+                    "resting_hr_delta",
+                    "body_battery_end",
+                ]
+            ],
+            on="day",
+            how="left",
+        )
+
+    for column in [
+        "efficiency_evidence",
+        "quality_session_load",
+        "vdot_eligible_runs",
+        "hard_run_count",
+        "single_run_rtss_max",
+        "long_run_load",
+        "long_run_share",
+        "running_day",
+        "training_readiness",
+        "hrv_status",
+        "resting_hr_delta",
+        "body_battery_end",
+    ]:
+        if column not in evidence.columns:
+            evidence[column] = 0.0
+        evidence[column] = pd.to_numeric(evidence[column], errors="coerce")
+    return evidence.fillna(0.0)
 
 
 def _build_athlete_progression_payload(
@@ -8159,6 +8370,36 @@ def _build_athlete_progression_payload(
     model_df = _apply_athlete_progression_baseline_fields(
         model_df, blend_profile=baseline_blend_profile
     )
+    evidence_df = _build_progression_evidence_frame(
+        filtered=filtered, model_df=model_df, db_path=db_path
+    )
+    derived_df = build_derived_progression_metrics(evidence_df)
+    derived_columns = [
+        "day",
+        "performance_trend",
+        "performance_confidence",
+        "performance_efficiency",
+        "performance_threshold",
+        "performance_quality_confirmation",
+        "performance_durability_support",
+        "readiness",
+        "readiness_confidence",
+        "readiness_acute_strain",
+        "readiness_carryover_friction",
+        "readiness_recovery_response",
+        "tissue_load_risk",
+        "tissue_load_risk_confidence",
+        "tissue_run_ramp",
+        "tissue_single_run_spike",
+        "tissue_load_concentration",
+        "tissue_wellness_friction",
+        "durability",
+        "durability_confidence",
+        "durability_single_run_tolerance",
+        "durability_weekly_specific_tolerance",
+        "durability_specific_load_consistency",
+    ]
+    model_df = model_df.merge(derived_df[derived_columns], on="day", how="left")
 
     tss_series = pd.to_numeric(model_df.get("tss"), errors="coerce").fillna(0.0)
     rtss_series = pd.to_numeric(model_df.get("rtss"), errors="coerce").fillna(0.0)
@@ -8340,6 +8581,68 @@ def _build_athlete_progression_payload(
                     )
                     and _safe_float(row.get("vdot_max")) > 0
                     else None
+                ),
+                "performance_trend": round(
+                    _safe_float(row.get("performance_trend")), 3
+                ),
+                "performance_confidence": round(
+                    _safe_float(row.get("performance_confidence")), 3
+                ),
+                "performance_efficiency": round(
+                    _safe_float(row.get("performance_efficiency")), 3
+                ),
+                "performance_threshold": round(
+                    _safe_float(row.get("performance_threshold")), 3
+                ),
+                "performance_quality_confirmation": round(
+                    _safe_float(row.get("performance_quality_confirmation")), 3
+                ),
+                "performance_durability_support": round(
+                    _safe_float(row.get("performance_durability_support")), 3
+                ),
+                "readiness": round(_safe_float(row.get("readiness")), 3),
+                "readiness_confidence": round(
+                    _safe_float(row.get("readiness_confidence")), 3
+                ),
+                "readiness_acute_strain": round(
+                    _safe_float(row.get("readiness_acute_strain")), 3
+                ),
+                "readiness_carryover_friction": round(
+                    _safe_float(row.get("readiness_carryover_friction")), 3
+                ),
+                "readiness_recovery_response": round(
+                    _safe_float(row.get("readiness_recovery_response")), 3
+                ),
+                "tissue_load_risk": round(
+                    _safe_float(row.get("tissue_load_risk")), 3
+                ),
+                "tissue_load_risk_confidence": round(
+                    _safe_float(row.get("tissue_load_risk_confidence")), 3
+                ),
+                "tissue_run_ramp": round(
+                    _safe_float(row.get("tissue_run_ramp")), 3
+                ),
+                "tissue_single_run_spike": round(
+                    _safe_float(row.get("tissue_single_run_spike")), 3
+                ),
+                "tissue_load_concentration": round(
+                    _safe_float(row.get("tissue_load_concentration")), 3
+                ),
+                "tissue_wellness_friction": round(
+                    _safe_float(row.get("tissue_wellness_friction")), 3
+                ),
+                "durability": round(_safe_float(row.get("durability")), 3),
+                "durability_confidence": round(
+                    _safe_float(row.get("durability_confidence")), 3
+                ),
+                "durability_single_run_tolerance": round(
+                    _safe_float(row.get("durability_single_run_tolerance")), 3
+                ),
+                "durability_weekly_specific_tolerance": round(
+                    _safe_float(row.get("durability_weekly_specific_tolerance")), 3
+                ),
+                "durability_specific_load_consistency": round(
+                    _safe_float(row.get("durability_specific_load_consistency")), 3
                 ),
                 "baseline_tss": round(_safe_float(row.get("baseline_tss")), 3),
                 "baseline_rtss": round(_safe_float(row.get("baseline_rtss")), 3),
@@ -9104,9 +9407,8 @@ def _build_activity_dashboard_payload(
             weekly_baseline_lookup[ts] = _safe_float(row.get("baseline_tss"))
             weekly_baseline_rtss_lookup[ts] = _safe_float(row.get("baseline_rtss"))
 
-    # Forward-fill the baseline into future weeks that have no recorded activities.
-    # This ensures the current (in-progress) week shows a baseline even before
-    # any activity is logged.
+    # Forward-fill the baseline only through completed prior weeks. The current
+    # in-progress week stays blank until it has a modeled point of its own.
     if weekly_baseline_lookup:
         last_baseline_week = max(weekly_baseline_lookup)
         last_baseline_value = weekly_baseline_lookup[last_baseline_week]
@@ -9114,7 +9416,8 @@ def _build_activity_dashboard_payload(
             last_baseline_week, 0.0
         )
         fill_week = last_baseline_week + pd.Timedelta(weeks=1)
-        while fill_week <= today_local:
+        current_week_start = _week_start_monday(today_local)
+        while fill_week < current_week_start:
             if fill_week not in weekly_baseline_lookup:
                 weekly_baseline_lookup[fill_week] = last_baseline_value
                 weekly_baseline_rtss_lookup[fill_week] = last_baseline_rtss_value

@@ -1051,6 +1051,70 @@ class MCPServerHelpersTest(unittest.TestCase):
             {"history_anchor_below_capacity", "balanced_blend"},
         )
 
+    def test_get_fitness_form_exposes_new_progression_metric_fields(self):
+        fake_daily_progression = {
+            "points": [
+                {
+                    "period_start": "2026-03-01",
+                    "tss": 55.0,
+                    "rtss": 57.0,
+                    "duration_h": 1.0,
+                    "distance_km": 10.0,
+                    "distance_eqv_km": 10.2,
+                    "target_tss": 60.0,
+                    "baseline_tss": 60.0,
+                    "baseline_distance_km": 11.0,
+                    "lt_target_tss": 63.0,
+                    "lt_target_distance_km": 11.5,
+                    "capacity_baseline_tss": 62.0,
+                    "recent_load_anchor_tss": 58.0,
+                    "blended_baseline_tss_before_smoothing": 59.0,
+                    "smoothed_baseline_tss": 60.0,
+                    "performance_trend": 66.0,
+                    "performance_confidence": 92.0,
+                    "readiness": 58.0,
+                    "readiness_confidence": 95.0,
+                    "tissue_load_risk": 42.0,
+                    "tissue_load_risk_confidence": 88.0,
+                    "durability": 61.0,
+                    "durability_confidence": 84.0,
+                }
+            ]
+        }
+        fake_weekly_progression = {
+            "points": [{"period_start": "2026-02-23", "baseline_tss": 57.0}]
+        }
+
+        def _fake_progression_builder(**kwargs):
+            if kwargs.get("aggregation") == "weekly":
+                return fake_weekly_progression
+            return fake_daily_progression
+
+        with (
+            patch(
+                "backend.app.mcp_server._resolve_db_path",
+                return_value=Path("/tmp/fake.sqlite"),
+            ),
+            patch(
+                "backend.app.mcp_server._analytics_helpers",
+                return_value={
+                    "_build_athlete_progression_payload": _fake_progression_builder,
+                    "_format_athlete_progression_weekly_baseline_point": lambda point: {
+                        "week_start": str(point.get("period_start") or ""),
+                        "baseline_tss": 57.0,
+                    },
+                },
+            ),
+        ):
+            result = mcp_server.tool_get_fitness_form({"owner": "admin", "days": 14})
+
+        point = result["daily"][0]
+        self.assertEqual(point["performance_trend"], 66.0)
+        self.assertEqual(point["readiness"], 58.0)
+        self.assertEqual(point["tissue_load_risk"], 42.0)
+        self.assertEqual(point["durability"], 61.0)
+        self.assertEqual(result["summary"]["current_performance_trend"], 66.0)
+
     def test_get_fitness_form_weekly_baseline_includes_current_week_from_weekly_progression(
         self,
     ):

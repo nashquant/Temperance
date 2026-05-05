@@ -34,7 +34,7 @@ If the app opens but looks empty, the usual cause is that no Garmin data has bee
 - Sync Garmin activities and wellness data into a local archive.
 - Plan workouts with compact text that the app can parse, normalize, edit, and re-use.
 - Compare planned work with completed activity history.
-- Track fitness, fatigue, form, durability, pounding, overreach, injury-risk burden, and weekly baseline.
+- Track TSS, rTSS, weekly baseline, performance trend, readiness, tissue-load risk, durability, and wellness context.
 - Use doctrine-aware MCP coaching tools to inspect the active build, judge recent history, plan tomorrow, and critique proposed changes.
 - Keep multiple owner-scoped local databases while still running a single local app.
 
@@ -46,7 +46,7 @@ Use this first. It shows the current week with completed and planned training si
 
 **Athlete Progression**
 
-Use this to understand trend, not just today's score. It shows fitness, fatigue, form, weekly baseline, durability, pounding, overreach burden, and injury-risk burden over time.
+Use this to understand trend, not just today's score. It shows load and baseline alongside performance trend, readiness, tissue-load risk, durability, and wellness context over time.
 
 **Weekly Outlook**
 
@@ -100,13 +100,9 @@ Planned activities are compact workout strings. Actual activities come from Garm
 
 The weekly baseline is the app's modeled expectation for sustainable weekly load. It starts from LT-derived weekly capacity, blends in trailing 21/63/365-day load history, and is exported as Monday-labeled weekly points. MCP `get_fitness_form.weekly_baseline` is expected to match the Athlete Progression `Base` line as closely as rounding allows.
 
-**Fitness, fatigue, and form**
+**Performance trend, readiness, tissue-load risk, and durability**
 
-The dashboard and MCP expose CTL/ATL/TSB-style signals. In current terms, fitness is a 42-day TSS EMA, fatigue is a 7-day TSS EMA, and form is fitness minus fatigue. These are planning context, not commands.
-
-**Durability, pounding, overreach, and injury risk**
-
-Durability tracks longer-term running robustness with a 100-day rTSS EMA. Pounding tracks acute running mechanical load with a 7-day rTSS EMA. Overreach and injury risk are accumulated burden signals from excess load above the daily target: overreach uses broad TSS pressure, while injury risk uses rTSS pressure.
+Athlete Progression now separates four different jobs. `performance_trend` is a run-performance evidence score built from pace-vs-strain, threshold movement, and quality confirmation. `readiness` is a short-horizon strain and recovery score. `tissue_load_risk` is a running-specific mechanical-risk score. `durability` is a capability score for how repeatable running-specific load is becoming.
 
 **Support modalities and specificity**
 

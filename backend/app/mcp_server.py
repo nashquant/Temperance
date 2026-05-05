@@ -2432,6 +2432,26 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
                     "racwr": round(_safe_float(pt.get("racwr")), 3)
                     if pt.get("racwr") is not None
                     else None,
+                    "performance_trend": round(
+                        _safe_float(pt.get("performance_trend")), 1
+                    ),
+                    "performance_confidence": round(
+                        _safe_float(pt.get("performance_confidence")), 1
+                    ),
+                    "readiness": round(_safe_float(pt.get("readiness")), 1),
+                    "readiness_confidence": round(
+                        _safe_float(pt.get("readiness_confidence")), 1
+                    ),
+                    "tissue_load_risk": round(
+                        _safe_float(pt.get("tissue_load_risk")), 1
+                    ),
+                    "tissue_load_risk_confidence": round(
+                        _safe_float(pt.get("tissue_load_risk_confidence")), 1
+                    ),
+                    "durability": round(_safe_float(pt.get("durability")), 1),
+                    "durability_confidence": round(
+                        _safe_float(pt.get("durability_confidence")), 1
+                    ),
                     # backward-compat aliases
                     "ctl": round(fitness, 1),
                     "atl": round(fatigue, 1),
@@ -2456,7 +2476,10 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
         "days": days,
         "_note": (
             "fitness\u2248CTL (42-day TSS EMA), fatigue\u2248ATL (7-day TSS EMA); "
-            "overreach and injury_risk measure accumulated burden from excess load above daily target"
+            "overreach and injury_risk measure accumulated burden from excess load above daily target; "
+            "performance_trend reflects pace-vs-strain and quality evidence; "
+            "readiness is acute strain with recovery response; "
+            "tissue_load_risk and durability are running-specific"
         ),
         "summary": _clean_mapping(
             {
@@ -2469,6 +2492,22 @@ def tool_get_fitness_form(arguments: dict[str, Any]) -> dict[str, Any]:
                 "current_overreach": current.get("overreach"),
                 "current_injury_risk": current.get("injury_risk"),
                 "current_racwr": current.get("racwr"),
+                "current_performance_trend": current.get("performance_trend"),
+                "current_performance_confidence": current.get(
+                    "performance_confidence"
+                ),
+                "current_readiness": current.get("readiness"),
+                "current_readiness_confidence": current.get(
+                    "readiness_confidence"
+                ),
+                "current_tissue_load_risk": current.get("tissue_load_risk"),
+                "current_tissue_load_risk_confidence": current.get(
+                    "tissue_load_risk_confidence"
+                ),
+                "current_durability": current.get("durability"),
+                "current_durability_confidence": current.get(
+                    "durability_confidence"
+                ),
                 "peak_fitness": round(peak_fitness, 1),
                 "total_days": len(daily_out),
                 # backward-compat aliases

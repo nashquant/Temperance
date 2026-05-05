@@ -1513,10 +1513,24 @@ def get_dashboard_cache_components(db_path: Path) -> dict[str, str]:
     Returns all six cache-key components for the dashboard in a single
     SQLite connection, avoiding six separate connect/pragma/close cycles.
     """
+
+    def _empty_components() -> dict[str, str]:
+        return {
+            "activities": "0:none:none",
+            "custom_activities": "0:none:none",
+            "planned_activities": "0:none:none",
+            "settings": "0:none",
+            "wellness": "0:none:none",
+            "merges": "0:none:0",
+        }
+
     with closing(get_conn(db_path)) as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at, MAX(start_time_utc) AS max_start_time FROM activities"
-        ).fetchone()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n, MAX(updated_at) AS max_updated_at, MAX(start_time_utc) AS max_start_time FROM activities"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return _empty_components()
         acts = (
             f"{int(row['n'] or 0)}:{row['max_updated_at'] or 'none'}:{row['max_start_time'] or 'none'}"
             if row

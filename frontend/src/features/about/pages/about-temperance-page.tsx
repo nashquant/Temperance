@@ -114,7 +114,7 @@ const aboutBlocks: AboutBlock[] = [
       {
         type: 'paragraph',
         content:
-          'Another side of Temperance is that it looks forward, not just back. By projecting weekly TSS and rTSS, it helps you plan load before it becomes a problem, rather than only recognizing overreaching after the fact. It also brings together raw and derived metrics - such as acute load, chronic load, fatigue, and fitness - and contrasts them with Garmin wellness signals to give training context beyond the session itself.',
+          'Another side of Temperance is that it looks forward, not just back. By projecting weekly TSS and rTSS, it helps you plan load before it becomes a problem. Athlete Progression now separates performance trend, readiness, tissue-load risk, and durability instead of asking one generic load model to mean all of those things at once, and it can contrast those signals with Garmin wellness context when available.',
       },
       {
         type: 'paragraph',
@@ -141,7 +141,7 @@ const aboutBlocks: AboutBlock[] = [
       {
         type: 'paragraph',
         content:
-          'Athlete Progression and Wellness: is the analytical layer, where long-term progression, load, fatigue, fitness, and recovery can be tracked more closely and contrasted with wellness signals.',
+          'Athlete Progression and Wellness: is the analytical layer, where load and baseline can be tracked alongside performance trend, readiness, tissue-load risk, durability, and recovery context.',
       },
       {
         type: 'paragraph',

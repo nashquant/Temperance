@@ -173,19 +173,21 @@ export function AthleteProgressionPage(): JSX.Element {
                 />
 
                 <ProgressionLineChartCard
-                  title="ACWR"
+                  title="Performance Trend"
                   data={deferredNormalizedChartData}
-                  yLabel="ratio"
+                  yLabel="score"
                   series={[
                     {
-                      key: "acwr",
-                      label: "ACWR",
-                      color: PROGRESSION_CHART_COLORS.blueAlt,
+                      key: "performance_trend",
+                      label: "Performance",
+                      color: PROGRESSION_CHART_COLORS.blue,
                     },
                     {
-                      key: "racwr",
-                      label: "rACWR",
-                      color: PROGRESSION_CHART_COLORS.redMuted,
+                      key: "performance_confidence",
+                      label: "Confidence",
+                      color: PROGRESSION_CHART_COLORS.graySoft,
+                      dashed: true,
+                      strokeOpacity: 0.8,
                     },
                   ]}
                 />
@@ -218,39 +220,61 @@ export function AthleteProgressionPage(): JSX.Element {
                 />
 
                 <ProgressionLineChartCard
-                  title="Fitness vs Fatigue"
+                  title="Readiness"
                   data={deferredNormalizedChartData}
-                  yLabel="Load"
-                  targetKey="daily_baseline_tss"
-                  targetLabel="Daily Baseline"
+                  yLabel="score"
                   series={[
                     {
-                      key: "fitness",
-                      label: "Fitness",
-                      color: PROGRESSION_CHART_COLORS.blue,
+                      key: "readiness",
+                      label: "Readiness",
+                      color: PROGRESSION_CHART_COLORS.greenStrong,
                     },
                     {
-                      key: "fatigue",
-                      label: "Fatigue",
-                      color: PROGRESSION_CHART_COLORS.grayDeep,
+                      key: "readiness_confidence",
+                      label: "Confidence",
+                      color: PROGRESSION_CHART_COLORS.graySoft,
+                      dashed: true,
+                      strokeOpacity: 0.8,
                     },
                   ]}
                 />
 
                 <ProgressionLineChartCard
-                  title="Overreach vs Injury Risk"
+                  title="Tissue Load Risk"
                   data={deferredNormalizedChartData}
-                  yLabel="Risk %"
+                  yLabel="score"
                   series={[
                     {
-                      key: "overreach",
-                      label: "Overreach",
-                      color: PROGRESSION_CHART_COLORS.blue,
+                      key: "tissue_load_risk",
+                      label: "Risk",
+                      color: PROGRESSION_CHART_COLORS.grayDeep,
                     },
                     {
-                      key: "injury_risk",
-                      label: "Injury Risk",
-                      color: PROGRESSION_CHART_COLORS.grayDeep,
+                      key: "tissue_load_risk_confidence",
+                      label: "Confidence",
+                      color: PROGRESSION_CHART_COLORS.graySoft,
+                      dashed: true,
+                      strokeOpacity: 0.8,
+                    },
+                  ]}
+                />
+
+                <ProgressionLineChartCard
+                  title="Durability"
+                  data={deferredNormalizedChartData}
+                  yLabel="score"
+                  series={[
+                    {
+                      key: "durability",
+                      label: "Durability",
+                      color: PROGRESSION_CHART_COLORS.purpleSoft,
+                    },
+                    {
+                      key: "durability_confidence",
+                      label: "Confidence",
+                      color: PROGRESSION_CHART_COLORS.graySoft,
+                      dashed: true,
+                      strokeOpacity: 0.8,
                     },
                   ]}
                 />

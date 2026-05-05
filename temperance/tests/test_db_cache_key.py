@@ -31,3 +31,20 @@ def test_cache_components_match_individual_calls():
     assert components["settings"] == get_settings_cache_key(db)
     assert components["wellness"] == get_wellness_cache_key(db)
     assert components["merges"] == get_merges_cache_key(db)
+
+
+def test_dashboard_cache_components_handle_uninitialized_db() -> None:
+    f = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    db = Path(f.name)
+    f.close()
+
+    components = get_dashboard_cache_components(db)
+
+    assert components == {
+        "activities": "0:none:none",
+        "custom_activities": "0:none:none",
+        "planned_activities": "0:none:none",
+        "settings": "0:none",
+        "wellness": "0:none:none",
+        "merges": "0:none:0",
+    }

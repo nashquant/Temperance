@@ -26,66 +26,61 @@ rTSS = duration_s × (tp_pace / avg_pace)² / 3600 × 100
 
 ---
 
-### 1.2 CTL / ATL / TSB — Fitness / Fatigue / Form
+### 1.2 Performance Trend
 
-```
-CTL_today = CTL_prev × (1 - alpha_ctl) + TSS_today × alpha_ctl   [42-day EMA]
-ATL_today = ATL_prev × (1 - alpha_atl) + TSS_today × alpha_atl   [7-day EMA]
-TSB = CTL - ATL
-```
+Built from four normalized components:
 
-**Status:** Published standard (Coggan PMC).
+- efficiency trend from pace-vs-heart-strain evidence
+- threshold trend from LT pace movement
+- quality confirmation from strong recent sessions
+- durability support from repeatable specific load
 
-**Critical divergence:** The code uses `alpha = 2/(N+1)` (standard EMA formula). Coggan's PMC uses `alpha = 1 - exp(-1/TC)`.
+**Status:** Custom composite built for the question "am I performing better relative to strain?"
 
-| Window | Code alpha | Coggan alpha | Ratio |
-|--------|-----------|--------------|-------|
-| CTL (42d) | 0.0465 | 0.0235 | 2.0× |
-| ATL (7d)  | 0.25   | 0.133  | 1.9× |
-
-The implementation is approximately 2× more responsive than the Coggan standard for both windows. This means CTL rises faster, drops faster, and TSB swings more dramatically. The ratio between ATL and CTL responsiveness is approximately preserved, so ACWR behavior is similar — but absolute TSB values will not match TrainingPeaks.
-
-**Decision needed:** This is an undocumented deliberate divergence or an accidental one. Either way, it needs to be named in code comments and understood by the LLM coach. If coaching briefs reference TSB ranges, the ranges from Coggan literature (e.g., "TSB of -10 to -30 for fitness peak") do not apply without recalibration.
+**Design rule:** This is not a load metric. It should not rise simply because TSS rises.
 
 ---
 
-### 1.3 ACWR — Acute:Chronic Workload Ratio
+### 1.3 Readiness
 
-```
-ACWR = ATL / CTL   (= 7-day EMA / 42-day EMA)
-```
+Built from three components:
 
-**Status:** Published standard (Hulin et al. 2014, 2016; Gabbett 2016).
+- acute strain
+- carryover friction from clustered hard work
+- optional recovery response from wellness data
 
-**Window mismatch:** Most ACWR injury risk literature uses 7-day acute / 28-day chronic. This system uses 42-day chronic (same as CTL). A 42-day chronic window is more stable and less sensitive to recent ramp-up — it effectively defines "sweet spot" (ACWR ~1.0) as matching your 6-week fitness baseline rather than your 4-week one.
+**Status:** Custom state score built for the question "how ready am I to absorb or execute quality work right now?"
 
-**Consequence:** ACWR will read lower during a build phase than the published injury-risk thresholds suggest. The overreach inflection at 1.8 (see §1.4) is calibrated to this window, not to the 28-day standard, and should not be compared directly to literature thresholds (which use 1.5–2.0 but against a 28-day chronic).
-
----
-
-### 1.4 Overreach Accumulator
-
-```
-overreach_excess = (tss_acwr_10d - target).clip(lower=0)
-raw_signal = sigmoid(-4 × (tss_acwr - 1.8)) × 100 × load_scale
-overreach = accumulated over time with decay
-```
-
-**Status:** Custom design. Not a published standard.
-
-**Rationale:** The sigmoid inflection at ACWR=1.8 is motivated by the published literature range of 1.5–2.0 for elevated injury/illness risk. The accumulator with decay captures the "you can't erase overreaching in one day" reality that a raw ACWR signal misses. The `-4` steepness makes the sigmoid transition sharp — most of the signal fires between ACWR 1.5 and 2.1.
-
-**Weakness:** The accumulator parameters (decay rate, load_scale) are not calibrated to outcome data. They are plausible but arbitrary. An autonomous coach should treat overreach as a direction signal ("trending up") rather than an absolute threshold ("above 50 = overreached").
+**Design rule:** Higher means more ready. Missing wellness data should reduce richness, not break the metric.
 
 ---
 
-### 1.5 Injury Risk
+### 1.4 Tissue Load Risk
 
-Same accumulator structure as overreach but driven by rTSS (running mechanical load) and uses a slower decay rate ("higher decay preserves memory longer"). This means mechanical stress persists in the accumulator longer than training stress overreach.
+Built from four components:
 
-**Status:** Custom design. The separation of mechanical load stress (rTSS-based) from general training stress (TSS-based) overreach is methodologically sound — running mechanical load and cardiovascular overreach are distinct injury pathways. No published formula uses this exact approach, but the design is well-motivated.
+- run-specific ramp
+- single-run spike versus recent tolerance
+- load concentration from long-run share and hard-run clustering
+- optional wellness friction
 
-**Weakness:** Same calibration gap as overreach. The accumulator is not validated against injury outcomes in this athlete's history.
+**Status:** Custom running-specific risk composite.
+
+**Design rule:** This should respond to mechanically risky running structure, not generic total training load alone.
+
+---
+
+### 1.5 Durability
+
+Built from three components:
+
+- single-run tolerance
+- weekly specific tolerance
+- specific-load consistency
+
+**Status:** Custom capability score.
+
+**Design rule:** Higher means the athlete is demonstrating more repeatable running-specific load tolerance, not merely accumulating more training volume.
 
 ---
 

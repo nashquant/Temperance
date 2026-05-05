@@ -64,10 +64,14 @@ const INTEGER_LIKE_KEYS = new Set([
   "respiration_avg",
   "steps",
   "intensity_minutes",
-  "fitness",
-  "fatigue",
-  "overreach",
-  "injury_risk",
+  "performance_trend",
+  "performance_confidence",
+  "readiness",
+  "readiness_confidence",
+  "tissue_load_risk",
+  "tissue_load_risk_confidence",
+  "durability",
+  "durability_confidence",
   "vdot",
   "vdot_max",
   "calories_total",
@@ -86,7 +90,7 @@ const HOUR_LIKE_KEYS = new Set([
   "awake_h",
 ]);
 
-const RATIO_LIKE_KEYS = new Set(["acwr", "racwr"]);
+const RATIO_LIKE_KEYS = new Set<string>([]);
 
 function shouldUseIntegerFormat(dataKey: string): boolean {
   return INTEGER_LIKE_KEYS.has(String(dataKey || ""));
