@@ -10,9 +10,11 @@ Thumbs.db
 .claude/settings.local.json
 .claude/worktrees/
 .worktrees/
+.tmp/
 docs/superpowers/
 
 # Python caches and local environments
+.pycache/
 __pycache__/
 *.py[cod]
 *$py.class

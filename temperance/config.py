@@ -17,8 +17,12 @@ class AppConfig:
 
 
 def load_config() -> AppConfig:
-    """Load configuration from environment and local .env file."""
+    """Load configuration from environment and local env files."""
     root = Path(__file__).resolve().parent
+    load_dotenv(
+        Path.home() / ".config" / "temperance" / "temperance.env",
+        override=False,
+    )
     load_dotenv(root / ".env", override=False)
     load_dotenv(override=False)
 

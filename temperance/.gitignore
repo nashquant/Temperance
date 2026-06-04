@@ -26,5 +26,11 @@ data/exports/
 *.sqlite
 *.sqlite3
 
+## tmp
+*.tmp
+
+## .claude
+*.claude
+
 # Athlete-specific local overlays.
 guidelines/temperance-guidelines/*.local.md

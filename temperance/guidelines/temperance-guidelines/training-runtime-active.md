@@ -2,6 +2,9 @@
 
 Status: ephemeral active runtime.
 
+This is the default current-state packet. Load it before broader roadmap or
+history context.
+
 - Active overlays:
 - Athlete-state: `training-athlete-state-high-capacity-durability-limited.local.md`
 - Event: `training-event-marathon-default.md`

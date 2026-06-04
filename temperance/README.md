@@ -31,6 +31,9 @@ If you are looking for the main project entry point, start with the repo root [R
 
 These paths are private and gitignored.
 
+Local credentials should live in `~/.config/temperance/temperance.env`, not in
+this package directory. Use `temperance/.env.example` as the template.
+
 ## Garmin sync notes
 
 - Comprehensive sync is the deep path for activities, activity details, FIT records, sleep, and wellness.
@@ -70,13 +73,13 @@ The current unified keepalive setup expects the repo-level `backend/` and `front
 ## Migrations
 
 ```bash
-cd /Users/matheus/Temperance/temperance
-python -m temperance.migrate
+# from repo root
+.venv/bin/python -m temperance.migrate
 ```
 
 ## Tests
 
 ```bash
-cd /Users/matheus/Temperance
-pytest temperance/tests -q
+# from repo root
+.venv/bin/pytest temperance/tests -q
 ```

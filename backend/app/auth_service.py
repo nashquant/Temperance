@@ -15,8 +15,10 @@ from fastapi.responses import Response
 
 from temperance.auth import build_users, resolve_user, password_matches
 
+DEFAULT_TOKEN_TTL_S = 30 * 24 * 60 * 60
 TOKEN_TTL_S = int(
-    os.getenv("TEMPERANCE_SESSION_TTL_S", str(4 * 60 * 60)) or (4 * 60 * 60)
+    os.getenv("TEMPERANCE_SESSION_TTL_S", str(DEFAULT_TOKEN_TTL_S))
+    or DEFAULT_TOKEN_TTL_S
 )
 AUTH_COOKIE_NAME = "temperance_session"
 

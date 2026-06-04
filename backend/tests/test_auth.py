@@ -205,6 +205,7 @@ def test_auth_login_sets_http_only_cookie(monkeypatch: pytest.MonkeyPatch) -> No
         assert cookies
         cookie_header = f"{cookies[0][1][0]}={cookies[0][1][1]}"
     assert backend_main._cookie_header_token(cookie_header) == payload["token"]
+    assert "Max-Age=2592000" in cookie_header
 
 
 def test_auth_cookie_header_parser_rejects_missing_cookie() -> None:

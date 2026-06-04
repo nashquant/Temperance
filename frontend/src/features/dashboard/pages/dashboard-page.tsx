@@ -266,6 +266,7 @@ export function DashboardPage(): JSX.Element {
   const { setHeaderActions } = useAppLayoutContext();
   const weekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAnchoredWeekRef = useRef<string>("");
+  const extractWasRunningRef = useRef(false);
   const undoTimerRef = useRef<number | null>(null);
   const undoDismissTimerRef = useRef<number | null>(null);
   const undoBusyRef = useRef(false);
@@ -287,6 +288,9 @@ export function DashboardPage(): JSX.Element {
   const weekOffset = selectedWindowIndex * dashboardWindowWeeks;
   const query = useDashboardQuery(dashboardWindowWeeks, "all", weekOffset);
   const extractStatusQuery = useDataExtractStatusQuery();
+  const extractProgressRunning = Boolean(
+    extractStatusQuery.data?.extract_progress?.running,
+  );
   const userTimeZone = useMemo(() => {
     const profileAny = profile as unknown as Record<string, unknown> | null;
     const tzFromProfile = String(
@@ -339,9 +343,17 @@ export function DashboardPage(): JSX.Element {
       queryClient.invalidateQueries({ queryKey: ["custom-activities"] }),
       queryClient.invalidateQueries({ queryKey: ["weekly-outlook"] }),
       queryClient.invalidateQueries({ queryKey: ["athlete-progression"] }),
+      queryClient.invalidateQueries({ queryKey: ["wellness"] }),
+      queryClient.invalidateQueries({ queryKey: ["coach-snapshot"] }),
       queryClient.invalidateQueries({ queryKey: ["data-extract-status"] }),
     ]);
   };
+  useEffect(() => {
+    if (extractWasRunningRef.current && !extractProgressRunning) {
+      void refreshDashboardViews();
+    }
+    extractWasRunningRef.current = extractProgressRunning;
+  }, [extractProgressRunning, profile?.owner]);
   const dashboardReloadMutation = useMutation({
     mutationFn: async () => {
       if (!session?.token) throw new Error("Missing auth token");

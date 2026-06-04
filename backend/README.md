@@ -5,9 +5,8 @@ The backend is the local server that powers the app. It handles auth, Garmin syn
 ## Start the server
 
 ```bash
-cd backend
-source .venv/bin/activate
-./run.sh
+# from repo root
+./backend/run.sh
 ```
 
 API available at `http://127.0.0.1:8000`. The frontend proxies to this during local development.
@@ -15,34 +14,35 @@ API available at `http://127.0.0.1:8000`. The frontend proxies to this during lo
 First-time setup:
 
 ```bash
-cd backend
+# from repo root
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+.venv/bin/pip install -r backend/requirements.txt
 ```
 
 ## MCP coaching tools
 
-The MCP server gives a Claude-based client doctrine-aware coaching context: what the current build is doing, how recent training looks against it, and what makes sense tomorrow.
+The MCP server gives compatible clients doctrine-aware coaching context: what the current build is doing, how recent training looks against it, and what makes sense tomorrow.
 
 ```bash
 # from repo root
-python3 -m backend.app.mcp_server --stdio
+.venv/bin/python -m backend.app.mcp_server --stdio --profile lite
 ```
 
-Claude Desktop / Claude Code config:
+Generic MCP client config:
 
 ```json
 {
   "mcpServers": {
-    "temperance": {
-      "command": "python3",
-      "args": ["-m", "backend.app.mcp_server"],
+    "temperance-lite": {
+      "command": "/absolute/path/to/Temperance/.venv/bin/python",
+      "args": ["-m", "backend.app.mcp_server", "--stdio", "--profile", "lite"],
       "cwd": "/absolute/path/to/Temperance"
     }
   }
 }
 ```
+
+Use `--profile full` only when you explicitly need the heavier admin/analytics tool surface.
 
 Useful starting prompts once connected:
 
@@ -93,6 +93,7 @@ If they diverge materially, it is a bug. Backend and MCP use the same helper so 
 ## After code changes
 
 ```bash
+# from repo root
 ./temperance/scripts/install_keepalive.sh restart
 ```
 

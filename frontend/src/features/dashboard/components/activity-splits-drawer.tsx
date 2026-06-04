@@ -254,6 +254,8 @@ export function ActivitySplitsDrawer({
   const [sourceText, setSourceText] = useState('');
 
   const activity = detailQuery.data?.activity;
+  const sportType = String(activity?.sport_type || '').toLowerCase();
+  const runningLike = sportType.includes('run') || sportType.includes('treadmill');
   const sourceKind = String(detailQuery.data?.details?.source || '').trim().toLowerCase();
   const raw = detailQuery.data?.raw;
   const rawDayUtc = String(raw?.day_utc || '').trim();
@@ -361,33 +363,32 @@ export function ActivitySplitsDrawer({
         >
           {detailQuery.data ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-[minmax(0,1fr)_190px] gap-2 max-[560px]:grid-cols-1">
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
-                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />TSS</p>
-                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{Math.round(activity?.tss ?? 0)}</p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
-                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />rTSS</p>
-                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{Math.round(activity?.rtss ?? 0)}</p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
-                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Route className="h-3 w-3" />Pace</p>
-                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{activity?.avg_pace_display || '-'}</p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
-                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><HeartPulse className="h-3 w-3" />HR</p>
-                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{Math.round(activity?.avg_hr ?? 0)} bpm</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
-                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Navigation className="h-3 w-3" />Distance</p>
-                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{(activity?.distance_km ?? 0).toFixed(2)} km</p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
-                  <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Clock3 className="h-3 w-3" />Total Time</p>
-                  <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{formatDurationHMS(Math.round((activity?.duration_min ?? 0) * 60))}</p>
+              <div className="grid grid-cols-[minmax(0,1fr)_190px] gap-2 max-[560px]:grid-cols-1">
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
+                    <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />TSS</p>
+                    <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{Math.round(activity?.tss ?? 0)}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
+                    <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Target className="h-3 w-3" />rTSS</p>
+                    <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{Math.round(activity?.rtss ?? 0)}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
+                    <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Clock3 className="h-3 w-3" />Total Time</p>
+                    <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{(() => { const m = Math.round(activity?.duration_min ?? 0); if (m < 60) return `${m}'`; const h = Math.floor(m / 60); const mm = m % 60; return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; })()}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
+                    <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Route className="h-3 w-3" />Pace</p>
+                    <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{activity?.avg_pace_display || '-'}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
+                    <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><HeartPulse className="h-3 w-3" />HR</p>
+                    <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{Math.round(activity?.avg_hr ?? 0)} bpm</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
+                    <p className="inline-flex items-center gap-1 text-xs text-slate-300/72"><Navigation className="h-3 w-3" />Distance</p>
+                    <p className="mt-1 text-[1.05rem] font-semibold leading-none text-foreground">{runningLike ? `${(activity?.distance_km ?? 0).toFixed(1)} km` : '-'}</p>
+                  </div>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-black/15 p-2.5">
                   <div className="mb-2 flex items-center justify-between gap-2">
@@ -407,7 +408,6 @@ export function ActivitySplitsDrawer({
                   </div>
                 </div>
               </div>
-            </div>
 
             {generatedText ? (
               <div className="space-y-2 rounded-xl border border-white/10 bg-black/15 p-3">

@@ -73,12 +73,6 @@ Divergence between MCP baseline values and dashboard baseline values is a bug.
 - Preserve existing style, imports, error handling, and data ownership patterns.
 - Do not silently rename, move, or create files that change project structure.
 
-## Token Budget Discipline
-
-Follow the canonical Codex token-budget guardrails and anti-patterns in
-`/Users/matheus/.codex/AGENTS.md`. Do not duplicate the full rule here; keep the
-canonical copy in the Codex home bridge.
-
 ## Validation Expectations
 
 - Parser, planning, analytics, MCP, or API behavior changes should get focused
@@ -100,10 +94,12 @@ Backend and Python commands:
 ```bash
 ./backend/run.sh
 .venv/bin/python -m backend.app.mcp_server --stdio
+.venv/bin/python -m backend.app.mcp_server --stdio --profile lite
+.venv/bin/python -m backend.app.mcp_server --stdio --profile full
 .venv/bin/pytest temperance/tests backend/tests -q
 .venv/bin/pytest temperance/tests/test_activity_parsing.py -v
 .venv/bin/python -m unittest backend.tests.test_mcp_server -v
-python -m temperance.migrate
+.venv/bin/python -m temperance.migrate
 ./temperance/scripts/install_keepalive.sh restart
 ```
 
@@ -113,35 +109,13 @@ The MCP server has two tool profiles from the same implementation:
 
 - `full` is the backward-compatible default and exposes the complete MCP tool
   surface for deep analytics, admin, sync, settings, and coaching work.
-- `lite` is the normal Codex onboarding profile. It keeps the everyday
+- `lite` is the normal lightweight onboarding profile. It keeps the everyday
   coaching/planning tools loaded while omitting heavier/admin tools such as
   activity detail, full fitness form, sync, and settings writes.
-
-Run profiles explicitly with:
-
-```bash
-.venv/bin/python -m backend.app.mcp_server --stdio --profile lite
-.venv/bin/python -m backend.app.mcp_server --stdio --profile full
-```
 
 `TEMPERANCE_MCP_PROFILE=lite` or `TEMPERANCE_MCP_PROFILE=full` may be used as a
 fallback, but a CLI `--profile` argument wins. Resources and resource templates
 are available in both profiles.
-
-Codex loads MCP servers when a session starts. After changing Codex MCP config,
-start a fresh Codex session before expecting the new profile to be active.
-
-Normal Codex config should register only the lite server:
-
-```toml
-[mcp_servers.temperance-lite]
-command = "/Users/matheus/Temperance/.venv/bin/python"
-args = ["-m", "backend.app.mcp_server", "--stdio", "--profile", "lite"]
-cwd = "/Users/matheus/Temperance"
-```
-
-For a deliberate full MCP session, replace the lite entry or temporarily add a
-`temperance-full` entry using `--profile full`, then start a fresh Codex session.
 
 Frontend commands run from `frontend/`:
 
@@ -154,7 +128,3 @@ npm run preview
 
 After backend changes that need a process restart, use the keepalive restart
 command above.
-
-Use the `/browse` skill from the gstack install for web browsing. When browsing
-or logging into the app, agents may refer to the admin username and password
-stored in `.env`.

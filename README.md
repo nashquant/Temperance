@@ -134,11 +134,9 @@ Main frontend surfaces are documented in [frontend/README.md](frontend/README.md
 ### Backend
 
 ```bash
-cd /Users/matheus/Temperance/backend
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-./run.sh
+.venv/bin/pip install -r backend/requirements.txt
+./backend/run.sh
 ```
 
 Backend URL: `http://127.0.0.1:8000`
@@ -146,14 +144,13 @@ Backend URL: `http://127.0.0.1:8000`
 Equivalent uvicorn form:
 
 ```bash
-cd /Users/matheus/Temperance
-python3 -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+.venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ### Frontend
 
 ```bash
-cd /Users/matheus/Temperance/frontend
+cd frontend
 npm install
 npm run dev
 ```
@@ -164,14 +161,29 @@ The frontend proxies `/api/*` and `/health` to the backend during local developm
 
 ## Garmin Data And Sync
 
-For local admin sync with environment credentials:
+For local admin sync with environment credentials, keep real secrets outside the
+repository tree:
 
 ```bash
-export GARMIN_EMAIL="you@example.com"
-export GARMIN_PASSWORD="your_password"
+mkdir -p ~/.config/temperance
+cp temperance/.env.example ~/.config/temperance/temperance.env
+$EDITOR ~/.config/temperance/temperance.env
 ```
 
-You can also keep these in `temperance/.env` for local use.
+`backend/run.sh` and shared config loading read this file automatically when it
+exists. Shell environment variables still win, so CI and one-off local runs can
+continue to export `GARMIN_EMAIL`, `GARMIN_PASSWORD`, and auth settings directly.
+
+Before leaving the repo open for screenshots, pairing, or long-running local
+work, run:
+
+```bash
+temperance/scripts/check_safe_open.sh
+```
+
+The check verifies that live repo-local env files are absent, private database
+artifacts are not tracked, and common token/private-key patterns are not present
+in tracked files.
 
 Garmin OAuth is optional, but required if non-admin users should pair their own Garmin accounts instead of relying on memory-only session credentials.
 
@@ -240,8 +252,7 @@ Temperance exposes one canonical stdio MCP server at `backend/app/mcp_server.py`
 Run it from the repo root:
 
 ```bash
-cd /Users/matheus/Temperance
-python3 -m backend.app.mcp_server --stdio
+.venv/bin/python -m backend.app.mcp_server --stdio --profile lite
 ```
 
 The MCP server is a thin interface over backend logic, not a separate analytics engine. It exposes:
@@ -258,8 +269,7 @@ For the full tool/resource list, request examples, and baseline contract details
 Minimal MCP smoke example:
 
 ```bash
-cd /Users/matheus/Temperance
-python3 -m backend.app.mcp_server --stdio <<'EOF'
+.venv/bin/python -m backend.app.mcp_server --stdio --profile lite <<'EOF'
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"manual-smoke","version":"0.0.1"}}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
 {"jsonrpc":"2.0","id":2,"method":"resources/list"}
@@ -293,14 +303,12 @@ Key modules:
 Run migrations:
 
 ```bash
-cd /Users/matheus/Temperance
-python -m temperance.migrate
+.venv/bin/python -m temperance.migrate
 ```
 
 Restart keepalive services after backend or frontend path changes:
 
 ```bash
-cd /Users/matheus/Temperance
 ./temperance/scripts/install_keepalive.sh restart
 ```
 
@@ -315,20 +323,18 @@ Related docs:
 Python tests:
 
 ```bash
-cd /Users/matheus/Temperance
-pytest temperance/tests -q
+.venv/bin/pytest temperance/tests -q
 ```
 
 Backend MCP tests:
 
 ```bash
-cd /Users/matheus/Temperance
-backend/.venv/bin/python -m unittest backend.tests.test_mcp_server temperance.tests.test_mcp_server -v
+.venv/bin/python -m unittest backend.tests.test_mcp_server -v
 ```
 
 Frontend build check:
 
 ```bash
-cd /Users/matheus/Temperance/frontend
+cd frontend
 npm run build
 ```
