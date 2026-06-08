@@ -1,4 +1,5 @@
 import unittest
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,7 @@ from backend.app.main import (
     _baseline_load_scale,
     _day_lookup_with_daily_model,
 )
+from temperance.db import init_db
 
 
 def _metrics_frame(daily_tss_values: list[float], start_day: str = "2026-01-05") -> pd.DataFrame:
@@ -154,15 +156,21 @@ class AccumulatedBurdenRiskTest(unittest.TestCase):
 
 class DayLookupAccumulatedRiskTest(unittest.TestCase):
     def _model_df(self, daily_tss_values: list[float]) -> pd.DataFrame:
-        with (
-            patch("backend.app.main._build_daily_vdot_series", side_effect=_empty_vdot_frame),
-            patch("backend.app.main._load_curve_points", return_value=[]),
-        ):
-            _, _, _, model_df = _day_lookup_with_daily_model(
-                metrics_df=_metrics_frame(daily_tss_values),
-                daily_tss_target=60.0,
-                db_path=Path("/tmp/day-lookup-risk-test.sqlite"),
-            )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "day-lookup-risk-test.sqlite"
+            init_db(db_path)
+            with (
+                patch(
+                    "backend.app.main._build_daily_vdot_series",
+                    side_effect=_empty_vdot_frame,
+                ),
+                patch("backend.app.main._load_curve_points", return_value=[]),
+            ):
+                _, _, _, model_df = _day_lookup_with_daily_model(
+                    metrics_df=_metrics_frame(daily_tss_values),
+                    daily_tss_target=60.0,
+                    db_path=db_path,
+                )
         return model_df
 
     def test_repeated_overload_block_peaks_higher_than_single_week(self):

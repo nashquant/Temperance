@@ -22,9 +22,33 @@ def test_upsert_activity_details_skips_unchanged_updates(tmp_path: Path) -> None
         ],
     )
 
-    first = upsert_activity_details(db_path, [{"activity_id": "a1", "details": {"k": 1}}])
-    second = upsert_activity_details(db_path, [{"activity_id": "a1", "details": {"k": 1}}])
-    third = upsert_activity_details(db_path, [{"activity_id": "a1", "details": {"k": 2}}])
+    first = upsert_activity_details(
+        db_path,
+        [
+            {
+                "activity_id": "a1",
+                "details": {"details": {"activityId": "a1", "metricsCount": 1}},
+            }
+        ],
+    )
+    second = upsert_activity_details(
+        db_path,
+        [
+            {
+                "activity_id": "a1",
+                "details": {"details": {"activityId": "a1", "metricsCount": 1}},
+            }
+        ],
+    )
+    third = upsert_activity_details(
+        db_path,
+        [
+            {
+                "activity_id": "a1",
+                "details": {"details": {"activityId": "a1", "metricsCount": 2}},
+            }
+        ],
+    )
 
     assert first == 1
     assert second == 0

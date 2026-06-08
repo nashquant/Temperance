@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException, Query
 
 from backend.app.models import UpdateSettingsRequest
+from backend.app.settings_service import settings_update_core, settings_view_core
 
 router = APIRouter()
 
@@ -19,7 +20,7 @@ def settings_view(
     ctx = main_module._auth_context(authorization)
     resolved_owner = main_module._resolve_owner(ctx, owner)
     db_path = main_module._db_path_for_owner(resolved_owner)
-    result = main_module._settings_view_core(db_path)
+    result = settings_view_core(db_path)
     result["owner"] = resolved_owner
     return result
 
@@ -51,7 +52,7 @@ def settings_update(
     ctx = main_module._auth_context(authorization)
     resolved_owner = main_module._resolve_owner(ctx, owner)
     db_path = main_module._db_path_for_owner(resolved_owner)
-    return main_module._settings_update_core(
+    return settings_update_core(
         db_path,
         {
             "if_zone_thresholds": payload.if_zone_thresholds,
