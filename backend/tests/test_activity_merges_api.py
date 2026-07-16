@@ -32,6 +32,8 @@ def tmp_db(tmp_path: Path) -> Path:
             _make_activity("act-2", "running"),
             _make_activity("act-3", "treadmill_running"),
             _make_activity("act-4", "cycling"),
+            _make_activity("act-5", "elliptical"),
+            _make_activity("act-6", "elliptical"),
         ],
     )
     return p
@@ -82,6 +84,16 @@ def test_create_merge_run_plus_treadmill_allowed(tmp_db: Path) -> None:
         "post",
         "/api/v1/activity-merges",
         json={"activity_id_1": "act-1", "activity_id_2": "act-3"},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+def test_create_merge_elliptical_activities_allowed(tmp_db: Path) -> None:
+    resp = _call(
+        tmp_db,
+        "post",
+        "/api/v1/activity-merges",
+        json={"activity_id_1": "act-5", "activity_id_2": "act-6"},
     )
     assert resp.status_code == 200, resp.text
 

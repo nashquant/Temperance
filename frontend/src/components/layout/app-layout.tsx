@@ -344,14 +344,14 @@ export function AppLayout(): JSX.Element {
   };
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-background">
+    <div className="min-h-[100dvh] bg-background">
       <a
         href="#app-main-content"
         className="sr-only absolute left-4 top-4 z-[60] rounded-md bg-background px-3 py-2 text-sm font-medium text-foreground shadow-lg focus:not-sr-only focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         Skip to main content
       </a>
-      <div className="h-[100dvh]">
+      <div className="min-h-[100dvh]">
         <aside
           className={cn(
             "fixed inset-y-0 left-0 z-20 hidden overflow-y-auto border-r bg-card/50 transition-[width,padding] duration-200 lg:block",
@@ -425,7 +425,7 @@ export function AppLayout(): JSX.Element {
         <div
           ref={setMainScrollContainer}
           className={cn(
-            "flex h-[100dvh] min-w-0 flex-col overflow-y-auto transition-[padding] duration-200",
+            "flex min-h-[100dvh] min-w-0 flex-col transition-[padding] duration-200",
             desktopNavExpanded ? "lg:pl-[236px]" : "lg:pl-[72px]",
           )}
         >

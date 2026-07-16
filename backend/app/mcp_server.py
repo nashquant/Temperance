@@ -111,6 +111,14 @@ class ResourceTemplateSpec:
 
 
 @dataclass
+class PromptSpec:
+    name: str
+    description: str
+    arguments: list[dict[str, Any]]
+    handler: Callable[[dict[str, Any]], str]
+
+
+@dataclass
 class ResolvedDoc:
     doc_id: str
     path: Path
@@ -219,6 +227,7 @@ class PlannedEntry(BaseModel):
 class SavePlannedActivitiesArgs(BaseModel):
     owner: str = DEFAULT_OWNER
     entries: list[PlannedEntry]
+    safety_acknowledged: bool = False
 
 
 class UpdatePlannedActivityArgs(BaseModel):
@@ -1656,6 +1665,51 @@ def _recommended_coach_tool_flow() -> list[str]:
     ]
 
 
+def _coach_prompt_text(flow_name: str, arguments: dict[str, Any]) -> str:
+    owner = str((arguments or {}).get("owner") or DEFAULT_OWNER).strip() or DEFAULT_OWNER
+    target_day = (
+        str((arguments or {}).get("target_day_utc") or "tomorrow").strip()
+        or "tomorrow"
+    )
+    flow = "\n".join(
+        f"{idx}. {step}"
+        for idx, step in enumerate(_recommended_coach_tool_flow(), start=1)
+    )
+    if flow_name == "daily_check_in":
+        return (
+            f"You are the Temperance local training coach for owner `{owner}`. "
+            "Start with get_coaching_brief, then summarize today through recovery, weekly progress, "
+            "active phase, limiting constraint, and any flags. Do not change the plan unless asked."
+        )
+    if flow_name == "plan_week":
+        return (
+            f"You are planning a week for owner `{owner}` starting from `{target_day}`. "
+            "Run prepare_week_dialogue first and ask for every required answer "
+            "before plan_week_with_dialogue. "
+            "Before saving any change, follow this tool flow:\n"
+            f"{flow}"
+        )
+    if flow_name == "critique_plan_change":
+        return (
+            f"You are auditing a proposed plan change for owner `{owner}`. "
+            "Start with get_coaching_brief, estimate_workout_tss for the proposed entries, "
+            "simulate_plan_week, then critique_day_plan. Name warnings and safer alternatives. "
+            "Only call save_planned_activities or update_planned_activity after the critique is clean, "
+            "or after the athlete explicitly acknowledges the risk."
+        )
+    return (
+        f"You are planning `{target_day}` for owner `{owner}`. "
+        "Use the MCP-first coach flow before writing any planned activity:\n"
+        f"{flow}\n"
+        "Every recommendation must name the active phase, weekly targets, limiting constraint, "
+        "spacing/density rationale, and the rejected alternative."
+    )
+
+
+def _prompt_with_owner_and_target(flow_name: str) -> Callable[[dict[str, Any]], str]:
+    return lambda arguments: _coach_prompt_text(flow_name, arguments)
+
+
 def _build_workout_overview_payload() -> dict[str, Any]:
     docs = []
     for filename in WORKOUT_OVERVIEW_DOCS:
@@ -1997,11 +2051,34 @@ def tool_save_planned_activities(arguments: dict[str, Any]) -> dict[str, Any]:
     args = SavePlannedActivitiesArgs.model_validate(arguments or {})
     db_path = _resolve_db_path(args.owner)
     backend_main = _backend_main_module()
+    entries = [entry.model_dump() for entry in args.entries]
+    critique = tool_critique_day_plan(
+        {
+            "owner": args.owner,
+            "extra_entries": entries,
+        }
+    )
+    warnings = list(critique.get("warnings") or [])
+    if warnings and not args.safety_acknowledged:
+        warning_tags = ", ".join(
+            str(warning.get("tag") or warning.get("code") or "warning")
+            for warning in warnings[:5]
+        )
+        raise ValueError(
+            "Plan critique warnings must be reviewed before saving planned activities: "
+            f"{warning_tags}. Re-run with safety_acknowledged=true only after accepting the risk."
+        )
     entry_lines = [f"{e.day_utc}: {e.workout_text}" for e in args.entries]
     entry_text = "\n".join(entry_lines)
     result = backend_main._ingest_planned_entries_core(db_path, entry_text)
     result["owner"] = args.owner
     result["db_path"] = str(db_path)
+    result["safety_gate"] = {
+        "status": "acknowledged_with_warnings"
+        if warnings and args.safety_acknowledged
+        else "passed",
+        "warnings": warnings or None,
+    }
     return result
 
 
@@ -4244,6 +4321,52 @@ RESOURCE_TEMPLATES: tuple[ResourceTemplateSpec, ...] = (
 )
 
 
+PROMPTS: dict[str, PromptSpec] = {
+    "daily_check_in": PromptSpec(
+        name="daily_check_in",
+        description="Summarize current training state without changing the plan.",
+        arguments=[
+            {"name": "owner", "description": "Temperance owner id.", "required": False}
+        ],
+        handler=_prompt_with_owner_and_target("daily_check_in"),
+    ),
+    "plan_tomorrow": PromptSpec(
+        name="plan_tomorrow",
+        description="Plan tomorrow using the full estimate, simulation, and critique gate before saving.",
+        arguments=[
+            {"name": "owner", "description": "Temperance owner id.", "required": False},
+            {
+                "name": "target_day_utc",
+                "description": "Target day, defaults to tomorrow in the client conversation.",
+                "required": False,
+            },
+        ],
+        handler=_prompt_with_owner_and_target("plan_tomorrow"),
+    ),
+    "plan_week": PromptSpec(
+        name="plan_week",
+        description="Plan a week after required life-context dialogue.",
+        arguments=[
+            {"name": "owner", "description": "Temperance owner id.", "required": False},
+            {
+                "name": "target_day_utc",
+                "description": "A day inside the target week.",
+                "required": False,
+            },
+        ],
+        handler=_prompt_with_owner_and_target("plan_week"),
+    ),
+    "critique_plan_change": PromptSpec(
+        name="critique_plan_change",
+        description="Audit a proposed plan change and name risks before any write.",
+        arguments=[
+            {"name": "owner", "description": "Temperance owner id.", "required": False}
+        ],
+        handler=_prompt_with_owner_and_target("critique_plan_change"),
+    ),
+}
+
+
 def _success_response(msg_id: Any, result: Any) -> dict[str, Any]:
     return {"jsonrpc": JSONRPC_VERSION, "id": msg_id, "result": result}
 
@@ -4282,6 +4405,14 @@ def _resource_template_listing(spec: ResourceTemplateSpec) -> dict[str, Any]:
     }
 
 
+def _prompt_listing(spec: PromptSpec) -> dict[str, Any]:
+    return {
+        "name": spec.name,
+        "description": spec.description,
+        "arguments": spec.arguments,
+    }
+
+
 def _server_info_for_profile(profile: Optional[str]) -> dict[str, str]:
     return SERVER_INFO_BY_PROFILE[_normalize_mcp_profile(profile)]
 
@@ -4295,6 +4426,7 @@ def _handle_initialize(msg_id: Any, profile: Optional[str] = MCP_PROFILE_FULL) -
             "capabilities": {
                 "tools": {},
                 "resources": {},
+                "prompts": {},
             },
         },
     )
@@ -4362,6 +4494,38 @@ def _handle_resources_list(msg_id: Any) -> dict[str, Any]:
     return _success_response(
         msg_id,
         {"resources": [_resource_listing(spec) for spec in RESOURCES.values()]},
+    )
+
+
+def _handle_prompts_list(msg_id: Any) -> dict[str, Any]:
+    return _success_response(
+        msg_id,
+        {"prompts": [_prompt_listing(spec) for spec in PROMPTS.values()]},
+    )
+
+
+def _handle_prompts_get(msg_id: Any, params: dict[str, Any]) -> dict[str, Any]:
+    name = str((params or {}).get("name") or "").strip()
+    prompt = PROMPTS.get(name)
+    if prompt is None:
+        return _error_response(msg_id, -32602, f"Unknown prompt: {name}")
+    arguments = (params or {}).get("arguments") or {}
+    if not isinstance(arguments, dict):
+        arguments = {}
+    return _success_response(
+        msg_id,
+        {
+            "description": prompt.description,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": {
+                        "type": "text",
+                        "text": prompt.handler(arguments),
+                    },
+                }
+            ],
+        },
     )
 
 
@@ -4469,6 +4633,10 @@ def _dispatch_request(
         return _handle_tools_list(msg_id, profile=profile)
     if method == "tools/call":
         return _handle_tools_call(msg_id, params, profile=profile)
+    if method == "prompts/list":
+        return _handle_prompts_list(msg_id)
+    if method == "prompts/get":
+        return _handle_prompts_get(msg_id, params)
     if method == "resources/list":
         return _handle_resources_list(msg_id)
     if method == "resources/templates/list":

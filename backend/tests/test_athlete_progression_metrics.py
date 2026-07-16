@@ -85,6 +85,37 @@ def test_payload_exposes_new_metric_series() -> None:
     assert point["durability"] >= 0
 
 
+def test_weekly_payload_exposes_new_metric_series() -> None:
+    with (
+        patch("backend.app.main._metrics_for_filters", return_value=_metrics_frame()),
+        patch("backend.app.main.get_wellness_df", return_value=_wellness_frame()),
+        patch("backend.app.main.get_sleep_df", return_value=pd.DataFrame()),
+        patch("backend.app.main.get_setting", return_value=None),
+        patch("backend.app.main._weekly_tss_target_from_lt_pace", return_value=420.0),
+        patch("backend.app.main._weekly_distance_target_from_lt_pace", return_value=70.0),
+        patch("backend.app.main.datetime", wraps=datetime) as mock_datetime,
+    ):
+        mock_datetime.now.return_value = datetime(2026, 3, 1, tzinfo=timezone.utc)
+        payload = _build_athlete_progression_payload(
+            db_path=Path("/tmp/progression-metrics.sqlite"),
+            days=56,
+            activity_filter="all",
+            aggregation="weekly",
+            owner="tester",
+        )
+
+    assert payload["points"]
+    for point in payload["points"]:
+        assert point["performance_trend"] >= 0
+        assert point["performance_confidence"] >= 0
+        assert point["readiness"] >= 0
+        assert point["readiness_confidence"] >= 0
+        assert point["tissue_load_risk"] >= 0
+        assert point["tissue_load_risk_confidence"] >= 0
+        assert point["durability"] >= 0
+        assert point["durability_confidence"] >= 0
+
+
 def test_cross_training_load_does_not_dominate_tissue_load_risk() -> None:
     metrics = _metrics_frame()
     metrics.loc[metrics["sport_type"] == "cycling", "tss"] = 140.0

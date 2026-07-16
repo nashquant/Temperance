@@ -76,6 +76,19 @@ npm run build
 
 Documentation-only changes do not require app tests.
 
+## Debugging Context Budget
+
+For bug investigations, prefer the smallest likely surface first, then widen
+only after a specific hypothesis requires it.
+
+- Start with the visible symptom and the nearest frontend or backend file.
+- Query one real API payload when the bug may be a data-shape mismatch.
+- Use bounded backend reads before broad module reads.
+- Avoid broad `git show --unified` dumps; start with `git show --stat` or a
+  small hunk around the suspected change.
+- Stop after three non-advancing inspections and summarize what is known,
+  unknown, and the next highest-signal check.
+
 ## Canonical Docs
 
 - Product and local run docs: `README.md`

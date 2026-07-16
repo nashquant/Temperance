@@ -249,7 +249,8 @@ class MCPServerHelpersTest(unittest.TestCase):
         self.assertEqual(response["result"]["protocolVersion"], "2025-03-26")
         self.assertEqual(response["result"]["serverInfo"]["name"], "temperance-mcp")
         self.assertEqual(
-            response["result"]["capabilities"], {"tools": {}, "resources": {}}
+            response["result"]["capabilities"],
+            {"tools": {}, "resources": {}, "prompts": {}},
         )
 
     def test_lite_initialize_advertises_lite_server_name(self):
@@ -260,7 +261,8 @@ class MCPServerHelpersTest(unittest.TestCase):
 
         self.assertEqual(response["result"]["serverInfo"]["name"], "temperance-mcp-lite")
         self.assertEqual(
-            response["result"]["capabilities"], {"tools": {}, "resources": {}}
+            response["result"]["capabilities"],
+            {"tools": {}, "resources": {}, "prompts": {}},
         )
 
     def test_activity_row_summary_is_stable_for_pure_formatting(self):
@@ -424,6 +426,43 @@ class MCPServerHelpersTest(unittest.TestCase):
             ],
         )
 
+    def test_prompts_list_exposes_coach_workflows(self):
+        response = mcp_server.handle_message(
+            {"jsonrpc": "2.0", "id": 20, "method": "prompts/list"},
+            profile="lite",
+        )
+
+        prompt_names = [prompt["name"] for prompt in response["result"]["prompts"]]
+        self.assertEqual(
+            prompt_names,
+            [
+                "daily_check_in",
+                "plan_tomorrow",
+                "plan_week",
+                "critique_plan_change",
+            ],
+        )
+
+    def test_prompts_get_plan_tomorrow_names_required_tool_flow(self):
+        response = mcp_server.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 21,
+                "method": "prompts/get",
+                "params": {"name": "plan_tomorrow", "arguments": {"owner": "test"}},
+            },
+            profile="lite",
+        )
+
+        result = response["result"]
+        self.assertIn("messages", result)
+        prompt_text = result["messages"][0]["content"]["text"]
+        self.assertIn("get_coaching_brief", prompt_text)
+        self.assertIn("estimate_workout_tss", prompt_text)
+        self.assertIn("simulate_plan_week", prompt_text)
+        self.assertIn("critique_day_plan", prompt_text)
+        self.assertIn("save_planned_activities", prompt_text)
+
     def test_resource_templates_list_exposes_dynamic_templates(self):
         response = mcp_server.handle_message(
             {"jsonrpc": "2.0", "id": 11, "method": "resources/templates/list"}
@@ -570,6 +609,80 @@ class MCPServerHelpersTest(unittest.TestCase):
             result["context_warnings"][0]["code"], "philosophy_layer_mismatch"
         )
         self.assertIn("search_workouts", result["recommended_tool_flow"])
+
+    def test_save_planned_activities_blocks_unacknowledged_critique_warnings(self):
+        fake_backend = type(
+            "BackendMain",
+            (),
+            {
+                "_ingest_planned_entries_core": staticmethod(
+                    lambda _db_path, _entry_text: {"saved_count": 1, "errors": []}
+                ),
+            },
+        )()
+
+        with (
+            patch.object(
+                mcp_server, "_resolve_db_path", return_value=Path("/tmp/test.db")
+            ),
+            patch.object(mcp_server, "_backend_main_module", return_value=fake_backend),
+            patch.object(
+                mcp_server,
+                "tool_critique_day_plan",
+                return_value={
+                    "warnings": [
+                        {
+                            "tag": "back_to_back_hard_days",
+                            "message": "Hard days are too compressed.",
+                        }
+                    ]
+                },
+            ),
+        ):
+            with self.assertRaisesRegex(ValueError, "critique warnings"):
+                mcp_server.tool_save_planned_activities(
+                    {
+                        "owner": "test",
+                        "entries": [
+                            {"day_utc": "2026-04-06", "workout_text": "90min @ 90%"}
+                        ],
+                    }
+                )
+
+    def test_save_planned_activities_allows_acknowledged_critique_warnings(self):
+        fake_backend = type(
+            "BackendMain",
+            (),
+            {
+                "_ingest_planned_entries_core": staticmethod(
+                    lambda _db_path, _entry_text: {"saved_count": 1, "errors": []}
+                ),
+            },
+        )()
+
+        with (
+            patch.object(
+                mcp_server, "_resolve_db_path", return_value=Path("/tmp/test.db")
+            ),
+            patch.object(mcp_server, "_backend_main_module", return_value=fake_backend),
+            patch.object(
+                mcp_server,
+                "tool_critique_day_plan",
+                return_value={"warnings": [{"tag": "accepted_risk"}]},
+            ),
+        ):
+            result = mcp_server.tool_save_planned_activities(
+                {
+                    "owner": "test",
+                    "safety_acknowledged": True,
+                    "entries": [
+                        {"day_utc": "2026-04-06", "workout_text": "90min @ 90%"}
+                    ],
+                }
+            )
+
+        self.assertEqual(result["saved_count"], 1)
+        self.assertEqual(result["safety_gate"]["status"], "acknowledged_with_warnings")
 
     def test_resources_read_returns_32002_for_unknown_resource(self):
         response = mcp_server.handle_message(

@@ -73,7 +73,10 @@ class TemperanceMCPServerTest(unittest.TestCase):
         self.assertIsNotNone(response)
         self.assertEqual(response["result"]["protocolVersion"], "2025-03-26")
         self.assertEqual(response["result"]["serverInfo"]["name"], "temperance-mcp")
-        self.assertEqual(response["result"]["capabilities"], {"tools": {}, "resources": {}})
+        self.assertEqual(
+            response["result"]["capabilities"],
+            {"tools": {}, "resources": {}, "prompts": {}},
+        )
 
     def test_mcp_server_lists_static_resources(self) -> None:
         server = mcp_server.TemperanceMCPServer()

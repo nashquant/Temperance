@@ -130,6 +130,19 @@ function formatTooltipDateLabel(value: string): string {
   }).format(date);
 }
 
+function hasNumericSeriesData(
+  data: Array<Record<string, number | string | null | undefined>>,
+  keys: string[],
+): boolean {
+  return data.some((row) =>
+    keys.some((key) => {
+      const value = row[key];
+      if (value == null || value === "") return false;
+      return Number.isFinite(Number(value));
+    }),
+  );
+}
+
 function ProgressionTooltip({
   active,
   label,
@@ -263,6 +276,25 @@ export function ProgressionLineChartCard({
       String(row["label"] ?? row._x ?? ""),
     ]),
   );
+  const hasSeriesData = hasNumericSeriesData(
+    chartData,
+    [
+      ...series.map((item) => item.key),
+      ...(targetKey ? [targetKey] : []),
+      ...(targetKey2 ? [targetKey2] : []),
+    ],
+  );
+
+  if (!hasSeriesData) {
+    return (
+      <ChartCard title={title} heightClassName="h-[280px]" className={className}>
+        <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-400">
+          No chart data available for this metric in the selected range.
+        </div>
+      </ChartCard>
+    );
+  }
+
   return (
     <ChartCard title={title} heightClassName="h-[280px]" className={className}>
       <ResponsiveContainer width="100%" height="100%">

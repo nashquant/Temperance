@@ -219,10 +219,11 @@ DB_PATH = Path(str(os.getenv("TEMPERANCE_DB_PATH") or _default_db_path()))
 DEFAULT_LTHR = 178.0
 DEFAULT_THRESHOLD_PACE_SEC_PER_KM = 300.0
 
-# Only running-like and cycling-like activities may be merged.
+# Only same-family activities may be merged.
 MERGE_COMPAT_GROUPS: list[frozenset[str]] = [
     frozenset({"running", "track_running", "virtual_run", "treadmill_running"}),
     frozenset({"cycling", "indoor_cycling"}),
+    frozenset({"elliptical"}),
 ]
 
 
@@ -8948,13 +8949,21 @@ def _build_merged_activity_card(
     ]
     if_pct_merged = round(sum(if_values) / len(if_values), 1) if if_values else 0.0
 
+    use_eqv_distance = any(
+        "eqv" in str(card.get("distance_label") or "") for card in ordered_cards
+    )
+    distance_field = "distance_eqv_km" if use_eqv_distance else "distance_km"
     dist_total = sum(
-        _parse_distance_km_label(str(card.get("distance_label") or ""))
+        (
+            _safe_float(card.get(distance_field))
+            if _safe_float(card.get(distance_field)) > 0
+            else _parse_distance_km_label(str(card.get("distance_label") or ""))
+        )
         for card in ordered_cards
     )
     dist_suffix = (
         " km eqv."
-        if any("eqv" in str(card.get("distance_label") or "") for card in ordered_cards)
+        if use_eqv_distance
         else " km"
     )
     distance_label = f"{dist_total:.0f}{dist_suffix}" if dist_total > 0 else "0 km"
@@ -8979,13 +8988,22 @@ def _build_merged_activity_card(
     )
 
     total_duration_s = sum(
-        _parse_duration_label_seconds(str(card.get("duration_label") or ""))
+        (
+            _safe_float(card.get("duration_s"))
+            if _safe_float(card.get("duration_s")) > 0
+            else _parse_duration_label_seconds(str(card.get("duration_label") or ""))
+        )
         for card in ordered_cards
     )
     duration_label = (
         _format_duration_short(total_duration_s)
         if total_duration_s > 0
         else "+".join(str(card.get("duration_label") or "") for card in ordered_cards)
+    )
+    pace_label = (
+        _format_pace_short(total_duration_s / dist_total)
+        if total_duration_s > 0 and dist_total > 0
+        else first.get("pace_label") or "-"
     )
 
     return {
@@ -9001,7 +9019,7 @@ def _build_merged_activity_card(
         "duration_label": duration_label,
         "distance_label": distance_label,
         "hr_label": hr_label,
-        "pace_label": first.get("pace_label") or "-",
+        "pace_label": pace_label,
         "vdot": None,
         "if_pct": if_pct_merged,
         "tss": round(tss_total, 1),
@@ -9878,6 +9896,9 @@ def _build_activity_dashboard_payload(
                         "duration_label": _format_duration_short(
                             _safe_float(act.get("duration_s"))
                         ),
+                        "duration_s": _safe_float(act.get("duration_s")),
+                        "distance_km": dist_km,
+                        "distance_eqv_km": dist_eqv,
                         "activity_text": str(act.get("activity_text") or "")
                         if bool(
                             str(act.get("source") or "").strip().lower() == "custom"
